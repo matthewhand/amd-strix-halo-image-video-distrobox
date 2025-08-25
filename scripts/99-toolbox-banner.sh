@@ -84,7 +84,7 @@ printf 'Image  : docker.io/kyuz0/amd-strix-halo-image-video:latest\n\n'
 printf 'Included:\n'
 printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://localhost:8000)"
 printf '  - %-16s → %s\n' "WAN 2.2 (CLI)"     "cd /opt/wan-video-studio && python generate.py ..."
-printf '  - %-16s → %s\n' "ComfyUI"            "start_comfy_ui"
+printf '  - %-16s → %s\n' "ComfyUI"            "start_comfy_ui (http://localhost:8000)"
 echo
 printf 'SSH tip: ssh -L 8000:localhost:8000 user@host\n\n'
 
