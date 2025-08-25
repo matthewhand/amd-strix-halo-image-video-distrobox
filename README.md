@@ -53,7 +53,7 @@ A toolbox is a containerized user environment that shares your home directory an
 Run:
 
 ```bash
-toolbox create image-video \
+toolbox create strix-halo-image-video \
   --image docker.io/kyuz0/amd-strix-halo-image-video:latest \
   -- --device /dev/dri --device /dev/kfd \
   --group-add video --group-add render --security-opt seccomp=unconfined
@@ -69,7 +69,7 @@ Explanation:
 Enter the toolbox:
 
 ```bash
-toolbox enter image-video
+toolbox enter strix-halo-image-video
 ```
 
 Inside, your prompt looks normal but you’re in the container with:
