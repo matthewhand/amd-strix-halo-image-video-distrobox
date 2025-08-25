@@ -73,21 +73,22 @@ Inside, your prompt looks normal but you’re in the container with:
 
 * Full ROCm stack
 * All tools under `/opt`
-* Shared `$HOME` (so models and outputs are persistent).&#x20;
+* Shared `$HOME` (so models and outputs are persistent).
 
-To refresh the toolbox and pull updates:
+### Updating the toolbox
+This toolbox will be updated regularly with new nightly builds from TheRock for ROCm 7 and updated support for image and video generation.
+
+You can use `refresh_toolbox.sh` to pull updates:
 
 ```bash
-# Remove the current toolbox
-toolbox rm -f image-video
-# Ensure you have the latest toolbox image
-podman pull docker.io/kyuz0/amd-strix-halo-image-video:latest
-# Reacreate the toolbox oof the most recent image
-toolbox create image-video \
-  --image docker.io/kyuz0/amd-strix-halo-image-video:latest \
-  -- --device /dev/dri --device /dev/kfd \
-  --group-add video --group-add render --security-opt seccomp=unconfined
+chmod +x refresh_toolbox.sh
+./refresh_toolbox.sh
 ```
+
+> [!WARNING] ⚠️ **Refreshing deletes the current toolbox**
+> Running `refresh_toolbox.sh` **removes and recreates** the toolbox image/container. This should be safe if you followed this README as all model files and outputs are saved OUTSIDE the toolbox in your home directory
+>
+> ❌ **Lost (deleted)** — anything stored **inside the container**, e.g. `/opt/...` or other non-HOME paths.
 
 ---
 
@@ -199,7 +200,8 @@ python generate.py --task ti2v-5B --size 1280*704 \
   --ckpt_dir ~/Wan2.2-TI2V-5B \
   --offload_model True --convert_model_dtype \
   --prompt "Two cats boxing under a spotlight" \
-  --frame_num 41
+  --frame_num 41   \
+  --save_file ~/video.mp4
 ```
 
 Explanation:
@@ -210,6 +212,7 @@ Explanation:
 * `--offload_model True` and `--convert_model_dtype` help fit models in memory on Strix Halo
 * `--prompt` is your text prompt
 * `--frame_num` number of frames to generate, needs to be 4n+1
+* `--save_file` location where to save the video (ensure this is OUTSIDe the toolbox!)
 
 
 ### Notes
