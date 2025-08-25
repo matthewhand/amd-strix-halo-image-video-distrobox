@@ -91,5 +91,8 @@ alias rocm-smi='/opt/venv/bin/rocm-smi'
 EOF
 RUN chmod 0644 /etc/profile.d/zz-venv-first.sh
 
+# Disable core dumps in interactive shells (helps with recovering faster from ROCm crashes)
+RUN printf 'ulimit -S -c 0\n' > /etc/profile.d/90-nocoredump.sh && chmod 0644 /etc/profile.d/90-nocoredump.sh
+
 CMD ["/bin/bash"]
 
