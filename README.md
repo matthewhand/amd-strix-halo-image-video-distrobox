@@ -69,7 +69,11 @@ Inside, your prompt looks normal but you’re in the container with:
 To refresh the toolbox and pull updates:
 
 ```bash
+# Remove the current toolbox
 toolbox rm -f image-video
+# Ensure you have the latest toolbox image
+podman pull docker.io/kyuz0/amd-strix-halo-image-video:latest
+# Reacreate the toolbox oof the most recent image
 toolbox create image-video \
   --image docker.io/kyuz0/amd-strix-halo-image-video:latest \
   -- --device /dev/dri --device /dev/kfd \
@@ -121,6 +125,7 @@ python /opt/qwen-image-studio/qwen-image-mps.py download
 Or to fetch all variants in one go (careful, together these exceed 80GB):
 
 ```bash
+cd /opt/qwen-image-studio/
 python /opt/qwen-image-studio/qwen-image-mps.py download all
 ```
 
@@ -170,7 +175,7 @@ WAN 2.2 is Alibaba’s open‑sourced text‑to‑video and image‑to‑video m
 Before running, you need to fetch model weights from Hugging Face. These are large, so store them in your HOME outside the toolbox so they survive rebuilds. For example, to fetch the smaller 5B model:
 
 ```bash
-HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Wan-AI/Wan2.2-TI2V-5B --local-dir ~/Wan2.2-TI2V-5B
+HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-TI2V-5B --local-dir ~/Wan2.2-TI2V-5B
 ```
 
 Other checkpoints (14B etc.) are also available, see the upstream repo.
@@ -229,6 +234,13 @@ These scripts ensure model files are downloaded to `~/comfy-models/` where they 
 Start ComfyUI inside the toolbox:
 
 ```bash
+start_comfy_ui
+```
+
+This is an alias for:
+
+```bash
+/opt/set-extra_paths.sh
 cd /opt/ComfyUI
 python main.py --port 8000 --output-directory "$HOME/comfy-outputs" --disable-mmap
 ```
