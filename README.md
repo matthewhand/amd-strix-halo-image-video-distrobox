@@ -1,3 +1,12 @@
+```
+███████╗████████╗██████╗ ██╗██╗  ██╗      ██╗  ██╗ █████╗ ██╗      ██████╗ 
+██╔════╝╚══██╔══╝██╔══██╗██║╚██╗██╔╝      ██║  ██║██╔══██╗██║     ██╔═══██╗
+███████╗   ██║   ██████╔╝██║ ╚███╔╝       ███████║███████║██║     ██║   ██║
+╚════██║   ██║   ██╔══██╗██║ ██╔██╗       ██╔══██║██╔══██║██║     ██║   ██║
+███████║   ██║   ██║  ██║██║██╔╝ ██╗      ██║  ██║██║  ██║███████╗╚██████╔╝
+╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ 
+```
+
 # AMD Strix Halo — Image & Video Toolbox
 
 A Fedora **toolbox** image with a full **ROCm environment** for **image & video generation** on **AMD Ryzen AI Max “Strix Halo” (gfx1151)**. It includes support for **Qwen Image/Edit,** and **WAN 2.2** models. If you are looking for sandboxes to run LLMs with llama.cpp, see here: [https://github.com/kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes)
@@ -219,12 +228,15 @@ ComfyUI is a flexible node‑based interface for building and running image and 
 
 ### Setup (ComfyUI only)
 
-Before running ComfyUI, configure external model paths so weights are stored in your HOME directory outside the toolbox. Use the provided scripts:
+Before running ComfyUI, you need to download the model weights to `~/comfy-models` in your home directory.
 
 ```bash
-/opt/set_extra_paths.sh  # creates ~/comfy-models and config file to point ComfyUI there
-/opt/get_qwen_image.sh   # fetches Qwen models for use in ComfyUI
-/opt/get_wan22.sh        # fetches Wan2.2 models for use in ComfyUI
+# Run this FIRST to create ~/comfy-models and config file to point ComfyUI there
+/opt/set_extra_paths.sh 
+
+# Fetch model weights to ~/comfy-models
+/opt/get_qwen_image.sh   # fetches Qwen Image models
+/opt/get_wan22.sh        # fetches Wan2.2 models
 ```
 
 These scripts ensure model files are downloaded to `~/comfy-models/` where they survive toolbox refreshes.
@@ -240,7 +252,6 @@ start_comfy_ui
 This is an alias for:
 
 ```bash
-/opt/set-extra_paths.sh
 cd /opt/ComfyUI
 python main.py --port 8000 --output-directory "$HOME/comfy-outputs" --disable-mmap
 ```
