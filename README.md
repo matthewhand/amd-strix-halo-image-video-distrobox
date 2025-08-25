@@ -291,7 +291,16 @@ ROCm 7 on Strix Halo may crash with:
 Memory access fault by GPU node-1 ... Reason: Page not present or supervisor privilege.
 ```
 
-This is a known instability tracked here: [https://gitlab.freedesktop.org/drm/amd/-/issues/4321#note\_3048205](https://gitlab.freedesktop.org/drm/amd/-/issues/4321#note_3048205). It occurs randomly and is a memory management bug in the current ROCm 7.0.0rc release, not necessarily tied to workload size. When it happens the process usually crashes, but the system itself remains stable and only the process needs restarting.
+or:
+
+```
+/opt/ComfyUI/comfy/ldm/qwen_image/model.py:153: UserWarning: HIP warning: an illegal memory access was encountered (Triggered internally at /__w/TheRock/TheRock/external-builds/pytorch/pytorch/aten/src/ATen/hip/impl/HIPGuardImplMasqueradingAsCUDA.h:83.)
+  joint_value = torch.cat([txt_value, img_value], dim=1)
+!!! Exception during processing !!! HIP error: an illegal memory access was encountered
+HIP kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+```
+
+These are known instabilities tracked here: [https://gitlab.freedesktop.org/drm/amd/-/issues/4321#note\_3048205](https://gitlab.freedesktop.org/drm/amd/-/issues/4321#note_3048205). It occurs randomly and is a memory management bug in the current ROCm 7.0.0rc release, not necessarily tied to workload size. When it happens the process usually crashes, but the system itself remains stable and only the process needs restarting.
 
 * A fix is expected in ROCm 7.0.x.
 * **Qwen Image Studio** is generally more stable than ComfyUI, likely due to simpler execution paths.
