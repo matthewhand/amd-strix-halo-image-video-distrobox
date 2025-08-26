@@ -80,16 +80,9 @@ COPY scripts/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
 COPY scripts/99-toolbox-banner.sh /etc/profile.d/99-toolbox-banner.sh
 RUN chmod 0644 /etc/profile.d/99-toolbox-banner.sh
 
-# Ensure /opt/venv/bin wins over ~/.local/bin, and prefer the venv rocm-smi
-RUN cat >/etc/profile.d/zz-venv-first.sh <<'EOF'
-# /etc/profile.d/zz-venv-first.sh
-case ":$PATH:" in
-  *":/opt/venv/bin:"*) : ;;             # already present
-  *) PATH="/opt/venv/bin:$PATH" ;;      # prepend if missing
-esac
-alias rocm-smi='/opt/venv/bin/rocm-smi'
-EOF
-RUN chmod 0644 /etc/profile.d/zz-venv-first.sh
+# Keep /opt/venv/bin first after user dotfiles
+COPY scripts/zz-venv-last.sh /etc/profile.d/zz-venv-last.sh
+RUN chmod 0644 /etc/profile.d/zz-venv-last.sh
 
 # Disable core dumps in interactive shells (helps with recovering faster from ROCm crashes)
 RUN printf 'ulimit -S -c 0\n' > /etc/profile.d/90-nocoredump.sh && chmod 0644 /etc/profile.d/90-nocoredump.sh
