@@ -132,6 +132,7 @@ Before starting the UI, you need to fetch the model weights. Without them the sy
 Run to see a list of Qwen Image models:
 
 ```bash
+cd /opt/qwen-image-studio
 python /opt/qwen-image-studio/qwen-image-mps.py download
 ```
 
@@ -223,6 +224,9 @@ Explanation:
 * Always download models under HOME so they persist.
 * Outputs are written in the current directory unless you override.
 * See official docs for more details: [https://github.com/Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2)
+
+> The quality fo the 5B model is not great out of the box and the 14B models will be very slow. Prmopt format is important and can help improve, take a look here: https://dengeai.com/.prompt-generator.
+> You can use https://huggingface.co/lightx2v/Wan2.2-Lightning for a Lora version that takes  4 steps   
 
 ---
 
