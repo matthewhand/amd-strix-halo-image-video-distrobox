@@ -32,7 +32,7 @@ A Fedora **toolbox** image with a full **ROCm environment** for **image & video 
 5. [Qwen Image Studio](#qwen-image-studio)
 6. [WAN 2.2](#wan-22)
 7. [ComfyUI](#comfyui)
-8. [Stability Notes](#stability-notes)
+8. [Stability and Peerformance Notes](#stability-and-performance-notes)
 9. [Credits & Links](#credits--links)
 
 ---
@@ -341,7 +341,7 @@ You can load ready‑made workflow files directly into the ComfyUI interface. Th
 * Qwen Image example: [https://comfyanonymous.github.io/ComfyUI\_examples/qwen\_image/](https://comfyanonymous.github.io/ComfyUI_examples/qwen_image/)
 * Wan2.2 example: [https://comfyanonymous.github.io/ComfyUI\_examples/wan22/](https://comfyanonymous.github.io/ComfyUI_examples/wan22/)
 
-## Stability Notes
+## Stability and Performance Notes
 
 ROCm 7 on Strix Halo may crash with:
 
@@ -366,6 +366,11 @@ These are known instabilities tracked here: [https://gitlab.freedesktop.org/drm/
 * ComfyUI can occasionally crash under the same conditions; if this happens, re‑launching it is usually enough.
 
 Until the ROCm fix lands, expect occasional instability when running large models or long video sequences. Keeping jobs queued in Qwen Image Studio is a safer option for overnight or unattended runs.
+
+Also, track these two tickets for perfromance issues on Strix Halo:
+
+- https://github.com/ROCm/ROCm/issues/4748
+- https://github.com/ROCm/ROCm/issues/4499
 
 ---
 
