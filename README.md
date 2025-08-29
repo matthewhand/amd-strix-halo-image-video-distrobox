@@ -178,25 +178,87 @@ You can also look at the console log to see the exact CLI commands executed for 
 
 ---
 
+Got it 👍 — you basically want to update the **WAN 2.2** section so that the **Lightning LoRA models** (4-step inference) are shown first, with examples for **T2V** and **I2V**, then keep the old 5B example afterward as a “baseline / slower” option. I’ll rewrite that section cleanly with your new instructions included.
+
+Here’s the edited **WAN 2.2** section for your README:
+
+---
+
 ## WAN 2.2
 
 **Path:** `/opt/wan-video-studio` (CLI only, Web UI planned)
 
-WAN 2.2 is Alibaba’s open‑sourced text‑to‑video and image‑to‑video model. In this toolbox you run it through the CLI script provided in their repository. A Web UI (Wan Video Studio) is planned but not yet included.
+WAN 2.2 is Alibaba’s open-sourced text-to-video and image-to-video model. This toolbox includes support for both the full A14B checkpoints and the **Lightning LoRA adapters** that allow **4-step inference** for much faster generation.
 
 ### Download Models
 
-Before running, you need to fetch model weights from Hugging Face. These are large, so store them in your HOME outside the toolbox so they survive rebuilds. For example, to fetch the smaller 5B model:
+Always store model weights in your HOME so they survive toolbox refreshes.
+
+First, fetch the Lightning adapters:
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 hf download lightx2v/Wan2.2-Lightning --local-dir ~/Wan2.2-Lightning
+```
+
+#### Full Checkpoints (needed alongside Lightning)
+
+* **Text-to-Video (T2V):**
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-T2V-A14B --local-dir ~/Wan2.2-T2V-A14B
+```
+
+* **Image-to-Video (I2V):**
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-I2V-A14B --local-dir ~/Wan2.2-I2V-A14B
+```
+
+### Video Generation Examples
+
+#### 1. Text-to-Video (T2V, Lightning)
+
+```bash
+cd /opt/wan-video-studio
+python generate.py \
+  --task t2v-A14B \
+  --size "832*480" \
+  --ckpt_dir ~/Wan2.2-T2V-A14B \
+  --lora_dir ~/Wan2.2-Lightning/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1 \
+  --offload_model False \
+  --prompt "In a colorful universe, a player-controlled pixel character travels between planets of various shapes and unique color tones, each with strange terrain and alien creatures. A close-up shot shows the player character in the center of the frame, in dialogue with a friendly alien creature. The alien has a rounded body and large eyes, appearing very cute. Above, pixelated cosmic storms and energy vortex effects rotate slowly, adding a sense of dynamism. The overall style is retro yet futuristic, with a vibrant and lively color palette." \
+  --frame_num 73 \
+  --save_file ~/output.mp4
+```
+
+* `--size "832*480"` → reduced resolution for better runtime on Strix Halo
+* `--frame_num 73` → required to be `4n+1`, gives ~3 sec video in ~30 min runtime
+* `--lora_dir` → points to the Lightning LoRA adapter
+
+
+#### 2. Image-to-Video (I2V, Lightning)
+
+```bash
+cd /opt/wan-video-studio
+python generate.py \
+  --task i2v-A14B \
+  --size "832*480" \
+  --ckpt_dir ~/Wan2.2-I2V-A14B \
+  --lora_dir ~/Wan2.2-Lightning/Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1 \
+  --offload_model False \
+  --prompt "Describe the scene and the required change to the input image." \
+  --frame_num 73 \
+  --image ~/input.jpg \
+  --save_file ~/output.mp4
+```
+
+#### 3.TI2V 5B Checkpoint (not recommended)
+
+For reference, you can also use the smaller 5B checkpoint without Lightning, but I haven't had much luck getting good generations with those and geenration is still very slow on Strix Halo, slower than the lightning models:
 
 ```bash
 HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-TI2V-5B --local-dir ~/Wan2.2-TI2V-5B
 ```
-
-Other checkpoints (14B etc.) are also available, see the upstream repo.
-
-### Video Generation Example
-
-Run generation inside the toolbox by pointing to the local model path:
 
 ```bash
 cd /opt/wan-video-studio
@@ -204,29 +266,16 @@ python generate.py --task ti2v-5B --size 1280*704 \
   --ckpt_dir ~/Wan2.2-TI2V-5B \
   --offload_model True --convert_model_dtype \
   --prompt "Two cats boxing under a spotlight" \
-  --frame_num 41   \
+  --frame_num 41 \
   --save_file ~/video.mp4
 ```
 
-Explanation:
-
-* `--task ti2v-5B` selects the checkpoint variant
-* `--size` sets resolution (multiples of 16, high resolutions need lots of memory)
-* `--ckpt_dir` points to the model folder you downloaded
-* `--offload_model True` and `--convert_model_dtype` help fit models in memory on Strix Halo
-* `--prompt` is your text prompt
-* `--frame_num` number of frames to generate, needs to be 4n+1
-* `--save_file` location where to save the video (ensure this is OUTSIDe the toolbox!)
-
-
 ### Notes
 
-* Always download models under HOME so they persist.
-* Outputs are written in the current directory unless you override.
-* See official docs for more details: [https://github.com/Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2)
-
-> The quality fo the 5B model is not great out of the box and the 14B models will be very slow. Prmopt format is important and can help improve, take a look here: https://dengeai.com/.prompt-generator.
-> You can use https://huggingface.co/lightx2v/Wan2.2-Lightning for a Lora version that takes  4 steps   
+* Lightning adapters (LoRA) drastically reduce generation time (4 steps).
+* Use smaller resolutions (`832*480`) to balance quality and runtime on Strix Halo.
+* Keep all model files under HOME (`~/Wan2.2-*`) so they survive toolbox updates.
+* Official Lightning repo: [https://huggingface.co/lightx2v/Wan2.2-Lightning](https://huggingface.co/lightx2v/Wan2.2-Lightning)
 
 ---
 
