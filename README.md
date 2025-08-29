@@ -16,6 +16,11 @@ A Fedora **toolbox** image with a full **ROCm environment** for **image & video 
 
 > Tested on Framework Desktop (Strix Halo, 128 GB unified memory). Works on other Strix Halo systems (GMKtec EVO X-2, HP Z2 G1a, etc).
 
+## Watch the YouTube Video
+
+[![Watch the YouTube Video](https://img.youtube.com/vi/7-E0a6sGWgs/maxresdefault.jpg)](https://youtu.be/7-E0a6sGWgs)
+
+
 ---
 
 ## Table of Contents
