@@ -181,14 +181,6 @@ All generated images and job metadata are stored under `~/.qwen-image-studio/` i
 
 You can also look at the console log to see the exact CLI commands executed for each job.
 
----
-
-Got it 👍 — you basically want to update the **WAN 2.2** section so that the **Lightning LoRA models** (4-step inference) are shown first, with examples for **T2V** and **I2V**, then keep the old 5B example afterward as a “baseline / slower” option. I’ll rewrite that section cleanly with your new instructions included.
-
-Here’s the edited **WAN 2.2** section for your README:
-
----
-
 ## WAN 2.2
 
 **Path:** `/opt/wan-video-studio` (CLI only, Web UI planned)
