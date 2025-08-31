@@ -64,7 +64,6 @@ RUN git clone --depth=1 https://github.com/kyuz0/wan-video-studio /opt/wan-video
     python -m pip install --prefer-binary \
       opencv-python-headless diffusers tokenizers accelerate \
       imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg && \
-    rm -rf /opt/wan-video-studio/.git
 
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh || true && \
