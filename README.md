@@ -251,7 +251,7 @@ python generate.py \
 
 #### 3.TI2V 5B Checkpoint (not recommended)
 
-For reference, you can also use the smaller 5B checkpoint without Lightning, but I haven't had much luck getting good generations with those and geenration is still very slow on Strix Halo, slower than the lightning models:
+For reference, you can also use the smaller 5B checkpoint without Lightning, but I haven't had much luck getting good generations with those and generation is still very slow on Strix Halo, slower than the lightning models:
 
 ```bash
 HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-TI2V-5B --local-dir ~/Wan2.2-TI2V-5B
