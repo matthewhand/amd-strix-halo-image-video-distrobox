@@ -3,7 +3,7 @@ FROM registry.fedoraproject.org/fedora:rawhide
 # Base packages (keep compilers/headers for Triton JIT at runtime)
 RUN dnf -y install --setopt=install_weak_deps=False --nodocs \
       libdrm-devel python3.13 python3.13-devel git rsync libatomic bash ca-certificates curl \
-      gcc gcc-c++ binutils make \
+      gcc gcc-c++ binutils make git \
   && dnf clean all && rm -rf /var/cache/dnf/*
 
 # Python venv
@@ -63,7 +63,7 @@ RUN git clone https://github.com/ROCm/flash-attention.git &&\
 RUN git clone --depth=1 https://github.com/kyuz0/wan-video-studio /opt/wan-video-studio && \
     python -m pip install --prefer-binary \
       opencv-python-headless diffusers tokenizers accelerate \
-      imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg && \
+      imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg decord librosa 
 
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh || true && \

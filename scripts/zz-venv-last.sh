@@ -13,3 +13,6 @@ case "$PROMPT_COMMAND" in
   *_venv_path_fix*) : ;;
   *) PROMPT_COMMAND="_venv_path_fix${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
 esac
+
+# We need this to avoid using TheRock build that segfaults (wan 2.2 s2v for audio processing uses this via librosa)
+export LD_PRELOAD=/opt/venv/lib/python3.13/site-packages/llvmlite/binding/libllvmlite.so

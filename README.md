@@ -20,6 +20,18 @@ A Fedora **toolbox** image with a full **ROCm environment** for **image & video 
 
 [![Watch the YouTube Video](https://img.youtube.com/vi/7-E0a6sGWgs/maxresdefault.jpg)](https://youtu.be/7-E0a6sGWgs)
 
+---
+
+# 🚨 Updates — 2025-09-06
+
+### 🔥 Performance Improvements
+* **Qwen Image Studio** and **WAN 2.2** now use **tiled VAE decoding/encoding** phases.  
+  This significantly reduces memory pressure and improves speed and stability on Strix Halo.
+
+### 🆕 New Model: Speech-to-Video (S2V)
+* Added support for **speech-to-video** in WAN 2.2 (14B checkpoint).  
+* No Lightning LoRA adapters yet — so inference requires ~40 steps, 
+* Still, it enables audio + image + prompt–based video generation.
 
 ---
 
@@ -248,6 +260,33 @@ python generate.py \
   --image ~/input.jpg \
   --save_file ~/output.mp4
 ```
+
+#### 3. Speech-to-Video (S2V, 14B)
+
+First, download the checkpoint:
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=1 hf download Wan-AI/Wan2.2-S2V-14B --local-dir ~/Wan2.2-S2V-14B
+````
+
+Then run generation:
+
+```bash
+cd /opt/wan-video-studio
+python generate.py \
+  --task s2v-14B \
+  --size "832*480" \
+  --ckpt_dir ~/Wan2.2-S2V-14B/ \
+  --convert_model_dtype \
+  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard." \
+  --image ~/input_image.jpg \
+  --audio ~/input_audio.mp3 \
+  --save_file ~/output.mp4
+```
+
+* No Lightning LoRA adapters are available yet for S2V.
+* This means inference requires \~40 steps, making generation **slower** than T2V/I2V with Lightning.
+* Still, it enables synchronized **audio + image + prompt → video** workflows.
 
 #### 3.TI2V 5B Checkpoint (not recommended)
 
