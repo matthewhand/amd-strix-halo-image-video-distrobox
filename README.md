@@ -273,11 +273,11 @@ Then run generation:
 
 ```bash
 cd /opt/wan-video-studio
-python generate.py \
+env LD_PRELOAD="/opt/venv/lib64/python3.13/site-packages/llvmlite/binding/libllvmlite.so"  python generate.py \
   --task s2v-14B \
   --size "832*480" \
+  --offload_model False \
   --ckpt_dir ~/Wan2.2-S2V-14B/ \
-  --convert_model_dtype \
   --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard." \
   --image ~/input_image.jpg \
   --audio ~/input_audio.mp3 \
