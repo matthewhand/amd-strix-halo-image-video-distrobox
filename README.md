@@ -273,7 +273,7 @@ Then run generation:
 
 ```bash
 cd /opt/wan-video-studio
-env LD_PRELOAD="/opt/venv/lib64/python3.13/site-packages/llvmlite/binding/libllvmlite.so"  python generate.py \
+python generate.py \
   --task s2v-14B \
   --size "832*480" \
   --offload_model False \
