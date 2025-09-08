@@ -50,7 +50,6 @@ RUN git clone --depth=1 https://github.com/kyuz0/qwen-image-studio /opt/qwen-ima
     rm -rf /opt/qwen-image-studio/.git
 
 # Flash-Attention
-RUN python -m pip install "triton==3.2.0"
 ENV FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"
 
 RUN git clone https://github.com/ROCm/flash-attention.git &&\ 
