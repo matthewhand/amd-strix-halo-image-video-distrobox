@@ -28,8 +28,7 @@ RUN python -m pip install --index-url ${ROCM_INDEX} 'rocm[libraries,devel]' && \
 WORKDIR /opt
 
 # ComfyUI
-RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI && \
-    rm -rf /opt/ComfyUI/.git
+RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI 
 WORKDIR /opt/ComfyUI
 RUN python -m pip install -r requirements.txt && \
     python -m pip install --prefer-binary \
@@ -38,16 +37,13 @@ RUN python -m pip uninstall -y torchaudio
 
 # ComfyUI plugins
 WORKDIR /opt/ComfyUI/custom_nodes
-RUN git clone --depth=1 https://github.com/cubiq/ComfyUI_essentials /opt/ComfyUI/custom_nodes/ComfyUI_essentials && \
-    rm -rf /opt/ComfyUI/custom_nodes/ComfyUI_essentials/.git
-RUN git clone --depth=1 https://github.com/kyuz0/ComfyUI-AMDGPUMonitor /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor && \
-    rm -rf /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor/.git
+RUN git clone --depth=1 https://github.com/cubiq/ComfyUI_essentials /opt/ComfyUI/custom_nodes/ComfyUI_essentials 
+RUN git clone --depth=1 https://github.com/kyuz0/ComfyUI-AMDGPUMonitor /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor 
 
 # Qwen Image Studio
 WORKDIR /opt
 RUN git clone --depth=1 https://github.com/kyuz0/qwen-image-studio /opt/qwen-image-studio && \
-    python -m pip install -r /opt/qwen-image-studio/requirements.txt && \
-    rm -rf /opt/qwen-image-studio/.git
+    python -m pip install -r /opt/qwen-image-studio/requirements.txt
 
 # Flash-Attention
 ENV FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"
