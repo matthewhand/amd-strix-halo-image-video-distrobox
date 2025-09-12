@@ -23,7 +23,7 @@ COPY scripts/get_qwen_image.sh /opt/
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
 RUN python -m pip install --index-url ${ROCM_INDEX} 'rocm[libraries,devel]' && \
     python -m pip install --index-url ${ROCM_INDEX} \
-      torch torchvision torchaudio pytorch-triton-rocm numpy
+      torch torchvision torchaudio==2.7.1a0 pytorch-triton-rocm numpy
 
 WORKDIR /opt
 
@@ -33,7 +33,6 @@ WORKDIR /opt/ComfyUI
 RUN python -m pip install -r requirements.txt && \
     python -m pip install --prefer-binary \
       pillow opencv-python-headless imageio imageio-ffmpeg scipy "huggingface_hub[hf_transfer]" pyyaml
-RUN python -m pip uninstall -y torchaudio
 
 # ComfyUI plugins
 WORKDIR /opt/ComfyUI/custom_nodes

@@ -286,7 +286,7 @@ python generate.py \
   --ckpt_dir ~/Wan2.2-T2V-A14B \
   --lora_dir ~/Wan2.2-Lightning/Wan2.2-T2V-A14B-4steps-lora-rank64-Seko-V1.1 \
   --offload_model False \
-  --prompt "In a colorful universe, a player-controlled pixel character travels between planets of various shapes and unique color tones, each with strange terrain and alien creatures. A close-up shot shows the player character in the center of the frame, in dialogue with a friendly alien creature. The alien has a rounded body and large eyes, appearing very cute. Above, pixelated cosmic storms and energy vortex effects rotate slowly, adding a sense of dynamism. The overall style is retro yet futuristic, with a vibrant and lively color palette." \
+  --prompt "Close-up cinematic shot inside a futuristic microchip environment, focusing on a GPU core processing a glowing neural network. Streams of neon-blue data pulses flow across intricate circuits, nodes light up in sequence as if the chip is thinking. Camera slowly pans through the GPU architecture, highlighting cybernetic details. High-tech, sci-fi atmosphere, sharp digital glow, cinematic lighting. no text, no watermark, no distortion." \
   --frame_num 73 \
   --save_file ~/output.mp4
 ```
