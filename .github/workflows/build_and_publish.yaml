@@ -59,6 +59,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -69,3 +70,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           sbom: false
+          cache-to: type=gha,mode=max
+          cache-from: type=gha
+
+      # Free buildx cache on the VM after we’ve pushed
+      - name: Prune buildx cache
+        if: always()
+        run: |
+          docker buildx prune -af --verbose --min-free-space 4gb || true
