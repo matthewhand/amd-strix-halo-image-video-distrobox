@@ -16,6 +16,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 4096        # keep ~4GB on /
+          build-mount-path: /mnt       # moves Docker data-root to /mnt
+          remove-android: true
+          remove-dotnet: true
+          remove-haskell: true
+
       - name: Checkout
         uses: actions/checkout@v4
 
