@@ -16,6 +16,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Put Docker on /mnt
+        run: |
+          set -eux
+          echo '{ "data-root": "/mnt/docker" }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl stop docker
+          sudo rm -rf /var/lib/docker || true
+          sudo mkdir -p /mnt/docker
+          sudo systemctl start docker
+          docker info | grep "Docker Root Dir"
+
       - name: Checkout
         uses: actions/checkout@v4
 
