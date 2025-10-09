@@ -83,7 +83,7 @@ echo
 printf 'Machine: %s\n' "$MACHINE"
 printf 'GPU    : %s\n\n' "$GPU"
 printf 'Repo   : https://github.com/matthewhand/amd-strix-halo-image-video-distrobox\n'
-printf 'Image  : docker.io/matthewhand/amd-strix-halo-image-video-distrobox:latest\n\n'
+printf 'Image  : docker.io/kyuz0/amd-strix-halo-image-video:latest\n\n'
 printf 'Included:\n'
 printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://localhost:8000)"
 printf '  - %-16s → %s\n' "WAN 2.2 (CLI)"     "cd /opt/wan-video-studio && python generate.py ..."
