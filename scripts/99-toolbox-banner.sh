@@ -89,7 +89,7 @@ printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://local
 printf '  - %-16s → %s\n' "WAN 2.2 (CLI)"     "cd /opt/wan-video-studio && python generate.py ..."
 printf '  - %-16s → %s\n' "ComfyUI"            "start_comfy_ui (http://localhost:8000)"
 echo
-# printf 'SSH tip: ssh -L 8000:localhost:8000 user@host\n\n'
+
 
 # Aliases
 alias start_qwen_studio='cd /opt/qwen-image-studio && uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000'
