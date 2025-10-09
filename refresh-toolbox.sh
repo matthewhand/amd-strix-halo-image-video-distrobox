@@ -20,13 +20,11 @@ fi
 echo "Updating $IMAGE ..."
 podman pull "$IMAGE"
 
-echo "Recreating toolbox $NAME ..."
-toolbox rm -f "$NAME" 2>/dev/null || true
-toolbox create "$NAME" \
+echo "Recreating distrobox $NAME ..."
+distrobox rm -f "$NAME" 2>/dev/null || true
+distrobox create "$NAME" \
   --image "$IMAGE" \
-  -- --device /dev/dri --device /dev/kfd \
-     --group-add video --group-add render \
-     --security-opt seccomp=unconfined
+  --additional-flags "--device /dev/dri --device /dev/kfd --group-add video --group-add render --security-opt seccomp=unconfined"
 
 echo "Removing older images from $REPO ..."
 # Remove only images from this repo whose digest != the new one

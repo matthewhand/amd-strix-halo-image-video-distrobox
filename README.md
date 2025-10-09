@@ -9,9 +9,9 @@
                          I M A G E   &   V I D E O                        
 ```
 
-# AMD Strix Halo — Image & Video Toolbox
+# AMD Strix Halo — Image & Video Distrobox
 
-A Fedora **toolbox** image with a full **ROCm environment** for **image & video generation** on **AMD Ryzen AI Max “Strix Halo” (gfx1151)**. It includes support for **Qwen Image/Edit** and **WAN 2.2** models. If you’re looking for sandboxes to run LLMs with llama.cpp, see: [https://github.com/kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes)
+A **distrobox** image with a full **ROCm environment** for **image & video generation** on **AMD Ryzen AI Max “Strix Halo” (gfx1151)**. It includes support for **Qwen Image/Edit** and **WAN 2.2** models. Compatible with Ubuntu and other Linux distros via Distrobox. If you’re looking for sandboxes to run LLMs with llama.cpp, see: [https://github.com/kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes)
 
 > Tested on Framework Desktop (Strix Halo, 128 GB unified memory). Works on other Strix Halo systems (GMKtec EVO X-2, HP Z2 G1a, etc).
 
@@ -52,7 +52,7 @@ A Fedora **toolbox** image with a full **ROCm environment** for **image & video 
 
 ## 1. Overview
 
-This toolbox provides a ROCm nightly stack for Strix Halo (gfx1151), built from [ROCm/TheRock](https://github.com/ROCm/TheRock), plus three main tools. **All model weights are stored outside the toolbox** (in your HOME), so they survive container deletion or refresh.
+This distrobox provides a ROCm nightly stack for Strix Halo (gfx1151), built from [ROCm/TheRock](https://github.com/ROCm/TheRock), plus three main tools. **All model weights are stored outside the distrobox** (in your HOME), so they survive container deletion or refresh.
 
 ---
 
@@ -89,15 +89,26 @@ This toolbox provides a ROCm nightly stack for Strix Halo (gfx1151), built from 
 
 ---
 
-## 5. Creating the Toolbox
+## 5. Creating the Distrobox
 
-A toolbox is a containerized user environment that shares your home directory and user account. To use this toolbox, you need to **expose GPU devices** and add your user to the right groups so ROCm and Vulkan have access to Strix Halo’s GPU nodes.
+A distrobox is a containerized user environment that shares your home directory and user account. To use this distrobox, you need to **expose GPU devices** and add your user to the right groups so ROCm and Vulkan have access to Strix Halo’s GPU nodes.
+
+First, install Distrobox if not already:
 
 ```bash
-toolbox create strix-halo-image-video \
+# On Ubuntu/Debian
+sudo apt update && sudo apt install distrobox podman
+
+# Or via curl (universal)
+curl -s https://raw.githubusercontent.com/89luca89/distrobox/main/install | sudo sh
+```
+
+Create the distrobox:
+
+```bash
+distrobox create strix-halo-image-video \
   --image docker.io/kyuz0/amd-strix-halo-image-video:latest \
-  -- --device /dev/dri --device /dev/kfd \
-  --group-add video --group-add render --security-opt seccomp=unconfined
+  --additional-flags "--device /dev/dri --device /dev/kfd --group-add video --group-add render --security-opt seccomp=unconfined"
 ```
 
 **Explanation**
@@ -107,10 +118,10 @@ toolbox create strix-halo-image-video \
 * `--group-add video, render` → ensures user has GPU access
 * `--security-opt seccomp=unconfined` → avoids syscall sandbox issues with GPUs
 
-Enter the toolbox:
+Enter the distrobox:
 
 ```bash
-toolbox enter strix-halo-image-video
+distrobox enter strix-halo-image-video
 ```
 
 Inside, your prompt looks normal but you’re in the container with:
@@ -121,29 +132,42 @@ Inside, your prompt looks normal but you’re in the container with:
 
 ### 5.1. Enter & Update
 
-This toolbox will be updated regularly with new nightly builds from TheRock for ROCm 7 and updated support for image and video generation.
+This distrobox will be updated regularly with new nightly builds from TheRock for ROCm 7 and updated support for image and video generation.
 
-You can use `refresh_toolbox.sh` to pull updates:
+You can use `refresh-toolbox.sh` to pull updates:
 
 ```bash
-chmod +x refresh_toolbox.sh
-./refresh_toolbox.sh
+chmod +x refresh-toolbox.sh
+./refresh-toolbox.sh
 ```
 
-> \[!WARNING] ⚠️ **Refreshing deletes the current toolbox**
-> Running `refresh_toolbox.sh` **removes and recreates** the toolbox image/container. This should be safe if you followed this README as all model files and outputs are saved **OUTSIDE** the toolbox in your home directory.
+> \[!WARNING] ⚠️ **Refreshing deletes the current distrobox**
+> Running `refresh-toolbox.sh` **removes and recreates** the distrobox image/container. This should be safe if you followed this README as all model files and outputs are saved **OUTSIDE** the distrobox in your home directory.
 >
 > ❌ **Lost (deleted)** — anything stored **inside the container**, e.g. `/opt/...` or other non-HOME paths.
 
-### 5.2. Ubuntu Users and Toolkits
+### 5.2. Ubuntu Users and Distroboxes
 
-Shantur from the Strix Halo Discord server noted that to get these toolboxes to work on Ubuntu, you need to create a udev rule to allow all users to use GPU or use toolbox with sudo.
+To get this distrobox to work on Ubuntu, you need to create a udev rule to allow all users to use GPU devices.
 
 Create `/etc/udev/rules.d/99-amd-kfd.rules`:
 
 ```
 SUBSYSTEM=="kfd", GROUP="render", MODE="0666", OPTIONS+="last_rule"
 SUBSYSTEM=="drm", KERNEL=="card[0-9]*", GROUP="render", MODE="0666", OPTIONS+="last_rule"
+```
+
+Then reload udev rules:
+
+```bash
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Ensure your user is in the `render` and `video` groups:
+
+```bash
+sudo usermod -aG render,video $USER
+# Log out and back in for group changes to take effect
 ```
 
 ---
@@ -480,8 +504,8 @@ Also track these tickets for performance issues on Strix Halo:
 * ComfyUI: [https://github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 * WAN 2.2: [https://github.com/Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2)
 * ROCm FlashAttention (AMD fork): [https://github.com/ROCm/flash-attention](https://github.com/ROCm/flash-attention)
-* Toolbox (Fedora): [https://containertoolbx.org/](https://containertoolbx.org/)
+* Distrobox: [https://distrobox.it/](https://distrobox.it/)
 
 ---
 
-**Notes on persistence:** All model weights and outputs are stored in your **HOME** outside the toolbox (e.g., `~/.cache/huggingface/hub/`, `~/.qwen-image-studio/`, `~/Wan2.2-*`, `~/comfy-models`, `~/comfy-outputs`). This ensures they survive toolbox refreshes.
+**Notes on persistence:** All model weights and outputs are stored in your **HOME** outside the distrobox (e.g., `~/.cache/huggingface/hub/`, `~/.qwen-image-studio/`, `~/Wan2.2-*`, `~/comfy-models`, `~/comfy-outputs`). This ensures they survive distrobox refreshes.
