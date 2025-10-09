@@ -494,6 +494,10 @@ You can load ready-made workflow files directly into ComfyUI:
 
 Instability has been **significantly reduced**. When using **PyTorch SDPA** (the **default for Qwen Image Studio**), users generally **do not** encounter attention-related crashes. Issues are **more likely** when enabling **Triton FlashAttention** on gfx1151 (see Qwen §7.4 and WAN §8.4 if you opt into Triton).
 
+### Known Issues (Fixed in This Fork)
+- **ROCm Import Error**: "ModuleNotFoundError: No module named '_rocm_sdk_core'" on entry—fixed by disabling problematic calls in the banner script. If rebuilding locally, ensure ROCm is installed on host.
+- **Password Setup Error**: "Authentication token manipulation error" during Distrobox init—harmless, ignore or set password manually with `passwd`.
+
 If a crash occurs, you may still see messages like:
 
 ```
