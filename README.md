@@ -108,9 +108,21 @@ curl -s https://raw.githubusercontent.com/89luca89/distrobox/main/install | sudo
 Create the distrobox:
 
 ```bash
+First, build the image locally (requires ROCm on host for proper GPU support):
+
+```bash
+git clone https://github.com/matthewhand/amd-strix-halo-image-video-distrobox.git
+cd amd-strix-halo-image-video-distrobox
+docker build -t amd-strix-halo-image-video-distrobox .
+```
+
+Then create the distrobox:
+
+```bash
 distrobox create strix-halo-image-video \
-  --image docker.io/kyuz0/amd-strix-halo-image-video:latest \
+  --image amd-strix-halo-image-video-distrobox \
   --additional-flags "--device /dev/dri --device /dev/kfd --group-add video --group-add render --security-opt seccomp=unconfined"
+```
 ```
 
 **Explanation**
