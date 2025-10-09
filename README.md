@@ -190,10 +190,15 @@ amd_iommu=off amdgpu.gttsize=131072 ttm.pages_limit=33554432
 
 Set BIOS to allocate minimal VRAM (e.g. 512 MB) and rely on unified memory.
 
-On Fedora 42 you can set these in `/etc/default/grub` under `GRUB_CMDLINE_LINUX`, then run:
+On Ubuntu (or Fedora), set these in `/etc/default/grub` under `GRUB_CMDLINE_LINUX`, then run:
 
 ```bash
+# On Ubuntu
+sudo update-grub
+
+# On Fedora
 sudo grub2-mkconfig -o /boot/grub2/grub.cfg
+
 sudo reboot
 ```
 
