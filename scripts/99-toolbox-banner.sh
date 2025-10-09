@@ -31,9 +31,10 @@ gpu_name() {
     name=$(rocm-smi --showproductname --csv 2>/dev/null | tail -n1 | cut -d, -f2)
     [[ -z "$name" ]] && name=$(rocm-smi --showproductname 2>/dev/null | grep -m1 -E 'Product Name|Card series' | sed 's/.*: //')
   fi
-  if [[ -z "$name" ]] && command -v rocminfo >/dev/null 2>&1; then
-    name=$(rocminfo 2>/dev/null | awk -F': ' '/^[[:space:]]*Name:/{print $2; exit}')
-  fi
+  # Disabled rocminfo call to avoid import errors
+  # if [[ -z "$name" ]] && command -v rocminfo >/dev/null 2>&1; then
+  #   name=$(rocminfo 2>/dev/null | awk -F': ' '/^[[:space:]]*Name:/{print $2; exit}')
+  # fi
   if [[ -z "$name" ]] && command -v lspci >/dev/null 2>&1; then
     name=$(lspci -nn 2>/dev/null | grep -Ei 'vga|display|gpu' | grep -i amd | head -n1 | cut -d: -f3-)
   fi
@@ -43,18 +44,20 @@ gpu_name() {
 }
 
 rocm_version() {
-  local PY="/opt/venv/bin/python"
-  [[ -x "$PY" ]] || PY="python"
-  "$PY" - <<'PY' 2>/dev/null || true
-try:
-    import importlib.metadata as im
-    try:
-        print(im.version('_rocm_sdk_core'))
-    except Exception:
-        print(im.version('rocm'))
-except Exception:
-    print("")
-PY
+  # Disabled to avoid import errors
+  # local PY="/opt/venv/bin/python"
+  # [[ -x "$PY" ]] || PY="python"
+  # "$PY" - <<'PY' 2>/dev/null || true
+  # try:
+  #     import importlib.metadata as im
+  #     try:
+  #         print(im.version('_rocm_sdk_core'))
+  #     except Exception:
+  #         print(im.version('rocm'))
+  # except Exception:
+  #     print("")
+  # PY
+  echo ""
 }
 
 MACHINE="$(oem_info)"
@@ -86,7 +89,7 @@ printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://local
 printf '  - %-16s → %s\n' "WAN 2.2 (CLI)"     "cd /opt/wan-video-studio && python generate.py ..."
 printf '  - %-16s → %s\n' "ComfyUI"            "start_comfy_ui (http://localhost:8000)"
 echo
-printf 'SSH tip: ssh -L 8000:localhost:8000 user@host\n\n'
+# printf 'SSH tip: ssh -L 8000:localhost:8000 user@host\n\n'
 
 # Aliases
 alias start_qwen_studio='cd /opt/qwen-image-studio && uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000'
