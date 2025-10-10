@@ -69,6 +69,9 @@ RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh || true && \
 # ROCm/Triton env (exports TRITON_HIP_* and LD_LIBRARY_PATH; also FA enable)
 COPY scripts/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
 
+# Default Qwen GPU mode
+ENV QWEN_FA_SHIM=1
+
 # Banner script (runs on login). Use a high sort key so it runs after venv.sh and 01-rocm-env...
 COPY scripts/99-toolbox-banner.sh /etc/profile.d/99-toolbox-banner.sh
 RUN chmod 0644 /etc/profile.d/99-toolbox-banner.sh
