@@ -534,3 +534,117 @@ Also track these tickets for performance issues on Strix Halo:
 ---
 
 **Notes on persistence:** All model weights and outputs are stored in your **HOME** outside the distrobox (e.g., `~/.cache/huggingface/hub/`, `~/.qwen-image-studio/`, `~/Wan2.2-*`, `~/comfy-models`, `~/comfy-outputs`). This ensures they survive distrobox refreshes.
+
+---
+
+## 12. Debugging & Compatibility Patches
+
+This section documents the current workarounds and patches needed for Qwen Image Studio to work properly in the distrobox environment. These patches address compatibility issues between the Qwen implementation and the ROCm/AMD GPU stack.
+
+### 12.1. Current Patches Applied
+
+#### 12.1.1. `offload_state_dict` Removal Patch
+**Files**: `start_qwen_studio_patched.py`, `patched_cli_runner.py`
+
+**Problem**: The `offload_state_dict` parameter in `DiffusionPipeline.from_pretrained()` and `Qwen2_5_VLForConditionalGeneration.__init__()` causes compatibility issues with the current ROCm stack.
+
+**Solution**: Monkey patch these methods to remove the problematic parameter:
+
+```python
+# Pipeline-level patch
+def patched_from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
+    if 'offload_state_dict' in kwargs:
+        kwargs.pop('offload_state_dict')
+    return original_from_pretrained(pretrained_model_name_or_path, **kwargs)
+
+# Model-level patch
+def patched_init(self, config, *args, **kwargs):
+    if 'offload_state_dict' in kwargs:
+        kwargs.pop('offload_state_dict')
+    original_init(self, config, *args, **kwargs)
+```
+
+**Status**: ✅ Working - Required for both CLI and Web UI
+
+#### 12.1.2. Distrobox Path Handling Fix
+**File**: `start_qwen_studio_patched.py`
+
+**Problem**: Web UI startup failed due to incorrect import paths when running from workspace directory instead of Qwen installation directory.
+
+**Solution**: Change to correct directory before importing:
+
+```python
+import os
+os.chdir('/opt/qwen-image-studio')
+from qwen_image_studio.server import app
+```
+
+**Status**: ✅ Working - Required for Web UI startup
+
+### 12.2. Legacy Patch Files (Deprecated)
+
+The following patch files were created during debugging but are no longer needed with the current solution:
+
+- `diffusers_patch.py` - Legacy diffusers patch
+- `transformers_fix.py` - Legacy transformers patch
+- `ultimate_fix.py` - Legacy comprehensive patch
+- `comprehensive_qwen_fix.py` - Legacy fix attempt
+
+**Status**: ❌ Deprecated - Can be removed
+
+### 12.3. Test Files (Reference Only)
+
+These files were used during debugging and can serve as reference for testing:
+
+- `polished_qwen_test_final.py` - Working 4-step generation test
+- `final_working_qwen.py` - Original working test
+- `working_qwen_demo.py` - Demo implementation
+- `direct_qwen_test.py` - Direct CLI test
+- `simple_qwen_test.py` - Simple test case
+- `ultra_simple_test.py` - Minimal test
+- `working_qwen_launcher.py` - Alternative launcher
+
+**Status**: 📋 Reference - Can be kept for testing
+
+### 12.4. Future Compatibility
+
+These patches may become unnecessary when upstream libraries are updated:
+
+#### When to Remove Patches
+
+1. **`offload_state_dict` Patch**: Monitor updates to:
+   - `diffusers` library (check `DiffusionPipeline.from_pretrained`)
+   - `transformers` library (check `Qwen2_5_VLForConditionalGeneration.__init__`)
+   - Qwen Image Studio updates that handle this parameter gracefully
+
+2. **Path Handling Fix**: Monitor updates to:
+   - Qwen Image Studio startup scripts
+   - Distrobox integration improvements
+
+#### Testing Patch Removal
+
+To test if patches are still needed:
+
+1. Comment out patch applications in `start_qwen_studio_patched.py`
+2. Try starting Web UI: `python3 start_qwen_studio_patched.py`
+3. Try CLI generation: `python3 patched_cli_runner.py generate -p "test" --steps 4`
+4. If both work without errors, patches can be removed
+
+#### Version Tracking
+
+Current working versions (as of 2025-10-11):
+- ROCm: 7.0.x (nightly from TheRock)
+- Python: 3.13
+- PyTorch: ROCm-enabled version
+- Qwen Image Studio: Fork of qwen-image-mps
+
+### 12.5. Troubleshooting
+
+If issues occur after updating libraries:
+
+1. First check if patches are still applied correctly
+2. Look for new error messages that might indicate changed APIs
+3. Test with the reference files in section 12.3
+4. Re-apply patches if necessary using the patterns in section 12.1
+
+**Note**: Always backup working configurations before updating libraries or removing patches.
