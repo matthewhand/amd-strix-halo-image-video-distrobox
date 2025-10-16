@@ -1,0 +1,10 @@
+# Ignore all markdown files
+*.md
+
+# Whitelist essential markdown files
+!README.md
+!COMFYUI_SETUP_GUIDE.md
+!AGENTS.md
+
+# Ignore Python cache directories
+__pycache__/
