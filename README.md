@@ -463,14 +463,17 @@ start_comfy_ui
 Alias details:
 
 ```bash
+/usr/local/bin/start_comfy_ui      # wraps ComfyUI launch with port checks
+# Equivalent manual invocation:
 cd /opt/ComfyUI
-python main.py --port 8000 --output-directory "$HOME/comfy-outputs" --disable-mmap
+python main.py --listen 0.0.0.0 --port 8000 \
+  --output-directory "$HOME/comfy-outputs" --disable-mmap
 ```
 
 > You will see an error message for missing `torchaudio`: this is **temporarily** removed as its presence causes ComfyUI to crash on boot.
 
 * Outputs appear under `~/comfy-outputs/` in your HOME.
-* Default ComfyUI port is 8188, but using `--port 8000` aligns it with Qwen Image Studio.
+* The launcher tries port 8000 for parity with Qwen Image Studio and falls back to 8188 if it is in use.
 * Remote over SSH:
 
 ```bash
@@ -478,6 +481,15 @@ ssh -L 8000:localhost:8000 user@your-strix-box
 ```
 
 Open [http://localhost:8000](http://localhost:8000) locally to access the web interface.
+
+> [TIP] If Qwen Image Studio (also on port 8000) is already running, the wrapper automatically
+> falls back to port **8188** and informs you of the change. To pick a different port manually,
+> pass `start_comfy_ui --port 9000`.
+
+> [TIP] The launcher now disables Triton FlashAttention (`FLASH_ATTENTION_TRITON_AMD_ENABLE=FALSE`)
+> and enables tiled WAN VAE decoding by default. This avoids the ROCm GPU hangs observed when
+> running the WAN 14B FP8 workflows on Strix Halo. Override by exporting different values before
+> calling `start_comfy_ui` if you want to experiment.
 
 Upstream project: [https://github.com/comfyanonymous/ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 
