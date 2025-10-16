@@ -5,6 +5,8 @@ Applies necessary patches before starting the web UI
 """
 import sys
 import os
+from typing import Tuple
+
 import uvicorn
 
 # Set the environment variable to use our patched CLI runner
@@ -18,9 +20,33 @@ sys.path.insert(0, '/opt/qwen-image-studio/src')
 # Add the main app directory to the path as well
 sys.path.insert(0, '/opt/qwen-image-studio/qwen-image-studio')
 
+
+def _check_hip_ready() -> Tuple[bool, str]:
+    """Ensure a HIP-capable GPU is visible before importing ROCm modules."""
+    try:
+        import torch
+    except ImportError as exc:
+        return False, f"PyTorch unavailable: {exc}"
+
+    if not torch.cuda.is_available():
+        return False, "torch.cuda.is_available() returned False (no HIP device)"
+
+    try:
+        torch.cuda.current_device()
+    except Exception as exc:  # pylint: disable=broad-except
+        return False, f"HIP runtime failed to initialise: {exc}"
+
+    return True, ""
+
+
 def apply_comprehensive_patches():
     """Apply both pipeline and model-level patches"""
     patches_applied = 0
+
+    hip_ready, hip_msg = _check_hip_ready()
+    if not hip_ready:
+        print(f"⚠️  Qwen Studio: Skipping compatibility patches – {hip_msg}")
+        return False
     
     # Patch 1: Pipeline-level patch for diffusers
     try:
@@ -73,10 +99,10 @@ def main():
     print("\n🔧 Applying compatibility patches...")
     if not apply_comprehensive_patches():
         print("\n💥 Failed to apply patches - cannot continue")
-        return
+        print("Hint: ensure ROCm/HIP devices are passed through (e.g. /dev/kfd and /dev/dri).")
+        sys.exit(1)
 
     # Change to the correct directory for Qwen Image Studio
-    import os
     os.chdir('/opt/qwen-image-studio')
 
     # Start the web UI by importing and running the app directly
@@ -86,7 +112,16 @@ def main():
 
     try:
         # Import the app *after* patches are applied and directory is changed
-        from qwen_image_studio.server import app
+        import importlib.util
+
+        server_path = os.path.join('/opt/qwen-image-studio', 'qwen-image-studio', 'server.py')
+        spec = importlib.util.spec_from_file_location("qwen_image_studio_server", server_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to locate Qwen Image Studio server module at {server_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # type: ignore[attr-defined]
+        app = module.app  # FastAPI app defined in server.py
+
         # Run uvicorn directly with the imported app to avoid module resolution issues
         uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
     except Exception as e:
