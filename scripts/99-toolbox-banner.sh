@@ -93,4 +93,4 @@ echo
 
 # Aliases
 alias start_qwen_studio='cd /opt/qwen-image-studio && uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000'
-alias start_comfy_ui='cd /opt/ComfyUI && python main.py --port 8000 --output-directory $HOME/comfy-outputs --disable-mmap'
+alias start_comfy_ui='/usr/local/bin/start_comfy_ui'

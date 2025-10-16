@@ -18,6 +18,8 @@ RUN python -m pip install --upgrade pip setuptools wheel
 COPY scripts/get_wan22.sh /opt/
 COPY scripts/set_extra_paths.sh /opt/
 COPY scripts/get_qwen_image.sh /opt/
+COPY scripts/start_comfy_ui.sh /usr/local/bin/start_comfy_ui
+RUN chmod 0755 /usr/local/bin/start_comfy_ui
 
 # ROCm + PyTorch (TheRock, include torchaudio for resolver; remove later)
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
@@ -84,4 +86,3 @@ RUN chmod 0644 /etc/profile.d/zz-venv-last.sh
 RUN printf 'ulimit -S -c 0\n' > /etc/profile.d/90-nocoredump.sh && chmod 0644 /etc/profile.d/90-nocoredump.sh
 
 CMD ["/bin/bash"]
-

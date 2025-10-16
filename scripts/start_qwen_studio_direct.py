@@ -5,6 +5,24 @@ Applies patches at the module level to ensure they're loaded before any imports
 """
 import sys
 import os
+from typing import Tuple
+
+def _check_hip_ready() -> Tuple[bool, str]:
+    """Ensure a HIP-capable GPU is visible before installing patches."""
+    try:
+        import torch
+    except ImportError as exc:
+        return False, f"PyTorch unavailable: {exc}"
+
+    if not torch.cuda.is_available():
+        return False, "torch.cuda.is_available() returned False (no HIP device)"
+
+    try:
+        torch.cuda.current_device()
+    except Exception as exc:  # pylint: disable=broad-except
+        return False, f"HIP runtime failed to initialise: {exc}"
+
+    return True, ""
 
 # Add Qwen path
 sys.path.insert(0, '/opt/qwen-image-studio/src')
@@ -14,6 +32,10 @@ sys.path.insert(0, '/opt/qwen-image-studio')
 # Apply patches BEFORE any imports
 def apply_module_level_patches():
     """Apply patches at the module level to ensure they're loaded first"""
+    hip_ready, hip_msg = _check_hip_ready()
+    if not hip_ready:
+        print(f"⚠️  Qwen Studio: Skipping compatibility patches – {hip_msg}")
+        return False
     
     # Patch 1: Monkey patch diffusers before it's imported
     import builtins
@@ -65,7 +87,10 @@ def main():
     
     # Apply module-level patches
     print("\n🔧 Applying module-level compatibility patches...")
-    apply_module_level_patches()
+    if not apply_module_level_patches():
+        print("\n💥 Failed to apply patches - cannot continue")
+        print("Hint: ensure ROCm/HIP devices are passed through (e.g. /dev/kfd and /dev/dri).")
+        sys.exit(1)
     
     # Change to the correct directory
     os.chdir('/opt/qwen-image-studio')

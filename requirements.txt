@@ -1,0 +1,19 @@
+# Wan Video Generation Tool Requirements
+# Core dependencies for enhanced video generation scripts
+
+# Web framework for REST API
+flask==2.3.3
+flask-cors==4.0.0
+
+# Image processing
+Pillow==10.0.1
+numpy==1.24.3
+
+# Async processing
+requests==2.31.0
+
+# Logging and monitoring (optional but recommended)
+psutil==5.9.5
+
+# For video templates system
+pathlib2==2.3.7
