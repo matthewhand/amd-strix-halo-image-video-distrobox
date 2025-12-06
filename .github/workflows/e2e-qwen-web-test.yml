@@ -1,0 +1,82 @@
+name: E2E Qwen Image Web Test
+
+on:
+  push:
+    branches: [ main, 'e2e-testing' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  e2e-qwen-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # Increased timeout for ROCm builds
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io docker-compose-plugin podman
+        python -m pip install requests
+
+    - name: Start Docker service
+      run: |
+        sudo systemctl start docker
+        sudo usermod -aG docker $USER
+        sudo chmod 666 /var/run/docker.sock
+
+    - name: Build Docker image
+      run: |
+        docker build -t amd-strix-halo-image-video-toolbox:test .
+
+    - name: Create test environment
+      run: |
+        mkdir -p ~/.qwen-image-studio
+        chmod -R 755 ~/.qwen-image-studio
+
+    - name: Run E2E Test
+      run: |
+        python tests/e2e_qwen_web_test.py
+
+    - name: Upload test artifacts
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: e2e-test-logs
+        path: |
+          ~/.qwen-image-studio/*.png
+          *.log
+        retention-days: 7
+
+  # Lightweight test for PRs (skips heavy Docker build)
+  e2e-qwen-web-light:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install requests pytest
+
+    - name: Run syntax validation
+      run: |
+        python -m py_compile tests/e2e_qwen_web_test.py
+        python -c "import tests.e2e_qwen_web_test; print('✅ Test script syntax valid')"
