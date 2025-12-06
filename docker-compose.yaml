@@ -1,0 +1,111 @@
+# Docker Compose v2 for AMD Strix Halo Image & Video Toolbox
+services:
+  strix-halo-toolbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amd-strix-halo-image-video-toolbox:46699d1
+    container_name: strix-halo-toolbox
+    restart: unless-stopped
+
+    # Auto-start services
+    profiles:
+      - qwen
+      - comfyui
+
+    # GPU and system access
+    network_mode: host
+    privileged: true
+    environment:
+      # ROCm/Triton environment
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
+      - QWEN_FA_SHIM=1
+      - WAN_ATTENTION_BACKEND=sdpa
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
+      - HIP_VISIBLE_DEVICES=0
+      - ROC_ENABLE_PRE_VEGA=1
+
+      # Performance settings
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+
+    volumes:
+      # GPU device access
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+
+      # Model cache and output persistence
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.qwen-image-studio:/root/.qwen-image-studio
+      - ${HOME}/wan-models:/workspace/wan-models
+      - ${HOME}/comfy-models:/opt/ComfyUI/models
+      - ${HOME}/comfy-outputs:/opt/ComfyUI/output
+
+    security_opt:
+      - seccomp:unconfined
+
+    working_dir: /workspace
+
+    # Default command for full services mode
+    command: >
+      bash -c "
+        echo '🚀 Starting Strix Halo Toolbox services...'
+
+        # Start Qwen Image Studio
+        cd /opt/qwen-image-studio
+        python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000 &
+        QWEN_PID=$!
+
+        # Start ComfyUI
+        cd /opt/ComfyUI
+        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output &
+        COMFYUI_PID=$!
+
+        echo '✅ Services started:'
+        echo '  🎨 Qwen Image Studio: http://localhost:8000'
+        echo '  🖼️  ComfyUI:          http://localhost:8188'
+        echo '  🎬 WAN CLI:          Available in container'
+        echo ''
+        echo '📊 Service status (PID: Qwen=$QWEN_PID, ComfyUI=$COMFYUI_PID)'
+
+        # Keep container running and monitor services
+        while true; do
+          sleep 30
+          if ! kill -0 $QWEN_PID 2>/dev/null; then
+            echo '⚠️  Qwen service died, restarting...'
+            cd /opt/qwen-image-studio
+            python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000 &
+            QWEN_PID=$!
+          fi
+          if ! kill -0 $COMFYUI_PID 2>/dev/null; then
+            echo '⚠️  ComfyUI service died, restarting...'
+            cd /opt/ComfyUI
+            python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output &
+            COMFYUI_PID=$!
+          fi
+        done
+      "
+
+  # Qwen-only service profile
+  qwen-service:
+    extends: strix-halo-toolbox
+    profiles:
+      - qwen-only
+    command: >
+      bash -c "
+        echo '🎨 Starting Qwen Image Studio only...'
+        cd /opt/qwen-image-studio
+        python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000
+      "
+
+  # ComfyUI-only service profile
+  comfyui-service:
+    extends: strix-halo-toolbox
+    profiles:
+      - comfyui-only
+    command: >
+      bash -c "
+        echo '🖼️  Starting ComfyUI only...'
+        cd /opt/ComfyUI
+        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output
+      "
