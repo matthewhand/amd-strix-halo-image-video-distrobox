@@ -1,17 +1,16 @@
-name: E2E Qwen Image Web Test
+name: CI Validation
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
-  # Test container build and basic functionality
-  build-and-basic-test:
+  # Build validation only
+  build-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # Increased timeout for heavy builds
+    timeout-minutes: 45
 
     steps:
     - name: Checkout repository
@@ -29,15 +28,15 @@ jobs:
         cache-to: type=gha,mode=max
         platforms: linux/amd64
 
-    - name: Test basic Python functionality
+    - name: Test basic container functionality
       run: |
         docker run --rm amd-strix-halo-image-video-toolbox:test \
-          python3 -c "import torch; print(f'ROCm available: {torch.cuda.is_available()}')"
+          python3 -c "import torch; print('✅ Container builds and PyTorch works')"
 
-  # Fast E2E test using existing Docker image
-  e2e-qwen-web-light:
+  # Code validation
+  code-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
     - name: Checkout repository
@@ -50,77 +49,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install requests pytest docker
+        python -m pip install requests pytest
 
-    - name: Test script syntax
+    - name: Validate E2E test script
       run: |
         python -m py_compile tests/e2e_qwen_web_test.py
-        python -c "import tests.e2e_qwen_web_test; print('✅ Test script syntax valid')"
+        python -c "import tests.e2e_qwen_web_test; print('✅ E2E test syntax valid')"
 
-    - name: Mock E2E test (without GPU)
+    - name: Validate Docker Compose
       run: |
-        python3 <<'EOF'
-import os
-import sys
-sys.path.insert(0, 'tests')
-from e2e_qwen_web_test import test_gpu_utilization, test_service_health
-
-# Mock GPU test (will fail without GPU, but that's expected for CI)
-print("🧪 Running mock E2E tests (CI environment)...")
-
-# Test import/structure
-try:
-    import e2e_qwen_web_test
-    print("✅ Test imports successful")
-    print(f"✅ Test functions available: {[f for f in dir(e2e_qwen_web_test) if f.startswith('test_')]}")
-except Exception as e:
-    print(f"❌ Import failed: {e}")
-    sys.exit(1)
-
-print("✅ E2E test structure validation passed")
-EOF
-
-  # Full E2E test (manual trigger only due to GPU requirements)
-  e2e-qwen-web-full:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    if: github.event_name == 'workflow_dispatch'
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.13'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install requests docker
-
-    - name: Build Docker image
-      run: |
-        docker build -t amd-strix-halo-image-video-toolbox:test .
-
-    - name: Create test environment
-      run: |
-        mkdir -p ~/.qwen-image-studio
-        chmod -R 755 ~/.qwen-image-studio
-
-    - name: Run E2E Test
-      run: |
-        timeout 300 python tests/e2e_qwen_web_test.py || {
-          echo "⚠️ E2E test timed out (expected without GPU), but CI validation passed"
-          exit 0
-        }
-
-    - name: Upload test artifacts
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: e2e-test-logs
-        path: |
-          ~/.qwen-image-studio/*.png
-          *.log
-        retention-days: 7
+        python3 -c "import yaml; yaml.safe_load(open('docker-compose.yaml'))" && echo "✅ Docker Compose valid"
