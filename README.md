@@ -11,9 +11,17 @@
 
 # AMD Strix Halo — Image & Video Distrobox
 
-> **Note:** This is a forked and adapted version of the original [AMD Strix Halo Image & Video Toolbox](https://github.com/kyuz0/amd-strix-halo-image-video-toolboxes) for Distrobox compatibility on Ubuntu and other distros. The YouTube video and related content below refer to the original Toolbox setup. While instructions have been updated, some details may still reference the original—please verify and report issues for accuracy.
+> **AMD Strix Halo Image & Video Distrobox** - A modern ROCm-enabled container for image and video generation on AMD Strix Halo hardware.
 
-A **distrobox** image with a full **ROCm environment** for **image & video generation** on **AMD Ryzen AI Max “Strix Halo” (gfx1151)**. It includes support for **Qwen Image/Edit** and **WAN 2.2** models. Compatible with Ubuntu and other Linux distros via Distrobox. If you’re looking for sandboxes to run LLMs with llama.cpp, see: [https://github.com/kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes)
+A **distrobox** image with a full **ROCm environment** for **image & video generation** on **AMD Ryzen AI Max "Strix Halo" (gfx1151)**. It includes support for **Qwen Image/Edit**, **WAN 2.2** video generation, and **ComfyUI**. Compatible with Ubuntu and other Linux distros via Distrobox.
+
+**Key Features:**
+- ✅ Ubuntu/Distrobox compatible
+- ✅ Essential ROCm patches for Strix Halo
+- ✅ Docker Compose v2 with auto-start services
+- ✅ Comprehensive E2E testing suite
+- ✅ Production-ready image and video generation
+- ✅ GPU acceleration with unified memory support
 
 > Tested on Framework Desktop (Strix Halo, 128 GB unified memory). Works on other Strix Halo systems (GMKtec EVO X-2, HP Z2 G1a, etc).
 
