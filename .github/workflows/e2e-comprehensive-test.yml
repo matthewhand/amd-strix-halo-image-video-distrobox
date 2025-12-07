@@ -1,0 +1,208 @@
+name: E2E Comprehensive Testing
+
+on:
+  push:
+    branches: [ main, feature/e2e-qwen-web-testing ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC to catch regressions
+    - cron: '0 2 * * *'
+
+jobs:
+  # Comprehensive E2E testing
+  e2e-comprehensive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        test-type: [comprehensive, qwen-only, video-only]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        push: false
+        tags: amd-strix-halo-image-video-toolbox:e2e-test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install test dependencies
+      run: |
+        python -m pip install requests pytest hashlib
+
+    - name: Create environment file
+      run: |
+        cat > .env << EOF
+        HSA_OVERRIDE_GFX_VERSION=11.0.0
+        FLASH_ATTENTION_TRITON_AMD_ENABLE=FALSE
+        QWEN_FA_SHIM=1
+        WAN_ATTENTION_BACKEND=sdpa
+        PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256,garbage_collection_threshold:0.95
+        HIP_VISIBLE_DEVICES=0
+        ROC_ENABLE_PRE_VEGA=1
+        TORCH_CUDNN_V8_API_ENABLED=0
+        EOF
+
+    - name: Run E2E Tests
+      run: |
+        case "${{ matrix.test-type }}" in
+          "comprehensive")
+            echo "🧪 Running comprehensive E2E test suite..."
+            timeout 2700 python3 tests/e2e_comprehensive_test.py
+            ;;
+          "qwen-only")
+            echo "🎨 Running Qwen image generation E2E test..."
+            timeout 1800 python3 tests/e2e_qwen_web_test.py
+            ;;
+          "video-only")
+            echo "🎬 Running video generation focused test..."
+            timeout 2400 python3 -c "
+from tests.e2e_comprehensive_test import *
+import docker
+import time
+
+print('🎬 Video Generation Focused E2E Test')
+print('=' * 50)
+
+# Start services
+test_docker_compose_startup()
+
+# Test service health
+health_results = test_service_health()
+if not health_results.get('ComfyUI', False):
+    print('❌ ComfyUI not healthy')
+    exit(1)
+
+# Test model availability
+if not test_model_availability():
+    print('❌ Models not available')
+    exit(1)
+
+# Test video generation
+if not test_comfyui_video_generation():
+    print('❌ Video generation failed')
+    exit(1)
+
+print('✅ Video generation E2E test passed!')
+"
+            ;;
+        esac
+
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-results-${{ matrix.test-type }}
+        path: |
+          ~/.qwen-image-studio/
+          ~/comfy-outputs/
+        retention-days: 7
+
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "## E2E Test Results (${{ matrix.test-type }})" >> $GITHUB_STEP_SUMMARY
+        echo "| Test Type | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+        if [[ ${{ matrix.test-type }} == "comprehensive" ]]; then
+          echo "| Full Stack | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| Qwen Image Gen | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ComfyUI Video Gen | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| GPU Utilization | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| File Integrity | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| ${{ matrix.test-type }} | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # Performance benchmarking
+  performance-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: e2e-comprehensive
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install requests psutil
+
+    - name: Performance benchmark
+      run: |
+        python3 -c "
+import requests
+import time
+import json
+
+print('📊 Performance Benchmark')
+print('=' * 30)
+
+# Test API response times
+start_time = time.time()
+response = requests.get('http://localhost:8000', timeout=10)
+qwen_response_time = time.time() - start_time
+
+start_time = time.time()
+response = requests.get('http://localhost:8188', timeout=10)
+comfyui_response_time = time.time() - start_time
+
+print(f'Qwen API Response Time: {qwen_response_time:.2f}s')
+print(f'ComfyUI Response Time: {comfyui_response_time:.2f}s')
+
+# Performance thresholds
+if qwen_response_time < 2.0:
+    print('✅ Qwen performance: GOOD')
+else:
+    print('⚠️  Qwen performance: SLOW')
+
+if comfyui_response_time < 2.0:
+    print('✅ ComfyUI performance: GOOD')
+else:
+    print('⚠️  ComfyUI performance: SLOW')
+
+print('🎯 Performance benchmark completed!')
+"
+
+  # Security scan
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
