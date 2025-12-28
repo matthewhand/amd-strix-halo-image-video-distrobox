@@ -13,22 +13,24 @@
 
 > **AMD Strix Halo Image & Video Generation** - A production-ready Docker environment for state-of-the-art image and video generation on AMD Strix Halo hardware.
 
-**Last Updated**: December 9, 2025
+**Last Updated**: December 28, 2025
 
-A **Docker Compose solution** inspired by [kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes), providing full **ROCm support** for **image & video generation** on **AMD Ryzen AI Max "Strix Halo" (gfx1151)**. Features **Qwen Image Studio**, **WAN 2.2** video generation, and **ComfyUI** with AMD GPU optimization.
+**⚠️ ROCm Requirements**: **ROCm 7.10+ is REQUIRED. ROCm 6.1 is NOT supported.** See [ROCM_REQUIREMENTS.md](ROCM_REQUIREMENTS.md) for details.
 
-**🔥 Key Achievements:**
-- ✅ **Fixed Flash Attention** dependency issues
-- ✅ **WAN I2V Channel Compatibility** resolved
-- ✅ **End-to-end working pipeline**: Qwen → WAN I2V
-- ✅ **GPU memory optimization** for 128GB unified memory
-- ✅ **Production-ready** image and video generation
+A Docker/Distrobox solution inspired by [kyuz0/amd-strix-halo-toolboxes](https://github.com/kyuz0/amd-strix-halo-toolboxes), providing full **ROCm 7.10+ support** for **image & video generation** on **AMD Ryzen AI Max "Strix Halo" (gfx1151)**. Features **Qwen Image Studio**, **WAN 2.2** video generation, and **ComfyUI** with AMD GPU optimization.
 
 **🎯 What This Project Does:**
-- **Image Generation**: Create stunning images with Qwen Image Studio
+- **Image Generation**: Create stunning images with Qwen Image Studio (20B model)
 - **Video Generation**: Transform images into videos with WAN 2.2 I2V
 - **Combined Pipeline**: Generate images with Qwen, then animate them with WAN
 - **Web Interface**: Easy-to-use ComfyUI web UI at http://localhost:8188
+
+**✅ What Works (ROCm 7.10+):**
+- ✅ **Qwen Image Studio** - Full GPU acceleration with ROCm 7.10+
+- ✅ **WAN 2.2 I2V** - Channel compatibility resolved
+- ✅ **Flash Attention** - Native support, no patches needed
+- ✅ **128GB Unified Memory** - Optimized for Strix Halo
+- ✅ **End-to-end Pipeline**: Qwen → WAN I2V video generation
 
 ---
 

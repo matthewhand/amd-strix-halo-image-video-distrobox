@@ -1,0 +1,14 @@
+# ROCm 6.x compatible version for AMD Strix Halo
+# Based on existing working container with version fixes
+
+FROM amd-strix-halo-image-video-toolbox:final-working-distrobox
+
+# Downgrade to ROCm 6.x PyTorch to match host driver 6.15.6
+# Use latest available PyTorch version compatible with ROCm 6.x
+RUN python -m pip uninstall -y torch torchvision torchaudio && \
+    python -m pip install --index-url https://download.pytorch.org/whl/rocm6.1 torch torchvision torchaudio
+
+# Update container label to reflect ROCm 6.x compatibility
+LABEL rocm.version="6.x" \
+      rocm.compatible="host-driver-6.15.6" \
+      description="AMD Strix Halo with ROCm 6.x compatibility"

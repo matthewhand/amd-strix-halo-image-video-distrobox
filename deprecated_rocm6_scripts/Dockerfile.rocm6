@@ -1,0 +1,87 @@
+FROM registry.fedoraproject.org/fedora:rawhide
+
+# Install ROCm 6.x compatible packages
+ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
+RUN dnf update -y && \
+    dnf install -y \
+    python3-pip \
+    python3-devel \
+    git \
+    wget \
+    curl \
+    nodejs \
+    npm \
+    && dnf clean all
+
+# Install ROCm 6.x
+RUN python -m pip install --index-url ${ROCM_INDEX} 'rocm[libraries,devel]'==6.1.* torch==2.4.* torchvision torchaudio
+
+# Set GPU architecture override
+ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
+ENV ROCM_ARCH=gfx1151
+
+# Clone and install ComfyUI with ROCm 6.x compatibility
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI && \
+    cd /opt/ComfyUI && \
+    git checkout tags/v0.3.76 && \
+    python -m pip install -r requirements.txt
+
+# Install custom nodes
+RUN cd /opt/ComfyUI && \
+    git clone https://github.com/comfyanonymous/ComfyUI-AMDGPUMonitor custom_nodes/ComfyUI-AMDGPUMonitor && \
+    git clone https://github.com/ltdrdata/ComfyUI-essentials custom_nodes/ComfyUI_essentials
+
+# Install flash attention patch for ROCm 6.x
+RUN mkdir -p /opt/venv/lib64/python3.13/site-packages/flash_attn_2_cuda && \
+    echo '"""__init__.py for flash_attn_2_cuda ROCm 6.x patch"""' > /opt/venv/lib64/python3.13/site-packages/flash_attn_2_cuda/__init__.py
+
+# Clone and setup Qwen Image Studio
+RUN git clone https://github.com/QwenLM/Qwen2-VL.git /opt/qwen-image-studio && \
+    cd /opt/qwen-image-studio && \
+    python -m pip install -e .
+
+# Create GPU startup script
+RUN cat > /usr/local/bin/start_comfy_ui_rocm6.sh << 'EOF'
+#!/bin/bash
+export HSA_OVERRIDE_GFX_VERSION=11.5.1
+source /opt/venv/bin/activate
+cd /opt/ComfyUI
+exec python main.py --listen 0.0.0.0 --port 8188 --gpu-only --output-directory /opt/ComfyUI/output
+EOF
+RUN chmod +x /usr/local/bin/start_comfy_ui_rocm6.sh
+
+# Create combined startup script
+RUN cat > /usr/local/bin/start_services_rocm6.sh << 'EOF'
+#!/bin/bash
+export HSA_OVERRIDE_GFX_VERSION=11.5.1
+source /opt/venv/bin/activate
+
+# Start Qwen Image Studio
+cd /opt/qwen-image-studio
+uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000 &
+QWEN_PID=$!
+
+# Start ComfyUI with ROCm 6.x
+cd /opt/ComfyUI
+python main.py --listen 0.0.0.0 --port 8188 --gpu-only --output-directory /opt/ComfyUI/output &
+COMFY_PID=$!
+
+echo "Services started:"
+echo "  Qwen Image Studio: http://localhost:8000 (PID: $QWEN_PID)"
+echo "  ComfyUI: http://localhost:8188 (PID: $COMFY_PID)"
+echo "  ROCm Version: 6.x (compatible with host driver)"
+echo "  GPU Architecture: gfx1151"
+echo "  HSA_OVERRIDE_GFX_VERSION: 11.5.1"
+
+wait
+EOF
+RUN chmod +x /usr/local/bin/start_services_rocm6.sh
+
+# Set working directory
+WORKDIR /opt/ComfyUI
+
+# Expose ports
+EXPOSE 8000 8188
+
+# Default command
+CMD ["/usr/local/bin/start_services_rocm6.sh"]

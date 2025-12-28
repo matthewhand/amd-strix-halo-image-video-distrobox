@@ -5,6 +5,12 @@
 !README.md
 !COMFYUI_SETUP_GUIDE.md
 !AGENTS.md
+!ROCM_REQUIREMENTS.md
+
+# Deprecated ROCm 6.1 scripts (DO NOT USE - broken with Qwen)
+deprecated_rocm6_scripts/
 
 # Ignore Python cache directories
-__pycache__/
+__pycache__/.env
+.env.local
+ComfyUI_output/
