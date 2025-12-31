@@ -27,8 +27,8 @@ def check_rocm_environment():
         for var in missing_vars:
             print(f"   - {var}")
         print("💡 Setting default ROCm environment for Strix Halo...")
-        os.environ['HSA_OVERRIDE_GFX_VERSION'] = '11.0.0'
-        print("✅ Set HSA_OVERRIDE_GFX_VERSION=11.0.0")
+        os.environ['HSA_OVERRIDE_GFX_VERSION'] = '11.5.1'
+        print("✅ Set HSA_OVERRIDE_GFX_VERSION=11.5.1")
 
 def setup_comfyui_environment():
     """Setup environment variables for ComfyUI"""
