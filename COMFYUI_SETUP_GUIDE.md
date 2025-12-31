@@ -83,7 +83,7 @@ distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-
 ## Environment Variables
 
 The setup automatically configures:
-- `HSA_OVERRIDE_GFX_VERSION=11.0.0` - For AMD Strix Halo GPU compatibility
+- `HSA_OVERRIDE_GFX_VERSION=11.5.1` - For AMD Strix Halo GPU (gfx1151) compatibility
 
 ## Troubleshooting
 

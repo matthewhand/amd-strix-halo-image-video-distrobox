@@ -18,7 +18,7 @@ services:
     privileged: true
     environment:
       # ROCm/Triton environment
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
       - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
       - QWEN_FA_SHIM=1
       - WAN_ATTENTION_BACKEND=sdpa
