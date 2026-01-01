@@ -8,3 +8,16 @@
 
 # Ignore Python cache directories
 __pycache__/
+
+# Local environment
+.env
+
+# Model files and outputs (large files, stored elsewhere)
+comfy-models/
+outputs/
+ComfyUI_output/
+*.safetensors
+workspace/
+
+# Docker/container specific
+docker/
