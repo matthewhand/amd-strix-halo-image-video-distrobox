@@ -219,7 +219,16 @@ sudo reboot
 ## 7. Qwen Image Studio
 
 **Path:** `/opt/qwen-image-studio`
-**Run:** `start_qwen_studio` (serves at [http://localhost:8000](http://localhost:8000))
+**Run:**
+- `start_qwen_studio` (standard version)
+- `start_qwen_studio_patched` (with ROCm 7.10+ compatibility fixes)
+
+**Status:** See [QWEN_STATUS.md](QWEN_STATUS.md) for detailed status and known issues.
+
+**Quick Summary:**
+- ✅ Pipeline initialization works
+- ✅ Components load to GPU successfully (53.79 GB / 128 GB)
+- ✅ Image generation works with `HSA_OVERRIDE_GFX_VERSION=11.5.1`
 
 ### 7.1. Download Models
 
@@ -247,13 +256,23 @@ Outputs and job state are kept in `~/.qwen-image-studio/` (HOME, outside the too
 
 ### 7.2. How to Start
 
-Start the Web UI:
+#### Standard Web UI
 
 ```bash
 start_qwen_studio
 ```
 
-This launches a FastAPI/uvicorn server on port 8000.
+#### Patched Web UI (Recommended for AMD GPU)
+
+```bash
+start_qwen_studio_patched
+```
+
+The patched version applies critical ROCm 7.10+ compatibility fixes:
+- Removes `offload_state_dict` from pipeline/model loading
+- Fixes segfault in `QwenImagePipeline.__init__`
+
+Both launch a FastAPI/uvicorn server on port 8000.
 Local machine: open [http://localhost:8000](http://localhost:8000)
 Over SSH:
 
@@ -261,14 +280,17 @@ Over SSH:
 ssh -L 8000:localhost:8000 user@your-strix-box
 ```
 
-Under the hood:
+**Under the hood (patched):**
 
 ```bash
 cd /opt/qwen-image-studio && \
-uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000
+QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps-patched.py \
+uvicorn qwen-image-studio.server:app --host 0.0.0.0 --port 8000
 ```
 
 You can also check the console log to see the exact CLI commands executed for each job.
+
+> **Note:** Ensure `HSA_OVERRIDE_GFX_VERSION=11.5.1` is set for Strix Halo (gfx1151) GPU support.
 
 ### 7.3. Paths & Persistence
 
