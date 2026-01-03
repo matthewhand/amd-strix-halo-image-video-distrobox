@@ -13,7 +13,7 @@ NC='\033[0m'
 
 # Configuration
 CONTAINER_NAME="${CONTAINER_NAME:-strix-fresh}"
-IMAGE_NAME="${IMAGE_NAME:-amd-strix-halo-image-video-toolbox:final-working-distrobox}"
+IMAGE_NAME="${IMAGE_NAME:-amd-strix-halo-image-video-toolbox:latest}"
 
 # Critical environment for Strix Halo gfx1151
 export HSA_OVERRIDE_GFX_VERSION=11.5.1

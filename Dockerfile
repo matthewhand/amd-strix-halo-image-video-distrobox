@@ -1,10 +1,19 @@
 FROM registry.fedoraproject.org/fedora:rawhide
 
+# Build args
+ARG INSTALL_GUI=false
+
 # Base packages (keep compilers/headers for Triton JIT at runtime)
 RUN dnf -y install --setopt=install_weak_deps=False --nodocs \
       libdrm-devel python3.13 python3.13-devel git rsync libatomic bash ca-certificates curl \
       gcc gcc-c++ binutils make git ffmpeg-free \
   && dnf clean all && rm -rf /var/cache/dnf/*
+
+# Optional: GUI tools for distrobox (X11/Wayland image viewers)
+RUN if [ "$INSTALL_GUI" = "true" ]; then \
+      dnf -y install --setopt=install_weak_deps=False --nodocs feh imv && \
+      dnf clean all && rm -rf /var/cache/dnf/*; \
+    fi
 
 # Python venv
 RUN /usr/bin/python3.13 -m venv /opt/venv
@@ -18,6 +27,8 @@ RUN python -m pip install --upgrade pip setuptools wheel
 COPY scripts/get_wan22.sh /opt/
 COPY scripts/set_extra_paths.sh /opt/
 COPY scripts/get_qwen_image.sh /opt/
+COPY scripts/start_docker.sh /opt/
+COPY scripts/qwen_launcher.py /opt/
 
 # ROCm + PyTorch (TheRock, include torchaudio for resolver; remove later)
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
