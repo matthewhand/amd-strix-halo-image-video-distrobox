@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: amd-strix-halo-image-video-toolbox:46699d1
+    image: amd-strix-halo-image-video-toolbox:latest
     container_name: strix-halo-toolbox
     restart: unless-stopped
 
@@ -22,12 +22,20 @@ services:
       - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
       - QWEN_FA_SHIM=1
       - WAN_ATTENTION_BACKEND=sdpa
+      - WAN_ATTENTION_BACKEND=sdpa
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
       - HIP_VISIBLE_DEVICES=0
       - ROC_ENABLE_PRE_VEGA=1
+      # Explicitly point to CLI wrapper
+      - QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps.py
 
       # Performance settings
+      # Performance settings
       - HF_HUB_ENABLE_HF_TRANSFER=1
+      
+      # Service Configuration (set to 0 to disable)
+      # - QWEN_PORT=8000
+      # - COMFYUI_PORT=8188
 
     volumes:
       # GPU device access
@@ -47,44 +55,7 @@ services:
     working_dir: /workspace
 
     # Default command for full services mode
-    command: >
-      bash -c "
-        echo '🚀 Starting Strix Halo Toolbox services...'
-
-        # Start Qwen Image Studio
-        cd /opt/qwen-image-studio
-        python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000 &
-        QWEN_PID=$!
-
-        # Start ComfyUI
-        cd /opt/ComfyUI
-        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output &
-        COMFYUI_PID=$!
-
-        echo '✅ Services started:'
-        echo '  🎨 Qwen Image Studio: http://localhost:8000'
-        echo '  🖼️  ComfyUI:          http://localhost:8188'
-        echo '  🎬 WAN CLI:          Available in container'
-        echo ''
-        echo '📊 Service status (PID: Qwen=$QWEN_PID, ComfyUI=$COMFYUI_PID)'
-
-        # Keep container running and monitor services
-        while true; do
-          sleep 30
-          if ! kill -0 $QWEN_PID 2>/dev/null; then
-            echo '⚠️  Qwen service died, restarting...'
-            cd /opt/qwen-image-studio
-            python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000 &
-            QWEN_PID=$!
-          fi
-          if ! kill -0 $COMFYUI_PID 2>/dev/null; then
-            echo '⚠️  ComfyUI service died, restarting...'
-            cd /opt/ComfyUI
-            python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output &
-            COMFYUI_PID=$!
-          fi
-        done
-      "
+    command: /opt/start_docker.sh
 
   # Qwen-only service profile
   qwen-service:
@@ -95,7 +66,7 @@ services:
       bash -c "
         echo '🎨 Starting Qwen Image Studio only...'
         cd /opt/qwen-image-studio
-        python3 src/qwen_image_mps.cli.py serve --host 0.0.0.0 --port 8000
+        python3 qwen-image-mps.py serve --host 0.0.0.0 --port 8000
       "
 
   # ComfyUI-only service profile

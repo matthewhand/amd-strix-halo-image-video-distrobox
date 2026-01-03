@@ -1,0 +1,20 @@
+# Docker Compose Override Example
+# Copy to docker-compose.override.yaml (gitignored) for local customization
+#
+# Usage:
+#   cp docker-compose.override.yaml.example docker-compose.override.yaml
+#   # Edit as needed, then:
+#   docker compose up -d
+
+services:
+  strix-halo-toolbox:
+    # Override image tag for local development
+    # image: amd-strix-halo-image-video-toolbox:dev
+
+    # Override ports if needed
+    # environment:
+    #   - QWEN_PORT=8001
+
+    # Add extra volume mounts
+    # volumes:
+    #   - ./my-models:/opt/custom-models

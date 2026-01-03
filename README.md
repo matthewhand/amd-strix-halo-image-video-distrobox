@@ -155,12 +155,42 @@ chmod +x refresh-toolbox.sh
 ./refresh-toolbox.sh
 ```
 
-> \[!WARNING] ⚠️ **Refreshing deletes the current distrobox**
+> [[!WARNING] ⚠️ **Refreshing deletes the current distrobox**
 > Running `refresh-toolbox.sh` **removes and recreates** the distrobox image/container. This should be safe if you followed this README as all model files and outputs are saved **OUTSIDE** the distrobox in your home directory.
 >
 > ❌ **Lost (deleted)** — anything stored **inside the container**, e.g. `/opt/...` or other non-HOME paths.
 
-### 5.2. Ubuntu Users and Distroboxes
+### 5.3. Running as a Service (Docker Compose)
+
+For a persistent server setup (instead of interactive Distrobox), you can use Docker Compose. This starts both Qwen Image Studio and ComfyUI automatically.
+
+```bash
+# Start all services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+```
+
+**Configuration (`.env` or `docker-compose.override.yaml`):**
+
+You can customize ports or disable specific services using environment variables:
+
+```yaml
+services:
+  strix-halo-toolbox:
+    environment:
+      - QWEN_PORT=8001      # Change Qwen port (default: 8000)
+      - COMFYUI_PORT=0      # Disable ComfyUI (default: 8188)
+```
+
+### 5.4. GUI Support (Distrobox)
+
+If you need X11/Wayland image viewers (like `feh`, `imv`) inside your Distrobox, build with `INSTALL_GUI=true`:
+
+```bash
+docker build --build-arg INSTALL_GUI=true -t amd-strix-halo-image-video-distrobox .
+```
 
 To get this distrobox to work on Ubuntu, you need to create a udev rule to allow all users to use GPU devices.
 

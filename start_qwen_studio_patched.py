@@ -9,12 +9,6 @@ from typing import Tuple
 
 import uvicorn
 
-# Set the environment variable to use our patched CLI runner
-# Use a dynamic path based on the current script's location
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PATCHED_CLI_PATH = os.path.join(SCRIPT_DIR, "patched_cli_runner.py")
-os.environ["QIM_CLI_PATH"] = PATCHED_CLI_PATH
-
 # Add Qwen path
 sys.path.insert(0, '/opt/qwen-image-studio/src')
 # Add the main app directory to the path as well
@@ -47,7 +41,7 @@ def apply_comprehensive_patches():
     if not hip_ready:
         print(f"⚠️  Qwen Studio: Skipping compatibility patches – {hip_msg}")
         return False
-    
+
     # Patch 1: Pipeline-level patch for diffusers
     try:
         from diffusers.pipelines.pipeline_utils import DiffusionPipeline
@@ -85,7 +79,48 @@ def apply_comprehensive_patches():
     except Exception as e:
         print(f"❌ Model patch failed: {e}")
 
-    print(f"🔧 Applied {patches_applied}/2 patches successfully")
+    # Patch 3: CRITICAL FIX - QwenImagePipeline __init__ segfault fix
+    try:
+        from diffusers import QwenImagePipeline
+        from diffusers.image_processor import VaeImageProcessor
+        from diffusers.pipelines.pipeline_utils import DiffusionPipeline as DiffPipeline
+
+        original_qwen_init = QwenImagePipeline.__init__
+
+        def patched_qwen_init(self, scheduler, vae, text_encoder, tokenizer, transformer):
+            """Fixed __init__ that avoids accessing vae.temperal_downsample (causes segfault)"""
+            DiffPipeline.__init__(self)
+
+            self.register_modules(
+                vae=vae,
+                text_encoder=text_encoder,
+                tokenizer=tokenizer,
+                transformer=transformer,
+                scheduler=scheduler,
+            )
+
+            # CRITICAL FIX: Avoid the problematic line that causes segfault
+            # Original: self.vae_scale_factor = 2 ** len(self.vae.temperal_downsample)
+            # This line crashes when accessing self.vae.temperal_downsample
+            self.vae_scale_factor = 8  # Use default value
+
+            # Create image processor
+            self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor * 2)
+
+            self.tokenizer_max_length = 1024
+            self.prompt_template_encode = "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
+            self.prompt_template_encode_start_idx = 34
+            self.default_sample_size = 128
+
+        QwenImagePipeline.__init__ = patched_qwen_init
+        print("✅ QwenImagePipeline segfault fix applied")
+        patches_applied += 1
+    except Exception as e:
+        print(f"❌ QwenImagePipeline patch failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+    print(f"🔧 Applied {patches_applied}/3 patches successfully")
     return patches_applied > 0
 
 def main():
@@ -123,7 +158,7 @@ def main():
         app = module.app  # FastAPI app defined in server.py
 
         # Run uvicorn directly with the imported app to avoid module resolution issues
-        uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+        uvicorn.run(app, host="0.0.0.0", port=8001, reload=False)
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         import traceback
