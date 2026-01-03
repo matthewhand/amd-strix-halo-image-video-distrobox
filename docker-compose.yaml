@@ -48,6 +48,8 @@ services:
       - ${HOME}/wan-models:/workspace/wan-models
       - ${HOME}/comfy-models:/opt/ComfyUI/models
       - ${HOME}/comfy-outputs:/opt/ComfyUI/output
+      # Optional: Mount external downloads for symlink support
+      - /mnt/downloads:/mnt/downloads
 
     security_opt:
       - seccomp:unconfined
