@@ -29,6 +29,9 @@ COPY scripts/set_extra_paths.sh /opt/
 COPY scripts/get_qwen_image.sh /opt/
 COPY scripts/start_docker.sh /opt/
 COPY scripts/qwen_launcher.py /opt/
+COPY scripts/wan_launcher.py /opt/
+COPY scripts/test_wan_permutations.py /opt/
+COPY scripts/download_wan_cli.sh /opt/
 
 # ROCm + PyTorch (TheRock, include torchaudio for resolver; remove later)
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
@@ -71,7 +74,7 @@ RUN git clone --depth=1 https://github.com/kyuz0/wan-video-studio /opt/wan-video
       imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg decord librosa 
 
 # Permissions & trims (keep compilers/headers)
-RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh || true && \
+RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
     find /opt/venv -type f -name "*.so" -exec strip -s {} + 2>/dev/null || true && \
     find /opt/venv -type d -name "__pycache__" -prune -exec rm -rf {} + && \
     python -m pip cache purge || true && rm -rf /root/.cache/pip || true && \
