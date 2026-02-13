@@ -1,137 +1,90 @@
-# ComfyUI Setup Guide for AMD Strix Halo
+# 🎨 ComfyUI Setup & Maintenance Guide (Strix Halo)
 
-## Overview
-This setup provides a complete ComfyUI environment optimized for AMD Strix Halo with automatic model management.
+This guide provides a comprehensive technical manual for running ComfyUI on AMD Strix Halo (gfx1151) hardware.
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Start ComfyUI
 ```bash
-# Option 1: Basic startup
-distrobox enter strix-halo-image-video -- bash -c "cd /opt/ComfyUI && source /opt/venv/bin/activate && python main.py --listen 0.0.0.0 --port 8188"
-
-# Option 2: Use the complete launcher (recommended)
+# Recommendation: Use the complete launcher which handles the ROCm environment
 distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-image-video-toolboxes/start_comfyui_complete.py
 ```
 
 ### 2. Access Web Interface
-Open your browser to: http://localhost:8188
+Open your browser to: **http://localhost:8188**
 
-## Model Management
+---
 
-### Current Status
-✅ **Available Models:**
-- SDXL Base Model (`sd_xl_base_1.0.safetensors`)
-- SDXL Refiner Model (`sd_xl_refiner_1.0.safetensors`)
-- SDXL VAE (`sdxl_vae.safetensors`)
-- CLIP Vision Model (`clip_vision_g.safetensors`)
+## 🛠️ **The "Technical Hacks" Registry**
 
-⚠️ **Specialized Models (Placeholders):**
-- `wan_2.1_vae.safetensors` - Wan VAE
-- `qwen_image_vae.safetensors` - Qwen VAE
-- `wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors` - Wan Video Generation
-- `wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors` - Wan Video Generation
-- `qwen_image_fp8_e4m3fn.safetensors` - Qwen Image Model
-- `umt5_xxl_fp8_e4m3fn_scaled.safetensors` - UMT5 Text Encoder
-- `qwen_2.5_vl_7b_fp8_scaled.safetensors` - Qwen Vision-Language Model
+Due to the bleeding-edge nature of Strix Halo (gfx1151), several "hacks" are required to keep models running stably.
 
-### Model Manager Commands
+### 1. Host Kernel Requirement
+- **Kernel Version**: **6.18.8-zabbly+** (or newer)
+- **Why**: Fixes a critical "VGPR Mismatch" bug. Without this, the GPU will crash (Memory Access Fault) at 0% of any complex sampling job.
+- **Maintenance**: If you update your OS, ensure you stay on a Zabbly-compatible kernel.
 
-```bash
-# Check current model status
-distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-image-video-toolboxes/comfy_model_manager.py --status --check-specialized
+### 2. Gemma 3 Text Encoder (NATIVE GPU)
+- **Status**: Running natively on GPU with Kernel 6.18+.
+- **Reverted Patch**: The CPU offload hack has been removed.
 
-# Install essential ComfyUI models
-distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-image-video-toolboxes/comfy_model_manager.py --install
+### 3. Tokenizer & Multi-Shard Symlinking
+- **Problem**: Stock loaders expect a single `.safetensors` file. Gemma 3 is split into 5 large shards + a separate `tokenizer.model` file.
+- **The Hack**: We use **dual symlinks** in `models/text_encoders/` to trick the UI and the loaders:
+    ```bash
+    # Folder symlink (provides tokenizer.model to the code)
+    ln -sf gemma-3-12b-it-qat-q4_0-unquantized gemma_3_12B_it
 
-# Create placeholders for missing specialized models
-distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-image-video-toolboxes/comfy_model_manager.py --create-placeholders
+    # File symlink (tells the UI the model "exists")
+    ln -sf gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors gemma_3_12B_it.safetensors
+    ```
+
+### 4. Audio Nodes Fix
+- **Problem**: `torchaudio` has a version mismatch that crashes the entire Python process on boot.
+- **The Hack**: `torchaudio` is uninstalled from the venv, and `audio_vae.py` is patched to make the import optional.
+
+---
+
+## 🛑 Critical: OOM Protection (VAE Decoding)
+
+Even with 128GB of RAM, generating long LTX-2 videos (41+ frames) can trigger the **System OOM Killer** during the final decoding stage.
+
+- **The Issue**: Loading the Text Encoder (49GB) + DiT (20GB) + standard VAE Decoding creates a peak memory draw that can exceed 128GB.
+- **The Solution**: **DO NOT** use the standard `LTX VAE Decode` node. 
+- **Use This Node Instead**: **`LTXV Spatio-Temporal Tiled VAE Decode`**
+- **Recommended Settings**: 
+    - `spatial_tiles`: 4
+    - `temporal_tile_length`: 16
+    - `working_device`: auto (or cpu if still hitting OOM)
+
+---
+
+## 🔗 Model Directory Structure
+
+We use `/mnt/data` (mapped to `~/comfy-models`) to host models across multiple tools.
+
+```text
+/opt/ComfyUI/models/
+├── checkpoints/           # Diffusion models
+├── vae/                   # VAE models
+└── text_encoders/         # Gemma, CLIP, T5
+    ├── gemma_3_12B_it -> DIR SYMLINK ✅
+    └── gemma_3_12B_it.safetensors -> FILE SYMLINK ✅
 ```
 
-## Directory Structure
+---
 
-```
-/opt/ComfyUI/
-├── models/
-│   ├── checkpoints/           # Main models (SDXL, etc.)
-│   ├── vae/                   # VAE models
-│   ├── diffusion_models/      # Specialized diffusion models
-│   ├── text_encoders/         # Text encoder models
-│   ├── clip_vision/           # CLIP vision models
-│   ├── loras/                 # LoRA models
-│   ├── controlnet/            # ControlNet models
-│   ├── embeddings/            # Text embeddings
-│   └── upscale_models/        # Upscaling models
-├── input/                     # Input images
-├── output/                    # Generated images
-└── custom_nodes/              # Custom extensions
-```
+## 📋 Maintenance Checklist
 
-## Workflow Compatibility
+If you ever **Refresh/Update** the toolbox, you MUST run these scripts to restore functionality:
 
-### Working Workflows
-- Standard SDXL workflows
-- Image-to-image workflows
-- Basic ControlNet workflows
-- LoRA-enhanced workflows
+1.  **Restore Links**: `/opt/set_extra_paths.sh`
+2.  **Restore Gemma Fix**: `python3 patch_gemma_loader.py`
+3.  **Restore Tokenizer Fix**: `python3 patch_lt_tokenizer.py`
 
-### Requires Specialized Models
-- Wan video generation workflows
-- Qwen vision-language workflows
-- Workflows requiring specific Alibaba models
+---
 
-## Environment Variables
-
-The setup automatically configures:
-- `HSA_OVERRIDE_GFX_VERSION=11.5.1` - For AMD Strix Halo GPU (gfx1151) compatibility
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Model Not Found Errors**
-   ```bash
-   # Check model status
-   python3 comfy_model_manager.py --status --check-specialized
-   ```
-
-2. **GPU Not Detected**
-   ```bash
-   # Check ROCm environment
-   echo $HSA_OVERRIDE_GFX_VERSION
-   # Should show: 11.0.0
-   ```
-
-3. **Workflow Validation Errors**
-   - Ensure all required models are present
-   - Check if workflow uses specialized Wan/Qwen models
-   - Use placeholder files to prevent validation errors
-
-### Getting Help
-
-1. Check ComfyUI logs for specific error messages
-2. Verify model placement in correct directories
-3. Ensure all required environment variables are set
-
-## Advanced Usage
-
-### Adding Custom Models
-1. Place models in appropriate subdirectories under `/opt/ComfyUI/models/`
-2. Restart ComfyUI to refresh model list
-3. Use models in workflows
-
-### Linking Existing Models
-```bash
-# Create symlinks to existing models
-python3 comfy_model_manager.py --link /path/to/model1.safetensors /path/to/model2.safetensors
-```
-
-### Custom Model Downloads
-The model manager can be extended to include additional models by adding them to the `essential_models` or `specialized_models` dictionaries.
-
-## Performance Notes
-
-- **GPU**: AMD Radeon Graphics (gfx1151) with ROCm 7.1
-- **VRAM**: 128GB available
-- **RAM**: 128GB system memory
-- **Optimization**: Uses pytorch attention for GPU acceleration
+## 📊 Performance Benchmark (LTX-2)
+- **Generation Time**: ~6.3 minutes for 49 frames.
+- **GPU Power**: ~90W active.
+- **Stability**: Tested 100% stable on Kernel 6.18.8.

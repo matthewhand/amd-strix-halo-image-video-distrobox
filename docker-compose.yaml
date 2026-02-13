@@ -17,7 +17,10 @@ services:
     network_mode: host
     privileged: true
     environment:
+      # Fix torchaudio linking
+      - LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/torch/lib:$LD_LIBRARY_PATH
       # ROCm/Triton environment
+      # CRITICAL: 11.5.1 is required for gfx1151 (Strix Halo) GPU operations
       - HSA_OVERRIDE_GFX_VERSION=11.5.1
       - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
       - QWEN_FA_SHIM=1
@@ -46,10 +49,13 @@ services:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
       - ${HOME}/.qwen-image-studio:/root/.qwen-image-studio
       - ${HOME}/wan-models:/workspace/wan-models
-      - ${HOME}/comfy-models:/opt/ComfyUI/models
-      - ${HOME}/comfy-outputs:/opt/ComfyUI/output
+      - ./comfy-models:/opt/ComfyUI/models
+      - ./LTX-2:/workspace/LTX-2  # Host LTX-2 repo
+      - ./comfy-outputs:/opt/ComfyUI/output
+      - ./scripts/start_docker.sh:/opt/start_docker.sh
       # Optional: Mount external downloads for symlink support
       - /mnt/downloads:/mnt/downloads
+      - /mnt/data:/mnt/data
 
     security_opt:
       - seccomp:unconfined
@@ -62,6 +68,7 @@ services:
   # Qwen-only service profile
   qwen-service:
     extends: strix-halo-toolbox
+    container_name: strix-halo-qwen
     profiles:
       - qwen-only
     command: >
@@ -74,11 +81,12 @@ services:
   # ComfyUI-only service profile
   comfyui-service:
     extends: strix-halo-toolbox
+    container_name: strix-halo-comfyui
     profiles:
       - comfyui-only
     command: >
       bash -c "
-        echo '🖼️  Starting ComfyUI only...'
+        echo '🖼️  Starting ComfyUI only (FP16 Mode)...'
         cd /opt/ComfyUI
-        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output
+        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16
       "
