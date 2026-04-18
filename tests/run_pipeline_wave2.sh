@@ -140,7 +140,7 @@ workflow = {
     '6': {'class_type': 'LoadImage', 'inputs': {'image': '$image_file'}},
     '7': {'class_type': 'LTXVImgToVideo', 'inputs': {
         'positive': ['4', 0], 'negative': ['5', 0], 'vae': ['1', 2],
-        'image': ['6', 0], 'width': 768, 'height': 512, 'length': $frames,
+        'image': ['6', 0], 'width': 1024, 'height': 576, 'length': $frames,
         'batch_size': 1, 'strength': 0.85}},
     '8': {'class_type': 'LTXVEmptyLatentAudio', 'inputs': {
         'frames_number': $frames, 'frame_rate': 24, 'batch_size': 1, 'audio_vae': ['2', 0]}},
@@ -178,13 +178,13 @@ print(f'  [$label] queued: ' + result.get('prompt_id', 'FAIL'))
 }
 
 submit_i2v "medieval_astronaut" \
-    "the astronaut slowly raises the golden visor revealing a confused bearded medieval knight face underneath, servants gasp and drop their trays, candles flicker, dramatic orchestral music, stone hall echoing" 97
+    "the astronaut slowly raises the golden visor revealing a confused bearded medieval knight face underneath, servants gasp and drop their trays, candles flicker, dramatic orchestral music, stone hall echoing" 193
 
 submit_i2v "dinosaur_barista" \
-    "the T-Rex carefully tries to pour latte art with its tiny trembling arms, milk splashing everywhere, the espresso cup shatters in its claws, customers clapping and cheering encouragingly, coffee machine hissing, ceramic breaking sounds" 145
+    "the T-Rex carefully tries to pour latte art with its tiny trembling arms, milk splashing everywhere, the espresso cup shatters in its claws, customers clapping and cheering encouragingly, coffee machine hissing, ceramic breaking sounds" 193
 
 submit_i2v "goldfish_therapist" \
-    "the goldfish adjusts its tiny glasses and nods thoughtfully, the great white shark on the couch starts crying with huge tears, the bowl wobbles, bubbling water sounds, soft emotional piano music, the shark says I just feel so misunderstood" 145
+    "the goldfish adjusts its tiny glasses and nods thoughtfully, the great white shark on the couch starts crying with huge tears, the bowl wobbles, bubbling water sounds, soft emotional piano music, the shark says I just feel so misunderstood" 193
 
 echo ""
 echo "=============================="
