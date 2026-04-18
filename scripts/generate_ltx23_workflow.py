@@ -40,6 +40,8 @@ def create_workflow(
     model_name="ltx-2.3-22b-distilled-fp8.safetensors",
     output_prefix="ltx23_output",
     include_audio=True,
+    lora_name=None,
+    lora_strength=0.5,
 ):
     """Build LTX-2.3 API workflow. Set image_filename=None for T2V, or filename for I2V."""
     if seed is None:
@@ -132,9 +134,21 @@ def create_workflow(
     else:
         guider_params = ["13", 0]
 
+    # Optional LoRA on the diffusion model (e.g. distillation LoRA when
+    # using the dev/full checkpoint to recover distilled-equivalent speed).
+    if lora_name:
+        wf["1L"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+            "model": ["1", 0],
+            "lora_name": lora_name,
+            "strength_model": lora_strength,
+        }}
+        model_ref = ["1L", 0]
+    else:
+        model_ref = ["1", 0]
+
     # Multimodal guider
     wf["15"] = {"class_type": "MultimodalGuider", "inputs": {
-        "model": ["1", 0],
+        "model": model_ref,
         "positive": ["5", 0],
         "negative": ["5", 1],
         "parameters": guider_params,
@@ -213,6 +227,9 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="ltx23_workflow_api.json")
     parser.add_argument("--prefix", default="ltx23_output")
     parser.add_argument("--no-audio", action="store_true")
+    parser.add_argument("--model", default="ltx-2.3-22b-distilled-fp8.safetensors")
+    parser.add_argument("--lora", help="LoRA filename under loras/ (e.g. distillation LoRA for dev model)")
+    parser.add_argument("--lora-strength", type=float, default=0.5)
     args = parser.parse_args()
 
     wf = create_workflow(
@@ -223,6 +240,9 @@ if __name__ == "__main__":
         seed=args.seed,
         output_prefix=args.prefix,
         include_audio=not args.no_audio,
+        model_name=args.model,
+        lora_name=args.lora,
+        lora_strength=args.lora_strength,
     )
     with open(args.output, "w") as f:
         json.dump({"prompt": wf}, f, indent=2)
