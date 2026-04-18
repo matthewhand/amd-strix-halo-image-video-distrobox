@@ -106,7 +106,7 @@ def start_comfyui():
         IMAGE,
         "bash", "-c",
         "cd /opt/ComfyUI && python main.py --listen 0.0.0.0 --port 8188 "
-        "--output-directory /opt/ComfyUI/output",
+        "--output-directory /opt/ComfyUI/output --lowvram",
     ]
     subprocess.run(cmd, check=True)
     print("ComfyUI starting...")
