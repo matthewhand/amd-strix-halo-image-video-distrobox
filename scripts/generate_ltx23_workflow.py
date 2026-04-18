@@ -48,11 +48,16 @@ def create_workflow(
     wf = {
         # Checkpoint loader
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": model_name}},
-        # Text encoder (loads Gemma + LTX encoder stack together)
-        "2": {"class_type": "LTXAVTextEncoderLoader", "inputs": {
-            "text_encoder": GEMMA_PATH,
-            "ckpt_name": model_name,
-            "device": "default",
+        # Text encoder. Uses the ComfyUI-LTXVideo custom node which reads the
+        # raw HuggingFace multi-shard Gemma layout and finds tokenizer.model
+        # automatically. The built-in LTXAVTextEncoderLoader requires a single
+        # comfy_gemma_3_12B_it.safetensors with the SPiece tokenizer embedded
+        # as a tensor — we don't ship that file. The CLIP output is type-
+        # equivalent so all downstream LTX-2.3 nodes work unchanged.
+        "2": {"class_type": "LTXVGemmaCLIPModelLoader", "inputs": {
+            "gemma_path": GEMMA_PATH,
+            "ltxv_path": model_name,
+            "max_length": 1024,
         }},
         # Positive/negative prompts
         "3": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["2", 0]}},
