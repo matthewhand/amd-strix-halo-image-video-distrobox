@@ -55,6 +55,8 @@ RUN git clone --depth=1 https://github.com/cubiq/ComfyUI_essentials /opt/ComfyUI
 RUN git clone --depth=1 https://github.com/kyuz0/ComfyUI-AMDGPUMonitor /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor
 RUN git clone --depth=1 https://github.com/Lightricks/ComfyUI-LTXVideo /opt/ComfyUI/custom_nodes/ComfyUI-LTXVideo && \
     python -m pip install -r /opt/ComfyUI/custom_nodes/ComfyUI-LTXVideo/requirements.txt
+# ComfyUI audio tensor AMD fix (Lightricks/ComfyUI-LTXVideo#361)
+RUN sed -i 's/\.float()\.numpy()/.float().cpu().numpy()/g' /opt/ComfyUI/comfy_api/latest/_input_impl/video_types.py
 
 # Qwen Image Studio
 WORKDIR /opt
@@ -90,6 +92,10 @@ COPY scripts/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
 ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
 ENV QWEN_FA_SHIM=1
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
+# LTX-2 performance tweaks (from ROCm/TheRock#2845 benchmarks on gfx1151)
+ENV HSA_ENABLE_SDMA=0
+ENV HSA_USE_SVM=0
+ENV PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 # Make ROCm SDK libraries available for JIT compilation (aiter) and runtime linking
 ENV LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib
 ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib

@@ -74,6 +74,40 @@ def patch_gemma_embedding(revert=False):
     return _apply_or_revert(path, original, patched, marker, revert)
 
 
+def patch_audio_tensor(revert=False):
+    """Fix audio tensor .numpy() call that crashes on AMD (Lightricks/ComfyUI-LTXVideo#361)."""
+    path = "/opt/ComfyUI/comfy_api/latest/_input_impl/video_types.py"
+    original = ".float().numpy()"
+    patched = ".float().cpu().numpy()"
+    marker = ".float().cpu().numpy()"
+
+    if not os.path.exists(path):
+        print(f"  SKIP: {path} not found")
+        return False
+    with open(path) as f:
+        content = f.read()
+    if revert:
+        if marker not in content:
+            print("  OK: not patched")
+            return True
+        content = content.replace(patched, original)
+        with open(path, "w") as f:
+            f.write(content)
+        print("  REVERTED")
+        return True
+    if marker in content:
+        print("  OK: already patched")
+        return True
+    if original not in content:
+        print("  SKIP: target not found")
+        return False
+    content = content.replace(original, patched)
+    with open(path, "w") as f:
+        f.write(content)
+    print("  PATCHED")
+    return True
+
+
 def patch_tokenizer(revert=False):
     """Add fallback tokenizer path resolution for Gemma3 in ComfyUI."""
     path = "/opt/ComfyUI/comfy/text_encoders/lt.py"
@@ -103,6 +137,7 @@ def patch_tokenizer(revert=False):
 PATCHES = {
     "gemma-loader": ("Gemma CLIP -> CPU (LTXVideo)", patch_gemma_loader),
     "audio-vae": ("Stub torchaudio import", patch_audio_vae),
+    "audio-tensor": ("LTX audio tensor .cpu() fix for AMD", patch_audio_tensor),
     "gemma-embedding": ("Gemma3 embedding -> CPU", patch_gemma_embedding),
     "tokenizer": ("Gemma3 tokenizer fallback path", patch_tokenizer),
 }
