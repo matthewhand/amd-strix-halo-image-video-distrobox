@@ -2,20 +2,71 @@
 """
 Chain Qwen image generation → LTX-2 video generation.
 
-1. Generate a still image with Qwen
-2. Feed it to LTX-2 via ComfyUI to animate it into a video with audio
+1. Stop ComfyUI (free GPU memory)
+2. Generate still images with Qwen (docker run --rm, exits after each)
+3. Start ComfyUI (loads LTX-2)
+4. Submit image-to-video workflows
 
-Run the Qwen part inside the container with GPU, or generate images first
-and just submit the ComfyUI workflows.
+Strix Halo has 128GB unified memory — Qwen (54GB) and LTX-2 (~70GB)
+cannot coexist. This script ensures only one runs at a time.
 """
 import json
 import os
 import random
+import subprocess
 import sys
 import time
 import urllib.request
 
 SERVER = "127.0.0.1:8188"
+COMFYUI_CONTAINER = "comfyui-test"
+IMAGE = "amd-strix-halo-image-video-toolbox:latest"
+
+DOCKER_ENV = [
+    "-e", "HSA_OVERRIDE_GFX_VERSION=11.5.1",
+    "-e", "LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib",
+    "-e", "LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib",
+]
+DOCKER_GPU = [
+    "--device", "/dev/dri", "--device", "/dev/kfd",
+    "--security-opt", "seccomp=unconfined",
+]
+
+
+def stop_comfyui():
+    """Stop ComfyUI container to free GPU memory for Qwen."""
+    subprocess.run(["docker", "kill", COMFYUI_CONTAINER], capture_output=True)
+    subprocess.run(["docker", "rm", COMFYUI_CONTAINER], capture_output=True)
+    print("ComfyUI stopped (GPU memory freed)")
+    time.sleep(2)
+
+
+def start_comfyui():
+    """Start ComfyUI container for LTX-2 video generation."""
+    subprocess.run(["docker", "rm", "-f", COMFYUI_CONTAINER], capture_output=True)
+    cmd = [
+        "docker", "run", "-d", "--name", COMFYUI_CONTAINER,
+        *DOCKER_GPU, *DOCKER_ENV,
+        "-p", "8188:8188",
+        "-v", os.path.expanduser("~/comfy-models") + ":/opt/ComfyUI/models",
+        "-v", "/tmp/comfy-outputs:/opt/ComfyUI/output",
+        IMAGE,
+        "bash", "-c",
+        "cd /opt/ComfyUI && python main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --disable-mmap",
+    ]
+    subprocess.run(cmd, check=True)
+    print("ComfyUI starting...")
+
+    # Wait for it to be ready
+    for i in range(60):
+        try:
+            urllib.request.urlopen(f"http://{SERVER}/system_stats", timeout=2)
+            print("ComfyUI ready")
+            return True
+        except Exception:
+            time.sleep(3)
+    print("ComfyUI failed to start")
+    return False
 
 # Each entry: (label, qwen_prompt, video_prompt, frames)
 SCENES = [
@@ -49,41 +100,45 @@ SCENES = [
         "camera slowly glides through the underwater library, pages turning by themselves in the current, small fish dart between shelves, bubbles rising from an open book, whale song echoing through the halls, peaceful and surreal",
         145,
     ),
+    (
+        "angry_ai_user",
+        "photorealistic close up of a frustrated middle aged man in a messy home office, red faced and furious, gripping a keyboard with white knuckles, multiple monitors showing AI chatbot responses, energy drink cans everywhere, dramatic lighting from screen glow",
+        "the man slams the keyboard on the desk and yells profanity at the screen, veins bulging on his forehead, a monitor flickers, he grabs his coffee mug and throws it, angry shouting and crashing sounds, keyboard keys flying",
+        97,
+    ),
 ]
 
 
 def generate_qwen_image(label, prompt):
-    """Generate image with Qwen. Returns the output path."""
+    """Generate image with Qwen via docker run --rm (exits after, frees memory)."""
     output_dir = "/tmp/comfy-outputs"
     output_path = os.path.join(output_dir, f"qwen_input_{label}.png")
 
-    # Check if already generated
     if os.path.exists(output_path):
         print(f"  Image exists: {output_path}")
         return output_path
 
-    # Run Qwen inside the container
-    cmd = f"""docker run --rm \
-      --device /dev/dri --device /dev/kfd \
-      --security-opt seccomp=unconfined \
-      -e HSA_OVERRIDE_GFX_VERSION=11.5.1 \
-      -e LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib \
-      -e LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib \
-      -v /home/matthewh/.cache/huggingface:/root/.cache/huggingface \
-      -v /tmp/comfy-outputs:/output \
-      -v {os.path.dirname(os.path.abspath(__file__))}/../scripts/apply_qwen_patches.py:/opt/apply_qwen_patches.py:ro \
-      amd-strix-halo-image-video-toolbox:latest \
-      python3 -c "
-import sys, shutil
+    scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts")
+    seed = random.randint(1, 10000)
+    escaped_prompt = prompt.replace("'", "\\'")
+
+    cmd = [
+        "docker", "run", "--rm",
+        *DOCKER_GPU, *DOCKER_ENV,
+        "-v", os.path.expanduser("~/.cache/huggingface") + ":/root/.cache/huggingface",
+        "-v", f"{output_dir}:/output",
+        "-v", f"{scripts_dir}/apply_qwen_patches.py:/opt/apply_qwen_patches.py:ro",
+        IMAGE,
+        "python3", "-c", f"""
+import sys, shutil, glob, os
 sys.path.insert(0, '/opt/qwen-image-studio/src')
 sys.path.insert(0, '/opt')
 from apply_qwen_patches import apply_comprehensive_patches
 apply_comprehensive_patches()
 from qwen_image_mps.cli import generate_image
-import glob, os
 
 class Args:
-    prompt = '''{prompt.replace("'", "\\'")}'''
+    prompt = '{escaped_prompt}'
     steps = 8
     num_images = 1
     size = '16:9'
@@ -94,7 +149,7 @@ class Args:
     edit = False
     input_image = None
     output_dir = '/tmp'
-    seed = {random.randint(1, 10000)}
+    seed = {seed}
     guidance_scale = 1.0
     negative_prompt = 'blurry, low quality, distorted, watermark'
     batman = False
@@ -102,25 +157,25 @@ class Args:
     targets = 'all'
 
 generate_image(Args())
-
-# Copy latest output
-import glob
 files = glob.glob('/root/.qwen-image-studio/*.png')
 if files:
     latest = max(files, key=os.path.getmtime)
     shutil.copy2(latest, '/output/qwen_input_{label}.png')
-    print(f'Saved: /output/qwen_input_{label}.png')
-" 2>&1 | tail -5"""
+    print(f'Saved: qwen_input_{label}.png')
+""",
+    ]
 
-    print(f"  Generating Qwen image...")
-    os.system(cmd)
+    print(f"  Generating Qwen image (docker run --rm)...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"  FAIL: {result.stderr[-200:]}")
+        return None
 
     if os.path.exists(output_path):
         print(f"  OK: {output_path}")
         return output_path
-    else:
-        print(f"  FAIL: image not generated")
-        return None
+    print("  FAIL: image not generated")
+    return None
 
 
 def submit_ltx2_i2v(label, image_filename, video_prompt, frames):
@@ -202,7 +257,11 @@ def main():
     print("Qwen → LTX-2 Image-to-Video Pipeline")
     print("=" * 60)
 
-    # Step 1: Generate all images with Qwen (sequential, GPU-bound)
+    # Step 1: Stop ComfyUI to free GPU memory
+    print("\n--- Phase 1: Generate images with Qwen ---")
+    stop_comfyui()
+
+    # Step 2: Generate all images with Qwen (sequential, each container exits after)
     images = {}
     for label, qwen_prompt, _, _ in SCENES:
         print(f"\n[{label}] Generating source image...")
@@ -210,16 +269,22 @@ def main():
         if path:
             images[label] = os.path.basename(path)
 
-    # Step 2: Submit all LTX-2 i2v jobs to ComfyUI
-    print(f"\n{'='*60}")
-    print(f"Submitting {len(images)} image-to-video jobs...")
+    if not images:
+        print("No images generated. Exiting.")
+        return
 
-    # Copy images to ComfyUI input directory
+    # Step 3: Start ComfyUI (loads LTX-2 into GPU)
+    print(f"\n--- Phase 2: Animate with LTX-2 ({len(images)} videos) ---")
+    if not start_comfyui():
+        print("ComfyUI failed to start. Exiting.")
+        return
+
+    # Step 4: Copy images into ComfyUI input directory
     for label, filename in images.items():
         src = f"/tmp/comfy-outputs/{filename}"
-        # ComfyUI LoadImage looks in its input/ directory
-        os.system(f"docker cp {src} comfyui-test:/opt/ComfyUI/input/{filename}")
+        os.system(f"docker cp {src} {COMFYUI_CONTAINER}:/opt/ComfyUI/input/{filename}")
 
+    # Step 5: Submit all i2v jobs
     for label, qwen_prompt, video_prompt, frames in SCENES:
         if label in images:
             print(f"\n[{label}]")
@@ -227,7 +292,7 @@ def main():
 
     print(f"\n{'='*60}")
     print("All jobs submitted. Videos will appear in /tmp/comfy-outputs/")
-    print("Convert PNGs to mp4 with: docker exec comfyui-test ffmpeg ...")
+    print(f"Monitor at http://localhost:8188")
 
 
 if __name__ == "__main__":
