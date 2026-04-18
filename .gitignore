@@ -1,23 +1,21 @@
-# Ignore all markdown files
+# Ignore all markdown files except essential docs
 *.md
-
-# Whitelist essential markdown files
 !README.md
 !COMFYUI_SETUP_GUIDE.md
 !AGENTS.md
 
-# Ignore Python cache directories
 __pycache__/
-
-# Local environment
 .env
+*.log
+*.safetensors
 
-# Model files and outputs (large files, stored elsewhere)
+# Data directories (created by docker-compose or at runtime)
+huggingface-cache/
+qwen-outputs/
+wan-models/
 comfy-models/
+comfy-outputs/
 outputs/
 ComfyUI_output/
-*.safetensors
 workspace/
-
-# Docker/container specific
 docker/
