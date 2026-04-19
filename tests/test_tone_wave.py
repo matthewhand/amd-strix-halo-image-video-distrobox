@@ -257,14 +257,43 @@ def main():
                         "from --width/--height/--frames using session benchmarks)")
     p.add_argument("--qwen-min-per-image", type=float, default=QWEN_MIN_PER_IMAGE,
                    help="Override Qwen still-image generation cost (default 3.0 min)")
+    p.add_argument("--prompts-file", type=str, default=None,
+                   help="Load scenes from a JSON file instead of the built-in list. "
+                        "Format: [{\"tone\":\"...\",\"label\":\"...\",\"qwen\":\"...\","
+                        "\"video\":\"...\"}, ...]")
+    p.add_argument("--theme-prefix", type=str, default="",
+                   help="Text prepended to every Qwen + LTX prompt. Strongest "
+                        "weight (early tokens dominate attention). Use for "
+                        "style/aesthetic: 'noir film grain, 1940s, '")
+    p.add_argument("--theme-suffix", type=str, default="",
+                   help="Text appended to every Qwen + LTX prompt. Use for "
+                        "technical/quality tags: ', 8k, hyperrealistic'")
     p.add_argument("--skip-qwen", action="store_true",
                    help="Skip Qwen phase, use existing qwen_input_tone_*.png")
     p.add_argument("--dry-run", action="store_true",
                    help="Print plan + time estimate, don't run anything")
     args = p.parse_args()
 
+    # Load scenes from file if requested
+    if args.prompts_file:
+        import json
+        with open(args.prompts_file) as f:
+            raw = json.load(f)
+        scenes_source = [(s["tone"], s["label"], s["qwen"], s["video"]) for s in raw]
+    else:
+        scenes_source = SCENES
+
+    # Apply theme prefix/suffix to every prompt (both qwen and video)
+    if args.theme_prefix or args.theme_suffix:
+        wrapped = []
+        for tone, label, qwen, video in scenes_source:
+            wq = f"{args.theme_prefix}{qwen}{args.theme_suffix}".strip()
+            wv = f"{args.theme_prefix}{video}{args.theme_suffix}".strip()
+            wrapped.append((tone, label, wq, wv))
+        scenes_source = wrapped
+
     # Apply tone filter
-    scenes = SCENES
+    scenes = scenes_source
     if args.tones:
         scenes = [s for s in scenes if s[0] in args.tones]
     # Apply per-tone cap
@@ -277,9 +306,10 @@ def main():
                 capped.append(s)
                 seen_per_tone[s[0]] = n + 1
         scenes = capped
-    # Manual override by global index (highest priority)
+    # Manual override by global index (highest priority, against scenes_source)
     if args.scenes:
-        scenes = [SCENES[i - 1] for i in args.scenes if 1 <= i <= len(SCENES)]
+        scenes = [scenes_source[i - 1] for i in args.scenes
+                  if 1 <= i <= len(scenes_source)]
 
     # Cost model
     per_scene = (args.per_scene_min if args.per_scene_min is not None
