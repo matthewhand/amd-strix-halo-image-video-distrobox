@@ -7,7 +7,7 @@ This guide provides a comprehensive technical manual for running ComfyUI on AMD 
 ### 1. Start ComfyUI
 ```bash
 # Recommendation: Use the complete launcher which handles the ROCm environment
-distrobox enter strix-halo-image-video -- python3 /home/matthewh/amd-strix-halo-image-video-toolboxes/start_comfyui_complete.py
+distrobox enter strix-halo-image-video -- python3 ~/amd-strix-halo-image-video-distrobox/start_comfyui_complete.py
 ```
 
 ### 2. Access Web Interface
