@@ -1,0 +1,27 @@
+[
+  {
+    "label": "1_office_coffee",
+    "qwen": "photorealistic mid shot of a tired office worker in a button-down shirt standing at a generic corporate break room counter, pouring coffee from a glass carafe into a white ceramic mug, microwave and sink visible in background, fluorescent overhead lighting, sterile beige walls, mundane Tuesday morning energy",
+    "video": "the worker pours coffee in slow careful motion, steam rising from the mug, head tilted slightly down with mild boredom, audio is mundane office break room ambience: distant printer humming, refrigerator compressor cycling, faint hold music from a nearby phone, a dripping tap"
+  },
+  {
+    "label": "2_coffee_swirls",
+    "qwen": null,
+    "video": "the coffee inside the mug suddenly begins spinning impossibly fast in a tight glowing vortex, faint blue light emanating from inside the cup, the worker's eyes widen and they slowly lower the carafe in confusion, audio shifts: room ambience drops to dead silence then a low electrical hum builds, metal stress sounds, faint whispering"
+  },
+  {
+    "label": "3_dragon_eye",
+    "qwen": null,
+    "video": "a beam of golden light bursts upward from the mug revealing a tiny shimmering portal hovering above the coffee surface, an enormous slitted reptilian eye peers through the portal blinking once, the worker's hair blows back in the conjured wind, audio is reverb-drenched whoosh into a deep bass dragon snort, crackling magical energy, the worker letting out an involuntary squeak"
+  },
+  {
+    "label": "4_dragon_ride",
+    "qwen": null,
+    "video": "the worker is now mid-air clinging to the back of a fully grown red scaled dragon flying down the office hallway, papers and cubicle walls exploding outward in their wake, terrified coworkers diving for cover, fluorescent lights raining down sparks, audio is full chaos: dragon roar, building alarms blaring, screaming, glass shattering, wind rush, and orchestral cinematic strings swelling"
+  },
+  {
+    "label": "5_snow_globe_cosmos",
+    "qwen": null,
+    "video": "the camera rapidly pulls back zooming out through office windows then through the building roof revealing the entire office tower is encased inside a glass snow globe being gently shaken by an enormous cosmic toddler sitting cross-legged on a starry void, dozens of other planet-sized snow globes float around them, audio is full ambient cosmic drone with wind chimes, then a giggling baby laugh that distorts and echoes across the void"
+  }
+]

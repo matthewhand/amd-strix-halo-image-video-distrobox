@@ -27,6 +27,7 @@ RUN python -m pip install --upgrade pip setuptools wheel
 COPY scripts/get_wan22.sh /opt/
 COPY scripts/set_extra_paths.sh /opt/
 COPY scripts/get_qwen_image.sh /opt/
+COPY scripts/apply_qwen_patches.py /opt/
 COPY scripts/start_docker.sh /opt/
 COPY scripts/qwen_launcher.py /opt/
 COPY scripts/wan_launcher.py /opt/
@@ -37,7 +38,7 @@ COPY scripts/download_wan_cli.sh /opt/
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
 RUN python -m pip install --index-url ${ROCM_INDEX} 'rocm[libraries,devel]' && \
     python -m pip install --index-url ${ROCM_INDEX} \
-      torch torchvision torchaudio==2.7.1a0 pytorch-triton-rocm numpy
+      torch torchvision torchaudio pytorch-triton-rocm numpy
 
 WORKDIR /opt
 
@@ -51,7 +52,11 @@ RUN python -m pip install -r requirements.txt && \
 # ComfyUI plugins
 WORKDIR /opt/ComfyUI/custom_nodes
 RUN git clone --depth=1 https://github.com/cubiq/ComfyUI_essentials /opt/ComfyUI/custom_nodes/ComfyUI_essentials 
-RUN git clone --depth=1 https://github.com/kyuz0/ComfyUI-AMDGPUMonitor /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor 
+RUN git clone --depth=1 https://github.com/kyuz0/ComfyUI-AMDGPUMonitor /opt/ComfyUI/custom_nodes/ComfyUI-AMDGPUMonitor
+RUN git clone --depth=1 https://github.com/Lightricks/ComfyUI-LTXVideo /opt/ComfyUI/custom_nodes/ComfyUI-LTXVideo && \
+    python -m pip install -r /opt/ComfyUI/custom_nodes/ComfyUI-LTXVideo/requirements.txt
+# ComfyUI audio tensor AMD fix (Lightricks/ComfyUI-LTXVideo#361)
+RUN sed -i 's/\.float()\.numpy()/.float().cpu().numpy()/g' /opt/ComfyUI/comfy_api/latest/_input_impl/video_types.py
 
 # Qwen Image Studio
 WORKDIR /opt
@@ -83,8 +88,17 @@ RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
 # ROCm/Triton env (exports TRITON_HIP_* and LD_LIBRARY_PATH; also FA enable)
 COPY scripts/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
 
-# Default Qwen GPU mode
+# ROCm environment for Strix Halo (gfx1151)
+ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
 ENV QWEN_FA_SHIM=1
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
+# LTX-2 performance tweaks (from ROCm/TheRock#2845 benchmarks on gfx1151)
+ENV HSA_ENABLE_SDMA=0
+ENV HSA_USE_SVM=0
+ENV PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+# Make ROCm SDK libraries available for JIT compilation (aiter) and runtime linking
+ENV LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib
 
 # Banner script (runs on login). Use a high sort key so it runs after venv.sh and 01-rocm-env...
 COPY scripts/99-toolbox-banner.sh /etc/profile.d/99-toolbox-banner.sh

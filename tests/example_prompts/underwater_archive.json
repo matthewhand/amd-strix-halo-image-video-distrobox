@@ -1,0 +1,37 @@
+[
+  {
+    "label": "expedition_uncovering_cathedral",
+    "qwen": "Ancient, partially submerged cathedral. Water seeps through broken stained glass and dripping stone. A team of explorers, including an underwater archaeologist, gathers around a central pillar with intricate carvings.",
+    "video": "Water pours from the ceiling, revealing a dark, dusty interior. The camera pans across the chamber as sunlight filters down from above. The archaeologist's light shines on the carvings, illuminating subtle mechanisms and gears.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "discovering_gears",
+    "qwen": null,
+    "video": "A hidden panel slides open, revealing a complex system of clockwork fish suspended in mid-air. The camera orbits these mechanical creatures as they begin to stir, their gears whirring and water pressure building.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "fish_libraries",
+    "qwen": null,
+    "video": "The clockwork fish swim and dart through the air, forming a shimmering curtain that parts to reveal rows of glowing orbs. The archaeologist reaches out a gloved hand to touch one, which pulsates with an otherworldly energy.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "energy Burst",
+    "qwen": null,
+    "video": "The orbs begin to glow brighter, and the air is filled with the sound of ticking clockwork. The camera zooms in on the archaeologist's face as they stumble back, overwhelmed by the sudden surge of energy.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "cathedral_rebirth",
+    "qwen": null,
+    "video": "As the energy dissipates, the cathedral begins to transform around the archaeologist. Stained glass shatters and reassembles itself, and the carvings on the pillar start to glow with a soft, blue light. The camera pans out as the chamber fills with water, but this time it's crystal clear.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  }
+]
