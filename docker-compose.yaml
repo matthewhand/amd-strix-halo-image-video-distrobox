@@ -13,26 +13,22 @@ services:
       - qwen
       - comfyui
 
+    # Run as host user so mounted files have correct ownership
+    user: "${UID:-1000}:${GID:-1000}"
+
     # GPU and system access
     network_mode: host
     privileged: true
     environment:
-      # ROCm/Triton environment
-      - HSA_OVERRIDE_GFX_VERSION=11.5.1
-      - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
-      - QWEN_FA_SHIM=1
-      - WAN_ATTENTION_BACKEND=sdpa
-      - WAN_ATTENTION_BACKEND=sdpa
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
-      - HIP_VISIBLE_DEVICES=0
-      - ROC_ENABLE_PRE_VEGA=1
-      # Explicitly point to CLI wrapper
-      - QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps.py
+      # Set HOME for non-root user (mount targets use this path)
+      - HOME=/home/user
 
-      # Performance settings
-      # Performance settings
+      # WAN uses SDPA by default in Docker (more stable than Triton for long runs)
+      - WAN_ATTENTION_BACKEND=sdpa
+
+      # Fast model downloads
       - HF_HUB_ENABLE_HF_TRANSFER=1
-      
+
       # Service Configuration (set to 0 to disable)
       # - QWEN_PORT=8000
       # - COMFYUI_PORT=8188
@@ -42,14 +38,12 @@ services:
       - /dev/dri:/dev/dri
       - /dev/kfd:/dev/kfd
 
-      # Model cache and output persistence
-      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-      - ${HOME}/.qwen-image-studio:/root/.qwen-image-studio
-      - ${HOME}/wan-models:/workspace/wan-models
-      - ${HOME}/comfy-models:/opt/ComfyUI/models
-      - ${HOME}/comfy-outputs:/opt/ComfyUI/output
-      # Optional: Mount external downloads for symlink support
-      - /mnt/downloads:/mnt/downloads
+      # Persist models and outputs (override paths in .env)
+      - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
+      - ${QWEN_OUTPUTS:-./qwen-outputs}:/home/user/.qwen-image-studio
+      - ${WAN_MODELS:-./wan-models}:/home/user/wan-models
+      - ${COMFY_MODELS:-./comfy-models}:/opt/ComfyUI/models
+      - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
 
     security_opt:
       - seccomp:unconfined
@@ -62,6 +56,7 @@ services:
   # Qwen-only service profile
   qwen-service:
     extends: strix-halo-toolbox
+    container_name: strix-halo-qwen
     profiles:
       - qwen-only
     command: >
@@ -74,11 +69,12 @@ services:
   # ComfyUI-only service profile
   comfyui-service:
     extends: strix-halo-toolbox
+    container_name: strix-halo-comfyui
     profiles:
       - comfyui-only
     command: >
       bash -c "
-        echo '🖼️  Starting ComfyUI only...'
+        echo '🖼️  Starting ComfyUI only (FP16 Mode)...'
         cd /opt/ComfyUI
-        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output
+        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16
       "

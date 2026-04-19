@@ -1,0 +1,27 @@
+[
+  {
+    "label": "1_attic_discovery",
+    "qwen": "warm afternoon photograph of a young woman in vintage clothes kneeling in a dusty attic among old steamer trunks and cobwebbed furniture, sunlight slanting through a small round window catching dust motes, holding up a single yellowed envelope she has just found, expression of quiet curiosity",
+    "video": "the woman slowly turns the yellowed envelope over in her hands examining the wax seal in the dusty light, dust motes swirl gently around her, audio is creaking attic floorboards, distant clock ticking from below, paper crinkling, a single solo cello note holding a long sustained tone"
+  },
+  {
+    "label": "2_letter_reading",
+    "qwen": null,
+    "video": "the woman has unfolded the letter and is reading it intently in the slanting attic light, her expression shifting from curiosity to wonder, the camera slowly pushes in toward her face, audio is rustling old paper, her own voice softly whispering the letter aloud in fragments: my dearest, if you are reading this, the lighthouse still stands, follow the path past the third bend, distant seagull cries fade in"
+  },
+  {
+    "label": "3_coastal_journey",
+    "qwen": null,
+    "video": "the camera transitions in a smooth cross-fade as the attic dust becomes ocean spray, revealing the same woman now standing at the windswept edge of a winding coastal cliff path holding the letter, a stone lighthouse visible in the distance through fog, gulls wheeling overhead, audio is full coastal ambience: waves crashing on rocks below, wind whipping her coat, gull cries, distant foghorn moaning, her footsteps on gravel"
+  },
+  {
+    "label": "4_lighthouse_door",
+    "qwen": null,
+    "video": "the woman stands before the weathered wooden door of the stone lighthouse comparing a small old key from the envelope against the rusted lock, the door is covered in peeling salt-bleached paint, the ocean visible behind her in dramatic golden hour light, audio is the key scraping into the lock, the heavy bolt turning with a deep clunk, the door creaking open in a long groan, the wind suddenly hushing as if something is listening"
+  },
+  {
+    "label": "5_inside_revelation",
+    "qwen": null,
+    "video": "the woman steps into the lighthouse interior and stops in stunned silence, the camera pulls back to reveal the entire circular room is filled wall-to-wall with thousands of identical yellowed envelopes stacked neatly to the ceiling, each addressed to her in the same handwriting, golden afternoon light pouring through the windows above, audio is her sharp intake of breath, an enormous swelling orchestral crescendo, then sudden total silence holding for a beat"
+  }
+]
