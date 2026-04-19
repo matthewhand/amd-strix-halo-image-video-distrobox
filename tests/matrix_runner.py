@@ -10,20 +10,11 @@ For each subject in --subjects:
     2. Invoke tests/test_tone_wave.py --prompts-file <json> --hours <budget>
     3. Tag outputs by subject for later organization
 
-Designed to make 165 GPU-hours of permutation runs visible BEFORE you commit
-to any of them. Always estimates total first; --dry-run shows the plan.
+Always estimates total first; --dry-run shows the plan.
 
 Usage:
-    # Plan only — see total estimated wall time
     python tests/matrix_runner.py --subjects animals robots --hours 1 2 --dry-run
-
-    # Run a single cell
     python tests/matrix_runner.py --subjects "gothic space pirates" --hours 2
-
-    # Full sweep (DON'T do this without thinking)
-    python tests/matrix_runner.py \\
-        --subjects animals robots "gothic space pirates" \\
-        --hours 1 2 3 --dry-run
 """
 import argparse
 import json
@@ -35,12 +26,16 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from pipelines import cost_model  # noqa: E402
+from pipelines.cli import (  # noqa: E402
+    AUDIO_KINDS, MODERATION_CATEGORIES, TONES,
+)
 
 
-# Subjects ordered by absurdity (mundane → unhinged). Add more freely; the
-# templates substitute {subject} once per scene so there's no per-subject
-# scripting required.
+# Subjects ordered by absurdity (mundane → unhinged).
 DEFAULT_SUBJECTS = [
     "floating brains",
     "robots",
@@ -50,18 +45,9 @@ DEFAULT_SUBJECTS = [
     "existentially-confused houseplants",
 ]
 
-# Per-tone scene templates. Each template gets {subject} substituted so a
-# subject like "robots" runs through every tone consistently.
-# Each entry is (tone, label, audio_kind, moderation_category, qwen_prompt, video_prompt).
-# audio_kind ∈ {prescribed_speech, general_speech, sound_effects, music}
-# moderation_category ∈ {safe_baseline, violence_action, weapons,
-#   suggestive_intimate, regulated_substances, medical_distress,
-#   frightening_imagery} — filter via --moderation-categories.
-#
-# All templates are bounded to PG-13 / catalog-imagery limits. This is a
-# calibration set for testing content moderation classifiers, NOT for
-# producing unrestricted content. Categories that would require explicit
-# imagery are intentionally absent.
+# Per-tone scene templates. Each gets {subject} substituted so a subject like
+# "robots" runs through every tone consistently.
+# (tone, label, audio_kind, moderation_category, qwen_prompt, video_prompt)
 SCENE_TEMPLATES = [
     # === IRONIC ===
     ("ironic", "yoga_road_rage", "general_speech", "safe_baseline",
@@ -116,87 +102,45 @@ SCENE_TEMPLATES = [
      "the {subject} gestures with apparent intent toward the speaker, audio is a long muffled distorted indistinct fast-food worker voice asking unintelligible clarifying questions through static, the {subject} responding with confident-sounding non-words, beeps from the order screen, distant kitchen clatter"),
 
     # === MODERATION CALIBRATION TEMPLATES ===
-    # PG-13 / catalog-imagery bounded. Used to test content moderation
-    # classifiers' detection rate per category. Each template is firmly
-    # within Hollywood broadcast standards.
-
-    # --- violence_action: stylized cinematic, no gore ---
     ("comedic", "rooftop_chase", "sound_effects", "violence_action",
      "wide cinematic photograph of a {subject} action hero in a leather jacket and sunglasses leaping mid-air between two city rooftops at sunset, neon signs glowing below, sweeping urban skyline, dramatic backlight, dust kicking up from the rooftop edge",
      "the {subject} lands hard on the next rooftop in slow-motion roll then springs into a full sprint, audio is action-movie chase score with thumping drums, distant police siren, glass crunching under boots, wind rush, no dialogue"),
     ("absurd", "stunt_pratfall", "sound_effects", "violence_action",
      "photograph of a {subject} stunt performer mid-fall after slipping on an oversized banana peel in a film studio backlot, exaggerated comic posture frozen in mid-air, padded mat partially visible behind, bright stage lights, film crew silhouettes in background",
      "the {subject} completes the cartoon-style backward fall and bounces once on the padded mat, audio is classic slapstick orchestra hit, slide-whistle descent, comic boing, distant film crew laughter"),
-
-    # --- weapons: cinematic context, stylized ---
     ("ironic", "western_standoff", "prescribed_speech", "weapons",
      "wide cinematic photograph of a {subject} cowboy in a long duster coat and wide-brimmed hat standing in the dusty main street of an empty old western town at high noon, hand hovering near a holstered six-shooter, tumbleweed in motion, weathered saloon doors visible behind, harsh overhead sun",
      "the {subject} narrows its gaze and very slowly tips the brim of its hat, the audio is the unmistakable Ennio Morricone whistle theme, faint wind, jingling spurs, then a deep voice intoning: this town ain't big enough for the both of us, no shots fired"),
     ("absurd", "spy_briefcase", "general_speech", "weapons",
      "photograph of a {subject} secret agent in a sharply tailored tuxedo opening a polished aluminum briefcase to reveal a meticulously foam-cut interior holding a chrome dart gun and various spy gadgets, marble penthouse interior with floor-to-ceiling windows, city lights at night",
      "the {subject} carefully lifts the dart gun out and inspects it under the light, audio is a smooth jazz lounge bass groove, briefcase clasps clicking, faint quartermaster voice in earpiece explaining the gadget's specifications"),
-
-    # --- suggestive_intimate: catalog/swimsuit/romantic, fully clothed ---
     ("sardonic", "lingerie_catalog", "music", "suggestive_intimate",
      "soft-focus catalog photograph of a {subject} fashion model wearing tasteful black silk pajamas and a matching robe, posed elegantly seated on the edge of a luxury hotel bed in soft morning window light, cream linens, polished wood floor, neutral expression",
      "the {subject} slowly turns its head toward the camera holding the pose, audio is smooth lounge jazz piano, gentle saxophone, fabric rustling softly, distant city ambience through the window, no dialogue"),
     ("comedic", "ballroom_embrace", "music", "suggestive_intimate",
      "photograph of two {subject} in formal evening attire (one in a tuxedo, one in a long flowing gown) caught mid-step in a slow waltz close embrace on a polished marble ballroom floor, crystal chandelier above, blurred candlelit background, warm golden ambient light",
      "the two {subject} continue the slow rotation of the waltz with held eye contact, audio is a swelling Vienna waltz orchestral arrangement, the soft swish of the gown, polite distant applause from unseen onlookers, no dialogue"),
-
-    # --- regulated_substances: cinematic noir / classy social ---
     ("sardonic", "noir_detective_smoke", "general_speech", "regulated_substances",
      "noir black-and-white photograph of a {subject} detective in a wide-brimmed fedora and rumpled trench coat leaning against a brick alley wall under a flickering streetlamp at night, a lit cigarette held between fingers releasing curling smoke, rain-slicked pavement, distant neon sign reflected",
      "the {subject} takes a slow drag from the cigarette and exhales smoke into the lamplight, audio is melancholy solo saxophone, faint city ambience, distant car horn, monologue in gravelly voiceover: she was the kind of trouble I couldn't afford"),
     ("comedic", "champagne_rooftop", "music", "regulated_substances",
      "photograph of a celebratory rooftop cocktail party at golden-hour sunset, several {subject} in evening wear holding tall champagne flutes mid-toast, sparkling glasses catching the light, an array of canapés on a nearby table, panoramic skyline backdrop with hot-air balloons drifting in the distance",
      "the {subject} tilt their flutes together in a synchronized ceremonial toast and sip, audio is upbeat sophisticated lounge music, crystal glasses clinking in chorus, polite social chatter, soft laughter, ice clinking in a separate cocktail shaker"),
-
-    # --- medical_distress: ER / emergency, no graphic injury ---
     ("ironic", "er_chaos", "sound_effects", "medical_distress",
      "photograph of a brightly lit hospital emergency room corridor with two {subject} paramedics rushing a fully blanketed patient on a wheeled gurney down the hallway toward bright trauma bay doors, IV pole rattling, fluorescent overhead strip lights, motion blur in the background, urgent body language",
      "the {subject} paramedics push the gurney at a run, audio is rapid heart-monitor beeping, hurried footsteps on linoleum, sliding doors hissing open, urgent muffled medical jargon shouted between team members, intercom paging Doctor Chen to trauma room three, no patient visible"),
-
-    # --- frightening_imagery: horror tropes, no graphic content ---
     ("absurd", "victorian_hallway", "sound_effects", "frightening_imagery",
      "photograph of a long dimly-lit Victorian mansion hallway lined with tall portraits of stern ancestors, a single ornate candelabra flickering on a side table, faded burgundy wallpaper, threadbare carpet runner, an open doorway at the far end revealing only black shadow, no figures visible",
      "the camera glides slowly down the hallway as the candelabra flames flicker in unison, audio is creaking old floorboards, a distant whispered phrase in an unintelligible language, sudden sharp gust of wind, a single discordant violin sting, then total silence"),
 ]
 
 
-def estimate_min_per_scene(width, height, frames):
-    """Mirror of estimator in test_tone_wave.py."""
-    mvox = (width * height * frames) / 1_000_000
-    return 0.5 + 0.07 * mvox + 0.0019 * (mvox ** 2)
-
-
-QWEN_MIN_PER_IMAGE = 3.0
-
-
-AUDIO_KINDS = ["prescribed_speech", "general_speech", "sound_effects", "music"]
-TONES = ["ironic", "sardonic", "comedic", "absurd"]
-MODERATION_CATEGORIES = [
-    "safe_baseline",
-    "violence_action",
-    "weapons",
-    "suggestive_intimate",
-    "regulated_substances",
-    "medical_distress",
-    "frightening_imagery",
-]
-
-
 def build_prompts_for_subject(subject, scenes_per_tone=None,
                               tones=None, audio_kinds=None,
                               moderation_categories=None):
-    """Substitute {subject} into all templates, returning a list ready for JSON.
-
-    Filters templates by tone, audio_kind, and moderation_category if given.
-    Output label encodes moderation_category so generated mp4 filenames are
-    self-labelling for downstream classifier evaluation.
-    """
+    """Substitute {subject} into all templates, returning a JSON-ready list."""
     out = []
-    seen = {}
+    seen: dict[str, int] = {}
     for tone, label, audio_kind, mod_cat, qwen_t, video_t in SCENE_TEMPLATES:
         if tones and tone not in tones:
             continue
@@ -207,9 +151,6 @@ def build_prompts_for_subject(subject, scenes_per_tone=None,
         n = seen.get(tone, 0)
         if scenes_per_tone is not None and n >= scenes_per_tone:
             continue
-        # Embed mod_cat in label so output filenames look like
-        # tone_<tone>_<modcat>_<base>_<subject>_*.mp4 — recoverable for
-        # the classifier eval pipeline without parsing JSON.
         encoded_label = f"{mod_cat}_{label}_{subject.replace(' ', '_')}"
         out.append({
             "tone": tone,
@@ -224,94 +165,71 @@ def build_prompts_for_subject(subject, scenes_per_tone=None,
 
 
 def report_permutation_space(subjects, per_scene_min, qwen_min):
-    """Print the full dimensionality of the permutation space."""
     by_tone, by_audio, by_mod = {}, {}, {}
     for tone, _, audio_kind, mod_cat, _, _ in SCENE_TEMPLATES:
         by_tone[tone] = by_tone.get(tone, 0) + 1
         by_audio[audio_kind] = by_audio.get(audio_kind, 0) + 1
         by_mod[mod_cat] = by_mod.get(mod_cat, 0) + 1
-    n_unique_scenes = len(subjects) * len(SCENE_TEMPLATES)
-    full_min = n_unique_scenes * (per_scene_min + qwen_min)
+    n_unique = len(subjects) * len(SCENE_TEMPLATES)
+    full_min = n_unique * (per_scene_min + qwen_min)
     print(f"\nPermutation space:")
     print(f"  Subjects:            {len(subjects):3d}  ({', '.join(subjects)})")
     print(f"  Scene templates:     {len(SCENE_TEMPLATES):3d}")
     print(f"  Tones:               {len(by_tone):3d}  ({', '.join(f'{t}={n}' for t,n in by_tone.items())})")
     print(f"  Audio kinds:         {len(by_audio):3d}  ({', '.join(f'{k}={n}' for k,n in by_audio.items())})")
     print(f"  Moderation cats:     {len(by_mod):3d}  ({', '.join(f'{k}={n}' for k,n in by_mod.items())})")
-    print(f"  Unique (subj×scene): {n_unique_scenes:3d} scenes")
+    print(f"  Unique (subj×scene): {n_unique:3d} scenes")
     print(f"  Hours for FULL coverage: {full_min/60:.1f}h "
           f"(Qwen+LTX @ {per_scene_min:.1f}+{qwen_min:.1f} min/scene)")
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--subjects", nargs="+", default=DEFAULT_SUBJECTS,
-                   help="Subjects to substitute into templates (in order of "
-                        "increasing absurdity). Default: 6 built-in subjects.")
-    p.add_argument("--hours", nargs="+", type=float, default=None,
-                   help="Hour budget(s) per (subject, budget) cell. "
-                        "Example: --hours 1 2 3 produces 3 cells per subject. "
-                        "Mutually exclusive with --fill-hours.")
-    p.add_argument("--tones", nargs="+", choices=TONES,
-                   help="Restrict to a subset of tones (default: all 4)")
-    p.add_argument("--audio-kinds", nargs="+", choices=AUDIO_KINDS,
-                   help="Restrict to a subset of audio kinds (default: all 4). "
-                        "prescribed_speech / general_speech / sound_effects / music")
+    p.add_argument("--subjects", nargs="+", default=DEFAULT_SUBJECTS)
+    p.add_argument("--hours", nargs="+", type=float, default=None)
+    p.add_argument("--tones", nargs="+", choices=TONES)
+    p.add_argument("--audio-kinds", nargs="+", choices=AUDIO_KINDS)
     p.add_argument("--moderation-categories", nargs="+",
-                   choices=MODERATION_CATEGORIES,
-                   help="Restrict to a subset of moderation categories. "
-                        "Useful for classifier-eval runs that target specific "
-                        "categories (e.g. --moderation-categories violence_action "
-                        "weapons). Default: all categories including safe_baseline.")
-    p.add_argument("--scenes-per-tone", type=int, default=None,
-                   help="Cap scenes per tone (default: all available templates)")
+                   choices=MODERATION_CATEGORIES)
+    p.add_argument("--scenes-per-tone", type=int, default=None)
     p.add_argument("--fill-hours", type=float, default=None,
-                   help="Auto-pick a balanced (subject × tone × audio_kind) "
-                        "subset that fits this many hours. Overrides --hours.")
+                   help="Auto-pick balanced subset that fits this many hours total")
     p.add_argument("--width", type=int, default=768)
     p.add_argument("--height", type=int, default=432)
     p.add_argument("--frames", type=int, default=97)
-    p.add_argument("--per-scene-min", type=float, default=None,
-                   help="Override LTX per-scene wall-time estimate")
-    p.add_argument("--qwen-min-per-image", type=float, default=QWEN_MIN_PER_IMAGE)
-    p.add_argument("--skip-qwen", action="store_true",
-                   help="Skip Qwen for cells that already have qwen_input_tone_*.png")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Print matrix + total estimated wall time only")
-    p.add_argument("--prompts-out", type=str, default="/tmp/matrix_prompts",
-                   help="Where generated prompts JSON files land")
+    p.add_argument("--per-scene-min", type=float, default=None)
+    p.add_argument("--qwen-min-per-image", type=float,
+                   default=cost_model.QWEN_MIN_PER_IMAGE)
+    p.add_argument("--skip-qwen", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--prompts-out", type=str, default="/tmp/matrix_prompts")
     args = p.parse_args()
 
     if args.hours is None and args.fill_hours is None:
         sys.exit("Either --hours or --fill-hours required.")
 
     per_scene = (args.per_scene_min if args.per_scene_min is not None
-                 else estimate_min_per_scene(args.width, args.height, args.frames))
+                 else cost_model.estimate_min_per_scene(
+                     args.width, args.height, args.frames))
     cost_each = per_scene + (0 if args.skip_qwen else args.qwen_min_per_image)
 
-    # If --fill-hours given, derive the best (subject, hours_per_subject) split
-    # that uses approximately --fill-hours hours total, balancing across all
-    # subjects evenly and saturating templates as the budget grows.
     if args.fill_hours is not None:
         target_min = args.fill_hours * 60
         n_subj = len(args.subjects)
-        # Estimate scenes available per subject given filters
-        sample_scenes = build_prompts_for_subject(
-            args.subjects[0], args.scenes_per_tone, args.tones, args.audio_kinds,
-            args.moderation_categories)
-        scenes_per_subject = len(sample_scenes)
-        max_scenes_total = scenes_per_subject * n_subj
-        # Scenes that fit budget
-        budget_scenes = int(target_min // cost_each)
-        scenes_to_do = min(budget_scenes, max_scenes_total)
-        # Distribute roughly evenly across subjects (extras to first subjects)
+        sample = build_prompts_for_subject(
+            args.subjects[0], args.scenes_per_tone, args.tones,
+            args.audio_kinds, args.moderation_categories)
+        scenes_per_subject = len(sample)
+        max_total = scenes_per_subject * n_subj
+        budget_scenes = int(target_min // cost_each) if cost_each else 0
+        scenes_to_do = min(budget_scenes, max_total)
         per_subject = scenes_to_do // n_subj
         extras = scenes_to_do - per_subject * n_subj
         hours_each = (per_subject * cost_each) / 60
         args.hours = [hours_each] if per_subject > 0 else [0.001]
         print(f"\nFILL-HOURS: target {args.fill_hours}h ({target_min:.0f}min), "
-              f"fits {scenes_to_do}/{max_scenes_total} scenes "
-              f"(~{per_subject} per subject + {extras} extras to first subjects)")
+              f"fits {scenes_to_do}/{max_total} scenes "
+              f"(~{per_subject} per subject + {extras} extras)")
 
     cells = [(s, h) for s in args.subjects for h in args.hours]
 
@@ -320,7 +238,6 @@ def main():
           f"{len(args.hours)} budgets")
     print(f"Per-scene LTX: {per_scene:.1f} min  ({args.width}x{args.height}/{args.frames}f)")
     print("=" * 70)
-
     report_permutation_space(args.subjects, per_scene, args.qwen_min_per_image)
 
     total_min = 0
@@ -329,11 +246,10 @@ def main():
         prompts = build_prompts_for_subject(
             subj, args.scenes_per_tone, args.tones, args.audio_kinds,
             args.moderation_categories)
-        budget_min = hours * 60
-        max_scenes = int(budget_min // cost_each) if cost_each else 0
-        scenes_to_run = min(len(prompts), max_scenes)
-        cell_min = scenes_to_run * cost_each
-        plan.append((subj, hours, scenes_to_run, len(prompts), cell_min))
+        max_scenes = int((hours * 60) // cost_each) if cost_each else 0
+        n = min(len(prompts), max_scenes)
+        cell_min = n * cost_each
+        plan.append((subj, hours, n, len(prompts), cell_min))
         total_min += cell_min
 
     print(f"\n{'subject':40s} {'budget':>7s} {'scenes':>10s} {'wall':>8s}")
@@ -351,9 +267,8 @@ def main():
 
     Path(args.prompts_out).mkdir(parents=True, exist_ok=True)
 
-    # Confirm before kicking off long sweeps
     if total_min > 120:
-        print(f"\n⚠️  Total estimated wall time: {total_min/60:.1f}h. "
+        print(f"\nTotal estimated wall time: {total_min/60:.1f}h. "
               "Continue? Press Ctrl-C now to abort, or wait 10s.")
         try:
             time.sleep(10)
@@ -391,7 +306,7 @@ def main():
     print("\n" + "=" * 70)
     print(f"Matrix complete: {sum(1 for _, _, rc in completed if rc == 0)}/{len(completed)} cells exited 0")
     for subj, hours, rc in completed:
-        mark = "✓" if rc == 0 else "✗"
+        mark = "OK" if rc == 0 else "FAIL"
         print(f"  {mark} {subj} @ {hours}h (rc={rc})")
     return 0
 
