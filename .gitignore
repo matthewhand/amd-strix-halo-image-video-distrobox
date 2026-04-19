@@ -2,7 +2,8 @@
 *.md
 !README.md
 !COMFYUI_SETUP_GUIDE.md
-!AGENTS.md
+# AGENTS.md is a local agent playbook, intentionally not committed —
+# contents drift per-machine and per-session.
 
 __pycache__/
 .env
