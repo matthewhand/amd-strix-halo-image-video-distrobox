@@ -121,13 +121,48 @@ def build_user_prompt(args):
 
 # ---------- providers ----------
 
-def call_ollama(system, user, model="llama3.2:latest", timeout=300):
+# Preference order when --model is not set. First match wins.
+# Note: gemma4:26b/31b excluded — confirmed broken on gfx1151 / this ollama
+# build (HTTP 500 "model runner unexpectedly stopped" on first inference).
+# Re-add them when ollama ships a fix.
+OLLAMA_MODEL_PREFERENCE = [
+    "gemma3:12b-it-qat", "gemma3:12b",
+    "llama3.2:latest",
+]
+
+
+def _ollama_list_models():
+    """Return set of installed ollama model tags, or empty set on error."""
+    try:
+        with urllib.request.urlopen(
+            "http://127.0.0.1:11434/api/tags", timeout=2) as r:
+            data = json.loads(r.read())
+        return {m.get("name") for m in data.get("models", [])}
+    except Exception:
+        return set()
+
+
+def _pick_ollama_model():
+    """First installed model from OLLAMA_MODEL_PREFERENCE, else llama3.2."""
+    installed = _ollama_list_models()
+    for m in OLLAMA_MODEL_PREFERENCE:
+        if m in installed:
+            return m
+    return "llama3.2:latest"
+
+
+def call_ollama(system, user, model=None, timeout=300):
     """POST to local ollama. Returns the assistant's content string.
+
+    If `model` is None, picks the highest-ranked installed model per
+    OLLAMA_MODEL_PREFERENCE (gemma4 > gemma3 > llama3.2).
 
     Note: smaller models (llama3.2 3B) error 500 with format=json on long
     prompts. We omit it and parse JSON from the response with markdown
     fence stripping (see main()).
     """
+    if model is None:
+        model = _pick_ollama_model()
     url = "http://127.0.0.1:11434/api/chat"
     payload = {
         "model": model,
