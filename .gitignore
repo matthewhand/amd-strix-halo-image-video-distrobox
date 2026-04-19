@@ -21,6 +21,12 @@ __pycache__/
 *.private
 secrets/
 
+# Private prompt overrides (sensitive moderation-category templates that
+# shouldn't be in public commits). Loaded at runtime via env var
+# MODERATION_TEMPLATES_FILE / SENSITIVE_PROMPTS_DIR. The committed
+# tests/example_prompts/ contains only safe_baseline narratives.
+tests/private_prompts/
+
 # Data directories (created by docker-compose or at runtime)
 huggingface-cache/
 qwen-outputs/

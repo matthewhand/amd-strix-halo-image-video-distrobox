@@ -1,6 +1,6 @@
 """Thin wrapper around scripts.comfyui_api for LTX submission + waiting.
 
-Replaces the inline polling loop currently duplicated in test_chained_wave.
+Replaces the inline polling loop currently duplicated in run_chained_wave.
 """
 import json
 import os

@@ -13,9 +13,9 @@ Pipeline per scene:
     ffmpeg extracts last frame -> next scene's input
 
 Usage:
-    python tests/test_chained_wave.py
-    python tests/test_chained_wave.py --scenes 1 2     # only first two
-    python tests/test_chained_wave.py --skip-qwen      # use existing scene-1 png
+    python tests/run_chained_wave.py
+    python tests/run_chained_wave.py --scenes 1 2     # only first two
+    python tests/run_chained_wave.py --skip-qwen      # use existing scene-1 png
 """
 import argparse
 import glob

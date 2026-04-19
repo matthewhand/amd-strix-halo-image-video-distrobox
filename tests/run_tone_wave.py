@@ -12,10 +12,10 @@ All scenes default to 768x432 / 97f / 24fps (~4s clips). distilled-fp8 with
 --lowvram (proven path from wave 1).
 
 Usage:
-    python tests/test_tone_wave.py                       # full 12
-    python tests/test_tone_wave.py --tones absurd        # one category
-    python tests/test_tone_wave.py --scenes 1 5 9        # subset by index
-    python tests/test_tone_wave.py --dry-run             # plan only
+    python tests/run_tone_wave.py                       # full 12
+    python tests/run_tone_wave.py --tones absurd        # one category
+    python tests/run_tone_wave.py --scenes 1 5 9        # subset by index
+    python tests/run_tone_wave.py --dry-run             # plan only
 """
 import argparse
 import json

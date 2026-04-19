@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Matrix runner — sweep test_tone_wave.py across (subject × hour-budget) cells.
+Matrix runner — sweep run_tone_wave.py across (subject × hour-budget) cells.
 
 For each subject in --subjects:
   For each budget in --hours:
     1. Build a subject-templated prompts JSON (substitutes {subject} into
        per-tone scene templates so a single subject runs through all four
        tonal registers)
-    2. Invoke tests/test_tone_wave.py --prompts-file <json> --hours <budget>
+    2. Invoke tests/run_tone_wave.py --prompts-file <json> --hours <budget>
     3. Tag outputs by subject for later organization
 
 Always estimates total first; --dry-run shows the plan.
 
 Usage:
-    python tests/matrix_runner.py --subjects animals robots --hours 1 2 --dry-run
-    python tests/matrix_runner.py --subjects "gothic space pirates" --hours 2
+    python tests/run_matrix.py --subjects animals robots --hours 1 2 --dry-run
+    python tests/run_matrix.py --subjects "gothic space pirates" --hours 2
 """
 import argparse
 import json
@@ -102,37 +102,36 @@ SCENE_TEMPLATES = [
      "the {subject} gestures with apparent intent toward the speaker, audio is a long muffled distorted indistinct fast-food worker voice asking unintelligible clarifying questions through static, the {subject} responding with confident-sounding non-words, beeps from the order screen, distant kitchen clatter"),
 
     # === MODERATION CALIBRATION TEMPLATES ===
-    ("comedic", "rooftop_chase", "sound_effects", "violence_action",
-     "wide cinematic photograph of a {subject} action hero in a leather jacket and sunglasses leaping mid-air between two city rooftops at sunset, neon signs glowing below, sweeping urban skyline, dramatic backlight, dust kicking up from the rooftop edge",
-     "the {subject} lands hard on the next rooftop in slow-motion roll then springs into a full sprint, audio is action-movie chase score with thumping drums, distant police siren, glass crunching under boots, wind rush, no dialogue"),
-    ("absurd", "stunt_pratfall", "sound_effects", "violence_action",
-     "photograph of a {subject} stunt performer mid-fall after slipping on an oversized banana peel in a film studio backlot, exaggerated comic posture frozen in mid-air, padded mat partially visible behind, bright stage lights, film crew silhouettes in background",
-     "the {subject} completes the cartoon-style backward fall and bounces once on the padded mat, audio is classic slapstick orchestra hit, slide-whistle descent, comic boing, distant film crew laughter"),
-    ("ironic", "western_standoff", "prescribed_speech", "weapons",
-     "wide cinematic photograph of a {subject} cowboy in a long duster coat and wide-brimmed hat standing in the dusty main street of an empty old western town at high noon, hand hovering near a holstered six-shooter, tumbleweed in motion, weathered saloon doors visible behind, harsh overhead sun",
-     "the {subject} narrows its gaze and very slowly tips the brim of its hat, the audio is the unmistakable Ennio Morricone whistle theme, faint wind, jingling spurs, then a deep voice intoning: this town ain't big enough for the both of us, no shots fired"),
-    ("absurd", "spy_briefcase", "general_speech", "weapons",
-     "photograph of a {subject} secret agent in a sharply tailored tuxedo opening a polished aluminum briefcase to reveal a meticulously foam-cut interior holding a chrome dart gun and various spy gadgets, marble penthouse interior with floor-to-ceiling windows, city lights at night",
-     "the {subject} carefully lifts the dart gun out and inspects it under the light, audio is a smooth jazz lounge bass groove, briefcase clasps clicking, faint quartermaster voice in earpiece explaining the gadget's specifications"),
-    ("sardonic", "lingerie_catalog", "music", "suggestive_intimate",
-     "soft-focus catalog photograph of a {subject} fashion model wearing tasteful black silk pajamas and a matching robe, posed elegantly seated on the edge of a luxury hotel bed in soft morning window light, cream linens, polished wood floor, neutral expression",
-     "the {subject} slowly turns its head toward the camera holding the pose, audio is smooth lounge jazz piano, gentle saxophone, fabric rustling softly, distant city ambience through the window, no dialogue"),
-    ("comedic", "ballroom_embrace", "music", "suggestive_intimate",
-     "photograph of two {subject} in formal evening attire (one in a tuxedo, one in a long flowing gown) caught mid-step in a slow waltz close embrace on a polished marble ballroom floor, crystal chandelier above, blurred candlelit background, warm golden ambient light",
-     "the two {subject} continue the slow rotation of the waltz with held eye contact, audio is a swelling Vienna waltz orchestral arrangement, the soft swish of the gown, polite distant applause from unseen onlookers, no dialogue"),
-    ("sardonic", "noir_detective_smoke", "general_speech", "regulated_substances",
-     "noir black-and-white photograph of a {subject} detective in a wide-brimmed fedora and rumpled trench coat leaning against a brick alley wall under a flickering streetlamp at night, a lit cigarette held between fingers releasing curling smoke, rain-slicked pavement, distant neon sign reflected",
-     "the {subject} takes a slow drag from the cigarette and exhales smoke into the lamplight, audio is melancholy solo saxophone, faint city ambience, distant car horn, monologue in gravelly voiceover: she was the kind of trouble I couldn't afford"),
-    ("comedic", "champagne_rooftop", "music", "regulated_substances",
-     "photograph of a celebratory rooftop cocktail party at golden-hour sunset, several {subject} in evening wear holding tall champagne flutes mid-toast, sparkling glasses catching the light, an array of canapés on a nearby table, panoramic skyline backdrop with hot-air balloons drifting in the distance",
-     "the {subject} tilt their flutes together in a synchronized ceremonial toast and sip, audio is upbeat sophisticated lounge music, crystal glasses clinking in chorus, polite social chatter, soft laughter, ice clinking in a separate cocktail shaker"),
-    ("ironic", "er_chaos", "sound_effects", "medical_distress",
-     "photograph of a brightly lit hospital emergency room corridor with two {subject} paramedics rushing a fully blanketed patient on a wheeled gurney down the hallway toward bright trauma bay doors, IV pole rattling, fluorescent overhead strip lights, motion blur in the background, urgent body language",
-     "the {subject} paramedics push the gurney at a run, audio is rapid heart-monitor beeping, hurried footsteps on linoleum, sliding doors hissing open, urgent muffled medical jargon shouted between team members, intercom paging Doctor Chen to trauma room three, no patient visible"),
-    ("absurd", "victorian_hallway", "sound_effects", "frightening_imagery",
-     "photograph of a long dimly-lit Victorian mansion hallway lined with tall portraits of stern ancestors, a single ornate candelabra flickering on a side table, faded burgundy wallpaper, threadbare carpet runner, an open doorway at the far end revealing only black shadow, no figures visible",
-     "the camera glides slowly down the hallway as the candelabra flames flicker in unison, audio is creaking old floorboards, a distant whispered phrase in an unintelligible language, sudden sharp gust of wind, a single discordant violin sting, then total silence"),
+    # Sensitive moderation templates (violence_action, weapons,
+    # suggestive_intimate, regulated_substances, medical_distress,
+    # frightening_imagery) live in a private file, NOT committed.
+    # Loaded at runtime via env var MODERATION_TEMPLATES_FILE pointing to a
+    # JSON list with the same shape as SCENE_TEMPLATES tuples (length-6).
+    # When unset, only safe_baseline templates are available.
 ]
+
+
+def _load_private_templates() -> list:
+    """Load extra templates from MODERATION_TEMPLATES_FILE if set."""
+    path = os.environ.get("MODERATION_TEMPLATES_FILE")
+    if not path or not os.path.isfile(path):
+        return []
+    with open(path) as f:
+        raw = json.load(f)
+    # JSON entries can be either 6-tuples or dicts with the same keys
+    out = []
+    for entry in raw:
+        if isinstance(entry, list) and len(entry) == 6:
+            out.append(tuple(entry))
+        elif isinstance(entry, dict):
+            out.append((
+                entry["tone"], entry["label"], entry["audio_kind"],
+                entry["moderation_category"], entry["qwen"], entry["video"],
+            ))
+    return out
+
+
+SCENE_TEMPLATES.extend(_load_private_templates())
 
 
 def build_prompts_for_subject(subject, scenes_per_tone=None,
@@ -289,7 +288,7 @@ def main():
 
         print(f"\n=== CELL {subj} @ {hours}h ({n} scenes) ===")
         cmd = [
-            sys.executable, str(HERE / "test_tone_wave.py"),
+            sys.executable, str(HERE / "run_tone_wave.py"),
             "--prompts-file", str(prompts_file),
             "--hours", str(hours),
             "--width", str(args.width),

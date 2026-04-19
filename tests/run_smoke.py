@@ -7,10 +7,10 @@ submits via scripts/comfyui_api, and orchestrates Qwen <-> ComfyUI container
 swaps so only one model occupies VRAM at a time (Strix Halo unified memory).
 
 Usage:
-    python tests/test_qwen_to_ltx23.py --smoke              # 1 scene, low res
-    python tests/test_qwen_to_ltx23.py                      # all scenes
-    python tests/test_qwen_to_ltx23.py --scenes octopus_accountant cats_boardroom
-    python tests/test_qwen_to_ltx23.py --frames 49
+    python tests/run_smoke.py --smoke              # 1 scene, low res
+    python tests/run_smoke.py                      # all scenes
+    python tests/run_smoke.py --scenes octopus_accountant cats_boardroom
+    python tests/run_smoke.py --frames 49
 
 Verified config (smoke 480x320, 49f, audio on): ~48s on Strix Halo gfx1151
 with the 22B distilled fp8 model + Gemma-3 12B encoder.

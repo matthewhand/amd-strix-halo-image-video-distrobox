@@ -13,10 +13,10 @@ Phase 1: stop ComfyUI, generate 10 Qwen images (sequential containers, 16:9).
 Phase 2: start ComfyUI with --lowvram, queue 10 LTX-2.3 jobs, ComfyUI serializes.
 
 Usage:
-    python tests/test_ironic_wave.py                        # full wave
-    python tests/test_ironic_wave.py --scenes 1 2 3         # 1-indexed subset
-    python tests/test_ironic_wave.py --skip-qwen            # use cached images
-    python tests/test_ironic_wave.py --dry-run              # print plan only
+    python tests/run_ironic_wave.py                        # full wave
+    python tests/run_ironic_wave.py --scenes 1 2 3         # 1-indexed subset
+    python tests/run_ironic_wave.py --skip-qwen            # use cached images
+    python tests/run_ironic_wave.py --dry-run              # print plan only
 """
 import argparse
 import os
