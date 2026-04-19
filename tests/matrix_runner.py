@@ -42,7 +42,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 # templates substitute {subject} once per scene so there's no per-subject
 # scripting required.
 DEFAULT_SUBJECTS = [
-    "animals",
+    "floating brains",
     "robots",
     "gothic space pirates",
     "sentient kitchen appliances",

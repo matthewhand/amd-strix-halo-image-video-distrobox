@@ -22,6 +22,7 @@ Usage:
     python tests/test_chained_wave.py --skip-qwen      # use existing scene-1 png
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -40,9 +41,14 @@ SERVER = "127.0.0.1:8188"
 COMFYUI_CONTAINER = "comfyui-ltx23"
 IMAGE = "amd-strix-halo-image-video-toolbox:latest"
 OUTPUT_DIR = "/tmp/comfy-outputs"
-MODEL = "ltx-2.3-22b-dev.safetensors"
-LORA = "ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
-LORA_STRENGTH = 0.5
+# Dev (43GB) + LoRA (7.6GB) at strength 0.5 produced NaN/Inf in the AAC
+# audio encode (avcodec_send_frame returned 22). The LoRA was trained
+# alongside the distilled checkpoint and doesn't compose cleanly with the
+# dev model's audio pathway. Falling back to distilled-fp8 (no LoRA) which
+# wave 1 proved works at 1024x576/145f.
+MODEL = "ltx-2.3-22b-distilled-fp8.safetensors"
+LORA = None
+LORA_STRENGTH = 0.0
 WIDTH, HEIGHT, FRAMES, FPS = 1024, 576, 145, 24
 
 DOCKER_ENV = [
@@ -101,6 +107,10 @@ def start_comfyui():
         *DOCKER_GPU, *DOCKER_ENV,
         "-p", "8188:8188",
         "-v", os.path.expanduser("~/comfy-models") + ":/opt/ComfyUI/models",
+        # /mnt/downloads is the symlink target for large models (e.g. dev-only
+        # downloads kept off the root partition). Mount it so symlinks under
+        # ~/comfy-models/checkpoints/ → /mnt/downloads/... resolve inside.
+        "-v", "/mnt/downloads:/mnt/downloads",
         "-v", f"{OUTPUT_DIR}:/opt/ComfyUI/output",
         IMAGE,
         "bash", "-c",
@@ -253,17 +263,126 @@ def extract_last_frame(mp4_path, png_path):
     return os.path.exists(png_path)
 
 
+EXTENSION_TEMPLATES = [
+    "the previous scene's final moment holds for a breath then erupts as {escalation}, audio swells from the previous scene into {audio_shift}",
+]
+EXTENSION_ESCALATIONS = [
+    "the entire frame flooding with impossible rainbow light as geometry warps",
+    "a gigantic cosmic hand reaching in from above to rearrange the scene like chess pieces",
+    "all objects gaining cartoon eyes and legs and scurrying in every direction",
+    "the ground tearing open to reveal a deeper layer where the same events repeat smaller",
+    "gravity reversing and everyone floating up into a purple vortex",
+    "the camera pulling so far back that the whole scene is revealed to be inside a snow globe held by something even larger and more absurd",
+    "the moment freezing solid as ice then shattering and reforming as the same scene but underwater",
+    "time running backward for three seconds then forward again with everything slightly misaligned",
+]
+EXTENSION_AUDIO = [
+    "a deep cosmic drone with whispered counting backward from ten",
+    "a polite studio audience laugh track then sudden complete silence",
+    "overlapping news anchor voices reporting contradictory versions of the scene",
+    "a lonely cello solo rising over distant church bells",
+    "a vintage telephone ringing from inside the viewer's head",
+    "a children's choir humming a lullaby that slowly becomes a horror score",
+]
+
+
+def extend_scenes(base_scenes, count):
+    """If user wants more scenes than defined, fabricate continuations using
+    escalation templates. Earlier scenes get more novelty; later ones recycle.
+    """
+    import random
+    scenes = list(base_scenes)
+    while len(scenes) < count:
+        i = len(scenes)
+        esc = EXTENSION_ESCALATIONS[i % len(EXTENSION_ESCALATIONS)]
+        aud = EXTENSION_AUDIO[i % len(EXTENSION_AUDIO)]
+        tmpl = EXTENSION_TEMPLATES[0]
+        scenes.append({
+            "label": f"{i+1}_extension_{i}",
+            "qwen": None,  # chained from previous last frame
+            "video": tmpl.format(escalation=esc, audio_shift=aud),
+        })
+    return scenes[:count]
+
+
+def join_mp4s(mp4_paths, out_path):
+    """Concat a list of mp4s into one continuous mp4 using ffmpeg concat
+    demuxer. Requires all inputs to share codec/resolution/fps — guaranteed
+    here because they're all produced by the same ComfyUI workflow.
+    """
+    if not mp4_paths:
+        print("  nothing to join")
+        return False
+    list_file = OUTPUT_DIR + "/chain_concat.txt"
+    rel_list = "/opt/ComfyUI/output/chain_concat.txt"
+    rel_out = out_path.replace(OUTPUT_DIR, "/opt/ComfyUI/output")
+    with open(list_file, "w") as f:
+        for m in mp4_paths:
+            rel = m.replace(OUTPUT_DIR, "/opt/ComfyUI/output")
+            f.write(f"file '{rel}'\n")
+    rc = subprocess.run([
+        "docker", "exec", COMFYUI_CONTAINER, "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", rel_list,
+        "-c", "copy", rel_out,
+    ], capture_output=True, text=True).returncode
+    os.remove(list_file)
+    return rc == 0 and os.path.exists(out_path)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--scenes", nargs="+", type=int,
                    help="1-indexed subset (e.g. --scenes 1 2)")
+    p.add_argument("--count", type=int, default=None,
+                   help="Number of chained scenes. <len(SCENES) truncates; "
+                        ">len(SCENES) auto-extends with generic escalation "
+                        "prompts (series mode) or repeats (repeat mode).")
+    p.add_argument("--mode", choices=["series", "repeat"], default="series",
+                   help="series: each scene has its own prompt (narrative arc, "
+                        "default). repeat: same prompt across all chained scenes "
+                        "(extends one moment by chaining the visual continuity).")
+    p.add_argument("--prompt", type=str, default=None,
+                   help="In repeat mode: video prompt to use for every scene "
+                        "(default: scene 1's video prompt)")
+    p.add_argument("--qwen-prompt", type=str, default=None,
+                   help="In repeat mode: Qwen seed prompt (default: scene 1's "
+                        "qwen prompt)")
+    p.add_argument("--prompts-file", type=str, default=None,
+                   help="JSON list [{label, qwen (null for mid-chain), video}, ...] — "
+                        "overrides SCENES entirely (only meaningful in series mode)")
+    p.add_argument("--no-join", action="store_true",
+                   help="Don't concat completed scenes into a single mp4")
     p.add_argument("--skip-qwen", action="store_true",
-                   help="Skip Qwen seed (chain_1_office_coffee.png must exist)")
+                   help="Skip Qwen seed (scene 1 png must already exist)")
     args = p.parse_args()
 
-    scenes = SCENES
+    if args.prompts_file:
+        with open(args.prompts_file) as f:
+            scenes = json.load(f)
+    else:
+        scenes = SCENES
+
+    if args.mode == "repeat":
+        # Take seed prompts from scene 1 (or CLI overrides), then replicate
+        # the video prompt across N scenes. Each chained scene visually
+        # continues the previous via last-frame seeding.
+        base_qwen = args.qwen_prompt or scenes[0]["qwen"]
+        base_video = args.prompt or scenes[0]["video"]
+        n = args.count or 5
+        base_label = scenes[0]["label"].split("_", 1)[1] if "_" in scenes[0]["label"] else "repeat"
+        scenes = [
+            {
+                "label": f"{i+1}_{base_label}",
+                "qwen": base_qwen if i == 0 else None,
+                "video": base_video,
+            }
+            for i in range(n)
+        ]
+    elif args.count is not None:
+        scenes = extend_scenes(scenes, args.count)
+
     if args.scenes:
-        scenes = [SCENES[i - 1] for i in args.scenes if 1 <= i <= len(SCENES)]
+        scenes = [scenes[i - 1] for i in args.scenes if 1 <= i <= len(scenes)]
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -342,6 +461,17 @@ def main():
     print(f"Completed {len(completed)}/{len(scenes)} scenes:")
     for m in completed:
         print(f"  {m}")
+
+    # Auto-join into one continuous mp4 (default on)
+    if not args.no_join and len(completed) >= 2:
+        joined = os.path.join(OUTPUT_DIR, f"chain_joined_{int(time.time())}.mp4")
+        print(f"\nJoining {len(completed)} clips into {os.path.basename(joined)}...")
+        if join_mp4s(completed, joined):
+            size_mb = os.path.getsize(joined) / 1e6
+            print(f"  OK: {joined} ({size_mb:.1f} MB)")
+        else:
+            print(f"  FAIL: ffmpeg concat")
+
     return 0 if len(completed) == len(scenes) else 1
 
 
