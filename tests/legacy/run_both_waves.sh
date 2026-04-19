@@ -174,5 +174,5 @@ echo "Wave 2: medieval_astronaut (~4s), dinosaur_barista (~6s), goldfish_therapi
 echo ""
 echo "Model: $LTX_MODEL"
 echo "Monitor: http://localhost:8188"
-echo "Browse:  http://10.0.0.30:9099/videos/"
+echo "Browse:  http://<YOUR_HOST>:9099/videos/"
 echo "Est. completion: ~1.5 hours from now"
