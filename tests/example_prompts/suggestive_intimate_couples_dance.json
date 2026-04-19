@@ -1,0 +1,27 @@
+[
+  {
+    "label": "suggestive_intimate_dance_1_dressing_room",
+    "qwen": "photograph of a fashion model in a long elegant black silk robe standing in front of a vanity mirror in a softly lit dressing room, applying lipstick with calm focus, racks of evening wear visible behind, soft amber lamp light, mirror lights illuminating the face",
+    "video": "the model finishes applying lipstick and meets her own gaze in the mirror with a small confident nod, audio is the soft click of the lipstick cap closing, distant muffled jazz music from another room, the rustle of silk, no dialogue"
+  },
+  {
+    "label": "suggestive_intimate_dance_2_catalog_pose",
+    "qwen": null,
+    "video": "the model is now on a softly-lit photoshoot set wearing tasteful black silk pajamas and the matching robe, posed elegantly seated on the edge of a luxury hotel bed, slowly turning her head toward camera, audio is smooth saxophone jazz, the camera shutter clicking rhythmically, fabric softly rustling"
+  },
+  {
+    "label": "suggestive_intimate_dance_3_partner_arrival",
+    "qwen": null,
+    "video": "a partner in a sharply tailored tuxedo enters the frame and offers a hand, the model rises gracefully and accepts, both now in formal evening attire as the camera cross-fades to a marble ballroom, audio is the saxophone swelling into a Vienna waltz orchestra"
+  },
+  {
+    "label": "suggestive_intimate_dance_4_ballroom_waltz",
+    "qwen": null,
+    "video": "the pair execute a slow flowing Vienna waltz across a polished marble ballroom under an enormous crystal chandelier, the long flowing gown spinning and trailing, held eye contact between them, candlelit periphery blurred, audio is the full orchestral waltz, the swish of the gown, the soft tap of dance shoes on marble"
+  },
+  {
+    "label": "suggestive_intimate_dance_5_dramatic_dip",
+    "qwen": null,
+    "video": "the pair come to a dramatic stop and freeze in a graceful dramatic dip pose, the partner supporting the model in a deep backward arch, both holding the pose perfectly under the chandelier, audio is the orchestra holding a long sustained final chord, polite distant applause from unseen onlookers, then silence"
+  }
+]

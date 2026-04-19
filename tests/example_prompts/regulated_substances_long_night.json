@@ -1,0 +1,27 @@
+[
+  {
+    "label": "regulated_substances_long_night_1_office_whiskey",
+    "qwen": "noir black-and-white photograph of a private detective in a rumpled three-piece suit sitting behind a cluttered wooden desk in a dimly lit office at night, pouring amber whiskey from a crystal decanter into a heavy tumbler, an unlit cigarette resting in an ashtray, venetian blind shadows striping the wall behind",
+    "video": "the detective sets down the decanter, picks up the glass and slowly swirls the whiskey, eyes fixed on something off-camera, audio is the glug of pouring liquid, the soft clink of crystal, distant muffled traffic, melancholy solo saxophone fading in"
+  },
+  {
+    "label": "regulated_substances_long_night_2_cigarette_files",
+    "qwen": null,
+    "video": "the detective lights the cigarette with a brass lighter and exhales a long curl of smoke while flipping through a thick file folder spread across the desk, smoke drifting through the lamp's beam, audio is the click and snap of the lighter, the soft crackle of paper, the slow exhale, sax continuing"
+  },
+  {
+    "label": "regulated_substances_long_night_3_streetlamp_smoke",
+    "qwen": null,
+    "video": "the scene transitions to the detective now standing outside under a flickering streetlamp at night, lighting another cigarette with cupped hands, rain-slicked pavement reflecting the lamp light, breath visible in the cold air, audio is the lighter clicking, footsteps approaching from off-camera, distant car horn"
+  },
+  {
+    "label": "regulated_substances_long_night_4_speakeasy_cocktail",
+    "qwen": null,
+    "video": "the detective is now seated at the polished wood bar of a smoky upscale speakeasy, ordering a martini from a vested bartender who shakes the silver shaker with theatrical flair, audio is the rhythmic shake of ice in the cocktail shaker, low jazz combo playing, murmured conversation, glass clinking"
+  },
+  {
+    "label": "regulated_substances_long_night_5_dawn_window",
+    "qwen": null,
+    "video": "the detective stands at a tall office window watching grey dawn light spread across the rooftops of the sleeping city, raising one final whiskey glass in a quiet toast to nobody, then setting it down and turning away, audio is birds beginning to call, distant church bells striking five, the saxophone resolving on a final long note"
+  }
+]
