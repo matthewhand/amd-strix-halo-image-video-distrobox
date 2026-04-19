@@ -134,7 +134,8 @@ def start_comfyui():
         *DOCKER_GPU, *DOCKER_ENV,
         "-p", "8188:8188",
         "-v", os.path.expanduser("~/comfy-models") + ":/opt/ComfyUI/models",
-        "-v", "/mnt/downloads:/mnt/downloads",
+        *(["-v", "/mnt/downloads:/mnt/downloads"]
+          if os.path.isdir("/mnt/downloads") else []),
         "-v", f"{OUTPUT_DIR}:/opt/ComfyUI/output",
         IMAGE,
         "bash", "-c",

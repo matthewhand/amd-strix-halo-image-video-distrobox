@@ -102,15 +102,19 @@ def stop_comfyui():
 
 def start_comfyui():
     subprocess.run(["docker", "rm", "-f", COMFYUI_CONTAINER], capture_output=True)
+    extra_mounts = []
+    # /mnt/downloads is a host-local symlink target some setups use to keep
+    # large models off the root partition. Mount it through if present so
+    # symlinks under ~/comfy-models/checkpoints/ → /mnt/downloads/... resolve
+    # inside the container. Skip silently on systems without it.
+    if os.path.isdir("/mnt/downloads"):
+        extra_mounts += ["-v", "/mnt/downloads:/mnt/downloads"]
     cmd = [
         "docker", "run", "-d", "--name", COMFYUI_CONTAINER,
         *DOCKER_GPU, *DOCKER_ENV,
         "-p", "8188:8188",
         "-v", os.path.expanduser("~/comfy-models") + ":/opt/ComfyUI/models",
-        # /mnt/downloads is the symlink target for large models (e.g. dev-only
-        # downloads kept off the root partition). Mount it so symlinks under
-        # ~/comfy-models/checkpoints/ → /mnt/downloads/... resolve inside.
-        "-v", "/mnt/downloads:/mnt/downloads",
+        *extra_mounts,
         "-v", f"{OUTPUT_DIR}:/opt/ComfyUI/output",
         IMAGE,
         "bash", "-c",
