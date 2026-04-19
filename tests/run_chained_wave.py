@@ -41,7 +41,7 @@ from generate_ltx23_workflow import create_workflow  # noqa: E402
 MODEL = "ltx-2.3-22b-distilled-fp8.safetensors"
 LORA = None
 LORA_STRENGTH = 0.0
-WIDTH, HEIGHT, FRAMES, FPS = 1024, 576, 145, 24
+DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_FRAMES, DEFAULT_FPS = 1024, 576, 145, 24
 
 SCENES = [
     {
@@ -114,18 +114,19 @@ def find_latest_mp4(label):
     return matches[-1] if matches else None
 
 
-def submit_and_wait_chain(label, image_filename, video_prompt):
+def submit_and_wait_chain(label, image_filename, video_prompt,
+                          width, height, frames, fps):
     wf = create_workflow(
         prompt=video_prompt,
         image_filename=image_filename,
-        width=WIDTH, height=HEIGHT, frames=FRAMES, fps=FPS,
+        width=width, height=height, frames=frames, fps=fps,
         include_audio=True,
         model_name=MODEL,
         lora_name=LORA,
         lora_strength=LORA_STRENGTH,
         output_prefix=f"chain_{label}",
     )
-    print(f"  Submitting LTX-2.3 i2v ({WIDTH}x{HEIGHT}/{FRAMES}f)...")
+    print(f"  Submitting LTX-2.3 i2v ({width}x{height}/{frames}f)...")
     status, err = ltx_runner.submit_and_wait(wf)
     if status != "success":
         print(f"  FAIL: {err}")
@@ -154,7 +155,12 @@ def main():
                    help="Don't concat completed scenes into a single mp4")
     p.add_argument("--skip-qwen", action="store_true",
                    help="Skip Qwen seed (scene 1 png must already exist)")
+    p.add_argument("--width", type=int, default=DEFAULT_WIDTH)
+    p.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
+    p.add_argument("--frames", type=int, default=DEFAULT_FRAMES)
+    p.add_argument("--fps", type=int, default=DEFAULT_FPS)
     args = p.parse_args()
+    width, height, frames, fps = args.width, args.height, args.frames, args.fps
 
     if args.prompts_file:
         with open(args.prompts_file) as f:
@@ -185,7 +191,7 @@ def main():
     print("=" * 70)
     print("LTX-2.3 Chained Narrative — 'The Coffee Break'")
     print(f"Model: {MODEL}  +  LoRA: {LORA} @ {LORA_STRENGTH}")
-    print(f"Per-scene: {WIDTH}x{HEIGHT}  {FRAMES}f @ {FPS}fps  ({FRAMES/FPS:.1f}s)")
+    print(f"Per-scene: {width}x{height}  {frames}f @ {fps}fps  ({frames/fps:.1f}s)")
     print("=" * 70)
     for i, s in enumerate(scenes, 1):
         print(f"  {i}. {s['label']}")
@@ -229,7 +235,8 @@ def main():
             print(f"  FAIL: docker cp input")
             break
 
-        if submit_and_wait_chain(label, in_filename, scene["video"]) != "success":
+        if submit_and_wait_chain(label, in_filename, scene["video"],
+                                 width, height, frames, fps) != "success":
             print(f"  Aborting chain at scene {idx}")
             break
 
@@ -259,9 +266,14 @@ def main():
         print(f"  {m}")
 
     if not args.no_join and len(completed) >= 2:
-        joined = os.path.join(
-            config.OUTPUT_DIR, f"chain_joined_{int(time.time())}.mp4"
-        )
+        # narrative is the prompts_file basename (e.g. lost_letter.json -> lost_letter);
+        # fall back to timestamp if not provided (t2v / SCENES[].label chain).
+        if args.prompts_file:
+            narrative = os.path.splitext(os.path.basename(args.prompts_file))[0]
+            joined_name = f"chain_{narrative}_{width}x{height}_{frames}f.mp4"
+        else:
+            joined_name = f"chain_joined_{int(time.time())}.mp4"
+        joined = os.path.join(config.OUTPUT_DIR, joined_name)
         print(f"\nJoining {len(completed)} clips into {os.path.basename(joined)}...")
         if comfy_container.join_mp4s(completed, joined):
             size_mb = os.path.getsize(joined) / 1e6
