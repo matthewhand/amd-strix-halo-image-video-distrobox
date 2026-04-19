@@ -120,6 +120,22 @@ SCENES = [
 ]
 
 
+def _extra_mounts():
+    """Optional extra bind mounts via env var COMFY_EXTRA_MOUNTS, formatted
+    as colon-separated host:container pairs, comma-separated for multiple.
+    Useful when models live on a separate volume and ~/comfy-models has
+    symlinks pointing into it (the container needs the symlink target
+    mounted too, or readlink fails). Example:
+        COMFY_EXTRA_MOUNTS=/data/ml:/data/ml,/scratch:/scratch
+    """
+    out = []
+    for spec in os.environ.get("COMFY_EXTRA_MOUNTS", "").split(","):
+        spec = spec.strip()
+        if spec:
+            out += ["-v", spec]
+    return out
+
+
 def stop_comfyui():
     subprocess.run(["docker", "kill", COMFYUI_CONTAINER], capture_output=True)
     subprocess.run(["docker", "rm", COMFYUI_CONTAINER], capture_output=True)
@@ -134,8 +150,7 @@ def start_comfyui():
         *DOCKER_GPU, *DOCKER_ENV,
         "-p", "8188:8188",
         "-v", os.path.expanduser("~/comfy-models") + ":/opt/ComfyUI/models",
-        *(["-v", "/mnt/downloads:/mnt/downloads"]
-          if os.path.isdir("/mnt/downloads") else []),
+        *_extra_mounts(),
         "-v", f"{OUTPUT_DIR}:/opt/ComfyUI/output",
         IMAGE,
         "bash", "-c",

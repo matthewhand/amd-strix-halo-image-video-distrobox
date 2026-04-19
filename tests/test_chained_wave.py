@@ -102,13 +102,17 @@ def stop_comfyui():
 
 def start_comfyui():
     subprocess.run(["docker", "rm", "-f", COMFYUI_CONTAINER], capture_output=True)
+    # Optional extra bind mounts via env var COMFY_EXTRA_MOUNTS, formatted
+    # as colon-separated host:container pairs, comma-separated for multiple.
+    # Useful when models live on a separate volume and ~/comfy-models has
+    # symlinks pointing into it (the container needs the symlink target
+    # mounted too, or readlink fails). Example:
+    #   COMFY_EXTRA_MOUNTS=/data/ml:/data/ml,/scratch:/scratch
     extra_mounts = []
-    # /mnt/downloads is a host-local symlink target some setups use to keep
-    # large models off the root partition. Mount it through if present so
-    # symlinks under ~/comfy-models/checkpoints/ → /mnt/downloads/... resolve
-    # inside the container. Skip silently on systems without it.
-    if os.path.isdir("/mnt/downloads"):
-        extra_mounts += ["-v", "/mnt/downloads:/mnt/downloads"]
+    for spec in os.environ.get("COMFY_EXTRA_MOUNTS", "").split(","):
+        spec = spec.strip()
+        if spec:
+            extra_mounts += ["-v", spec]
     cmd = [
         "docker", "run", "-d", "--name", COMFYUI_CONTAINER,
         *DOCKER_GPU, *DOCKER_ENV,
