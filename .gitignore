@@ -6,9 +6,20 @@
 # contents drift per-machine and per-session.
 
 __pycache__/
-.env
 *.log
 *.safetensors
+
+# Environment files — ignore ALL .env variants except the committed
+# template (.env.example). Covers .env, .env.local, .env.production,
+# .env.<user>, .env.<host>, .env.private, etc.
+.env
+.env.*
+!.env.example
+
+# Per-user / per-host local override files
+*.local
+*.private
+secrets/
 
 # Data directories (created by docker-compose or at runtime)
 huggingface-cache/
