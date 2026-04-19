@@ -30,21 +30,24 @@ from pathlib import Path
 OUTPUT_DIR = Path("/tmp/comfy-outputs")
 
 # (source_glob, dest_subdir) — order matters: more specific first.
+# No renames — original prefixes already encode the wave (chain_/wave_/tone_/
+# qwen_input_) and folder structure makes type unambiguous.
 RULES = [
     # Inspection PNGs from spot-check tooling
     ("insp_*.png", "inspection"),
-    # Chained-wave outputs: distinguish Qwen seed (1st) from extracted frames
-    # (2nd onward). The seed has scene index 1; extracted frames have 2..N.
-    # We rename for clarity:
-    #   chain_1_*.png             -> images/qwen_chain_1_*.png  (seed)
-    #   chain_{2,3,4,5}_*.png     -> images/frame_chain_{N}_*.png (extracted)
-    ("chain_*.mp4", "videos"),
-    ("chain_1_*.png", "images:rename:qwen_"),  # special: rename
-    ("chain_*.png", "images:rename:frame_"),    # everything else extracted
-    # Ironic-wave outputs
-    ("wave_*.mp4", "videos"),
-    ("qwen_input_*.png", "images:rename:qwen_"),
-    # Legacy / one-off outputs
+    # Auto-joined chain outputs (concatenated mp4s)
+    ("chain_joined_*.mp4", "videos"),
+    # Current waves
+    ("chain_*.mp4", "videos"),     # chained-wave LTX outputs
+    ("wave_*.mp4", "videos"),      # ironic-wave LTX outputs
+    ("tone_*.mp4", "videos"),      # tone-variety wave outputs
+    # PNG seeds + extracted last frames for chained waves
+    # chain_<N>_<scene>.png — N=1 is Qwen seed, N>=2 is extracted last frame
+    # of prior scene. The N prefix tells you which.
+    ("chain_*.png", "images"),
+    # Qwen-generated seeds for batch waves
+    ("qwen_input_*.png", "images"),
+    # Legacy / one-off outputs (pre-current naming convention)
     ("i2v_*.mp4", "archive"),
     ("ltx2_*.mp4", "archive"),
     ("lowvram_*.mp4", "archive"),
@@ -61,12 +64,7 @@ def plan_moves():
             if src in seen:
                 continue
             seen.add(src)
-            if ":rename:" in dest:
-                subdir, _, prefix = dest.partition(":rename:")
-                target_name = prefix + src.name
-                target = OUTPUT_DIR / subdir / target_name
-            else:
-                target = OUTPUT_DIR / dest / src.name
+            target = OUTPUT_DIR / dest / src.name
             moves.append((src, target))
     return moves
 
