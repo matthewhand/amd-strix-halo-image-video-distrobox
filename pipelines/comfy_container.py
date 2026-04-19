@@ -48,8 +48,17 @@ def _atexit_stop():
     subprocess.run(["docker", "rm", config.CONTAINER], capture_output=True)
 
 
-def start(extra_mounts=None, lowvram=True):
-    """Boot ComfyUI in the background, register atexit cleanup."""
+def start(extra_mounts=None, lowvram=False):
+    """Boot ComfyUI in the background, register atexit cleanup.
+
+    `lowvram` defaults to False because on Strix Halo with the 96 GB
+    usable env (PYTORCH_HIP_ALLOC_CONF + HSA_*), `--lowvram` causes the
+    text encoder to run on CPU and thrashes the sampler on large latent
+    shapes (193f @ 1280x720 observed to stall indefinitely).
+    Opt in via COMFY_LOWVRAM=1 if you actually need it.
+    """
+    if os.environ.get("COMFY_LOWVRAM") == "1":
+        lowvram = True
     global _atexit_registered
     subprocess.run(["docker", "rm", "-f", config.CONTAINER], capture_output=True)
 

@@ -16,6 +16,13 @@ DOCKER_ENV = [
     "-e", "HSA_OVERRIDE_GFX_VERSION=11.5.1",
     "-e", "LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib",
     "-e", "LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib",
+    # Lift the 64 GB per-process cap on gfx1151 and force coherent PCIe.
+    # Empirically raises usable VRAM from 64 GB -> ~98 GB.
+    "-e", "PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,"
+          "garbage_collection_threshold:0.9,backend:native",
+    "-e", "HSA_XNACK=1",
+    "-e", "HSA_FORCE_FINE_GRAIN_PCIE=1",
+    "-e", "HSA_ENABLE_SDMA=0",
 ]
 DOCKER_GPU = [
     "--device", "/dev/dri", "--device", "/dev/kfd",
