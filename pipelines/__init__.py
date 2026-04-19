@@ -9,7 +9,7 @@ Public API — import from here for stable callers:
     from pipelines.scenes import Scene, load_from_json, filter_by
     from pipelines.wave import run_wave
 """
-from . import config, comfy_container, qwen_runner, ltx_runner, cost_model, cli
+from . import config, comfy_container, qwen_runner, ltx_runner, cost_model, cli, mux
 from .scenes import Scene, load_from_json, filter_by
 from .wave import run_wave
 
@@ -20,6 +20,7 @@ __all__ = [
     "ltx_runner",
     "cost_model",
     "cli",
+    "mux",
     "Scene",
     "load_from_json",
     "filter_by",
