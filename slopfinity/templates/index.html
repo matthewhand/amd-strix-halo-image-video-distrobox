@@ -500,6 +500,9 @@
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-2">Settings</h3>
         <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud provider endpoints are accepted.</p>
 
+        <div role="tablist" class="tabs tabs-boxed mb-4">
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" checked />
+            <div role="tabpanel" class="tab-content pt-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <label class="form-control">
                 <span class="label-text text-xs">Provider</span>
@@ -589,6 +592,68 @@
             <button class="btn btn-sm btn-outline btn-accent" onclick="testSettings()">Test</button>
             <span id="set-test-badge" class="badge badge-ghost font-mono text-xs">idle</span>
         </div>
+            </div><!-- /LLM tabpanel -->
+
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
+            <div role="tabpanel" class="tab-content pt-4">
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="text-[11px] uppercase tracking-widest text-base-content/60">Status</span>
+                    <span id="sched-status-badge" class="badge badge-ghost font-mono">—</span>
+                </div>
+
+                <div class="join mb-4 flex-wrap">
+                    <button class="btn btn-sm btn-warning join-item" onclick="schedPost('/pause')">⏸ Pause</button>
+                    <button class="btn btn-sm btn-success join-item" onclick="schedPost('/resume')">▶ Resume</button>
+                    <button class="btn btn-sm btn-primary join-item" onclick="schedPost('/free')">🧹 Free ComfyUI</button>
+                    <button class="btn btn-sm btn-error join-item" onclick="schedPost('/emergency_free')">🚨 Emergency free</button>
+                </div>
+
+                <label class="form-control mb-4">
+                    <span class="label-text text-xs flex items-center justify-between">
+                        <span>Memory safety margin</span>
+                        <span class="font-mono"><span id="sched-safety-val">10</span> GB</span>
+                    </span>
+                    <input id="sched-safety" type="range" min="1" max="30" step="1" value="10"
+                           class="range range-sm range-primary"
+                           oninput="$('sched-safety-val').innerText = this.value"
+                           onchange="saveSchedSafety(this.value)" />
+                    <span class="label-text-alt text-[10px] text-base-content/50 italic mt-1">
+                        Scheduler reads this at acquire_gpu time (writes config.json → scheduler.memory_safety_gb).
+                    </span>
+                </label>
+
+                <div>
+                    <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-1">Recent events</div>
+                    <div id="sched-recent" class="flex flex-wrap gap-1 min-h-[2rem]">
+                        <span class="text-[11px] text-base-content/40 italic">no events yet</span>
+                    </div>
+                </div>
+            </div><!-- /Scheduler tabpanel -->
+
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Diagnostics" />
+            <div role="tabpanel" class="tab-content pt-4">
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="bg-base-100 rounded-lg p-3 border border-base-300">
+                        <div class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</div>
+                        <div id="diag-gpu" class="text-lg font-mono">—</div>
+                    </div>
+                    <div class="bg-base-100 rounded-lg p-3 border border-base-300">
+                        <div class="text-[10px] uppercase tracking-widest text-base-content/50">VRAM</div>
+                        <div id="diag-vram" class="text-lg font-mono">—</div>
+                    </div>
+                    <div class="bg-base-100 rounded-lg p-3 border border-base-300">
+                        <div class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</div>
+                        <div id="diag-ram" class="text-lg font-mono">—</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 mb-2">
+                    <button class="btn btn-xs btn-outline" onclick="refreshDiagStatus()">Refresh /scheduler/status</button>
+                    <button class="btn btn-xs btn-outline" onclick="copyDiagnostics()">Copy diagnostics</button>
+                    <span id="diag-copy-badge" class="badge badge-ghost badge-sm font-mono">idle</span>
+                </div>
+                <pre id="diag-status" class="bg-base-100 border border-base-300 rounded p-2 text-[10px] font-mono overflow-auto max-h-48">(click Refresh)</pre>
+            </div><!-- /Diagnostics tabpanel -->
+        </div><!-- /tablist -->
 
         <div class="modal-action">
             <button class="btn btn-sm btn-primary" onclick="saveSettings()">Save</button>

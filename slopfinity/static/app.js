@@ -109,18 +109,89 @@ function updateScheduler(sc) {
         pauseBadge.innerText = sc.paused ? 'paused' : 'live';
         pauseBadge.className = 'badge badge-sm font-mono ' + (sc.paused ? 'badge-warning' : 'badge-ghost');
     }
-    const tl = $('sched-timeline');
-    if (!tl) return;
-    const events = (sc.events || []).slice(-5);
-    if (!events.length) {
-        tl.innerHTML = '<span class="text-[11px] text-neutral-content/40 italic">no events yet</span>';
-        return;
+    // Settings-modal Scheduler tab badge
+    const statusBadge = $('sched-status-badge');
+    if (statusBadge) {
+        statusBadge.innerText = sc.paused ? '⏸ Paused' : '▶ Running';
+        statusBadge.className = 'badge font-mono ' + (sc.paused ? 'badge-warning' : 'badge-success');
     }
-    tl.innerHTML = events.map((e, i) => {
-        const label = (e.stage && e.model) ? `${e.stage}/${e.model}` : (e.type || 'event');
-        const tip = JSON.stringify(e).replace(/"/g, '&quot;');
-        return `<span id="sched-event-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tip}">${e.type}: ${label}</span>`;
-    }).join('');
+    const events = (sc.events || []).slice(-5);
+    const tipFor = e => JSON.stringify(e).replace(/"/g, '&quot;');
+    const labelFor = e => (e.stage && e.model) ? `${e.stage}/${e.model}` : (e.type || 'event');
+    const renderEvents = (container, idPrefix) => {
+        if (!container) return;
+        if (!events.length) {
+            container.innerHTML = '<span class="text-[11px] text-base-content/40 italic">no events yet</span>';
+            return;
+        }
+        container.innerHTML = events.map((e, i) =>
+            `<span id="${idPrefix}-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tipFor(e)}">${e.type}: ${labelFor(e)}</span>`
+        ).join('');
+    };
+    renderEvents($('sched-timeline'), 'sched-event');
+    renderEvents($('sched-recent'), 'sched-recent-event');
+}
+
+// Cache last WS tick for diagnostics-copy / manual refresh.
+let _lastTick = null;
+
+async function schedPost(path) {
+    try {
+        const r = await fetch(path, { method: 'POST' });
+        return r.json();
+    } catch (e) {
+        console.warn('schedPost failed', path, e);
+        return { ok: false, error: String(e) };
+    }
+}
+
+async function saveSchedSafety(v) {
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduler: { memory_safety_gb: parseInt(v, 10) } }),
+        });
+    } catch (e) {
+        console.warn('saveSchedSafety failed', e);
+    }
+}
+
+function updateDiagnostics(d) {
+    const g = $('diag-gpu'); if (g && d.stats) g.innerText = d.stats.gpu + '%';
+    const v = $('diag-vram'); if (v && d.stats) v.innerText = d.stats.vram + '%';
+    const r = $('diag-ram'); if (r && d.stats) r.innerText = `${d.stats.ram_u} / ${Math.round(d.stats.ram_t)} GB`;
+}
+
+async function refreshDiagStatus() {
+    const pre = $('diag-status');
+    if (!pre) return;
+    try {
+        const r = await fetch('/scheduler/status');
+        const d = await r.json();
+        pre.innerText = JSON.stringify(d, null, 2);
+    } catch (e) {
+        pre.innerText = 'error: ' + String(e);
+    }
+}
+
+async function copyDiagnostics() {
+    const badge = $('diag-copy-badge');
+    const blob = {
+        stats: _lastTick && _lastTick.stats,
+        storage: _lastTick && _lastTick.storage,
+        ram: _lastTick && _lastTick.ram,
+        scheduler: _lastTick && _lastTick.scheduler,
+    };
+    try {
+        await navigator.clipboard.writeText(JSON.stringify(blob, null, 2));
+        if (badge) { badge.className = 'badge badge-success badge-sm font-mono'; badge.innerText = 'copied'; }
+    } catch (e) {
+        if (badge) { badge.className = 'badge badge-error badge-sm font-mono'; badge.innerText = 'fail'; }
+    }
+    setTimeout(() => {
+        if (badge) { badge.className = 'badge badge-ghost badge-sm font-mono'; badge.innerText = 'idle'; }
+    }, 1500);
 }
 
 function updateRefresh() {
@@ -175,6 +246,8 @@ function connect() {
             updateStorage(d.storage);
             updateRam(d.ram);
             updateScheduler(d.scheduler);
+            _lastTick = d;
+            updateDiagnostics(d);
         }
         if (d.type === 'new_file') {
             const isV = d.file.endsWith('.mp4');
@@ -662,6 +735,13 @@ async function openSettings() {
         });
         $('set-test-badge').className = 'badge badge-ghost font-mono text-xs';
         $('set-test-badge').innerText = 'idle';
+        // Hydrate scheduler safety-margin slider from full settings payload.
+        const safety = (sr.scheduler && sr.scheduler.memory_safety_gb) ?? 10;
+        const safetyEl = $('sched-safety');
+        if (safetyEl) {
+            safetyEl.value = safety;
+            const lbl = $('sched-safety-val'); if (lbl) lbl.innerText = safety;
+        }
         modal.showModal();
         reloadModels();
     } catch (e) {
