@@ -134,7 +134,10 @@ function updateOutputs(o) {
     if (f) f.textContent = o.finals ?? 0;
     if (c) c.textContent = o.chains ?? 0;
     if (b) b.textContent = o.base_images ?? 0;
-    if (l) l.textContent = o.latest_final || '—';
+    if (l) {
+        l.textContent = o.latest_final ? `latest: ${o.latest_final}` : '';
+        l.style.display = o.latest_final ? 'block' : 'none';
+    }
 }
 
 function updateScheduler(sc) {
@@ -277,7 +280,7 @@ function connect() {
             const qList = $('q-list');
             if (qList) {
                 qList.innerHTML = d.queue.length
-                    ? d.queue.slice(0, 3).map(q => `<div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">${(q.prompt || '').substring(0, 60)}...</div>`).join('')
+                    ? d.queue.map((q, idx) => _renderQueueRow(q, idx + 1, d.config || {})).join('')
                     : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
             }
             const qDrawer = $('queue-drawer-list');
@@ -331,18 +334,36 @@ function connect() {
         }
         if (d.type === 'new_file') {
             const isV = d.file.endsWith('.mp4');
-            const g = $(isV ? 'preview-grid' : 'i-grid');
+            const isFinal = isV && /^FINAL_/i.test(d.file);
+            // Route: FINAL_*.mp4 → v-grid (Completed / curated keepers)
+            //        everything else (base PNGs, chain MP4s, bridge PNGs) → preview-grid (Live chronological stream)
+            const g = $(isFinal ? 'v-grid' : 'preview-grid');
             if (!g) return;
+            // Make the Output section visible the moment the first file arrives.
+            const outSec = $('output-section');
+            const outEmpty = $('output-empty');
+            if (outSec) outSec.style.display = 'block';
+            if (outEmpty) outEmpty.style.display = 'none';
             const c = document.createElement('div');
-            c.className = 'card bg-base-100 shadow-2xl border-2 border-primary card-hover animate-pulse';
-            c.innerHTML = isV
-                ? `<figure><video controls autoplay loop class="w-full aspect-video object-cover"><source src="/files/${d.file}"></video></figure><div class="p-3 text-xs font-mono bg-base-200 text-primary truncate">${d.file}</div>`
-                : `<figure><img src="/files/${d.file}" class="w-full aspect-video object-cover"></figure><div class="p-2 text-[10px] font-mono bg-base-200 truncate">${d.file}</div>`;
+            const badgeClass = isFinal ? 'border-accent' : (isV ? 'border-primary' : 'border-secondary');
+            c.className = `card card-compact bg-base-100 shadow-lg border ${badgeClass} card-hover overflow-hidden animate-pulse`;
+            const label = isFinal ? '🎬 FINAL'
+                         : isV ? '⛓ chain'
+                         : '🖼 png';
+            const media = isV
+                ? `<figure class="bg-black"><video controls autoplay muted loop class="w-full aspect-video object-cover"><source src="/files/${d.file}"></video></figure>`
+                : `<figure class="bg-black"><img src="/files/${d.file}" class="w-full aspect-video object-cover" loading="lazy"></figure>`;
+            c.innerHTML = `${media}
+                <div class="card-body !p-2 bg-base-200/60 flex-row items-center justify-between">
+                    <span class="badge badge-xs ${isFinal ? 'badge-accent' : (isV ? 'badge-primary' : 'badge-secondary')}">${label}</span>
+                    <span class="text-[10px] font-mono text-base-content/60 truncate" title="${d.file}">${d.file}</span>
+                </div>`;
             g.prepend(c);
             const ring = $('live-ring');
-            if (isV && ring) ring.style.display = 'inline-block';
-            setTimeout(() => c.classList.remove('animate-pulse', 'border-2', 'border-primary'), 3000);
-            if (isV && g.children.length > 4) g.removeChild(g.lastChild);
+            if (ring) ring.style.display = 'inline-block';
+            setTimeout(() => c.classList.remove('animate-pulse'), 3000);
+            // Cap live feed to most recent 24 items
+            if (!isFinal && g.children.length > 24) g.removeChild(g.lastChild);
         }
     };
     ws.onclose = () => {
@@ -350,6 +371,42 @@ function connect() {
         if (w) w.style.display = '';
         setTimeout(connect, 2000);
     };
+}
+
+function _renderQueueRow(q, idx, currentConfig) {
+    const snap = (q && q.config_snapshot) || {};
+    const base = snap.base_model || currentConfig.base_model || '';
+    const video = snap.video_model || currentConfig.video_model || '';
+    const audio = snap.audio_model || currentConfig.audio_model || '';
+    const upscale = snap.upscale_model || currentConfig.upscale_model || '';
+    const frames = snap.frames || currentConfig.frames || '';
+    const tier = snap.tier || currentConfig.tier || 'auto';
+    const prompt = (q && q.prompt) || '';
+    const badge = (cls, title, txt) => txt && txt !== 'none'
+        ? `<span class="badge badge-xs ${cls}" title="${_htmlEscape(title)}">${_htmlEscape(txt)}</span>`
+        : '';
+    const snapBlock = q && q.config_snapshot
+        ? `<div><div class="uppercase opacity-60">snapshot</div><pre class="whitespace-pre-wrap break-words font-mono">${_htmlEscape(JSON.stringify(q.config_snapshot, null, 2))}</pre></div>`
+        : '';
+    return `<details class="card card-compact bg-base-200 border border-base-300 mb-1">
+        <summary class="card-body !p-2 cursor-pointer list-none">
+            <div class="flex items-start justify-between gap-2">
+                <span class="text-xs font-semibold truncate" title="${_htmlEscape(prompt)}">${_htmlEscape(prompt.substring(0, 80))}</span>
+                <span class="text-[9px] text-base-content/40 font-mono">${idx}</span>
+            </div>
+            <div class="flex flex-wrap gap-1">
+                ${badge('badge-primary', 'Base image', base)}
+                ${badge('badge-success', 'Video', video)}
+                ${badge('badge-secondary', 'Music', audio)}
+                ${badge('badge-warning', 'Upscale', upscale)}
+            </div>
+            <div class="text-[10px] text-base-content/50 font-mono">1:1 · ${_htmlEscape(String(frames))}f · tier=${_htmlEscape(String(tier))}</div>
+        </summary>
+        <div class="!p-2 text-[10px] space-y-1 bg-base-300/50">
+            <div><div class="uppercase opacity-60">prompt</div><div class="whitespace-pre-wrap break-words">${_htmlEscape(prompt)}</div></div>
+            ${snapBlock}
+        </div>
+    </details>`;
 }
 
 function _concatStagePrompts() {
@@ -549,16 +606,43 @@ async function inject(prio) {
     ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
 }
 
+function _subjectsFromTextarea() {
+    const v = ($('p-core') && $('p-core').value) || '';
+    return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
 async function updatePipeline() {
+    const subjects = _subjectsFromTextarea();
+    // Prefer explicit frames dropdown when present; else infer from video model.
+    let frames;
+    if ($('cfg-frames')) {
+        frames = parseInt($('cfg-frames').value, 10);
+    } else {
+        frames = ($('cfg-video') && $('cfg-video').value.includes('wan')) ? 81 : 49;
+    }
     const body = {
         infinity_mode: $('inf-on') ? $('inf-on').checked : false,
-        infinity_themes: $('inf-themes') ? $('inf-themes').value.split(',').map(s => s.trim()) : [],
+        infinity_themes: subjects,
         base_model: $('cfg-base') ? $('cfg-base').value : '',
         video_model: $('cfg-video') ? $('cfg-video').value : '',
         audio_model: $('cfg-audio') ? $('cfg-audio').value : '',
         upscale_model: $('cfg-upscale') ? $('cfg-upscale').value : '',
-        frames: $('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49,
+        frames,
     };
+    if ($('cfg-chains')) body.chains = parseInt($('cfg-chains').value, 10);
+    if ($('cfg-tier')) body.tier = $('cfg-tier').value;
+    if ($('cfg-consolidation')) body.consolidation = $('cfg-consolidation').value;
+    if ($('cfg-music-gain-db')) body.music_gain_db = parseInt($('cfg-music-gain-db').value, 10);
+    if ($('cfg-fade-s')) body.fade_s = parseFloat($('cfg-fade-s').value);
+
+    // Keep the legacy #inf-themes compat field in sync (comma-joined).
+    const legacy = $('inf-themes');
+    if (legacy) legacy.value = subjects.join(', ');
+
+    // Start/Stop button label + infinity-toggle wiring.
+    const ssBtn = $('btn-start-stop');
+    if (ssBtn) ssBtn.textContent = body.infinity_mode ? '⏸ Stop Infinity' : '▶ Start Infinity';
+
     await fetch('/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -575,6 +659,69 @@ async function updatePipeline() {
         const res = await fetch('/ram_estimate?' + qs.toString());
         if (res.ok) updateRam(await res.json());
     } catch (e) { /* WS tick will catch up */ }
+}
+
+function _onAudioChanged() {
+    const audio = $('cfg-audio') ? $('cfg-audio').value : 'none';
+    const enabled = audio && audio !== 'none';
+    ['cfg-consolidation', 'cfg-music-gain-db', 'cfg-fade-s'].forEach(id => {
+        const el = $(id);
+        if (el) el.disabled = !enabled;
+    });
+    const wrap = $('consolidation-wrap');
+    if (wrap) wrap.classList.toggle('opacity-50', !enabled);
+}
+
+async function regenSuggestions(n = 6) {
+    const box = $('subject-chips');
+    if (box) box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    try {
+        const r = await fetch('/subjects/suggest?n=' + n);
+        const data = await r.json();
+        const arr = data.suggestions || [];
+        if (!arr.length) {
+            box.innerHTML = '<span class="alert alert-ghost text-xs p-1">LLM unreachable</span>';
+            return;
+        }
+        box.innerHTML = '';
+        arr.forEach(s => {
+            const b = document.createElement('button');
+            b.className = 'btn btn-outline btn-primary btn-xs normal-case';
+            b.textContent = s;
+            b.title = 'Click: append · Shift+click: replace';
+            b.addEventListener('click', (e) => {
+                const ta = $('p-core');
+                if (!ta) return;
+                if (e.shiftKey) {
+                    ta.value = s;
+                } else {
+                    ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+                }
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+                updatePipeline();
+            });
+            box.appendChild(b);
+        });
+    } catch (e) {
+        if (box) box.innerHTML = '<span class="alert alert-error text-xs p-1">error</span>';
+    }
+}
+
+async function toggleInfinity() {
+    const t = $('inf-on');
+    if (!t) return;
+    t.checked = !t.checked;
+    const btn = $('btn-start-stop');
+    if (btn) btn.textContent = t.checked ? '⏸ Stop Infinity' : '▶ Start Infinity';
+    await updatePipeline();
+}
+
+function openPipeline() {
+    const d = $('pipeline-modal');
+    if (d && d.showModal) {
+        _onAudioChanged();
+        d.showModal();
+    }
 }
 
 function openQueueDrawer() {
@@ -883,6 +1030,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 connect();
 _wireLockListeners();
+
+// Wire the Subjects textarea → config.infinity_themes (debounced on input, immediate on blur).
+(function () {
+    const core = $('p-core');
+    if (!core) return;
+    let t = null;
+    core.addEventListener('input', () => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => { updatePipeline(); }, 600);
+    });
+    core.addEventListener('blur', () => {
+        if (t) { clearTimeout(t); t = null; }
+        updatePipeline();
+    });
+})();
 
 // Auto-open drawer on mobile first visit (remembers user close preference)
 (function () {

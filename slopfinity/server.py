@@ -151,6 +151,40 @@ async def enhance(data: dict = Body(...)):
     return {"suggestion": suggestion}
 
 
+@app.get("/subjects/suggest")
+async def subjects_suggest(n: int = 6):
+    """Ask LM Studio for N short visual subject ideas. Cached 30s."""
+    cache = getattr(subjects_suggest, "_cache", None)
+    now = time.time()
+    if cache and now - cache[0] < 30 and cache[1] == n:
+        return {"suggestions": cache[2], "cached": True}
+    sys_p = (
+        "You are a concept artist for an AI video fleet. "
+        f"Output ONLY a JSON array of exactly {n} short visual subject ideas "
+        "(3-8 words each). Each should be cynical, philosophical, visually rich, "
+        "suitable as a video seed. No prose, just the JSON array."
+    )
+    user_p = f"Give me {n} subject ideas."
+    raw = lmstudio_call(sys_p, user_p)
+    # Best-effort parse
+    suggestions = []
+    try:
+        suggestions = json.loads(raw)
+        if not isinstance(suggestions, list):
+            raise ValueError()
+    except Exception:
+        start, end = raw.find("["), raw.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            try:
+                suggestions = json.loads(raw[start:end + 1])
+            except Exception:
+                suggestions = []
+    suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
+    if suggestions:
+        subjects_suggest._cache = (now, n, suggestions)
+    return {"suggestions": suggestions, "cached": False}
+
+
 @app.post("/enhance/distribute")
 async def enhance_distribute(data: dict = Body(...)):
     """Single-idea fan-out with preserve-tokens and lock support.

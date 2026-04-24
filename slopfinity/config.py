@@ -15,7 +15,13 @@ DEFAULT_CONFIG = {
     "enhancer_prompt": "You are a master cinematic director. Rewrite the user's prompt into a highly detailed, visually evocative description for an AI video generator. Focus on lighting, texture, and mood. Keep it under 60 words.",
     "infinity_mode": False,
     "infinity_themes": ["existential crisis of lumpy clay robots", "cyberpunk dragons in neon rain"],
-    "infinity_index": 0
+    "infinity_index": 0,
+    # Pipeline shape (new — workflow rethink)
+    "chains": 10,
+    "tier": "auto",
+    "consolidation": "overlay",
+    "music_gain_db": 0,
+    "fade_s": 0.5,
 }
 
 def load_config():
