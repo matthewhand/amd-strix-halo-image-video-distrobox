@@ -29,9 +29,31 @@ def load_config():
         except: pass
     return DEFAULT_CONFIG
 
+SENSITIVE_KEYS = {"api_key"}
+
+
 def save_config(config):
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-    with open(CONFIG_FILE, "w") as f: json.dump(config, f, indent=2)
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+    # Config may contain API keys; restrict to owner-only.
+    try:
+        os.chmod(CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def redact(config):
+    """Return a deep copy with sensitive fields blanked for broadcast/transit."""
+    import copy
+    c = copy.deepcopy(config) if isinstance(config, dict) else config
+    if isinstance(c, dict):
+        llm = c.get("llm")
+        if isinstance(llm, dict) and llm.get("api_key"):
+            llm["api_key"] = "***"
+        if c.get("api_key"):
+            c["api_key"] = "***"
+    return c
 
 def get_state():
     if os.path.exists(STATE_FILE):
