@@ -23,15 +23,17 @@ jobs:
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y docker.io docker-compose-plugin podman
+        # ubuntu-24.04 runners ship Docker + compose-v2 pre-installed; skip apt.
+        # Verify they exist, then install only the Python deps we need.
+        docker --version
+        docker compose version
         python -m pip install requests
 
-    - name: Start Docker service
+    - name: Ensure Docker socket accessible
       run: |
-        sudo systemctl start docker
-        sudo usermod -aG docker $USER
-        sudo chmod 666 /var/run/docker.sock
+        # Docker service is already running on ubuntu-24.04 runners; just
+        # make sure the non-root user can reach the socket.
+        sudo chmod 666 /var/run/docker.sock || true
 
     - name: Build Docker image
       run: |
