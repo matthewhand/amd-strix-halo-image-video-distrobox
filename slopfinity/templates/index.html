@@ -73,22 +73,25 @@
                             <div class="stat-desc"><span class="badge badge-ghost badge-sm font-mono">gfx1151</span></div>
                         </div>
 
-                        <!-- Storage widgets -->
-                        {% for s in storage %}
-                        {% set sid = 'st-root' if s.mount == '/' else ('st-data' if s.mount == '/mnt/data' else 'st-downloads') %}
-                        <div class="stat py-2" id="{{ sid }}">
-                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">{{ s.mount }}</div>
-                            <div class="stat-value text-sm font-mono st-val">{{ s.used_gb }} / {{ s.total_gb }} GB</div>
-                            <div class="stat-desc">
-                                <span class="st-badge badge badge-sm {% if s.status == 'danger' %}badge-error{% elif s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}">{{ s.pct }}%</span>
-                            </div>
-                        </div>
-                        {% endfor %}
-
                     </div>
                 </div>
 
-                <div class="flex-none gap-2">
+                <div class="flex-none gap-2 items-center">
+                    {# Worst storage mount summary; JS hides when all <80% #}
+                    {% set worst = namespace(s=None) %}
+                    {% for s in storage %}
+                        {% if worst.s is none or s.pct > worst.s.pct %}{% set worst.s = s %}{% endif %}
+                    {% endfor %}
+                    {% set any_alert = false %}
+                    {% for s in storage %}{% if s.status != 'ok' %}{% set any_alert = true %}{% endif %}{% endfor %}
+                    <div id="st-pill"
+                         class="badge badge-lg cursor-pointer tooltip tooltip-left {% if worst.s and worst.s.status == 'danger' %}badge-error{% elif worst.s and worst.s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}"
+                         data-tip="{% for s in storage %}{{ s.mount }}: {{ s.used_gb }}/{{ s.total_gb }} GB ({{ s.pct }}%){% if not loop.last %} · {% endif %}{% endfor %}"
+                         onclick="openStorageModal()"
+                         {% if not any_alert %}style="display:none"{% endif %}>
+                        {% if worst.s %}{% if worst.s.status == 'danger' %}🔴{% elif worst.s.status == 'warn' %}🟡{% else %}🟢{% endif %} {{ worst.s.pct }}%{% else %}🟢 0%{% endif %}
+                    </div>
+
                     <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
                         <select id="refresh-interval" class="select select-bordered select-sm w-32" onchange="updateRefresh()">
                             <option value="5000" selected>Sync: 5s</option>
@@ -428,6 +431,28 @@
         </div>
     </aside>
 </div>
+
+<!-- Storage Details Modal -->
+<dialog id="storage-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Storage Mounts</h3>
+        <div id="storage-modal-list" class="space-y-2">
+            {% for s in storage %}
+            <div class="flex items-center justify-between gap-3 bg-base-100 p-3 rounded-lg border border-base-300">
+                <div class="flex-1">
+                    <div class="text-[10px] uppercase tracking-widest text-base-content/50">{{ s.mount }}</div>
+                    <div class="text-sm font-mono">{{ s.used_gb }} / {{ s.total_gb }} GB</div>
+                </div>
+                <span class="badge badge-lg {% if s.status == 'danger' %}badge-error{% elif s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}">{{ s.pct }}%</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-sm">Close</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <!-- Fanout Edit Modal -->
 <dialog id="fanout-edit-modal" class="modal">
