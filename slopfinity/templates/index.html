@@ -355,13 +355,18 @@
                     <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
                 </select>
             </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Tier (FLEET_TIER)</span>
+            <label class="form-control" title="How aggressive to ramp quality. auto = start cheap (8 steps, 1:1, 17f) and escalate as pipeline proves stable. Force a level to skip the ramp.">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
+                    Quality ramp
+                    <span class="tooltip tooltip-right cursor-help" data-tip="auto = cheap first, escalate on success · low = 8 steps 1:1 17f · med = 20 steps 4:3 33f · high = 50 steps 16:9 49f">
+                        <span class="text-[9px] opacity-60">ⓘ</span>
+                    </span>
+                </span>
                 <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                    <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto</option>
-                    <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low</option>
-                    <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med</option>
-                    <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high</option>
+                    <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto · ramp low→high</option>
+                    <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low · fast preview</option>
+                    <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med · balanced</option>
+                    <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high · max quality</option>
                 </select>
             </label>
         </div>
