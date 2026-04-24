@@ -1,4 +1,14 @@
 // Slopfinity dashboard client.
+
+// PWA: register service worker (scoped to /) for installable desktop-icon experience.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker
+            .register('/sw.js', { scope: '/' })
+            .catch((err) => console.warn('SW registration failed:', err));
+    });
+}
+
 let ws;
 let gH = Array(15).fill(0);
 let vH = Array(15).fill(0);
@@ -46,6 +56,36 @@ function updateRam(ram) {
     }
     el.className = 'alert p-2 ' + (ram.status === 'danger' ? 'alert-error' : ram.status === 'warn' ? 'alert-warning' : 'alert-success');
     el.id = 'ram-est';
+}
+
+function schedBadgeClass(type) {
+    if (type === 'stage_start') return 'badge-info';
+    if (type === 'stage_end') return 'badge-success';
+    if (type === 'budget_block') return 'badge-warning';
+    if (type === 'oom_retry') return 'badge-error';
+    if (type === 'emergency_free') return 'badge-error';
+    return 'badge-ghost';
+}
+
+function updateScheduler(sc) {
+    if (!sc) return;
+    const pauseBadge = $('sched-pause-badge');
+    if (pauseBadge) {
+        pauseBadge.innerText = sc.paused ? 'paused' : 'live';
+        pauseBadge.className = 'badge badge-sm font-mono ' + (sc.paused ? 'badge-warning' : 'badge-ghost');
+    }
+    const tl = $('sched-timeline');
+    if (!tl) return;
+    const events = (sc.events || []).slice(-5);
+    if (!events.length) {
+        tl.innerHTML = '<span class="text-[11px] text-neutral-content/40 italic">no events yet</span>';
+        return;
+    }
+    tl.innerHTML = events.map((e, i) => {
+        const label = (e.stage && e.model) ? `${e.stage}/${e.model}` : (e.type || 'event');
+        const tip = JSON.stringify(e).replace(/"/g, '&quot;');
+        return `<span id="sched-event-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tip}">${e.type}: ${label}</span>`;
+    }).join('');
 }
 
 function updateRefresh() {
@@ -99,6 +139,7 @@ function connect() {
 
             updateStorage(d.storage);
             updateRam(d.ram);
+            updateScheduler(d.scheduler);
         }
         if (d.type === 'new_file') {
             const isV = d.file.endsWith('.mp4');
@@ -135,31 +176,168 @@ function _concatStagePrompts() {
     return concat;
 }
 
-async function enhance() {
-    _concatStagePrompts();
-    const p = ($('p-in') && $('p-in').value) || '';
-    if (!p) return;
-    const box = $('ai-box');
-    if (box) box.classList.remove('hidden');
-    if ($('ai-s')) $('ai-s').innerText = 'Conjuring brilliance...';
-    const res = await fetch('/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: p, distribute: true }),
+// ---- Fan-out (P2) ----------------------------------------------------------
+const STAGE_NAMES = ['image', 'video', 'music', 'tts'];
+let _fanoutPending = null; // { stages: {...}, preserved_ok, preserved_dropped }
+
+function _stageVal(name) {
+    const el = $('p-' + name);
+    return el ? el.value : '';
+}
+
+function _setStageVal(name, v) {
+    const el = $('p-' + name);
+    if (el) el.value = v;
+}
+
+function _lockedList() {
+    return STAGE_NAMES.filter(n => {
+        const b = $('lock-' + n);
+        return b && b.dataset.locked === '1';
     });
-    const r = await res.json();
-    if (r && r.stages) {
-        if ($('p-image')) $('p-image').value = r.stages.image || '';
-        if ($('p-video')) $('p-video').value = r.stages.video || '';
-        if ($('p-music')) $('p-music').value = r.stages.music || '';
-        if ($('p-tts')) $('p-tts').value = r.stages.tts || '';
-        _concatStagePrompts();
-        if ($('ai-s')) $('ai-s').innerText = 'Distributed across stages. Edit or Accept.';
-    } else if ($('ai-s')) {
-        $('ai-s').innerText = r.suggestion || '(no response)';
+}
+
+function _setLock(name, locked) {
+    const b = $('lock-' + name);
+    if (!b) return;
+    if (locked) {
+        b.dataset.locked = '1';
+        b.innerText = '🔒';
+        b.title = 'Locked — your text will be preserved';
+        b.classList.remove('badge-ghost');
+        b.classList.add('badge-warning');
+    } else {
+        b.dataset.locked = '0';
+        b.innerText = '🔓';
+        b.title = 'Unlocked — will be overwritten';
+        b.classList.remove('badge-warning');
+        b.classList.add('badge-ghost');
     }
 }
 
+function _wireLockListeners() {
+    STAGE_NAMES.forEach(n => {
+        const ta = $('p-' + n);
+        if (!ta) return;
+        const sync = () => _setLock(n, (ta.value || '').length >= 1);
+        ta.addEventListener('input', sync);
+        sync();
+    });
+}
+
+function _htmlEscape(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+}
+
+function _renderFanoutPreview(stages) {
+    const tabs = $('fanout-tabs');
+    const body = $('fanout-body');
+    if (!tabs || !body) return;
+    tabs.innerHTML = STAGE_NAMES.map((n, i) =>
+        `<a role="tab" class="tab ${i === 0 ? 'tab-active' : ''}" data-stage="${n}" onclick="_switchFanoutTab('${n}')">${n}</a>`
+    ).join('');
+    body.dataset.stages = JSON.stringify(stages);
+    _switchFanoutTab('image');
+}
+
+function _switchFanoutTab(stage) {
+    const tabs = $('fanout-tabs');
+    const body = $('fanout-body');
+    if (!tabs || !body) return;
+    tabs.querySelectorAll('.tab').forEach(el => {
+        el.classList.toggle('tab-active', el.dataset.stage === stage);
+    });
+    const stages = JSON.parse(body.dataset.stages || '{}');
+    const before = _stageVal(stage);
+    const after = stages[stage] || '';
+    body.innerHTML = `
+        <div class="grid grid-cols-1 gap-2">
+            <div>
+                <div class="text-[10px] uppercase opacity-60">Before</div>
+                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap">${_htmlEscape(before) || '<em class="opacity-40">(empty)</em>'}</div>
+            </div>
+            <div>
+                <div class="text-[10px] uppercase opacity-60">After</div>
+                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap border-l-2 border-primary">${_htmlEscape(after) || '<em class="opacity-40">(empty)</em>'}</div>
+            </div>
+        </div>`;
+}
+
+async function enhance() {
+    const core = ($('p-core') && $('p-core').value) || '';
+    const stages = {
+        image: _stageVal('image'),
+        video: _stageVal('video'),
+        music: _stageVal('music'),
+        tts: _stageVal('tts'),
+    };
+    if (!core.trim() && !Object.values(stages).some(v => v && v.trim())) return;
+    const locked = _lockedList();
+    const preview = $('fanout-preview');
+    if (preview) preview.classList.remove('hidden');
+    const warn = $('fanout-warn');
+    if (warn) { warn.classList.add('hidden'); warn.innerText = ''; }
+    const body = $('fanout-body');
+    if (body) body.innerHTML = '<em class="opacity-60">Conjuring brilliance...</em>';
+    try {
+        const res = await fetch('/enhance/distribute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ core, stages, locked, preserve_tokens: [] }),
+        });
+        const r = await res.json();
+        if (r && r.stages) {
+            _fanoutPending = r;
+            _renderFanoutPreview(r.stages);
+            if (!r.preserved_ok && warn) {
+                warn.classList.remove('hidden');
+                warn.innerText = 'Restored dropped tokens: ' + (r.preserved_dropped || []).join(', ');
+            }
+        } else if (body) {
+            body.innerText = '(no response)';
+        }
+    } catch (e) {
+        if (body) body.innerText = 'Error: ' + e;
+    }
+}
+
+function acceptFanout() {
+    if (!_fanoutPending || !_fanoutPending.stages) return;
+    STAGE_NAMES.forEach(n => {
+        const v = _fanoutPending.stages[n];
+        if (typeof v === 'string') _setStageVal(n, v);
+        _setLock(n, (_stageVal(n) || '').length >= 1);
+    });
+    _concatStagePrompts();
+    const preview = $('fanout-preview');
+    if (preview) preview.classList.add('hidden');
+    _fanoutPending = null;
+}
+
+function editFanout() {
+    if (!_fanoutPending || !_fanoutPending.stages) return;
+    STAGE_NAMES.forEach(n => {
+        const el = $('fe-' + n);
+        if (el) el.value = _fanoutPending.stages[n] || '';
+    });
+    const m = $('fanout-edit-modal');
+    if (m && typeof m.showModal === 'function') m.showModal();
+}
+
+function commitFanoutEdit() {
+    if (!_fanoutPending) _fanoutPending = { stages: {} };
+    STAGE_NAMES.forEach(n => {
+        const el = $('fe-' + n);
+        if (el) _fanoutPending.stages[n] = el.value;
+    });
+    const m = $('fanout-edit-modal');
+    if (m && typeof m.close === 'function') m.close();
+    _renderFanoutPreview(_fanoutPending.stages);
+}
+
+// Legacy — kept so any stray caller doesn't explode.
 function applyAi() {
     const s = $('ai-s') && $('ai-s').innerText;
     if ($('p-in') && s) $('p-in').value = s;
@@ -494,3 +672,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 connect();
+_wireLockListeners();

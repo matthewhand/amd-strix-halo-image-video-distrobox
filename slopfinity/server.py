@@ -1,6 +1,6 @@
 """Slopfinity FastAPI dashboard — packaged entry point."""
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -15,6 +15,8 @@ from . import branding as _branding
 from .stats import get_sys_stats, get_storage, get_ram_estimate
 from .llm import lmstudio_call, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
+from . import scheduler as sched
+from . import fanout as _fanout
 
 
 def _load_branding():
@@ -41,9 +43,25 @@ app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
+@app.middleware("http")
+async def _sw_allowed_header(request: Request, call_next):
+    """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/sw.js" or path == "/static/sw.js":
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 clients: List[WebSocket] = []
+
+# Rolling buffer of recent scheduler events (last 20). Drained from
+# sched.SchedulerEvents each broadcast tick.
+_recent_events: List[dict] = []
+_RECENT_EVENTS_MAX = 20
 
 
 def _list_outputs():
@@ -128,6 +146,33 @@ async def enhance(data: dict = Body(...)):
     return {"suggestion": suggestion}
 
 
+@app.post("/enhance/distribute")
+async def enhance_distribute(data: dict = Body(...)):
+    """Single-idea fan-out with preserve-tokens and lock support.
+
+    Accepts: {core, stages: {image, video, music, tts}, locked: [...],
+              preserve_tokens: [...]}
+    Returns: {ok, stages, preserved_ok, preserved_dropped}
+    """
+    core = (data.get("core") or "").strip()
+    stages = data.get("stages") or {}
+    locked = data.get("locked") or []
+    preserve_tokens = data.get("preserve_tokens") or []
+    result = _fanout.fanout(
+        core=core,
+        stages=stages,
+        locked=locked,
+        preserve_tokens=preserve_tokens,
+        llm_call=lmstudio_call,
+    )
+    return {
+        "ok": result["ok"],
+        "stages": result["stages"],
+        "preserved_ok": result["preserved_ok"],
+        "preserved_dropped": result["preserved_dropped"],
+    }
+
+
 @app.post("/config")
 async def update_config(data: dict = Body(...)):
     config = cfg.load_config()
@@ -183,6 +228,43 @@ async def tts(data: dict = Body(...)):
 @app.get("/ram_estimate")
 async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale: str = ""):
     return get_ram_estimate(base or None, video or None, audio or None, upscale or None)
+
+
+@app.get("/manifest.webmanifest")
+async def manifest_webmanifest():
+    """Dynamic PWA manifest using the active branding profile."""
+    b = _load_branding()
+    app_block = b.get("app") or {}
+    colors = b.get("colors") or {}
+    name = app_block.get("name") or "Slopfinity"
+    short_name = app_block.get("short_name") or name
+    theme_color = colors.get("primary") or "#ff79c6"
+    background_color = "#282a36"
+    manifest = {
+        "name": name,
+        "short_name": short_name,
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": background_color,
+        "theme_color": theme_color,
+        "icons": [
+            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+        ],
+    }
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve the service worker with Service-Worker-Allowed: / so it can scope to root."""
+    sw_path = os.path.join(STATIC_DIR, "sw.js")
+    return FileResponse(
+        sw_path,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/branding")
@@ -327,6 +409,44 @@ async def settings_probe():
     return {"ok": True, "endpoints": found}
 
 
+@app.post("/pause")
+async def pause_scheduler():
+    """Clear the scheduler's `paused` event — new stages will wait."""
+    await sched.pause()
+    return {"paused": True}
+
+
+@app.post("/resume")
+async def resume_scheduler():
+    """Set the scheduler's `paused` event — stages may proceed."""
+    await sched.resume()
+    return {"paused": False}
+
+
+@app.post("/free")
+async def free_endpoint():
+    """Trigger ComfyUI /free + gc. Returns freed_gb when measurable."""
+    result = await sched.free_between()
+    return {"ok": result.get("ok", False), **result}
+
+
+@app.post("/emergency_free")
+async def emergency_free_endpoint():
+    """ComfyUI /free + pkill stray model launchers."""
+    result = await sched.emergency_free()
+    return {"ok": True, **result}
+
+
+@app.get("/scheduler/status")
+async def scheduler_status():
+    """Snapshot of the scheduler: pause state + queue depth."""
+    return {
+        "paused": sched.is_paused(),
+        "pending_events": sched.SchedulerEvents.qsize(),
+    }
+
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -359,6 +479,17 @@ async def broadcast():
             )
             # Never broadcast api_key / other sensitive fields.
             safe_config = cfg.redact(config)
+            # Drain any pending scheduler events into the rolling buffer.
+            drained: List[dict] = []
+            while True:
+                try:
+                    ev = sched.SchedulerEvents.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                drained.append(ev)
+            if drained:
+                _recent_events.extend(drained)
+                del _recent_events[:-_RECENT_EVENTS_MAX]
             msg = {
                 "type": "state",
                 "state": state,
@@ -367,6 +498,11 @@ async def broadcast():
                 "storage": storage,
                 "ram": ram,
                 "config": safe_config,
+                "scheduler": {
+                    "paused": sched.is_paused(),
+                    "events": list(_recent_events[-5:]),
+                },
+                "events": drained,
             }
             for c in list(clients):
                 try:
