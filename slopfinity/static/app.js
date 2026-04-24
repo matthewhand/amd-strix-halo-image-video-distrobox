@@ -87,6 +87,15 @@ function updateStorage(storage) {
     }
 }
 
+function switchOutputTab(which) {
+    document.querySelectorAll('[data-output-tab]').forEach(t => {
+        t.classList.toggle('tab-active', t.getAttribute('data-output-tab') === which);
+    });
+    document.querySelectorAll('[data-output-panel]').forEach(p => {
+        p.style.display = p.getAttribute('data-output-panel') === which ? 'block' : 'none';
+    });
+}
+
 function openStorageModal() {
     const m = $('storage-modal');
     if (m && typeof m.showModal === 'function') m.showModal();
@@ -271,6 +280,28 @@ function connect() {
             if (hint) {
                 hint.style.display = (d.state.mode === 'Idle' && d.queue.length === 0) ? 'flex' : 'none';
             }
+
+            // Hero collapse (compact line when Idle; full card otherwise).
+            const hero = $('hero-card');
+            const heroIdle = $('hero-idle');
+            if (hero && heroIdle) {
+                if (d.state.mode === 'Idle') {
+                    hero.style.display = 'none';
+                    heroIdle.style.display = 'flex';
+                } else {
+                    hero.style.display = 'block';
+                    heroIdle.style.display = 'none';
+                }
+            }
+
+            // Output section: hide when all three grids are empty; show ONE empty card instead.
+            const hasAny = document.querySelector('#preview-grid > *') ||
+                           document.querySelector('#v-grid > *') ||
+                           document.querySelector('#i-grid > *');
+            const outSec = $('output-section');
+            const outEmpty = $('output-empty');
+            if (outSec) outSec.style.display = hasAny ? 'block' : 'none';
+            if (outEmpty) outEmpty.style.display = hasAny ? 'none' : 'flex';
 
             updateStorage(d.storage);
             updateRam(d.ram);
