@@ -14,6 +14,7 @@ from . import config as cfg
 from . import branding as _branding
 from .stats import get_sys_stats, get_storage, get_ram_estimate
 from .llm import lmstudio_call
+from . import scheduler as sched
 
 
 def _load_branding():
@@ -43,6 +44,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 clients: List[WebSocket] = []
+
+# Rolling buffer of recent scheduler events (last 20). Drained from
+# sched.SchedulerEvents each broadcast tick.
+_recent_events: List[dict] = []
+_RECENT_EVENTS_MAX = 20
 
 
 def _list_outputs():
@@ -208,6 +214,43 @@ async def branding_switch(data: dict = Body(...)):
     return {"ok": True, "active": name, "resolved": _branding.load(name)}
 
 
+@app.post("/pause")
+async def pause_scheduler():
+    """Clear the scheduler's `paused` event — new stages will wait."""
+    await sched.pause()
+    return {"paused": True}
+
+
+@app.post("/resume")
+async def resume_scheduler():
+    """Set the scheduler's `paused` event — stages may proceed."""
+    await sched.resume()
+    return {"paused": False}
+
+
+@app.post("/free")
+async def free_endpoint():
+    """Trigger ComfyUI /free + gc. Returns freed_gb when measurable."""
+    result = await sched.free_between()
+    return {"ok": result.get("ok", False), **result}
+
+
+@app.post("/emergency_free")
+async def emergency_free_endpoint():
+    """ComfyUI /free + pkill stray model launchers."""
+    result = await sched.emergency_free()
+    return {"ok": True, **result}
+
+
+@app.get("/scheduler/status")
+async def scheduler_status():
+    """Snapshot of the scheduler: pause state + queue depth."""
+    return {
+        "paused": sched.is_paused(),
+        "pending_events": sched.SchedulerEvents.qsize(),
+    }
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -238,6 +281,17 @@ async def broadcast():
                 config.get("audio_model"),
                 config.get("upscale_model"),
             )
+            # Drain any pending scheduler events into the rolling buffer.
+            drained: List[dict] = []
+            while True:
+                try:
+                    ev = sched.SchedulerEvents.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                drained.append(ev)
+            if drained:
+                _recent_events.extend(drained)
+                del _recent_events[:-_RECENT_EVENTS_MAX]
             msg = {
                 "type": "state",
                 "state": state,
@@ -245,6 +299,11 @@ async def broadcast():
                 "queue": queue,
                 "storage": storage,
                 "ram": ram,
+                "scheduler": {
+                    "paused": sched.is_paused(),
+                    "events": list(_recent_events[-5:]),
+                },
+                "events": drained,
             }
             for c in list(clients):
                 try:

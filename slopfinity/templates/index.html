@@ -113,6 +113,13 @@
                         </div>
                         <progress class="progress progress-primary w-full h-3 bg-base-300" id="h-p" value="0" max="100"></progress>
                         <div class="text-lg italic text-neutral-content/70 border-l-4 border-primary pl-4" id="h-pr">"{{ state.current_prompt }}"</div>
+                        <div class="flex items-center gap-2 mt-3">
+                            <span class="text-[11px] uppercase tracking-widest text-neutral-content/50">Scheduler</span>
+                            <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
+                            <div class="flex flex-wrap gap-1" id="sched-timeline">
+                                <span class="text-[11px] text-neutral-content/40 italic">no events yet</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

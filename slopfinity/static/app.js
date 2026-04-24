@@ -48,6 +48,36 @@ function updateRam(ram) {
     el.id = 'ram-est';
 }
 
+function schedBadgeClass(type) {
+    if (type === 'stage_start') return 'badge-info';
+    if (type === 'stage_end') return 'badge-success';
+    if (type === 'budget_block') return 'badge-warning';
+    if (type === 'oom_retry') return 'badge-error';
+    if (type === 'emergency_free') return 'badge-error';
+    return 'badge-ghost';
+}
+
+function updateScheduler(sc) {
+    if (!sc) return;
+    const pauseBadge = $('sched-pause-badge');
+    if (pauseBadge) {
+        pauseBadge.innerText = sc.paused ? 'paused' : 'live';
+        pauseBadge.className = 'badge badge-sm font-mono ' + (sc.paused ? 'badge-warning' : 'badge-ghost');
+    }
+    const tl = $('sched-timeline');
+    if (!tl) return;
+    const events = (sc.events || []).slice(-5);
+    if (!events.length) {
+        tl.innerHTML = '<span class="text-[11px] text-neutral-content/40 italic">no events yet</span>';
+        return;
+    }
+    tl.innerHTML = events.map((e, i) => {
+        const label = (e.stage && e.model) ? `${e.stage}/${e.model}` : (e.type || 'event');
+        const tip = JSON.stringify(e).replace(/"/g, '&quot;');
+        return `<span id="sched-event-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tip}">${e.type}: ${label}</span>`;
+    }).join('');
+}
+
 function updateRefresh() {
     const el = $('refresh-interval');
     if (!el) return;
@@ -99,6 +129,7 @@ function connect() {
 
             updateStorage(d.storage);
             updateRam(d.ram);
+            updateScheduler(d.scheduler);
         }
         if (d.type === 'new_file') {
             const isV = d.file.endsWith('.mp4');
