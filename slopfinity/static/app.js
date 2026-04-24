@@ -125,6 +125,18 @@ function schedBadgeClass(type) {
     return 'badge-ghost';
 }
 
+function updateOutputs(o) {
+    if (!o) return;
+    const f = document.getElementById('out-finals');
+    const c = document.getElementById('out-chains');
+    const b = document.getElementById('out-base');
+    const l = document.getElementById('out-latest');
+    if (f) f.textContent = o.finals ?? 0;
+    if (c) c.textContent = o.chains ?? 0;
+    if (b) b.textContent = o.base_images ?? 0;
+    if (l) l.textContent = o.latest_final || '—';
+}
+
 function updateScheduler(sc) {
     if (!sc) return;
     const pauseBadge = $('sched-pause-badge');
@@ -313,6 +325,7 @@ function connect() {
             updateStorage(d.storage);
             updateRam(d.ram);
             updateScheduler(d.scheduler);
+            updateOutputs(d.outputs);
             _lastTick = d;
             updateDiagnostics(d);
         }
