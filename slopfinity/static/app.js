@@ -1,5 +1,19 @@
 // Slopfinity dashboard client.
 
+// Theme persistence — apply any previously-chosen theme as early as possible
+// to avoid a flash of unstyled/default theme on load.
+(function () {
+  const saved = localStorage.getItem('slopfinity-theme');
+  if (saved) document.documentElement.dataset.theme = saved;
+})();
+
+function applyTheme(name) {
+  if (!name) return;
+  document.documentElement.dataset.theme = name;
+  localStorage.setItem('slopfinity-theme', name);
+}
+window.applyTheme = applyTheme;
+
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -761,6 +775,16 @@ async function openSettings() {
         if (safetyEl) {
             safetyEl.value = safety;
             const lbl = $('sched-safety-val'); if (lbl) lbl.innerText = safety;
+        }
+        // Hydrate theme selector from localStorage (falling back to branding default).
+        const themeSel = $('theme-select');
+        if (themeSel) {
+            const brandingDefault = (br && br.theme && br.theme.default) || themeSel.value;
+            const current = localStorage.getItem('slopfinity-theme') || brandingDefault;
+            if (current) {
+                const opt = Array.from(themeSel.options).find(o => o.value === current);
+                if (opt) themeSel.value = current;
+            }
         }
         modal.showModal();
         reloadModels();
