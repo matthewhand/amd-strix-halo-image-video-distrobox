@@ -808,3 +808,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 connect();
 _wireLockListeners();
+
+// Auto-open drawer on mobile first visit (remembers user close preference)
+(function () {
+  const drawer = document.getElementById('app-drawer');
+  if (!drawer) return;
+  const narrow = window.innerWidth < 1024;
+  if (narrow && localStorage.getItem('drawer-closed') !== 'true') {
+    drawer.checked = true;
+  }
+  drawer.addEventListener('change', () => {
+    if (drawer.checked) {
+      localStorage.removeItem('drawer-closed');
+    } else if (narrow) {
+      localStorage.setItem('drawer-closed', 'true');
+    }
+  });
+})();
