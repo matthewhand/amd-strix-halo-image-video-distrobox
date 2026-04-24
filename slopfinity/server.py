@@ -70,18 +70,31 @@ _RECENT_EVENTS_MAX = 20
 
 
 def _list_outputs():
+    """Return three lists sorted newest-first:
+        finals  — FINAL_*.mp4 (curated keepers → Completed Gallery)
+        live    — everything else (chain mp4s, base pngs, bridges, test images)
+                  mixed and sorted by mtime → Live Gallery
+        legacy_pngs — all pngs (for back-compat templates that still branch on imgs)
+    """
     try:
-        files = os.listdir(EXP_DIR)
+        entries = [
+            (f, os.path.getmtime(os.path.join(EXP_DIR, f)))
+            for f in os.listdir(EXP_DIR)
+            if f.endswith('.mp4') or f.endswith('.png')
+        ]
     except Exception:
-        files = []
-    vids = sorted([f for f in files if f.endswith('.mp4')], reverse=True)
-    imgs = sorted([f for f in files if f.endswith('.png')], reverse=True)
-    return vids, imgs
+        entries = []
+    entries.sort(key=lambda x: x[1], reverse=True)
+    finals = [f for f, _ in entries if f.endswith('.mp4') and f.startswith('FINAL_')]
+    live = [f for f, _ in entries if not (f.endswith('.mp4') and f.startswith('FINAL_'))]
+    legacy_pngs = [f for f, _ in entries if f.endswith('.png')]
+    return finals, live, legacy_pngs
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    vids, imgs = _list_outputs()
+    finals, live, imgs = _list_outputs()
+    vids = finals  # alias preserved for Jinja template back-compat (v-grid)
     state = cfg.get_state()
     config = cfg.load_config()
     queue = cfg.get_queue()
@@ -99,8 +112,9 @@ async def index(request: Request):
             "config": config,
             "state": state,
             "queue": queue,
-            "vids": vids[:8],
-            "imgs": imgs[:10],
+            "vids": vids[:16],       # Completed Gallery (FINAL_*.mp4)
+            "live": live[:48],        # Live Gallery (chain mp4s + pngs, newest first)
+            "imgs": imgs[:10],        # back-compat (hidden i-grid)
             "storage": storage,
             "ram": ram,
             "branding": _load_branding(),
