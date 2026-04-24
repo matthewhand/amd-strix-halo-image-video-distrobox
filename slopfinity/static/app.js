@@ -160,10 +160,26 @@ function updateOutputs(o) {
         l.textContent = o.latest_final ? `latest: ${o.latest_final}` : '';
         l.style.display = o.latest_final ? 'block' : 'none';
     }
+    // Update chip counts inline with filter labels.
+    // chain count includes finals + chain clips; image count = base + bridges; audio count from total WAVs (approx via DOM scan).
+    const totalVideos = (o.finals ?? 0) + (o.chains ?? 0);
+    const chipV = document.querySelector('[data-chip-count="chain"]');
+    const chipI = document.querySelector('[data-chip-count="image"]');
+    const chipA = document.querySelector('[data-chip-count="audio"]');
+    if (chipV) chipV.textContent = totalVideos;
+    if (chipI) chipI.textContent = o.base_images ?? 0;
+    if (chipA) {
+        const audioCards = document.querySelectorAll('#preview-grid > [data-slop-kind="audio"]').length;
+        chipA.textContent = audioCards;
+    }
 }
 
 function updateScheduler(sc) {
     if (!sc) return;
+    const events = (sc.events || []).slice(-5);
+    // Hide the whole strip when we have nothing to show (reduces visual noise when idle).
+    const strip = $('sched-strip');
+    if (strip) strip.style.display = (events.length > 0 || sc.paused) ? 'flex' : 'none';
     const pauseBadge = $('sched-pause-badge');
     if (pauseBadge) {
         pauseBadge.innerText = sc.paused ? 'paused' : 'live';
@@ -175,7 +191,6 @@ function updateScheduler(sc) {
         statusBadge.innerText = sc.paused ? '⏸ Paused' : '▶ Running';
         statusBadge.className = 'badge font-mono ' + (sc.paused ? 'badge-warning' : 'badge-success');
     }
-    const events = (sc.events || []).slice(-5);
     const tipFor = e => JSON.stringify(e).replace(/"/g, '&quot;');
     const labelFor = e => (e.stage && e.model) ? `${e.stage}/${e.model}` : (e.type || 'event');
     const renderEvents = (container, idPrefix) => {
