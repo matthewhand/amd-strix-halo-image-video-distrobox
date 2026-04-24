@@ -1,6 +1,6 @@
 """Slopfinity FastAPI dashboard — packaged entry point."""
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -39,6 +39,17 @@ app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def _sw_allowed_header(request: Request, call_next):
+    """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/sw.js" or path == "/static/sw.js":
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
@@ -182,6 +193,43 @@ async def tts(data: dict = Body(...)):
 @app.get("/ram_estimate")
 async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale: str = ""):
     return get_ram_estimate(base or None, video or None, audio or None, upscale or None)
+
+
+@app.get("/manifest.webmanifest")
+async def manifest_webmanifest():
+    """Dynamic PWA manifest using the active branding profile."""
+    b = _load_branding()
+    app_block = b.get("app") or {}
+    colors = b.get("colors") or {}
+    name = app_block.get("name") or "Slopfinity"
+    short_name = app_block.get("short_name") or name
+    theme_color = colors.get("primary") or "#ff79c6"
+    background_color = "#282a36"
+    manifest = {
+        "name": name,
+        "short_name": short_name,
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": background_color,
+        "theme_color": theme_color,
+        "icons": [
+            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+        ],
+    }
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve the service worker with Service-Worker-Allowed: / so it can scope to root."""
+    sw_path = os.path.join(STATIC_DIR, "sw.js")
+    return FileResponse(
+        sw_path,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/branding")
