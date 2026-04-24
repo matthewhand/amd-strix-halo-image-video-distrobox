@@ -14,7 +14,7 @@ from typing import List
 
 from . import config as cfg
 from . import branding as _branding
-from .stats import get_sys_stats, get_storage, get_ram_estimate
+from .stats import get_sys_stats, get_storage, get_ram_estimate, get_output_counts
 from .llm import lmstudio_call, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
 from . import scheduler as sched
@@ -313,6 +313,12 @@ async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale
     return get_ram_estimate(base or None, video or None, audio or None, upscale or None)
 
 
+@app.get("/outputs")
+async def outputs():
+    """Return counters for produced artifacts: final mp4s, chain clips, base images."""
+    return get_output_counts(EXP_DIR)
+
+
 @app.get("/manifest.webmanifest")
 async def manifest_webmanifest():
     """Dynamic PWA manifest using the active branding profile."""
@@ -560,6 +566,7 @@ async def broadcast():
                 config.get("audio_model"),
                 config.get("upscale_model"),
             )
+            outputs = get_output_counts(EXP_DIR)
             # Never broadcast api_key / other sensitive fields.
             safe_config = cfg.redact(config)
             # Drain any pending scheduler events into the rolling buffer.
@@ -581,6 +588,7 @@ async def broadcast():
                 "storage": storage,
                 "ram": ram,
                 "config": safe_config,
+                "outputs": outputs,
                 "scheduler": {
                     "paused": sched.is_paused(),
                     "events": list(_recent_events[-5:]),
