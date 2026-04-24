@@ -284,8 +284,11 @@ function connect() {
             // Hero collapse (compact line when Idle; full card otherwise).
             const hero = $('hero-card');
             const heroIdle = $('hero-idle');
+            const statsNav = $('stats-navbar');
+            const gpuIdle = (d.stats.gpu || 0) < 2 && (d.stats.vram || 0) < 2;
+            const isIdle = d.state.mode === 'Idle';
             if (hero && heroIdle) {
-                if (d.state.mode === 'Idle') {
+                if (isIdle) {
                     hero.style.display = 'none';
                     heroIdle.style.display = 'flex';
                 } else {
@@ -293,6 +296,10 @@ function connect() {
                     heroIdle.style.display = 'none';
                 }
             }
+            // Stats navbar: dim stat values when both GPU+VRAM are near zero
+            // (no active inference). Keeps the navbar present for tickers but
+            // de-emphasises meaningless "0%" numbers.
+            if (statsNav) statsNav.classList.toggle('opacity-60', isIdle && gpuIdle);
 
             // Output section: hide when all three grids are empty; show ONE empty card instead.
             const hasAny = document.querySelector('#preview-grid > *') ||
