@@ -27,20 +27,55 @@ function progressClass(st) {
     return 'progress-success';
 }
 
+function _statusRank(st) {
+    if (st === 'danger') return 2;
+    if (st === 'warn') return 1;
+    return 0;
+}
+
+function _statusEmoji(st) {
+    if (st === 'danger') return '🔴';
+    if (st === 'warn') return '🟡';
+    return '🟢';
+}
+
 function updateStorage(storage) {
-    if (!storage) return;
-    const ids = { '/': 'st-root', '/mnt/data': 'st-data', '/mnt/downloads': 'st-downloads' };
+    if (!storage || !storage.length) return;
+    const pill = $('st-pill');
+    // Find worst (highest pct) mount and whether any non-ok exist.
+    let worst = storage[0];
+    let anyAlert = false;
     storage.forEach(s => {
-        const el = $(ids[s.mount]);
-        if (!el) return;
-        const badge = el.querySelector('.st-badge');
-        const val = el.querySelector('.st-val');
-        if (val) val.innerText = `${s.used_gb} / ${s.total_gb} GB`;
-        if (badge) {
-            badge.className = 'st-badge badge badge-sm ' + statusClass(s.status);
-            badge.innerText = s.pct + '%';
-        }
+        if (s.pct > worst.pct) worst = s;
+        if (_statusRank(s.status) > 0) anyAlert = true;
     });
+
+    if (pill) {
+        pill.className = 'badge badge-lg cursor-pointer tooltip tooltip-left ' + statusClass(worst.status);
+        pill.innerText = `${_statusEmoji(worst.status)} ${worst.pct}%`;
+        pill.setAttribute(
+            'data-tip',
+            storage.map(s => `${s.mount}: ${s.used_gb}/${s.total_gb} GB (${s.pct}%)`).join(' · ')
+        );
+        pill.style.display = anyAlert ? '' : 'none';
+    }
+
+    const list = $('storage-modal-list');
+    if (list) {
+        list.innerHTML = storage.map(s => `
+            <div class="flex items-center justify-between gap-3 bg-base-100 p-3 rounded-lg border border-base-300">
+                <div class="flex-1">
+                    <div class="text-[10px] uppercase tracking-widest text-base-content/50">${_htmlEscape(s.mount)}</div>
+                    <div class="text-sm font-mono">${s.used_gb} / ${s.total_gb} GB</div>
+                </div>
+                <span class="badge badge-lg ${statusClass(s.status)}">${s.pct}%</span>
+            </div>`).join('');
+    }
+}
+
+function openStorageModal() {
+    const m = $('storage-modal');
+    if (m && typeof m.showModal === 'function') m.showModal();
 }
 
 function updateRam(ram) {
