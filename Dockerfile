@@ -35,6 +35,8 @@ COPY scripts/qwen_tts_serve.py /opt/
 COPY scripts/wan_launcher.py /opt/
 COPY scripts/test_wan_permutations.py /opt/
 COPY scripts/download_wan_cli.sh /opt/
+COPY scripts/ernie_launcher.py /opt/
+COPY scripts/get_ernie_image.sh /opt/
 
 # ROCm + PyTorch (TheRock, include torchaudio for resolver; remove later)
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
@@ -78,7 +80,7 @@ RUN git clone https://github.com/ROCm/flash-attention.git &&\
 RUN git clone --depth=1 https://github.com/kyuz0/wan-video-studio /opt/wan-video-studio && \
     python -m pip install --prefer-binary \
       opencv-python-headless diffusers tokenizers accelerate \
-      imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg decord librosa 
+      imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg decord librosa
 
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
