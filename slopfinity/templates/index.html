@@ -222,9 +222,9 @@
         <div class="w-80 min-h-full bg-base-200 border-r border-base-100 flex flex-col p-4 overflow-y-auto custom-scrollbar">
 
             <div class="flex items-center justify-between mb-4 gap-2">
-                <h1 class="text-2xl font-black text-primary uppercase tracking-widest drop-shadow-md flex-1 text-center">{{ branding.app.name }}</h1>
-                <button id="btn-settings" class="btn btn-ghost btn-sm btn-square" title="Settings" onclick="openSettings()">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <h1 class="text-2xl font-black text-primary uppercase tracking-widest drop-shadow-md">{{ branding.app.name }}</h1>
+                <button id="btn-settings" class="btn btn-ghost btn-sm gap-2" title="Settings" onclick="openSettings()">
+                    <span class="text-base">⚙</span><span class="hidden lg:inline">Settings</span>
                 </button>
             </div>
 
@@ -233,11 +233,10 @@
             <!-- ============================================================== -->
             <div class="card card-compact bg-base-100 border-2 border-primary shadow-xl mb-4">
                 <div class="card-body">
-                    <h3 class="card-title text-sm font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</h3>
-                    <textarea id="p-core" class="textarea textarea-lg textarea-primary w-full" placeholder="What do you want? One idea. I'll elaborate into image, video, music and voice."></textarea>
-                    <div class="join w-full mt-2">
-                        <button class="btn btn-primary btn-lg join-item flex-1" onclick="enhance()" title="Fan this out across all 4 stages">✨ AI Magic</button>
-                        <button class="btn btn-secondary btn-lg join-item flex-1" onclick="inject('next')">Generate</button>
+                    <textarea id="p-core" rows="6" class="textarea textarea-lg textarea-primary w-full leading-snug" placeholder="What do you want?&#10;&#10;One idea. I'll elaborate it into image, video, music and voice. Hit {{ branding.labels.ai_magic }} to distribute."></textarea>
+                    <div class="space-y-2 mt-2">
+                        <button class="btn btn-primary btn-lg btn-block" onclick="enhance()" title="Fan this out across all 4 stages">✨ {{ branding.labels.ai_magic }}</button>
+                        <button class="btn btn-secondary btn-lg btn-block" onclick="inject('next')">Generate</button>
                     </div>
 
                     <!-- Fan-out preview (inline under Input) -->
@@ -264,85 +263,49 @@
                 </div>
             </div>
 
-            <!-- Empty-state hint (between Tier 1 and Tier 2) -->
-            <div id="empty-state-hint" class="alert alert-info mb-4 text-xs" style="display:none">
-                <span>Type an idea above and hit ✨ AI Magic, then Generate.</span>
-            </div>
-
             <!-- ============================================================== -->
             <!-- TIER 2 — Models (grouped, open by default)                     -->
             <!-- ============================================================== -->
             <div tabindex="0" class="collapse collapse-arrow collapse-open bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
                 <input type="checkbox" checked />
                 <div class="collapse-title text-sm font-bold text-accent uppercase tracking-wider py-3 min-h-0">{{ branding.labels.pipeline }}</div>
-                <div class="collapse-content">
-                    <ul class="steps steps-vertical">
-                        <li class="step step-primary wf-step" id="s-Concept" data-content="1">
-                            <div class="wf-dot hidden"></div>
-                            <span class="text-sm uppercase font-bold tracking-wide ml-2">Concept</span>
-                        </li>
-
-                        <li class="step step-primary wf-step" id="s-Base-Image" data-content="2">
-                            <div class="wf-dot hidden"></div>
-                            <div class="ml-2 w-full text-left">
-                                <div class="text-[10px] uppercase opacity-60">Base Image</div>
-                                <select id="cfg-base" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
-                                    <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
-                                    <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
-                                    <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
-                                </select>
-                            </div>
-                        </li>
-
-                        <li class="step step-primary wf-step" id="s-Video-Chains" data-content="3">
-                            <div class="wf-dot hidden"></div>
-                            <div class="ml-2 w-full text-left">
-                                <div class="text-[10px] uppercase opacity-60">Video Chain</div>
-                                <select id="cfg-video" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
-                                    <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
-                                    <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
-                                    <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
-                                </select>
-                            </div>
-                        </li>
-
-                        <li class="step step-warning wf-step" id="s-Audio-Music" data-content="4">
-                            <div class="wf-dot hidden"></div>
-                            <div class="ml-2 w-full text-left">
-                                <div class="text-[10px] uppercase opacity-60">Audio / Music</div>
-                                <select id="cfg-audio" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
-                                    <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
-                                    <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
-                                </select>
-                            </div>
-                        </li>
-
-                        <li class="step step-info wf-step" id="s-Post-Process" data-content="5">
-                            <div class="wf-dot hidden"></div>
-                            <div class="ml-2 w-full text-left">
-                                <div class="text-[10px] uppercase opacity-60">Post Process</div>
-                                <select id="cfg-upscale" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
-                                    <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
-                                    <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
-                                </select>
-                            </div>
-                        </li>
-
-                        <li class="step wf-step" id="s-Final-Merge" data-content="6">
-                            <div class="wf-dot hidden"></div>
-                            <span class="text-sm uppercase font-bold tracking-wide ml-2">Final Merge</span>
-                        </li>
-                    </ul>
+                <div class="collapse-content space-y-2">
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Base Image</span></label>
+                        <select id="cfg-base" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                            <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
+                            <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
+                            <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video Chain</span></label>
+                        <select id="cfg-video" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                            <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
+                            <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
+                            <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Audio / Music</span></label>
+                        <select id="cfg-audio" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                            <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
+                            <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Post Process</span></label>
+                        <select id="cfg-upscale" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                            <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
+                            <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
+                        </select>
+                    </div>
 
                     <!-- RAM estimator -->
-                    <div id="ram-est" class="alert p-2 mt-3 {% if ram.status == 'danger' %}alert-error{% elif ram.status == 'warn' %}alert-warning{% else %}alert-success{% endif %}">
-                        <div class="w-full">
-                            <div class="flex justify-between items-center text-[10px] uppercase tracking-widest mb-1">
-                                <span>RAM Estimate</span>
-                                <span class="ram-txt font-mono">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB unified</span>
-                            </div>
-                            <progress class="ram-bar progress w-full {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
-                        </div>
+                    <div id="ram-est" class="card card-compact bg-base-200 mt-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
+                        <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
+                        <div class="ram-txt font-mono text-sm font-bold mt-0.5">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+                        <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
                     </div>
                 </div>
             </div>
