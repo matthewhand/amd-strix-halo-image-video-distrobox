@@ -10,10 +10,13 @@ if _REPO_ROOT not in sys.path:
 
 from pipelines import mux  # noqa: E402
 
-VIDEO = "/mnt/downloads/comfy-outputs/canary_hero_00001_.mp4"
-TONE = "/tmp/tone.wav"
-OUT_REPLACE = "/mnt/downloads/comfy-outputs/canary_hero_replaced.mp4"
-OUT_MIX = "/mnt/downloads/comfy-outputs/canary_hero_mixed.mp4"
+# Defaults work out of the box; override via env for machine-specific paths.
+# See .env.example for recommended names.
+_OUTPUTS = os.environ.get("COMFY_OUTPUTS", "./comfy-outputs")
+VIDEO = os.environ.get("MUX_SMOKE_VIDEO", os.path.join(_OUTPUTS, "canary_hero_00001_.mp4"))
+TONE = os.environ.get("MUX_SMOKE_TONE", "/tmp/tone.wav")
+OUT_REPLACE = os.environ.get("MUX_SMOKE_OUT_REPLACE", os.path.join(_OUTPUTS, "canary_hero_replaced.mp4"))
+OUT_MIX = os.environ.get("MUX_SMOKE_OUT_MIX", os.path.join(_OUTPUTS, "canary_hero_mixed.mp4"))
 
 
 def _sz(p):
