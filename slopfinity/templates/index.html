@@ -93,7 +93,10 @@
                             <option value="0">off</option>
                         </select>
                     </div>
-                    <kbd class="kbd kbd-sm hidden lg:inline-flex">LIVE</kbd>
+                    <span id="live-dot" class="hidden lg:inline-flex relative w-2.5 h-2.5 ml-1" title="WebSocket live">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                        <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-success"></span>
+                    </span>
                 </div>
             </div>
 

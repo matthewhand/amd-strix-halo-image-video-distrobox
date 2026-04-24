@@ -245,6 +245,13 @@ function connect() {
     ws.onopen = () => {
         const w = $('refresh-wrapper');
         if (w) w.style.display = 'none';
+        const dot = $('live-dot');
+        if (dot) {
+            const inner = dot.querySelector('.rounded-full:last-child');
+            const ping = dot.querySelector('.animate-ping');
+            if (inner) inner.classList.replace('bg-error', 'bg-success');
+            if (ping) ping.classList.replace('bg-error', 'bg-success');
+        }
     };
     ws.onmessage = e => {
         const d = JSON.parse(e.data);
@@ -399,6 +406,13 @@ function connect() {
     ws.onclose = () => {
         const w = $('refresh-wrapper');
         if (w) w.style.display = '';
+        const dot = $('live-dot');
+        if (dot) {
+            const inner = dot.querySelector('.rounded-full:last-child');
+            const ping = dot.querySelector('.animate-ping');
+            if (inner) inner.classList.replace('bg-success', 'bg-error');
+            if (ping) ping.classList.replace('bg-success', 'bg-error');
+        }
         setTimeout(connect, 2000);
     };
 }
