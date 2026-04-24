@@ -93,6 +93,25 @@
                 </div>
             </div>
 
+            <!-- MP4 / output counters -->
+            <div class="stats stats-horizontal bg-base-100/60 backdrop-blur rounded-2xl border border-base-200 shadow mb-6 w-full">
+                <div class="stat py-3">
+                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Finished MP4s</div>
+                    <div class="stat-value text-3xl font-black text-primary font-mono" id="out-finals">0</div>
+                    <div class="stat-desc text-[10px] text-base-content/50 font-mono truncate" id="out-latest">—</div>
+                </div>
+                <div class="stat py-3">
+                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Chain clips</div>
+                    <div class="stat-value text-2xl font-bold text-secondary font-mono" id="out-chains">0</div>
+                    <div class="stat-desc text-[10px] text-base-content/50">10 per final</div>
+                </div>
+                <div class="stat py-3">
+                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Base images</div>
+                    <div class="stat-value text-2xl font-bold text-accent font-mono" id="out-base">0</div>
+                    <div class="stat-desc text-[10px] text-base-content/50">PNG keyframes</div>
+                </div>
+            </div>
+
             <!-- Hero Idle (compact one-liner, shown when state.mode === Idle) -->
             <div id="hero-idle" class="alert alert-info mb-6" style="display:{% if state.mode == 'Idle' %}flex{% else %}none{% endif %}">
                 <span>Ready. Type an idea → ✨ {{ branding.labels.ai_magic }} → Generate</span>

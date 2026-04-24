@@ -1,5 +1,7 @@
+import os
 import shutil
 import subprocess
+from pathlib import Path
 
 
 def get_sys_stats():
@@ -82,6 +84,36 @@ def _lookup(model):
     if model is None:
         return 0
     return _MODEL_GB.get(model, 0)
+
+
+def get_output_counts(base_dir=None):
+    """Return counters for what's been produced: finals, chain clips, base images.
+
+    Counts files in the fleet's output directory. In-container this is
+    /workspace; on host it's ./comfy-outputs/experiments. Returns:
+        {finals, chains, base_images, total_mp4, total_png, latest_final}
+    """
+    if base_dir is None:
+        for cand in ("/workspace", "./comfy-outputs/experiments"):
+            if os.path.isdir(cand):
+                base_dir = cand
+                break
+    if not base_dir or not os.path.isdir(base_dir):
+        return {"finals": 0, "chains": 0, "base_images": 0,
+                "total_mp4": 0, "total_png": 0, "latest_final": None}
+    p = Path(base_dir)
+    finals = sorted(p.glob("FINAL_*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True)
+    chains = list(p.glob("v*_c*.mp4"))
+    base_imgs = list(p.glob("v*_base.png"))
+    latest = finals[0].name if finals else None
+    return {
+        "finals": len(finals),
+        "chains": len(chains),
+        "base_images": len(base_imgs),
+        "total_mp4": len(list(p.glob("*.mp4"))),
+        "total_png": len(list(p.glob("*.png"))),
+        "latest_final": latest,
+    }
 
 
 def get_ram_estimate(base_model, video_model, audio_model, upscale_model):
