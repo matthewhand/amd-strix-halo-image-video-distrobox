@@ -238,4 +238,259 @@ async function generateTts() {
     }
 }
 
+// -------------------- Settings modal (local-only LLM) --------------------
+
+const PROVIDER_DEFAULTS = {
+    lmstudio: { port: 1234, path: '/v1' },
+    ollama: { port: 11434, path: '' },
+    vllm: { port: 8000, path: '/v1' },
+    llamacpp: { port: 8080, path: '/v1' },
+    custom: { port: 8080, path: '/v1' },
+};
+
+function computeBaseUrl() {
+    const scheme = $('set-scheme').value;
+    const host = $('set-host').value.trim() || 'localhost';
+    const port = $('set-port').value;
+    const path = $('set-path').value || '';
+    const p = path && !path.startsWith('/') ? '/' + path : path;
+    const url = `${scheme}://${host}${port ? ':' + port : ''}${p}`;
+    $('set-base').value = url;
+    return url;
+}
+
+function onSettingsUrlChanged() { computeBaseUrl(); }
+
+function applyProviderDefaults() {
+    const prov = $('set-provider').value;
+    const d = PROVIDER_DEFAULTS[prov] || PROVIDER_DEFAULTS.custom;
+    $('set-port').value = d.port;
+    $('set-path').value = d.path;
+    computeBaseUrl();
+}
+
+function parseBaseUrl(url) {
+    try {
+        const u = new URL(url);
+        return {
+            scheme: u.protocol.replace(':', ''),
+            host: u.hostname,
+            port: u.port || (u.protocol === 'https:' ? '443' : '80'),
+            path: u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/$/, '') : '',
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function toggleApiKeyReveal() {
+    const el = $('set-api-key');
+    const btn = $('set-api-reveal');
+    if (!el || !btn) return;
+    if (el.type === 'password') { el.type = 'text'; btn.innerText = 'hide'; }
+    else { el.type = 'password'; btn.innerText = 'show'; }
+}
+
+function onModelSelectChanged() {
+    const sel = $('set-model');
+    const custom = $('set-model-custom');
+    if (!sel || !custom) return;
+    if (sel.value === '__custom__') {
+        custom.classList.remove('hidden');
+        custom.focus();
+    } else {
+        custom.classList.add('hidden');
+    }
+}
+
+async function reloadModels() {
+    const sel = $('set-model');
+    if (!sel) return;
+    const base = computeBaseUrl();
+    const provider = $('set-provider').value;
+    const apiKey = $('set-api-key').value;
+    const prevSelected = sel.dataset.selected || sel.value || '';
+    sel.innerHTML = '<option value="">(loading…)</option>';
+    try {
+        const qs = new URLSearchParams({ base_url: base, provider, api_key: apiKey || '' });
+        const r = await fetch('/settings/models?' + qs.toString());
+        const d = await r.json();
+        const models = (d && d.models) || [];
+        sel.innerHTML = '';
+        if (!models.length) {
+            const opt = document.createElement('option');
+            opt.value = ''; opt.innerText = '(none found)';
+            sel.appendChild(opt);
+        }
+        models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m; opt.innerText = m;
+            if (m === prevSelected) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        const customOpt = document.createElement('option');
+        customOpt.value = '__custom__'; customOpt.innerText = '⌨ Custom…';
+        sel.appendChild(customOpt);
+    } catch (e) {
+        sel.innerHTML = '<option value="">(error)</option>';
+    }
+}
+
+async function probeLan() {
+    const box = $('set-probe-chips');
+    if (!box) return;
+    box.innerHTML = '<span class="badge badge-ghost badge-sm">scanning…</span>';
+    try {
+        const r = await fetch('/settings/probe');
+        const d = await r.json();
+        const eps = (d && d.endpoints) || [];
+        box.innerHTML = '';
+        if (!eps.length) { box.innerHTML = '<span class="badge badge-warning badge-sm">no local endpoints found</span>'; return; }
+        eps.forEach(ep => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'badge badge-primary badge-outline cursor-pointer';
+            chip.innerText = `${ep.provider} :${ep.port} (${ep.model_count})`;
+            chip.onclick = () => {
+                $('set-provider').value = ep.provider;
+                const parsed = parseBaseUrl(ep.base_url);
+                if (parsed) {
+                    $('set-scheme').value = parsed.scheme;
+                    $('set-host').value = parsed.host;
+                    $('set-port').value = parsed.port;
+                    $('set-path').value = parsed.path;
+                }
+                computeBaseUrl();
+                reloadModels();
+            };
+            box.appendChild(chip);
+        });
+    } catch (e) {
+        box.innerHTML = '<span class="badge badge-error badge-sm">probe failed</span>';
+    }
+}
+
+async function testSettings() {
+    const badge = $('set-test-badge');
+    if (!badge) return;
+    badge.className = 'badge badge-warning font-mono text-xs';
+    badge.innerText = 'testing…';
+    const sel = $('set-model');
+    let model_id = sel.value;
+    if (model_id === '__custom__') model_id = $('set-model-custom').value.trim();
+    const payload = {
+        base_url: computeBaseUrl(),
+        provider: $('set-provider').value,
+        model_id,
+        api_key: $('set-api-key').value || '',
+    };
+    try {
+        const r = await fetch('/settings/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            const mc = d.model_count != null ? `${d.model_count} models · ` : '';
+            badge.className = 'badge badge-success font-mono text-xs';
+            badge.innerText = `✓ ${mc}${d.latency_ms} ms`;
+        } else {
+            badge.className = 'badge badge-error font-mono text-xs';
+            badge.innerText = `✗ ${(d.error || 'error').slice(0, 60)}`;
+        }
+    } catch (e) {
+        badge.className = 'badge badge-error font-mono text-xs';
+        badge.innerText = '✗ network';
+    }
+}
+
+async function openSettings() {
+    const modal = $('settings-modal');
+    if (!modal) return;
+    try {
+        const [sr, br] = await Promise.all([
+            fetch('/settings').then(r => r.json()),
+            fetch('/branding').then(r => r.json()),
+        ]);
+        const llm = sr.llm || {};
+        $('set-provider').value = llm.provider || 'lmstudio';
+        const parsed = parseBaseUrl(llm.base_url || 'http://localhost:1234/v1');
+        if (parsed) {
+            $('set-scheme').value = parsed.scheme;
+            $('set-host').value = parsed.host;
+            $('set-port').value = parsed.port;
+            $('set-path').value = parsed.path;
+        }
+        computeBaseUrl();
+        $('set-api-key').value = sr.llm_has_api_key ? '***' : '';
+        $('set-api-key').type = 'password';
+        $('set-api-reveal').innerText = 'show';
+        $('set-temp').value = llm.temperature ?? 0.7;
+        $('set-temp-val').innerText = $('set-temp').value;
+        $('set-retries').value = llm.max_retries ?? 2;
+        $('set-timeout').value = llm.timeout_s ?? 60;
+        const modelSel = $('set-model');
+        modelSel.dataset.selected = llm.model_id || '';
+        modelSel.innerHTML = '';
+        if (llm.model_id) {
+            const o = document.createElement('option');
+            o.value = llm.model_id; o.innerText = llm.model_id; o.selected = true;
+            modelSel.appendChild(o);
+        }
+        const bsel = $('set-branding');
+        bsel.innerHTML = '';
+        const profiles = (br && br.profiles) || [];
+        profiles.forEach(name => {
+            const o = document.createElement('option');
+            o.value = name; o.innerText = name;
+            if (name === (br && br.active)) o.selected = true;
+            bsel.appendChild(o);
+        });
+        $('set-test-badge').className = 'badge badge-ghost font-mono text-xs';
+        $('set-test-badge').innerText = 'idle';
+        modal.showModal();
+        reloadModels();
+    } catch (e) {
+        console.error('openSettings failed', e);
+    }
+}
+
+async function saveSettings() {
+    const sel = $('set-model');
+    let model_id = sel.value;
+    if (model_id === '__custom__') model_id = $('set-model-custom').value.trim();
+    const body = {
+        llm: {
+            provider: $('set-provider').value,
+            base_url: computeBaseUrl(),
+            model_id,
+            api_key: $('set-api-key').value,
+            temperature: parseFloat($('set-temp').value),
+            max_retries: parseInt($('set-retries').value, 10),
+            timeout_s: parseInt($('set-timeout').value, 10),
+        },
+    };
+    await fetch('/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const bsel = $('set-branding');
+    if (bsel && bsel.value) {
+        await fetch('/branding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: bsel.value }),
+        });
+    }
+    const modal = $('settings-modal');
+    if (modal && modal.close) modal.close();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const p = $('set-provider');
+    if (p) p.addEventListener('change', applyProviderDefaults);
+});
+
 connect();
