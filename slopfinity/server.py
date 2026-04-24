@@ -14,6 +14,7 @@ from . import config as cfg
 from . import branding as _branding
 from .stats import get_sys_stats, get_storage, get_ram_estimate
 from .llm import lmstudio_call
+from . import fanout as _fanout
 
 
 def _load_branding():
@@ -125,6 +126,33 @@ async def enhance(data: dict = Body(...)):
         }
     suggestion = lmstudio_call(config["enhancer_prompt"], prompt)
     return {"suggestion": suggestion}
+
+
+@app.post("/enhance/distribute")
+async def enhance_distribute(data: dict = Body(...)):
+    """Single-idea fan-out with preserve-tokens and lock support.
+
+    Accepts: {core, stages: {image, video, music, tts}, locked: [...],
+              preserve_tokens: [...]}
+    Returns: {ok, stages, preserved_ok, preserved_dropped}
+    """
+    core = (data.get("core") or "").strip()
+    stages = data.get("stages") or {}
+    locked = data.get("locked") or []
+    preserve_tokens = data.get("preserve_tokens") or []
+    result = _fanout.fanout(
+        core=core,
+        stages=stages,
+        locked=locked,
+        preserve_tokens=preserve_tokens,
+        llm_call=lmstudio_call,
+    )
+    return {
+        "ok": result["ok"],
+        "stages": result["stages"],
+        "preserved_ok": result["preserved_ok"],
+        "preserved_dropped": result["preserved_dropped"],
+    }
 
 
 @app.post("/config")
