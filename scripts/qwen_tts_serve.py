@@ -19,8 +19,33 @@ import uuid
 from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
 
-OUT_DIR = os.environ.get("TTS_OUT_DIR", "/workspace/tts")
-os.makedirs(OUT_DIR, exist_ok=True)
+def _first_writable(candidates):
+    """Pick the first directory we can create + write to."""
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            os.makedirs(cand, exist_ok=True)
+            probe = os.path.join(cand, ".writable-probe")
+            with open(probe, "w") as _f:
+                _f.write("ok")
+            os.unlink(probe)
+            return cand
+        except (OSError, PermissionError):
+            continue
+    raise PermissionError(
+        f"No writable TTS output directory found in: {candidates!r}. "
+        "Set TTS_OUT_DIR to a writable path."
+    )
+
+
+OUT_DIR = _first_writable([
+    os.environ.get("TTS_OUT_DIR"),
+    "/workspace/tts",
+    os.path.expanduser("~/.slopfinity/tts"),
+    "/tmp/slopfinity-tts",
+])
+print(f"🎙️  TTS output dir: {OUT_DIR}", flush=True)
 
 LAUNCHER = os.environ.get(
     "QWEN_TTS_LAUNCHER",
