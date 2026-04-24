@@ -32,8 +32,39 @@ huggingface-cache/
 qwen-outputs/
 wan-models/
 comfy-models/
+comfy-models
 comfy-outputs/
+comfy-input/
 outputs/
 ComfyUI_output/
 workspace/
 docker/
+docker-compose.override.yaml
+logs/
+
+# External model repos and datasets (too big for git)
+LTX-2/
+ComfyUI-LTXVideo/
+
+# IDE / editor / local AI assistant state
+.claude/
+.vscode/
+.idea/
+
+# Integration work products (not shipped)
+ui-rebuild/
+
+# Branding profiles — users copy <name>.json.example to <name>.json
+# (per-install, not shared via the repo)
+branding/*.json
+!branding/*.json.example
+
+# Experimental / stray scripts not promoted to the pipelines/ package
+debug_comfy.py
+test_enhancer.py
+test_llm_enhancer.py
+test_ltx23.py
+test_ltx23_video.py
+run_philosophical_experiments.py
+workflow_api.json
+-.o

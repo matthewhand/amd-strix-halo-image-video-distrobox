@@ -22,7 +22,7 @@ def test_docker_compose_startup():
         result = subprocess.run(['docker', 'ps'], capture_output=True, text=True)
         if 'strix-halo-toolbox' not in result.stdout:
             print("🔄 Starting services...")
-            subprocess.run(['docker', 'compose', '--profile', 'qwen-only', 'up', '--build', '-d'], check=True)
+            subprocess.run(['docker', 'compose', '--profile', 'qwen-image', 'up', '--build', '-d'], check=True)
             time.sleep(30)  # Wait for services to start
 
         return True

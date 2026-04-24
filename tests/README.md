@@ -42,7 +42,7 @@ python -m pip install requests
 python tests/e2e_qwen_web_test.py
 
 # Run with Docker Compose
-docker compose --profile qwen-only up --build -d
+docker compose --profile qwen-image up --build -d
 python tests/e2e_qwen_web_test.py
 docker compose down
 ```
