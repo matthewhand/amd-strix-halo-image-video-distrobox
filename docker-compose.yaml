@@ -2,7 +2,7 @@
 #
 # Profiles:
 #   qwen-image   → Qwen Image Studio server on :8000
-#   qwen-tts     → (P4) Qwen TTS server on :8010
+#   qwen-tts     → Qwen3-TTS server on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)
 #   comfyui      → ComfyUI server on :8188
 #   slopfinity   → Slopfinity dashboard on :9099 (see override)
 #   slop         → umbrella for the full stack (all of the above)
@@ -108,6 +108,34 @@ services:
         fi
         cd /opt/qwen-image-studio/qwen-image-studio
         exec uvicorn server:app --host 0.0.0.0 --port 8000
+      "
+
+  # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so
+  # you can run TTS independently. Enforces HSA_OVERRIDE_GFX_VERSION=11.0.0
+  # (NOT the 11.5.1 used by the rest of the stack — the TTS model's kernels
+  # regress under 11.5.1 on gfx1151).
+  qwen-tts-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-qwen-tts
+    profiles:
+      - qwen-tts
+      - slop
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+    volumes:
+      - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
+      - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/8010) 2>/dev/null ; then
+          echo 'ERROR: Port 8010 is already bound.' 1>&2
+          echo '       Stop the other TTS worker first, or change TTS_PORT.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        mkdir -p /workspace/tts
+        echo '🎙️  Starting Qwen3-TTS worker on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)...'
+        exec python3 /opt/qwen_tts_serve.py
       "
 
   # ComfyUI-only service profile. Mutually exclusive with a toolbox running

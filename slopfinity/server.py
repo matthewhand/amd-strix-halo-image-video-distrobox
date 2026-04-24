@@ -8,6 +8,8 @@ import json
 import subprocess
 import time
 import asyncio
+import urllib.request
+import urllib.error
 from typing import List
 
 from . import config as cfg
@@ -17,6 +19,9 @@ from .llm import lmstudio_call, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
 from . import scheduler as sched
 from . import fanout as _fanout
+from .workers import ffmpeg_mux as _ffmpeg_mux
+
+TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
 
 
 def _load_branding():
@@ -202,27 +207,105 @@ async def inject(
     return {"status": "ok"}
 
 
+def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
+    """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
+
+    Isolated for test mocking.
+    """
+    payload = json.dumps({"text": text, "voice": voice}).encode("utf-8")
+    req = urllib.request.Request(
+        TTS_WORKER_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
+
+
 @app.post("/tts")
 async def tts(data: dict = Body(...)):
+    """Proxy to the Qwen3-TTS worker on :8010.
+
+    Preserves the JS contract: response contains {ok, status, url, audio_path,
+    voice}. On worker-unreachable, returns a clear error — NEVER falls back
+    to a sine-wave stub.
+    """
     text = (data.get("text") or "").strip()
     voice = data.get("voice") or "ryan"
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
-    fname = f"tts_{voice}_{int(time.time() * 1000)}.wav"
-    out_path = os.path.join(TTS_OUT_DIR, fname)
     try:
-        subprocess.run(
-            [
-                "ffmpeg", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
-                "-y", out_path,
-            ],
-            capture_output=True, check=False,
+        result = _call_tts_worker(text, voice)
+    except urllib.error.URLError as e:
+        return JSONResponse(
+            {
+                "ok": False,
+                "status": "worker-unreachable",
+                "error": "qwen-tts-service not running — enable profile qwen-tts "
+                         f"(docker compose --profile qwen-tts up -d qwen-tts-service): {e}",
+                "voice": voice,
+            },
+            status_code=503,
         )
-        ok = os.path.exists(out_path)
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "status": "worker-error", "error": str(e), "voice": voice},
+            status_code=502,
+        )
+    # Back-compat shape for slopfinity/static/app.js generateTts().
+    url = result.get("url") or result.get("audio_path")
+    return {
+        "ok": bool(result.get("ok")),
+        "status": result.get("status", "ok" if result.get("ok") else "error"),
+        "url": url,
+        "audio_path": url,
+        "voice": result.get("voice", voice),
+        "error": result.get("error"),
+    }
+
+
+@app.post("/mux")
+async def mux(data: dict = Body(...)):
+    """Mux audio onto video using ffmpeg_mux.
+
+    Body: {video_path, audio_path, out_name, [loop_audio], [pad_to_video]}
+    Paths are treated as relative to /workspace (EXP_DIR) if not absolute.
+    """
+    vrel = data.get("video_path") or ""
+    arel = data.get("audio_path") or ""
+    out_name = data.get("out_name") or f"muxed_{int(time.time() * 1000)}.mp4"
+    if not vrel or not arel:
+        return JSONResponse(
+            {"ok": False, "error": "video_path and audio_path required"},
+            status_code=400,
+        )
+
+    def _resolve(p: str) -> str:
+        if os.path.isabs(p):
+            return p
+        return os.path.join(EXP_DIR, p.lstrip("/"))
+
+    video = _resolve(vrel)
+    audio = _resolve(arel)
+    out_path = os.path.join(EXP_DIR, out_name)
+
+    try:
+        ok = _ffmpeg_mux.mux(
+            video,
+            audio,
+            out_path,
+            loop_audio=bool(data.get("loop_audio")),
+            pad_to_video=bool(data.get("pad_to_video", True)),
+        )
+    except FileNotFoundError as e:
+        return JSONResponse({"ok": False, "error": f"missing input: {e}"}, status_code=404)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    url = f"/files/tts/{fname}"
-    return {"ok": ok, "status": "ok" if ok else "stub-failed", "audio_path": url, "url": url, "voice": voice}
+    if not ok:
+        return JSONResponse({"ok": False, "error": "ffmpeg mux failed"}, status_code=500)
+    return {"ok": True, "url": f"/files/{out_name}"}
 
 
 @app.get("/ram_estimate")
