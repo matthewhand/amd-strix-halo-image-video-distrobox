@@ -39,20 +39,9 @@
                 <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
                 <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
             </span>
-            <span class="divider divider-horizontal mx-0"></span>
-            {# Output counters — icon set aligned with Slop filter chips. #}
-            <span class="flex items-baseline gap-1" title="FINAL merged MP4s">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎞 final</span>
-                <span class="font-mono font-black text-accent text-lg" id="out-finals">0</span>
-            </span>
-            <span class="flex items-baseline gap-1" title="Video chain clips (10 per FINAL)">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 videos</span>
-                <span class="font-mono font-bold text-primary" id="out-chains">0</span>
-            </span>
-            <span class="flex items-baseline gap-1" title="Base / keyframe images">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 images</span>
-                <span class="font-mono font-bold text-secondary" id="out-base">0</span>
-            </span>
+            {# Output counters removed from navbar — now shown inline with Slop filter chip labels. #}
+            {# Keep hidden IDs so existing WS / backend bindings don't break. #}
+            <span class="hidden" id="out-finals">0</span><span class="hidden" id="out-chains">0</span><span class="hidden" id="out-base">0</span>
         </div>
 
         <div class="flex-none flex gap-2 items-center">
@@ -85,9 +74,8 @@
     <div class="text-[10px] text-base-content/40 font-mono mb-4 truncate px-2" id="out-latest"></div>
 
     <!-- Hero Idle — tiny status line instead of giant alert -->
-    <div id="hero-idle" class="text-xs text-base-content/60 italic mb-3 px-2" style="display:{% if state.mode == 'Idle' %}block{% else %}none{% endif %}">
-        Idle · enter subjects below and hit ▶ Start Infinity
-    </div>
+    {# Idle chip removed — the Start Infinity button already communicates state. #}
+    <div id="hero-idle" class="hidden"></div>
 
     <!-- Subjects card (primary input for Infinity mode) -->
     <section class="card bg-base-100 border-2 border-primary shadow-xl mb-6">
@@ -114,7 +102,13 @@
                 <button class="btn btn-primary btn-lg join-item flex-1" id="btn-start-stop" onclick="toggleInfinity()">
                     {% if config.infinity_mode %}⏸ Stop Infinity{% else %}▶ Start Infinity{% endif %}
                 </button>
-                <button class="btn btn-ghost btn-lg join-item text-lg" title="Pipeline settings" onclick="openPipeline()">🎚</button>
+                <button class="btn btn-ghost btn-lg join-item text-xl" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
+                        <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
+                        <line x1="4" y1="18" x2="16" y2="18"/><circle cx="19" cy="18" r="2.5" fill="currentColor"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </section>
@@ -140,13 +134,11 @@
         </div>
     </section>
 
-    <!-- Scheduler timeline -->
-    <div class="flex items-center gap-2 mb-6 flex-wrap">
+    {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
+    <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">
         <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
         <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
-        <div class="flex flex-wrap gap-1" id="sched-timeline">
-            <span class="text-[11px] text-base-content/40 italic">no events yet</span>
-        </div>
+        <div class="flex flex-wrap gap-1" id="sched-timeline"></div>
     </div>
 
     <!-- Queue -->
@@ -187,9 +179,9 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 {{ branding.labels.slop_video or 'video' }}</span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 {{ branding.labels.slop_image or 'image' }}</span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 {{ branding.labels.slop_audio or 'audio' }}</span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 {{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="chain">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 {{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 {{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -276,7 +268,7 @@
 <!-- Pipeline Modal (copied verbatim from reference /tmp/ref_workflow_rethink.html 350-543) -->
 <dialog id="pipeline-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
-        <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">🎚 Pipeline</h3>
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
         <!-- Models -->
         <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Models</div>
@@ -302,6 +294,14 @@
                 <select id="cfg-audio" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline(); _onAudioChanged();">
                     <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
                     <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice (TTS)</span>
+                <select id="cfg-tts" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                    <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
+                    <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
+                    <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
                 </select>
             </label>
             <label class="form-control">
