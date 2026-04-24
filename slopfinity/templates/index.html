@@ -13,463 +13,479 @@
 </head>
 <body class="min-h-screen bg-base-300 text-base-content">
 
-<div class="drawer lg:drawer-open">
-    <input id="app-drawer" type="checkbox" class="drawer-toggle" />
+<!-- Sticky Header -->
+<header class="sticky top-0 z-30 bg-base-200/80 backdrop-blur border-b border-base-100 px-6 py-3 flex items-center justify-between">
+    <h1 class="text-2xl font-black text-primary uppercase tracking-widest">{{ branding.app.name }}</h1>
+    <div class="flex items-center gap-2">
+        <button id="btn-settings" class="btn btn-ghost btn-sm gap-2" title="Settings" onclick="openSettings()">
+            <span class="text-base">⚙</span><span class="hidden sm:inline">Settings</span>
+        </button>
+        <button class="btn btn-ghost btn-sm gap-2" title="Pipeline" onclick="openPipeline()">
+            <span class="text-base">🎚</span><span class="hidden sm:inline">Pipeline</span>
+        </button>
+    </div>
+</header>
 
-    <!-- DRAWER CONTENT (main page) -->
-    <div class="drawer-content flex flex-col h-screen overflow-hidden">
+<main class="max-w-5xl mx-auto p-4 md:p-6">
 
-        <!-- Mobile Top Navbar -->
-        <div class="navbar bg-base-200 border-b border-base-100 lg:hidden z-10">
-            <div class="flex-none">
-                <label for="app-drawer" aria-label="open sidebar" class="btn btn-square btn-ghost">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                    </svg>
-                </label>
-            </div>
-            <div class="px-2">
-                <span class="text-xl font-black text-primary uppercase tracking-widest">{{ branding.app.name }}</span>
-            </div>
-            <div class="flex-1"></div>
-            {# Intentionally no Settings gear here: the sidebar header's gear
-               handles it. When the drawer is open on mobile the sidebar is
-               on screen, so duplicating the icon in the navbar is clutter. #}
+    <!-- Sticky stats navbar: hardware (GPU/VRAM/RAM) + output counts (MP4/Chains/Base) + storage + sync -->
+    <div id="stats-navbar" class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-[60px] z-20 px-4 flex-wrap gap-y-1">
+        <div class="flex-1 flex flex-wrap items-center gap-x-6 gap-y-1">
+            {# Hardware #}
+            <span class="flex items-baseline gap-1">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
+                <span class="font-mono font-black text-primary" id="g-v">0%</span>
+                <span class="ticker-bar ml-1" id="g-t"></span>
+            </span>
+            <span class="flex items-baseline gap-1">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">VRAM</span>
+                <span class="font-mono font-black text-secondary" id="v-v">0%</span>
+                <span class="ticker-bar ml-1" id="v-t"></span>
+            </span>
+            <span class="flex items-baseline gap-1">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
+                <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
+            </span>
+            <span class="divider divider-horizontal mx-0"></span>
+            {# Output counters #}
+            <span class="flex items-baseline gap-1" title="Finished MP4s">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 MP4</span>
+                <span class="font-mono font-black text-primary text-lg" id="out-finals">0</span>
+            </span>
+            <span class="flex items-baseline gap-1" title="Chain clips (10 per final)">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">⛓ clips</span>
+                <span class="font-mono font-bold text-secondary" id="out-chains">0</span>
+            </span>
+            <span class="flex items-baseline gap-1" title="Base PNG keyframes">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 png</span>
+                <span class="font-mono font-bold text-accent" id="out-base">0</span>
+            </span>
         </div>
 
-        <!-- Main scrollable area -->
-        <main class="flex-1 overflow-y-auto custom-scrollbar pb-20 lg:pb-0 p-6">
-
-            <!-- Single consolidated status bar: hardware (GPU/VRAM/RAM) + output counts (MP4/Chains/Base) + storage + sync -->
-            <div id="stats-navbar" class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-0 z-20 px-4 flex-wrap gap-y-1">
-                <div class="flex-1 flex flex-wrap items-center gap-x-6 gap-y-1">
-                    {# Hardware #}
-                    <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
-                        <span class="font-mono font-black text-primary" id="g-v">0%</span>
-                        <span class="ticker-bar ml-1" id="g-t"></span>
-                    </span>
-                    <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">VRAM</span>
-                        <span class="font-mono font-black text-secondary" id="v-v">0%</span>
-                        <span class="ticker-bar ml-1" id="v-t"></span>
-                    </span>
-                    <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
-                        <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
-                    </span>
-                    <span class="divider divider-horizontal mx-0"></span>
-                    {# Output counters #}
-                    <span class="flex items-baseline gap-1" title="Finished MP4s">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 MP4</span>
-                        <span class="font-mono font-black text-primary text-lg" id="out-finals">0</span>
-                    </span>
-                    <span class="flex items-baseline gap-1" title="Chain clips (10 per final)">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">⛓ clips</span>
-                        <span class="font-mono font-bold text-secondary" id="out-chains">0</span>
-                    </span>
-                    <span class="flex items-baseline gap-1" title="Base PNG keyframes">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 png</span>
-                        <span class="font-mono font-bold text-accent" id="out-base">0</span>
-                    </span>
-                </div>
-
-                <div class="flex-none flex gap-2 items-center">
-                    {% set worst = namespace(s=None) %}
-                    {% for s in storage %}{% if worst.s is none or s.pct > worst.s.pct %}{% set worst.s = s %}{% endif %}{% endfor %}
-                    {% set any_alert = false %}
-                    {% for s in storage %}{% if s.status != 'ok' %}{% set any_alert = true %}{% endif %}{% endfor %}
-                    <div id="st-pill"
-                         class="badge badge-lg cursor-pointer tooltip tooltip-left {% if worst.s and worst.s.status == 'danger' %}badge-error{% elif worst.s and worst.s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}"
-                         data-tip="{% for s in storage %}{{ s.mount }}: {{ s.used_gb }}/{{ s.total_gb }} GB ({{ s.pct }}%){% if not loop.last %} · {% endif %}{% endfor %}"
-                         onclick="openStorageModal()"
-                         {% if not any_alert %}style="display:none"{% endif %}>
-                        {% if worst.s %}{% if worst.s.status == 'danger' %}🔴{% elif worst.s.status == 'warn' %}🟡{% else %}🟢{% endif %} {{ worst.s.pct }}%{% else %}🟢 0%{% endif %}
-                    </div>
-                    <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
-                        <select id="refresh-interval" class="select select-bordered select-xs w-24" onchange="updateRefresh()">
-                            <option value="5000" selected>5s</option>
-                            <option value="15000">15s</option>
-                            <option value="0">off</option>
-                        </select>
-                    </div>
-                    <span id="live-dot" class="hidden lg:inline-flex relative w-2.5 h-2.5 ml-1" title="WebSocket live">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                        <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-success"></span>
-                    </span>
-                </div>
+        <div class="flex-none flex gap-2 items-center">
+            {% set worst = namespace(s=None) %}
+            {% for s in storage %}{% if worst.s is none or s.pct > worst.s.pct %}{% set worst.s = s %}{% endif %}{% endfor %}
+            {% set any_alert = false %}
+            {% for s in storage %}{% if s.status != 'ok' %}{% set any_alert = true %}{% endif %}{% endfor %}
+            <div id="st-pill"
+                 class="badge badge-lg cursor-pointer tooltip tooltip-left {% if worst.s and worst.s.status == 'danger' %}badge-error{% elif worst.s and worst.s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}"
+                 data-tip="{% for s in storage %}{{ s.mount }}: {{ s.used_gb }}/{{ s.total_gb }} GB ({{ s.pct }}%){% if not loop.last %} · {% endif %}{% endfor %}"
+                 onclick="openStorageModal()"
+                 {% if not any_alert %}style="display:none"{% endif %}>
+                {% if worst.s %}{% if worst.s.status == 'danger' %}🔴{% elif worst.s.status == 'warn' %}🟡{% else %}🟢{% endif %} {{ worst.s.pct }}%{% else %}🟢 0%{% endif %}
             </div>
-
-            {# Latest-final filename (small desc line below navbar, hidden when empty) #}
-            <div class="text-[10px] text-base-content/40 font-mono mb-4 truncate px-2" id="out-latest"></div>
-
-            <!-- Hero Idle — tiny status line instead of giant alert -->
-            <div id="hero-idle" class="text-xs text-base-content/60 italic mb-3 px-2" style="display:{% if state.mode == 'Idle' %}block{% else %}none{% endif %}">
-                Idle · type an idea in the sidebar to start
+            <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
+                <select id="refresh-interval" class="select select-bordered select-xs w-24" onchange="updateRefresh()">
+                    <option value="5000" selected>5s</option>
+                    <option value="15000">15s</option>
+                    <option value="0">off</option>
+                </select>
             </div>
-
-            <!-- Hero Progress (full, shown when state.mode !== Idle) -->
-            <div id="hero-card" class="hero bg-neutral text-neutral-content rounded-3xl border border-base-200 shadow-2xl mb-10 overflow-hidden relative" style="display:{% if state.mode == 'Idle' %}none{% else %}block{% endif %}">
-                <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
-                <div class="hero-content flex-col items-stretch w-full p-8 gap-4">
-                    <div class="card card-body p-0 bg-transparent">
-                        <div class="flex flex-wrap justify-between items-end gap-4">
-                            <div>
-                                <div class="badge badge-primary badge-outline mb-2 uppercase tracking-widest">Mode</div>
-                                <h2 class="card-title text-4xl font-black tracking-tight" id="h-m">{{ state.mode }}</h2>
-                            </div>
-                            <div class="badge badge-lg badge-primary text-base font-mono px-4 py-4 shadow-lg" id="h-c">
-                                V {{ state.video_index }}/{{ state.total_videos }} | C {{ state.chain_index }}/{{ state.total_chains }}
-                            </div>
-                        </div>
-                        <progress class="progress progress-primary w-full h-3 bg-base-300" id="h-p" value="0" max="100"></progress>
-                        <div class="text-lg italic text-neutral-content/70 border-l-4 border-primary pl-4" id="h-pr">"{{ state.current_prompt }}"</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Scheduler timeline (standalone; folds in the previous "SCHEDULER live · no events yet" subtitle) -->
-            <div class="flex items-center gap-2 mb-8 flex-wrap">
-                <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
-                <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
-                <div class="flex flex-wrap gap-1" id="sched-timeline">
-                    <span class="text-[11px] text-base-content/40 italic">no events yet</span>
-                </div>
-            </div>
-
-            <!-- Output (consolidated Live / Videos / Keyframes; hidden when all grids empty) -->
-            <h2 class="text-xl font-black uppercase tracking-widest mb-4">Output</h2>
-
-            <div id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
-                <div role="tablist" class="tabs tabs-boxed mb-6" id="output-tabs">
-                    <a role="tab" class="tab tab-active" data-output-tab="live" onclick="switchOutputTab('live')">
-                        🔥 {{ branding.labels.gallery_live }}
-                        <span class="loading loading-ring loading-xs text-accent ml-2" id="live-ring" style="display:none"></span>
-                    </a>
-                    <a role="tab" class="tab" data-output-tab="videos" onclick="switchOutputTab('videos')">🎬 {{ branding.labels.gallery_completed }}</a>
-                </div>
-
-                <!-- Live tab — everything streaming (base PNGs, chain MP4s, bridge PNGs) chronologically.
-                     Server hydrates this on page load with the newest 48 assets so a refresh doesn't wipe history. -->
-                <div data-output-panel="live">
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="preview-grid">
-                        {% for f in (live or [])[:48] %}
-                            {% set is_mp4 = f.endswith('.mp4') %}
-                            {# Determine model label with simple prefix rules (mirrors app.js logic) #}
-                            {% set model = '' %}
-                            {% if f.startswith('test_') %}
-                                {% set model = f.split('_')[1] %}
-                            {% elif f.startswith('ltx_base_') %}
-                                {% set model = 'ltx-2.3' %}
-                            {% elif is_mp4 %}
-                                {% set model = 'ltx-2.3' %}
-                            {% endif %}
-                            {% set badge_color = {'qwen':'badge-info','ernie':'badge-error','ltx-2.3':'badge-success','wan2.2':'badge-info','wan2.5':'badge-info','heartmula':'badge-secondary','qwen-tts':'badge-warning'}.get(model, 'badge-ghost') %}
-                            {% set kind_label = '⛓ chain' if is_mp4 else '🖼 png' %}
-                            {% set kind_color = 'badge-primary' if is_mp4 else 'badge-secondary' %}
-                            <div class="card card-compact bg-base-100 shadow-lg border {{ 'border-primary' if is_mp4 else 'border-secondary' }} card-hover overflow-hidden">
-                                <figure class="bg-black">
-                                {% if is_mp4 %}
-                                    <video controls muted loop preload="metadata" class="w-full aspect-video object-cover"><source src="/files/{{ f }}"></video>
-                                {% else %}
-                                    <img src="/files/{{ f }}" class="w-full aspect-video object-cover" loading="lazy">
-                                {% endif %}
-                                </figure>
-                                <div class="card-body !p-2 bg-base-200/60 gap-1">
-                                    <div class="flex flex-wrap items-center gap-1">
-                                        <span class="badge badge-xs {{ kind_color }}">{{ kind_label }}</span>
-                                        {% if model %}<span class="badge badge-xs {{ badge_color }}" title="Generated by {{ model }}">{{ model }}</span>{% endif %}
-                                    </div>
-                                    <span class="text-[10px] font-mono text-base-content/60 truncate" title="{{ f }}">{{ f }}</span>
-                                </div>
-                            </div>
-                        {% endfor %}
-                    </div>
-                    <!-- Hidden grid kept for back-compat with WS handlers; not displayed. -->
-                    <div id="i-grid" class="hidden"></div>
-                </div>
-
-                <!-- Videos tab -->
-                <div data-output-panel="videos" style="display:none">
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6" id="v-grid">
-                        {% if vids %}
-                            {% for v in vids %}
-                            <div class="card card-compact bg-base-100 shadow-xl border border-base-300 hover:border-primary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
-                                <figure class="relative bg-black">
-                                    <video controls loop class="w-full object-cover aspect-video"><source src="/files/{{ v }}"></video>
-                                    <div class="absolute top-2 right-2 badge badge-primary badge-sm font-mono uppercase shadow-lg">{{ v.rsplit('.', 1)[-1] }}</div>
-                                </figure>
-                                <div class="card-body !p-3 bg-base-200/60">
-                                    <p class="text-[11px] font-mono truncate text-base-content/70" title="{{ v }}">{{ v }}</p>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        {% endif %}
-                    </div>
-                </div>
-
-                <!-- Keyframes tab -->
-                <div data-output-panel="keyframes" style="display:none">
-                    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" id="i-grid">
-                        {% if imgs %}
-                            {% for i in imgs %}
-                            <div class="card card-compact bg-base-100 shadow-lg border border-base-300 hover:border-secondary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
-                                <figure class="relative bg-black aspect-video overflow-hidden">
-                                    <img src="/files/{{ i }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy">
-                                    <div class="absolute top-1.5 right-1.5 badge badge-secondary badge-xs font-mono uppercase shadow">{{ i.rsplit('.', 1)[-1] }}</div>
-                                </figure>
-                                <div class="card-body !p-2 bg-base-200/60">
-                                    <p class="text-[10px] font-mono truncate text-base-content/70" title="{{ i }}">{{ i }}</p>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Output Empty-state card (shown when all grids empty) -->
-            <div id="output-empty" class="card bg-base-200/30 border border-base-300 mb-12" style="display:{% if vids or imgs %}none{% else %}flex{% endif %}">
-                <div class="card-body items-center text-center p-10">
-                    <div class="skeleton h-24 w-24 rounded-full mb-3"></div>
-                    <p class="text-base-content/50 italic">Nothing generated yet — your clips will appear here.</p>
-                </div>
-            </div>
-
-            <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
-                {{ branding.footer.tagline }}
-            </div>
-        </main>
-
-        <!-- Mobile Bottom Nav -->
-        <div class="btm-nav btm-nav-sm lg:hidden bg-base-200 border-t border-base-100 z-10">
-            <a href="#pipeline" class="text-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                <span class="btm-nav-label text-xs">Pipeline</span>
-            </a>
-            <a href="#queue">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-                <span class="btm-nav-label text-xs">Queue</span>
-            </a>
-            <a href="#gallery">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                <span class="btm-nav-label text-xs">Gallery</span>
-            </a>
+            <span id="live-dot" class="hidden lg:inline-flex relative w-2.5 h-2.5 ml-1" title="WebSocket live">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-success"></span>
+            </span>
         </div>
     </div>
 
-    <!-- DRAWER SIDE (Sidebar) -->
-    <aside class="drawer-side z-30">
-        <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-        <div class="w-80 min-h-full bg-base-200 border-r border-base-100 flex flex-col p-4 overflow-y-auto custom-scrollbar">
+    {# Latest-final filename (small desc line below navbar, hidden when empty) #}
+    <div class="text-[10px] text-base-content/40 font-mono mb-4 truncate px-2" id="out-latest"></div>
 
-            <div class="flex items-center justify-between mb-4 gap-2">
-                <h1 class="text-2xl font-black text-primary uppercase tracking-widest drop-shadow-md">{{ branding.app.name }}</h1>
-                <button id="btn-settings" class="btn btn-ghost btn-sm gap-2" title="Settings" onclick="openSettings()">
-                    <span class="text-base">⚙</span><span class="hidden lg:inline">Settings</span>
-                </button>
+    <!-- Hero Idle — tiny status line instead of giant alert -->
+    <div id="hero-idle" class="text-xs text-base-content/60 italic mb-3 px-2" style="display:{% if state.mode == 'Idle' %}block{% else %}none{% endif %}">
+        Idle · enter subjects below and hit ▶ Start Infinity
+    </div>
+
+    <!-- Subjects card (primary input for Infinity mode) -->
+    <section class="card bg-base-100 border-2 border-primary shadow-xl mb-6">
+        <div class="card-body gap-3">
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-bold uppercase tracking-wider text-primary">Subjects</span>
+                <label class="flex items-center gap-2">
+                    <span class="text-xs">Infinity</span>
+                    <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateStartBtn()" />
+                </label>
             </div>
-
-            <!-- ============================================================== -->
-            <!-- TIER 1 — Primary Input (big, always visible)                   -->
-            <!-- ============================================================== -->
-            <div class="card card-compact bg-base-100 border-2 border-primary shadow-xl mb-4">
-                <div class="card-body">
-                    <textarea id="p-core" rows="6" class="textarea textarea-lg textarea-primary w-full leading-snug" placeholder="What do you want?&#10;&#10;One idea. I'll elaborate it into image, video, music and voice. Hit {{ branding.labels.ai_magic }} to distribute."></textarea>
-                    <div class="space-y-2 mt-2">
-                        <button class="btn btn-primary btn-lg btn-block" onclick="enhance()" title="Fan this out across all 4 stages">✨ {{ branding.labels.ai_magic }}</button>
-                        <button class="btn btn-secondary btn-lg btn-block" onclick="inject('next')">Generate</button>
-                    </div>
-
-                    <!-- Fan-out preview (inline under Input) -->
-                    <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
-                        <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
-                        <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
-                        <div id="fanout-body" class="text-xs"></div>
-                        <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
-                        <div class="join w-full">
-                            <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
-                            <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
-                            <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
-                        </div>
-                    </div>
-
-                    <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
-                    <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
-                        <div id="ai-s" class="text-xs italic"></div>
-                        <div class="join w-full">
-                            <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
-                            <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
-                        </div>
-                    </div>
-                </div>
+            <textarea id="p-core" rows="5"
+                class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
+                placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
+                oninput="updatePipeline()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-[10px] text-base-content/50">Need ideas?</span>
+                <button class="btn btn-ghost btn-xs" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
             </div>
-
-            <!-- ============================================================== -->
-            <!-- TIER 2 — Models (grouped, open by default)                     -->
-            <!-- ============================================================== -->
-            <div tabindex="0" class="collapse collapse-arrow collapse-open bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
-                <input type="checkbox" checked />
-                <div class="collapse-title text-sm font-bold text-accent uppercase tracking-wider py-3 min-h-0">{{ branding.labels.pipeline }}</div>
-                <div class="collapse-content space-y-2">
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Base Image</span></label>
-                        <select id="cfg-base" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                            <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
-                            <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
-                            <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video Chain</span></label>
-                        <select id="cfg-video" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                            <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
-                            <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
-                            <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Audio / Music</span></label>
-                        <select id="cfg-audio" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                            <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
-                            <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
-                        </select>
-                    </div>
-                    <div class="form-control">
-                        <label class="label py-1"><span class="label-text text-[10px] uppercase tracking-widest opacity-60">Post Process</span></label>
-                        <select id="cfg-upscale" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                            <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
-                            <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
-                        </select>
-                    </div>
-
-                    <!-- RAM estimator -->
-                    <div id="ram-est" class="card card-compact bg-base-200 mt-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
-                        <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
-                        <div class="ram-txt font-mono text-sm font-bold mt-0.5">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
-                        <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
-                    </div>
-                </div>
+            <div id="subject-chips" class="flex flex-wrap gap-1 min-h-[28px]">
+                <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
+            <button class="btn btn-primary btn-lg btn-block" id="btn-start-stop" onclick="toggleInfinity()">
+                {% if config.infinity_mode %}⏸ Stop Infinity{% else %}▶ Start Infinity{% endif %}
+            </button>
+        </div>
+    </section>
 
-            <!-- ============================================================== -->
-            <!-- TIER 3 — Tertiary (collapsed by default)                       -->
-            <!-- ============================================================== -->
-
-            <!-- 3.1 Advanced: per-stage prompts -->
-            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
-                <input type="checkbox" />
-                <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider py-3 min-h-0">Advanced: per-stage prompts</div>
-                <div class="collapse-content">
-                    <div class="flex flex-col w-full gap-1 mt-1">
-                        <div class="flex items-center gap-1">
-                            <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                            <textarea id="p-image" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Image prompt..."></textarea>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                            <textarea id="p-video" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Video prompt..."></textarea>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                            <textarea id="p-music" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Music prompt..."></textarea>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="TTS voiceover..."></textarea>
-                        </div>
-                    </div>
-                    <!-- Compat shim concatenating the 4 stage fields -->
-                    <textarea id="p-in" class="hidden"></textarea>
-                    <div class="join w-full mt-2">
-                        <button class="btn btn-sm btn-primary join-item flex-1" onclick="inject('next')">Queue Next</button>
-                        <button class="btn btn-sm btn-secondary join-item flex-1" onclick="inject('now')">Force Now</button>
-                    </div>
-                </div>
+    <!-- Breadcrumb stage steps (shown when state.mode !== Idle) -->
+    <section id="hero-card" class="card bg-neutral text-neutral-content rounded-2xl border border-base-200 shadow-xl mb-6" style="display:{% if state.mode == 'Idle' %}none{% else %}block{% endif %}">
+        <div class="card-body p-4 gap-2">
+            <div class="flex justify-between items-center">
+                <span id="h-m" class="text-lg font-black">{{ state.mode }}</span>
+                <span id="h-c" class="badge badge-primary font-mono">V {{ state.video_index }}/{{ state.total_videos }} · C {{ state.chain_index }}/{{ state.total_chains }}</span>
             </div>
+            <ul id="stage-steps" class="steps w-full text-[11px]">
+                <li class="step" data-stage="Concept">Concept</li>
+                <li class="step" data-stage="Base Image">Image</li>
+                <li class="step" data-stage="Video Chains">Chain <span id="chain-counter" class="ml-1 opacity-70"></span></li>
+                <li class="step" data-stage="Audio">Audio</li>
+                <li class="step" data-stage="TTS">TTS</li>
+                <li class="step" data-stage="Post Process">Post</li>
+                <li class="step" data-stage="Final Merge">Final</li>
+            </ul>
+            <progress id="h-p" class="progress progress-primary w-full h-2" value="0" max="100"></progress>
+            <div id="h-pr" class="text-xs italic text-neutral-content/70 truncate">"{{ state.current_prompt }}"</div>
+        </div>
+    </section>
 
-            <!-- 3.2 Autonomous Mode (was Smithgetti) -->
-            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
-                <input type="checkbox" />
-                <div class="collapse-title flex justify-between items-center py-3 min-h-0">
-                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center gap-2">{{ branding.infinity_mode.emoji }} {{ branding.infinity_mode.name }}</span>
-                    <input type="checkbox" id="inf-on" class="toggle toggle-secondary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline()" onclick="event.stopPropagation()" />
-                </div>
-                <div class="collapse-content">
-                    <label class="label pt-0"><span class="label-text text-xs opacity-60">Themes (comma separated)</span></label>
-                    <textarea id="inf-themes" class="textarea textarea-bordered w-full h-16 text-xs" placeholder="Themes..." onchange="updatePipeline()">{{ config.infinity_themes | join(', ') }}</textarea>
-                </div>
+    <!-- Scheduler timeline -->
+    <div class="flex items-center gap-2 mb-6 flex-wrap">
+        <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
+        <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
+        <div class="flex flex-wrap gap-1" id="sched-timeline">
+            <span class="text-[11px] text-base-content/40 italic">no events yet</span>
+        </div>
+    </div>
+
+    <!-- Queue -->
+    <section class="card bg-base-100 border border-base-300 shadow mb-6">
+        <div class="card-body p-3 gap-2">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-accent">Queue <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
+                <button class="btn btn-ghost btn-xs" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
+            <ul id="q-list" class="flex flex-col gap-1">
+                {% for q in (queue or [])[:5] %}
+                    <li>
+                        <details class="bg-base-200 rounded-md">
+                            <summary class="cursor-pointer p-2 text-xs flex flex-wrap items-center gap-2">
+                                <span class="font-semibold truncate max-w-[50%]" title="{{ q.prompt }}">{{ q.prompt[:80] }}</span>
+                                {# best-effort badges from either the queue's snapshot OR current config #}
+                                {% set snap = q.config_snapshot or config %}
+                                {% if snap.base_model %}<span class="badge badge-xs badge-info">{{ snap.base_model }}</span>{% endif %}
+                                {% if snap.video_model %}<span class="badge badge-xs badge-success">{{ snap.video_model }}</span>{% endif %}
+                                {% if snap.audio_model and snap.audio_model != 'none' %}<span class="badge badge-xs badge-secondary">{{ snap.audio_model }}</span>{% endif %}
+                                {% if snap.upscale_model and snap.upscale_model != 'none' %}<span class="badge badge-xs badge-warning">{{ snap.upscale_model }}</span>{% endif %}
+                                <span class="text-[10px] text-base-content/50 font-mono ml-auto">{{ snap.size or '1:1' }}·{{ snap.frames or 17 }}f</span>
+                            </summary>
+                            <div class="p-2 pt-0 text-[11px] text-base-content/70 font-mono whitespace-pre-wrap">{{ q.prompt }}</div>
+                        </details>
+                    </li>
+                {% endfor %}
+                {% if not queue %}<li class="text-[10px] text-base-content/40 italic p-2">queue empty — toggle Infinity to start</li>{% endif %}
+            </ul>
+        </div>
+    </section>
 
-            <!-- 3.3 Queue -->
-            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3" id="queue">
-                <input type="checkbox" />
-                <div class="collapse-title flex justify-between items-center py-3 min-h-0 pr-10">
-                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider">{{ branding.labels.queue }}</span>
-                    <span class="badge badge-accent badge-sm" id="q-count">{{ queue | length }}</span>
-                </div>
-                <div class="collapse-content">
-                    <div class="overflow-y-auto custom-scrollbar flex-grow max-h-48" id="q-list">
-                        {% if queue %}
-                            {% for q in queue[:3] %}
-                            <div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">{{ q.prompt[:80] }}...</div>
-                            {% endfor %}
+    <!-- Output (consolidated Live / Videos / Keyframes; hidden when all grids empty) -->
+    <h2 class="text-xl font-black uppercase tracking-widest mb-4">Output</h2>
+
+    <div id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
+        <div role="tablist" class="tabs tabs-boxed mb-6" id="output-tabs">
+            <a role="tab" class="tab tab-active" data-output-tab="live" onclick="switchOutputTab('live')">
+                🔥 {{ branding.labels.gallery_live }}
+                <span class="loading loading-ring loading-xs text-accent ml-2" id="live-ring" style="display:none"></span>
+            </a>
+            <a role="tab" class="tab" data-output-tab="videos" onclick="switchOutputTab('videos')">🎬 {{ branding.labels.gallery_completed }}</a>
+        </div>
+
+        <!-- Live tab — everything streaming (base PNGs, chain MP4s, bridge PNGs) chronologically.
+             Server hydrates this on page load with the newest 48 assets so a refresh doesn't wipe history. -->
+        <div data-output-panel="live">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="preview-grid">
+                {% for f in (live or [])[:48] %}
+                    {% set is_mp4 = f.endswith('.mp4') %}
+                    {# Determine model label with simple prefix rules (mirrors app.js logic) #}
+                    {% set model = '' %}
+                    {% if f.startswith('test_') %}
+                        {% set model = f.split('_')[1] %}
+                    {% elif f.startswith('ltx_base_') %}
+                        {% set model = 'ltx-2.3' %}
+                    {% elif is_mp4 %}
+                        {% set model = 'ltx-2.3' %}
+                    {% endif %}
+                    {% set badge_color = {'qwen':'badge-info','ernie':'badge-error','ltx-2.3':'badge-success','wan2.2':'badge-info','wan2.5':'badge-info','heartmula':'badge-secondary','qwen-tts':'badge-warning'}.get(model, 'badge-ghost') %}
+                    {% set kind_label = '⛓ chain' if is_mp4 else '🖼 png' %}
+                    {% set kind_color = 'badge-primary' if is_mp4 else 'badge-secondary' %}
+                    <div class="card card-compact bg-base-100 shadow-lg border {{ 'border-primary' if is_mp4 else 'border-secondary' }} card-hover overflow-hidden">
+                        <figure class="bg-black">
+                        {% if is_mp4 %}
+                            <video controls muted loop preload="metadata" class="w-full aspect-video object-cover"><source src="/files/{{ f }}"></video>
                         {% else %}
-                            <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
+                            <img src="/files/{{ f }}" class="w-full aspect-video object-cover" loading="lazy">
                         {% endif %}
+                        </figure>
+                        <div class="card-body !p-2 bg-base-200/60 gap-1">
+                            <div class="flex flex-wrap items-center gap-1">
+                                <span class="badge badge-xs {{ kind_color }}">{{ kind_label }}</span>
+                                {% if model %}<span class="badge badge-xs {{ badge_color }}" title="Generated by {{ model }}">{{ model }}</span>{% endif %}
+                            </div>
+                            <span class="text-[10px] font-mono text-base-content/60 truncate" title="{{ f }}">{{ f }}</span>
+                        </div>
                     </div>
-                    <button id="queue-view-all" class="btn btn-xs btn-secondary btn-outline w-full mt-2" onclick="openQueueDrawer()">View all</button>
-                </div>
+                {% endfor %}
             </div>
+            <!-- Hidden grid kept for back-compat with WS handlers; not displayed. -->
+            <div id="i-grid" class="hidden"></div>
+        </div>
 
-            <!-- 3.4 Voice (TTS) -->
-            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
-                <input type="checkbox" />
-                <div class="collapse-title flex justify-between items-center py-3 min-h-0 pr-10">
-                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center gap-2">🗣️ Voice (TTS)</span>
-                    <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
-                </div>
-                <div class="collapse-content">
-                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
-                    <div class="flex gap-2 mb-2">
-                        <select id="tts-voice" class="select select-bordered select-xs flex-1">
-                            <option value="ryan">Ryan (EN, m)</option>
-                            <option value="eric">Eric (EN, m)</option>
-                            <option value="vivian">Vivian (EN, f)</option>
-                            <option value="olivia">Olivia (EN, f)</option>
-                            <option value="ethan">Ethan (EN, m)</option>
-                        </select>
-                        <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
+        <!-- Videos tab -->
+        <div data-output-panel="videos" style="display:none">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6" id="v-grid">
+                {% if vids %}
+                    {% for v in vids %}
+                    <div class="card card-compact bg-base-100 shadow-xl border border-base-300 hover:border-primary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
+                        <figure class="relative bg-black">
+                            <video controls loop class="w-full object-cover aspect-video"><source src="/files/{{ v }}"></video>
+                            <div class="absolute top-2 right-2 badge badge-primary badge-sm font-mono uppercase shadow-lg">{{ v.rsplit('.', 1)[-1] }}</div>
+                        </figure>
+                        <div class="card-body !p-3 bg-base-200/60">
+                            <p class="text-[11px] font-mono truncate text-base-content/70" title="{{ v }}">{{ v }}</p>
+                        </div>
                     </div>
-                    <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
-                </div>
+                    {% endfor %}
+                {% endif %}
             </div>
         </div>
-    </aside>
+    </div>
 
-    <!-- Queue Drawer (shows full queue) -->
-    <div class="drawer drawer-end" id="queue-drawer">
-        <input id="queue-drawer-toggle" type="checkbox" class="drawer-toggle" />
-        <div class="drawer-side z-40">
-            <label for="queue-drawer-toggle" aria-label="close queue drawer" class="drawer-overlay"></label>
-            <div class="w-96 min-h-full bg-base-200 border-l border-base-100 p-4 overflow-y-auto custom-scrollbar">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-black text-accent uppercase tracking-widest">{{ branding.labels.queue }}</h2>
-                    <label for="queue-drawer-toggle" class="btn btn-sm btn-ghost btn-square">✕</label>
-                </div>
-                <div id="queue-drawer-list" class="flex flex-col gap-2">
-                    {% if queue %}
-                        {% for q in queue %}
-                        <div class="bg-base-300 p-3 rounded text-xs border border-base-200">{{ q.prompt[:200] }}</div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
-                    {% endif %}
-                </div>
+    <!-- Output Empty-state card (shown when all grids empty) -->
+    <div id="output-empty" class="card bg-base-200/30 border border-base-300 mb-12" style="display:{% if vids or imgs %}none{% else %}flex{% endif %}">
+        <div class="card-body items-center text-center p-10">
+            <div class="skeleton h-24 w-24 rounded-full mb-3"></div>
+            <p class="text-base-content/50 italic">Nothing generated yet — your clips will appear here.</p>
+        </div>
+    </div>
+
+    <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
+        {{ branding.footer.tagline }}
+    </div>
+</main>
+
+<!-- Queue Drawer (shows full queue) -->
+<div class="drawer drawer-end" id="queue-drawer">
+    <input id="queue-drawer-toggle" type="checkbox" class="drawer-toggle" />
+    <div class="drawer-side z-40">
+        <label for="queue-drawer-toggle" aria-label="close queue drawer" class="drawer-overlay"></label>
+        <div class="w-96 min-h-full bg-base-200 border-l border-base-100 p-4 overflow-y-auto custom-scrollbar">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-black text-accent uppercase tracking-widest">{{ branding.labels.queue }}</h2>
+                <label for="queue-drawer-toggle" class="btn btn-sm btn-ghost btn-square">✕</label>
+            </div>
+            <div id="queue-drawer-list" class="flex flex-col gap-2">
+                {% if queue %}
+                    {% for q in queue %}
+                    <div class="bg-base-300 p-3 rounded text-xs border border-base-200">{{ q.prompt[:200] }}</div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+<!-- Pipeline Modal (copied verbatim from reference /tmp/ref_workflow_rethink.html 350-543) -->
+<dialog id="pipeline-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">🎚 Pipeline</h3>
+
+        <!-- Models -->
+        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Models</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Base Image</span>
+                <select id="cfg-base" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                    <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
+                    <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
+                    <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video Chain</span>
+                <select id="cfg-video" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                    <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
+                    <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
+                    <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Audio / Music</span>
+                <select id="cfg-audio" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline(); _onAudioChanged();">
+                    <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
+                    <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Post Process</span>
+                <select id="cfg-upscale" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
+                    <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
+                    <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
+                </select>
+            </label>
+        </div>
+
+        <!-- RAM estimator -->
+        <div id="ram-est" class="card card-compact bg-base-100 mt-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
+            <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
+            <div class="ram-txt font-mono text-sm font-bold mt-0.5">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+            <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
+        </div>
+
+        <!-- Chain shape -->
+        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Chain shape</div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label class="form-control md:col-span-3">
+                <span class="label-text text-xs flex justify-between">
+                    <span>Chains per subject</span>
+                    <span class="font-mono"><span id="cfg-chains-val">{{ config.chains or 10 }}</span></span>
+                </span>
+                <input id="cfg-chains" type="range" min="1" max="20" step="1" value="{{ config.chains or 10 }}"
+                       class="range range-sm range-primary"
+                       oninput="$('cfg-chains-val').innerText = this.value"
+                       onchange="updatePipeline()" />
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames</span>
+                <select id="cfg-frames" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="17" {% if config.frames == 17 %}selected{% endif %}>17</option>
+                    <option value="33" {% if config.frames == 33 %}selected{% endif %}>33</option>
+                    <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49</option>
+                    <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Tier (FLEET_TIER)</span>
+                <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto</option>
+                    <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low</option>
+                    <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med</option>
+                    <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high</option>
+                </select>
+            </label>
+        </div>
+
+        <!-- Consolidation -->
+        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Consolidation</div>
+        <div id="consolidation-wrap" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Mode</span>
+                <select id="cfg-consolidation" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="overlay" {% if (config.consolidation or 'overlay') == 'overlay' %}selected{% endif %}>overlay (default)</option>
+                    <option value="replace" {% if config.consolidation == 'replace' %}selected{% endif %}>replace</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-xs flex justify-between">
+                    <span>Music gain (dB)</span>
+                    <span class="font-mono"><span id="cfg-music-gain-val">{{ config.music_gain_db or 0 }}</span></span>
+                </span>
+                <input id="cfg-music-gain-db" type="range" min="-12" max="6" step="1" value="{{ config.music_gain_db or 0 }}"
+                       class="range range-sm range-primary"
+                       oninput="$('cfg-music-gain-val').innerText = this.value"
+                       onchange="updatePipeline()" />
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Fade (s)</span>
+                <input id="cfg-fade-s" type="number" step="0.1" min="0" max="3" value="{{ config.fade_s or 0.5 }}"
+                       class="input input-bordered input-sm w-full" onchange="updatePipeline()" />
+            </label>
+        </div>
+
+        <!-- Advanced: per-stage overrides -->
+        <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 mt-6">
+            <input type="checkbox" />
+            <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider">Advanced — per-stage overrides</div>
+            <div class="collapse-content">
+                <div class="flex flex-col w-full gap-1 mt-1">
+                    <div class="flex items-center gap-1">
+                        <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                        <textarea id="p-image" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Image prompt..."></textarea>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                        <textarea id="p-video" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Video prompt..."></textarea>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                        <textarea id="p-music" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Music prompt..."></textarea>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                        <textarea id="p-tts" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="TTS voiceover..."></textarea>
+                    </div>
+                </div>
+                <!-- Compat shim concatenating the 4 stage fields -->
+                <textarea id="p-in" class="hidden"></textarea>
+                <div class="join w-full mt-2">
+                    <button class="btn btn-sm btn-primary join-item flex-1" onclick="enhance()" title="Fan out across 4 stages">✨ {{ branding.labels.ai_magic }}</button>
+                    <button class="btn btn-sm btn-secondary join-item flex-1" onclick="inject('next')">Queue Next</button>
+                    <button class="btn btn-sm btn-accent join-item flex-1" onclick="inject('now')">Force Now</button>
+                </div>
+
+                <!-- Fan-out preview (inline under Advanced) -->
+                <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
+                    <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
+                    <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
+                    <div id="fanout-body" class="text-xs"></div>
+                    <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
+                    <div class="join w-full">
+                        <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
+                        <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                        <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
+                    </div>
+                </div>
+
+                <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
+                <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
+                    <div id="ai-s" class="text-xs italic"></div>
+                    <div class="join w-full">
+                        <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
+                        <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TTS -->
+        <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 mt-3">
+            <input type="checkbox" />
+            <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center justify-between">
+                <span>🗣️ Voice (TTS)</span>
+                <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+            </div>
+            <div class="collapse-content">
+                <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
+                <div class="flex gap-2 mb-2">
+                    <select id="tts-voice" class="select select-bordered select-xs flex-1">
+                        <option value="ryan">Ryan (EN, m)</option>
+                        <option value="eric">Eric (EN, m)</option>
+                        <option value="vivian">Vivian (EN, f)</option>
+                        <option value="olivia">Olivia (EN, f)</option>
+                        <option value="ethan">Ethan (EN, m)</option>
+                    </select>
+                    <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
+                </div>
+                <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
+            </div>
+        </div>
+
+        <!-- Compat: hidden legacy infinity themes textarea (backend still reads #inf-themes) -->
+        <textarea id="inf-themes" class="hidden">{{ (config.infinity_themes or []) | join(', ') }}</textarea>
+
+        <div class="modal-action">
+            <button class="btn btn-sm btn-primary" onclick="updatePipeline(); $('pipeline-modal').close();">Save</button>
+            <form method="dialog"><button class="btn btn-sm btn-ghost">Cancel</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <!-- Storage Details Modal -->
 <dialog id="storage-modal" class="modal">
@@ -520,7 +536,6 @@
     <div class="modal-box bg-base-200 border border-base-100">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest">Keyboard Shortcuts</h3>
         <div class="py-4 space-y-2 text-sm">
-            <div class="flex justify-between"><span>Toggle sidebar</span><kbd class="kbd kbd-sm">[</kbd></div>
             <div class="flex justify-between"><span>Focus prompt</span><kbd class="kbd kbd-sm">/</kbd></div>
             <div class="flex justify-between"><span>Run pipeline</span><kbd class="kbd kbd-sm">ctrl</kbd> + <kbd class="kbd kbd-sm">enter</kbd></div>
             <div class="flex justify-between"><span>Open help</span><kbd class="kbd kbd-sm">?</kbd></div>
