@@ -1,4 +1,14 @@
 // Slopfinity dashboard client.
+
+// PWA: register service worker (scoped to /) for installable desktop-icon experience.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker
+            .register('/sw.js', { scope: '/' })
+            .catch((err) => console.warn('SW registration failed:', err));
+    });
+}
+
 let ws;
 let gH = Array(15).fill(0);
 let vH = Array(15).fill(0);
