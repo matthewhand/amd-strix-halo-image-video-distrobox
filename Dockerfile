@@ -30,6 +30,8 @@ COPY scripts/get_qwen_image.sh /opt/
 COPY scripts/apply_qwen_patches.py /opt/
 COPY scripts/start_docker.sh /opt/
 COPY scripts/qwen_launcher.py /opt/
+COPY scripts/qwen_tts_launcher.py /opt/
+COPY scripts/qwen_tts_serve.py /opt/
 COPY scripts/wan_launcher.py /opt/
 COPY scripts/test_wan_permutations.py /opt/
 COPY scripts/download_wan_cli.sh /opt/
