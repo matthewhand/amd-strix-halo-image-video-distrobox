@@ -363,6 +363,72 @@ async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale
     return get_ram_estimate(base or None, video or None, audio or None, upscale or None)
 
 
+@app.get("/asset/{filename}")
+async def asset_info(filename: str):
+    """Return metadata about a single asset file: kind, model, size, mtime,
+    and best-effort prompt (if a sidecar .json exists or state matches).
+
+    Filename should be the leaf name only (no path), living under EXP_DIR.
+    """
+    import re
+    # basic name safety — no path traversal
+    if "/" in filename or ".." in filename or filename.startswith("."):
+        return JSONResponse({"ok": False, "error": "invalid filename"}, status_code=400)
+    path = os.path.join(EXP_DIR, filename)
+    if not os.path.isfile(path):
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    st = os.stat(path)
+    # kind
+    if filename.endswith(".mp4"):
+        kind = "final" if filename.startswith("FINAL_") else "chain"
+    elif filename.endswith(".wav"):
+        kind = "audio"
+    elif filename.endswith(".png") or filename.endswith(".jpg"):
+        kind = "image"
+    else:
+        kind = "other"
+    # model (mirror template / app.js logic)
+    model = None
+    m = re.match(r"^test_([A-Za-z0-9.-]+)_", filename)
+    if m:
+        model = m.group(1)
+    elif filename.startswith("ltx_base_") or filename.endswith(".mp4"):
+        model = "ltx-2.3"
+    elif re.match(r"^v\d+_f\d+\.png$", filename):
+        model = "ltx-bridge"
+    # best-effort prompt — look for a sibling JSON sidecar OR the running state.json
+    prompt = None
+    sidecar = os.path.join(EXP_DIR, filename + ".json")
+    if os.path.isfile(sidecar):
+        try:
+            with open(sidecar) as f:
+                prompt = json.load(f).get("prompt")
+        except Exception:
+            pass
+    if not prompt:
+        # fallback: if this file's mtime is within 60 s of the current state, use current prompt
+        state = cfg.get_state()
+        if state.get("ts") and abs(st.st_mtime - state["ts"]) < 60:
+            prompt = state.get("current_prompt")
+    return {
+        "ok": True,
+        "filename": filename,
+        "kind": kind,
+        "model": model,
+        "size_bytes": st.st_size,
+        "size_human": (
+            f"{st.st_size/1e9:.2f} GB" if st.st_size > 1e9
+            else f"{st.st_size/1e6:.1f} MB" if st.st_size > 1e6
+            else f"{st.st_size/1e3:.0f} KB"
+        ),
+        "mtime": st.st_mtime,
+        "mtime_human": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime)),
+        "age_seconds": int(time.time() - st.st_mtime),
+        "prompt": prompt,
+        "url": f"/files/{filename}",
+    }
+
+
 @app.get("/outputs")
 async def outputs():
     """Return counters for produced artifacts: final mp4s, chain clips, base images."""

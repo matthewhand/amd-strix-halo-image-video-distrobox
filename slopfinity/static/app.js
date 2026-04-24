@@ -125,6 +125,57 @@ function schedBadgeClass(type) {
     return 'badge-ghost';
 }
 
+// Asset card click → metadata popover
+async function openAssetInfo(filename) {
+    const d = document.getElementById('asset-info-modal');
+    if (!d) return;
+    const body = document.getElementById('asset-info-body');
+    const media = document.getElementById('asset-info-media');
+    if (body) body.innerHTML = '<span class="loading loading-dots loading-sm"></span>';
+    if (media) media.innerHTML = '';
+    if (d.showModal) d.showModal();
+    try {
+        const r = await fetch('/asset/' + encodeURIComponent(filename));
+        const m = await r.json();
+        if (!m.ok) {
+            body.innerHTML = `<div class="alert alert-error text-xs">${m.error || 'error'}</div>`;
+            return;
+        }
+        const isV = filename.endsWith('.mp4');
+        const isA = filename.endsWith('.wav');
+        const mediaHtml = isV
+            ? `<video controls autoplay loop class="w-full aspect-video rounded bg-black"><source src="${m.url}"></video>`
+            : isA
+                ? `<audio controls class="w-full"><source src="${m.url}"></audio>`
+                : `<img src="${m.url}" class="w-full rounded bg-black" />`;
+        media.innerHTML = mediaHtml;
+        const badgeColor = ({final:'badge-accent',chain:'badge-primary',image:'badge-secondary',audio:'badge-warning'})[m.kind] || 'badge-ghost';
+        body.innerHTML = `
+            <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1 text-xs font-mono">
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${m.filename}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Kind</div><div><span class="badge badge-xs ${badgeColor}">${m.kind}</span></div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Model</div><div>${m.model || '—'}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Size</div><div>${m.size_human}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Created</div><div>${m.mtime_human} <span class="text-base-content/50">(${m.age_seconds}s ago)</span></div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt || '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
+            </div>
+        `;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-error text-xs">${String(e)}</div>`;
+    }
+}
+
+// Click-to-info wiring for any asset card in the Slop feed
+document.addEventListener('click', (e) => {
+    const card = e.target.closest('#preview-grid > [data-slop-kind]');
+    if (!card) return;
+    // Avoid opening info when clicking the native media controls
+    if (e.target.closest('video, audio')) return;
+    const nameSpan = card.querySelector('[title]');
+    const filename = nameSpan ? nameSpan.getAttribute('title') : null;
+    if (filename) openAssetInfo(filename);
+});
+
 // Slop filter chips — toggle visibility of cards by data-slop-kind.
 function _applySlopFilters() {
     const enabled = {};
