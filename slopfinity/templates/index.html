@@ -40,18 +40,18 @@
                 <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
             </span>
             <span class="divider divider-horizontal mx-0"></span>
-            {# Output counters #}
-            <span class="flex items-baseline gap-1" title="Finished MP4s">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 MP4</span>
-                <span class="font-mono font-black text-primary text-lg" id="out-finals">0</span>
+            {# Output counters — icon set aligned with Slop filter chips. #}
+            <span class="flex items-baseline gap-1" title="FINAL merged MP4s">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎞 final</span>
+                <span class="font-mono font-black text-accent text-lg" id="out-finals">0</span>
             </span>
-            <span class="flex items-baseline gap-1" title="Chain clips (10 per final)">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">⛓ clips</span>
-                <span class="font-mono font-bold text-secondary" id="out-chains">0</span>
+            <span class="flex items-baseline gap-1" title="Video chain clips (10 per FINAL)">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 videos</span>
+                <span class="font-mono font-bold text-primary" id="out-chains">0</span>
             </span>
-            <span class="flex items-baseline gap-1" title="Base PNG keyframes">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 png</span>
-                <span class="font-mono font-bold text-accent" id="out-base">0</span>
+            <span class="flex items-baseline gap-1" title="Base / keyframe images">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 images</span>
+                <span class="font-mono font-bold text-secondary" id="out-base">0</span>
             </span>
         </div>
 
@@ -153,7 +153,7 @@
     <section class="card bg-base-100 border border-base-300 shadow mb-6">
         <div class="card-body p-3 gap-2">
             <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-accent">Queue <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
+                <span class="text-xs font-bold uppercase tracking-wider text-accent">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
                 <button class="btn btn-ghost btn-xs" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
             <ul id="q-list" class="flex flex-col gap-1">
@@ -187,9 +187,9 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 video</span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 image</span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 audio</span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 {{ branding.labels.slop_video or 'video' }}</span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 {{ branding.labels.slop_image or 'image' }}</span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 {{ branding.labels.slop_audio or 'audio' }}</span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -213,13 +213,13 @@
                     else {'chain': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind]
                 ) %}
                 <div class="card card-compact bg-base-100 shadow-lg border {{ kind_meta[2] }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
-                    <figure class="bg-black aspect-video flex items-center justify-center">
+                    <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                     {% if is_mp4 %}
-                        <video controls muted loop preload="metadata" class="w-full h-full object-cover"><source src="/files/{{ f }}"></video>
+                        <video controls muted loop preload="metadata" class="w-full h-full object-contain"><source src="/files/{{ f }}"></video>
                     {% elif is_wav %}
-                        <audio controls class="w-full"><source src="/files/{{ f }}"></audio>
+                        <audio controls class="w-full mx-2"><source src="/files/{{ f }}"></audio>
                     {% else %}
-                        <img src="/files/{{ f }}" class="w-full h-full object-cover" loading="lazy">
+                        <img src="/files/{{ f }}" class="w-full h-full object-contain" loading="lazy">
                     {% endif %}
                     </figure>
                     <div class="card-body !p-2 bg-base-200/60 gap-1">
