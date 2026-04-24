@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ branding.app.name }} Dashboard</title>
+    <meta name="theme-color" content="{{ branding.colors.primary }}" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/app.css" />
@@ -113,6 +116,13 @@
                         </div>
                         <progress class="progress progress-primary w-full h-3 bg-base-300" id="h-p" value="0" max="100"></progress>
                         <div class="text-lg italic text-neutral-content/70 border-l-4 border-primary pl-4" id="h-pr">"{{ state.current_prompt }}"</div>
+                        <div class="flex items-center gap-2 mt-3">
+                            <span class="text-[11px] uppercase tracking-widest text-neutral-content/50">Scheduler</span>
+                            <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
+                            <div class="flex flex-wrap gap-1" id="sched-timeline">
+                                <span class="text-[11px] text-neutral-content/40 italic">no events yet</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -214,7 +224,12 @@
         <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
         <div class="w-80 min-h-full bg-base-200 border-r border-base-100 flex flex-col p-4 overflow-y-auto custom-scrollbar">
 
-            <h1 class="text-2xl font-black text-primary text-center mb-6 uppercase tracking-widest drop-shadow-md">{{ branding.app.name }}</h1>
+            <div class="flex items-center justify-between mb-6 gap-2">
+                <h1 class="text-2xl font-black text-primary uppercase tracking-widest drop-shadow-md flex-1 text-center">{{ branding.app.name }}</h1>
+                <button id="btn-settings" class="btn btn-ghost btn-sm btn-square" title="Settings" onclick="openSettings()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </button>
+            </div>
 
             <!-- Pipeline Config -->
             <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
@@ -351,21 +366,51 @@
                 <div class="card-body">
                     <div class="flex justify-between items-center">
                         <span class="text-xs font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</span>
-                        <button class="btn btn-xs btn-outline btn-primary gap-1" onclick="enhance()">
+                    </div>
+
+                    <!-- Core idea + global AI Magic button -->
+                    <div class="flex items-start gap-2">
+                        <textarea id="p-core" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="One idea. I'll elaborate into all stages."></textarea>
+                        <button class="btn btn-xs btn-primary gap-1 self-stretch" onclick="enhance()" title="Fan this out across all 4 stages">
                             <span>✨ {{ branding.labels.ai_magic }}</span>
                         </button>
                     </div>
 
-                    <!-- Per-stage prompts -->
-                    <div class="join join-vertical w-full">
-                        <textarea id="p-image" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Image prompt..."></textarea>
-                        <textarea id="p-video" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Video prompt..."></textarea>
-                        <textarea id="p-music" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Music prompt..."></textarea>
-                        <textarea id="p-tts" class="textarea textarea-bordered join-item text-xs h-14" placeholder="TTS voiceover..."></textarea>
+                    <!-- Per-stage prompts with lock badges -->
+                    <div class="flex flex-col w-full gap-1 mt-1">
+                        <div class="flex items-center gap-1">
+                            <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-image" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Image prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-video" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Video prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-music" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Music prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="TTS voiceover..."></textarea>
+                        </div>
                     </div>
                     <!-- Compat shim concatenating the 4 stage fields -->
                     <textarea id="p-in" class="hidden"></textarea>
 
+                    <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
+                        <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
+                        <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
+                        <div id="fanout-body" class="text-xs"></div>
+                        <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
+                        <div class="join w-full">
+                            <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
+                            <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                            <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
+                        </div>
+                    </div>
+
+                    <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
                     <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
                         <div id="ai-s" class="text-xs italic"></div>
                         <div class="join w-full">
@@ -384,6 +429,28 @@
     </aside>
 </div>
 
+<!-- Fanout Edit Modal -->
+<dialog id="fanout-edit-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest">Edit Fan-out</h3>
+        <div class="py-2 space-y-2">
+            <label class="text-[10px] uppercase opacity-60">Image</label>
+            <textarea id="fe-image" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">Video</label>
+            <textarea id="fe-video" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">Music</label>
+            <textarea id="fe-music" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">TTS</label>
+            <textarea id="fe-tts" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+        </div>
+        <div class="modal-action">
+            <button class="btn btn-sm btn-primary" onclick="commitFanoutEdit()">Apply</button>
+            <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <!-- Keyboard Shortcuts Help Modal -->
 <dialog id="help-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100">
@@ -397,6 +464,110 @@
         </div>
         <div class="modal-action">
             <form method="dialog"><button class="btn btn-primary btn-sm">Close</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Settings Modal (local-only LLM configuration) -->
+<dialog id="settings-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-2">Settings</h3>
+        <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud provider endpoints are accepted.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="form-control">
+                <span class="label-text text-xs">Provider</span>
+                <select id="set-provider" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
+                    <option value="lmstudio">LM Studio</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="vllm">vLLM</option>
+                    <option value="llamacpp">llama.cpp</option>
+                    <option value="custom">Custom (OpenAI-compat)</option>
+                </select>
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Scheme</span>
+                <select id="set-scheme" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
+                    <option value="http" selected>http</option>
+                    <option value="https">https</option>
+                </select>
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Host</span>
+                <input id="set-host" class="input input-bordered input-sm" value="localhost" oninput="onSettingsUrlChanged()" />
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Port</span>
+                <input id="set-port" type="number" class="input input-bordered input-sm" value="1234" oninput="onSettingsUrlChanged()" />
+            </label>
+
+            <label class="form-control md:col-span-2">
+                <span class="label-text text-xs">Path prefix (e.g. /v1)</span>
+                <input id="set-path" class="input input-bordered input-sm" value="/v1" oninput="onSettingsUrlChanged()" />
+            </label>
+
+            <label class="form-control md:col-span-2">
+                <span class="label-text text-xs">Computed base URL</span>
+                <input id="set-base" class="input input-bordered input-sm font-mono text-xs" readonly />
+            </label>
+
+            <div class="md:col-span-2 flex items-center gap-2">
+                <button class="btn btn-sm btn-outline" onclick="probeLan()">Discover LAN</button>
+                <div id="set-probe-chips" class="flex flex-wrap gap-1 text-xs"></div>
+            </div>
+
+            <label class="form-control md:col-span-2">
+                <span class="label-text text-xs">API key (optional)</span>
+                <div class="join w-full">
+                    <input id="set-api-key" type="password" class="input input-bordered input-sm join-item flex-1" placeholder="leave blank if none" />
+                    <button class="btn btn-sm join-item" type="button" onclick="toggleApiKeyReveal()" id="set-api-reveal">show</button>
+                </div>
+            </label>
+
+            <label class="form-control md:col-span-2">
+                <span class="label-text text-xs flex justify-between">
+                    <span>Model</span>
+                    <button class="btn btn-ghost btn-xs" type="button" onclick="reloadModels()">reload</button>
+                </span>
+                <select id="set-model" class="select select-bordered select-sm" onchange="onModelSelectChanged()">
+                    <option value="">(none loaded)</option>
+                </select>
+                <input id="set-model-custom" class="input input-bordered input-sm mt-1 hidden" placeholder="model id..." />
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Temperature: <span id="set-temp-val" class="font-mono">0.7</span></span>
+                <input id="set-temp" type="range" min="0" max="1.5" step="0.05" value="0.7" class="range range-sm range-primary" oninput="$('set-temp-val').innerText = this.value" />
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Max retries</span>
+                <input id="set-retries" type="number" min="0" max="5" value="2" class="input input-bordered input-sm" />
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Timeout (seconds)</span>
+                <input id="set-timeout" type="number" min="1" value="60" class="input input-bordered input-sm" />
+            </label>
+
+            <label class="form-control">
+                <span class="label-text text-xs">Branding profile</span>
+                <select id="set-branding" class="select select-bordered select-sm"></select>
+            </label>
+        </div>
+
+        <div class="flex items-center gap-3 mt-4">
+            <button class="btn btn-sm btn-outline btn-accent" onclick="testSettings()">Test</button>
+            <span id="set-test-badge" class="badge badge-ghost font-mono text-xs">idle</span>
+        </div>
+
+        <div class="modal-action">
+            <button class="btn btn-sm btn-primary" onclick="saveSettings()">Save</button>
+            <form method="dialog"><button class="btn btn-sm btn-ghost">Cancel</button></form>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
