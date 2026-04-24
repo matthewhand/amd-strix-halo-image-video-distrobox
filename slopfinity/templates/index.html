@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dracula">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ branding.app.name }} Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="min-h-screen bg-base-300 text-base-content">
+
+<div class="drawer lg:drawer-open">
+    <input id="app-drawer" type="checkbox" class="drawer-toggle" />
+
+    <!-- DRAWER CONTENT (main page) -->
+    <div class="drawer-content flex flex-col h-screen overflow-hidden">
+
+        <!-- Mobile Top Navbar -->
+        <div class="navbar bg-base-200 border-b border-base-100 lg:hidden z-10">
+            <div class="flex-none">
+                <label for="app-drawer" aria-label="open sidebar" class="btn btn-square btn-ghost">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </label>
+            </div>
+            <div class="flex-1">
+                <span class="text-xl font-black text-primary uppercase tracking-widest">{{ branding.app.name }}</span>
+            </div>
+            <div class="flex-none">
+                <div class="dropdown dropdown-end">
+                    <div tabindex="0" role="button" class="btn btn-ghost btn-sm">
+                        Theme
+                        <svg width="12px" height="12px" class="h-2 w-2 fill-current opacity-60 inline-block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048"><path d="M1799 349l242 241-1017 1017L7 590l242-241 775 775 775-775z"></path></svg>
+                    </div>
+                    <ul tabindex="0" class="dropdown-content z-[1] p-2 shadow-2xl bg-base-300 rounded-box w-52">
+                        <li><input type="radio" name="theme-dropdown" class="theme-controller btn btn-sm btn-block btn-ghost justify-start" aria-label="Dracula" value="dracula" checked /></li>
+                        <li><input type="radio" name="theme-dropdown" class="theme-controller btn btn-sm btn-block btn-ghost justify-start" aria-label="Synthwave" value="synthwave" /></li>
+                        <li><input type="radio" name="theme-dropdown" class="theme-controller btn btn-sm btn-block btn-ghost justify-start" aria-label="Night" value="night" /></li>
+                        <li><input type="radio" name="theme-dropdown" class="theme-controller btn btn-sm btn-block btn-ghost justify-start" aria-label="Forest" value="forest" /></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main scrollable area -->
+        <main class="flex-1 overflow-y-auto custom-scrollbar pb-20 lg:pb-0 p-6">
+
+            <!-- Stats Navbar -->
+            <div class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-0 z-20 px-4">
+                <div class="flex-1">
+                    <div class="stats stats-vertical lg:stats-horizontal bg-transparent w-full">
+
+                        <div class="stat py-2">
+                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">GPU Load</div>
+                            <div class="stat-value text-2xl font-black text-primary font-mono" id="g-v">0%</div>
+                            <div class="stat-desc"><div class="ticker-bar" id="g-t"></div></div>
+                        </div>
+
+                        <div class="stat py-2">
+                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Unified VRAM</div>
+                            <div class="stat-value text-2xl font-black text-secondary font-mono" id="v-v">0%</div>
+                            <div class="stat-desc"><div class="ticker-bar" id="v-t"></div></div>
+                        </div>
+
+                        <div class="stat py-2">
+                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">System RAM</div>
+                            <div class="stat-value text-xl font-bold text-accent font-mono" id="r-v">0 / 0 GB</div>
+                            <div class="stat-desc"><span class="badge badge-ghost badge-sm font-mono">gfx1151</span></div>
+                        </div>
+
+                        <!-- Storage widgets -->
+                        {% for s in storage %}
+                        {% set sid = 'st-root' if s.mount == '/' else ('st-data' if s.mount == '/mnt/data' else 'st-downloads') %}
+                        <div class="stat py-2" id="{{ sid }}">
+                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">{{ s.mount }}</div>
+                            <div class="stat-value text-sm font-mono st-val">{{ s.used_gb }} / {{ s.total_gb }} GB</div>
+                            <div class="stat-desc">
+                                <span class="st-badge badge badge-sm {% if s.status == 'danger' %}badge-error{% elif s.status == 'warn' %}badge-warning{% else %}badge-success{% endif %}">{{ s.pct }}%</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                    </div>
+                </div>
+
+                <div class="flex-none gap-2">
+                    <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
+                        <select id="refresh-interval" class="select select-bordered select-sm w-32" onchange="updateRefresh()">
+                            <option value="5000" selected>Sync: 5s</option>
+                            <option value="15000">Sync: 15s</option>
+                            <option value="0">Sync: OFF</option>
+                        </select>
+                    </div>
+                    <kbd class="kbd kbd-sm hidden lg:inline-flex">LIVE</kbd>
+                </div>
+            </div>
+
+            <!-- Hero Progress -->
+            <div class="hero bg-neutral text-neutral-content rounded-3xl border border-base-200 shadow-2xl mb-10 overflow-hidden relative">
+                <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+                <div class="hero-content flex-col items-stretch w-full p-8 gap-4">
+                    <div class="card card-body p-0 bg-transparent">
+                        <div class="flex flex-wrap justify-between items-end gap-4">
+                            <div>
+                                <div class="badge badge-primary badge-outline mb-2 uppercase tracking-widest">Mode</div>
+                                <h2 class="card-title text-4xl font-black tracking-tight" id="h-m">{{ state.mode }}</h2>
+                            </div>
+                            <div class="badge badge-lg badge-primary text-base font-mono px-4 py-4 shadow-lg" id="h-c">
+                                V {{ state.video_index }}/{{ state.total_videos }} | C {{ state.chain_index }}/{{ state.total_chains }}
+                            </div>
+                        </div>
+                        <progress class="progress progress-primary w-full h-3 bg-base-300" id="h-p" value="0" max="100"></progress>
+                        <div class="text-lg italic text-neutral-content/70 border-l-4 border-primary pl-4" id="h-pr">"{{ state.current_prompt }}"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gallery sections -->
+            <div class="divider divider-accent my-10 text-accent font-black uppercase tracking-[0.3em] text-sm">Gallery</div>
+
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-black text-accent uppercase tracking-widest flex items-center gap-3">
+                    <span class="text-2xl">🔥</span> {{ branding.labels.gallery_live }}
+                    <span class="loading loading-ring loading-md text-accent" id="live-ring" style="display:none"></span>
+                </h3>
+                <div class="badge badge-accent badge-outline font-mono text-xs">streaming</div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12" id="preview-grid"></div>
+
+            <div class="divider divider-primary my-10 text-primary font-black uppercase tracking-[0.3em] text-sm">Video Gallery</div>
+
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-black text-base-content/80 uppercase tracking-widest flex items-center gap-3">
+                    <span class="text-2xl">🎬</span> {{ branding.labels.gallery_completed }}
+                </h3>
+                <div class="badge badge-primary badge-outline font-mono text-xs">MP4 · rendered</div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12" id="v-grid">
+                {% if vids %}
+                    {% for v in vids %}
+                    <div class="card card-compact bg-base-100 shadow-xl border border-base-300 hover:border-primary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
+                        <figure class="relative bg-black">
+                            <video controls loop class="w-full object-cover aspect-video"><source src="/files/{{ v }}"></video>
+                            <div class="absolute top-2 right-2 badge badge-primary badge-sm font-mono uppercase shadow-lg">{{ v.rsplit('.', 1)[-1] }}</div>
+                        </figure>
+                        <div class="card-body !p-3 bg-base-200/60">
+                            <p class="text-[11px] font-mono truncate text-base-content/70" title="{{ v }}">{{ v }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="col-span-full flex flex-col gap-4 p-10 rounded-xl bg-base-200/30">
+                        <div class="skeleton h-48 w-full"></div>
+                        <p class="text-center text-base-content/40 italic text-sm">No synthesized segments yet — the gallery awaits.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="divider divider-secondary my-10 text-secondary font-black uppercase tracking-[0.3em] text-sm">Keyframe Gallery</div>
+
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-black text-base-content/80 uppercase tracking-widest flex items-center gap-3">
+                    <span class="text-2xl">🖼️</span> {{ branding.labels.gallery_keyframes }}
+                </h3>
+                <div class="badge badge-secondary badge-outline font-mono text-xs">PNG · concept art</div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" id="i-grid">
+                {% if imgs %}
+                    {% for i in imgs %}
+                    <div class="card card-compact bg-base-100 shadow-lg border border-base-300 hover:border-secondary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
+                        <figure class="relative bg-black aspect-video overflow-hidden">
+                            <img src="/files/{{ i }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy">
+                            <div class="absolute top-1.5 right-1.5 badge badge-secondary badge-xs font-mono uppercase shadow">{{ i.rsplit('.', 1)[-1] }}</div>
+                        </figure>
+                        <div class="card-body !p-2 bg-base-200/60">
+                            <p class="text-[10px] font-mono truncate text-base-content/70" title="{{ i }}">{{ i }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="col-span-full flex flex-col gap-4 p-10 rounded-xl bg-base-200/30">
+                        <div class="skeleton h-40 w-full"></div>
+                        <p class="text-center text-base-content/40 italic text-sm">No keyframes yet — concepts pending.</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
+                {{ branding.footer.tagline }}
+            </div>
+        </main>
+
+        <!-- Mobile Bottom Nav -->
+        <div class="btm-nav btm-nav-sm lg:hidden bg-base-200 border-t border-base-100 z-10">
+            <a href="#pipeline" class="text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span class="btm-nav-label text-xs">Pipeline</span>
+            </a>
+            <a href="#queue">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                <span class="btm-nav-label text-xs">Queue</span>
+            </a>
+            <a href="#gallery">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <span class="btm-nav-label text-xs">Gallery</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- DRAWER SIDE (Sidebar) -->
+    <aside class="drawer-side z-30">
+        <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+        <div class="w-80 min-h-full bg-base-200 border-r border-base-100 flex flex-col p-4 overflow-y-auto custom-scrollbar">
+
+            <h1 class="text-2xl font-black text-primary text-center mb-6 uppercase tracking-widest drop-shadow-md">{{ branding.app.name }}</h1>
+
+            <!-- Pipeline Config -->
+            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
+                <div class="card-body">
+                    <h3 class="card-title text-xs font-bold text-accent uppercase tracking-wider">{{ branding.labels.pipeline }}</h3>
+
+                    <ul class="steps steps-vertical">
+                        <li class="step step-primary wf-step" id="s-Concept" data-content="1">
+                            <div class="wf-dot hidden"></div>
+                            <span class="text-sm uppercase font-bold tracking-wide ml-2">Concept</span>
+                        </li>
+
+                        <li class="step step-primary wf-step" id="s-Base-Image" data-content="2">
+                            <div class="wf-dot hidden"></div>
+                            <div class="ml-2 w-full text-left">
+                                <div class="text-[10px] uppercase opacity-60">Base Image</div>
+                                <select id="cfg-base" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
+                                    <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
+                                    <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
+                                    <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
+                                </select>
+                            </div>
+                        </li>
+
+                        <li class="step step-primary wf-step" id="s-Video-Chains" data-content="3">
+                            <div class="wf-dot hidden"></div>
+                            <div class="ml-2 w-full text-left">
+                                <div class="text-[10px] uppercase opacity-60">Video Chain</div>
+                                <select id="cfg-video" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
+                                    <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
+                                    <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
+                                    <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
+                                </select>
+                            </div>
+                        </li>
+
+                        <li class="step step-warning wf-step" id="s-Audio-Music" data-content="4">
+                            <div class="wf-dot hidden"></div>
+                            <div class="ml-2 w-full text-left">
+                                <div class="text-[10px] uppercase opacity-60">Audio / Music</div>
+                                <select id="cfg-audio" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
+                                    <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
+                                    <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
+                                </select>
+                            </div>
+                        </li>
+
+                        <li class="step step-info wf-step" id="s-Post-Process" data-content="5">
+                            <div class="wf-dot hidden"></div>
+                            <div class="ml-2 w-full text-left">
+                                <div class="text-[10px] uppercase opacity-60">Post Process</div>
+                                <select id="cfg-upscale" class="select select-bordered select-xs w-full focus:outline-none" onchange="updatePipeline()">
+                                    <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
+                                    <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
+                                </select>
+                            </div>
+                        </li>
+
+                        <li class="step wf-step" id="s-Final-Merge" data-content="6">
+                            <div class="wf-dot hidden"></div>
+                            <span class="text-sm uppercase font-bold tracking-wide ml-2">Final Merge</span>
+                        </li>
+                    </ul>
+
+                    <!-- RAM estimator -->
+                    <div id="ram-est" class="alert p-2 mt-3 {% if ram.status == 'danger' %}alert-error{% elif ram.status == 'warn' %}alert-warning{% else %}alert-success{% endif %}">
+                        <div class="w-full">
+                            <div class="flex justify-between items-center text-[10px] uppercase tracking-widest mb-1">
+                                <span>RAM Estimate</span>
+                                <span class="ram-txt font-mono">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB unified</span>
+                            </div>
+                            <progress class="ram-bar progress w-full {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Smithgetti Mode -->
+            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-4">
+                <input type="checkbox" />
+                <div class="collapse-title flex justify-between items-center py-3 min-h-0">
+                    <span class="text-sm font-bold text-secondary uppercase tracking-wider flex items-center gap-2">{{ branding.infinity_mode.emoji }} {{ branding.infinity_mode.name }}</span>
+                    <input type="checkbox" id="inf-on" class="toggle toggle-secondary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline()" onclick="event.stopPropagation()" />
+                </div>
+                <div class="collapse-content">
+                    <label class="label pt-0"><span class="label-text text-xs opacity-60">Themes (comma separated)</span></label>
+                    <textarea id="inf-themes" class="textarea textarea-bordered w-full h-16 text-xs" placeholder="Themes..." onchange="updatePipeline()">{{ config.infinity_themes | join(', ') }}</textarea>
+                </div>
+            </div>
+
+            <!-- Mission Queue -->
+            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4 min-h-0" id="queue">
+                <div class="card-body">
+                    <div class="flex justify-between items-center">
+                        <h3 class="card-title text-xs font-bold text-accent uppercase tracking-wider">{{ branding.labels.queue }}</h3>
+                        <span class="badge badge-accent badge-sm" id="q-count">{{ queue | length }}</span>
+                    </div>
+                    <div class="overflow-y-auto custom-scrollbar flex-grow max-h-48" id="q-list">
+                        {% if queue %}
+                            {% for q in queue %}
+                            <div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">{{ q.prompt[:80] }}...</div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- TTS Input -->
+            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4">
+                <div class="card-body p-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-2">🗣️ Voiceover (Qwen3-TTS)</span>
+                        <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+                    </div>
+                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
+                    <div class="flex gap-2 mb-2">
+                        <select id="tts-voice" class="select select-bordered select-xs flex-1">
+                            <option value="ryan">Ryan (EN, m)</option>
+                            <option value="eric">Eric (EN, m)</option>
+                            <option value="vivian">Vivian (EN, f)</option>
+                            <option value="olivia">Olivia (EN, f)</option>
+                            <option value="ethan">Ethan (EN, m)</option>
+                        </select>
+                        <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
+                    </div>
+                    <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
+                </div>
+            </div>
+
+            <!-- Inject Task -->
+            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mt-auto">
+                <div class="card-body">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</span>
+                        <button class="btn btn-xs btn-outline btn-primary gap-1" onclick="enhance()">
+                            <span>✨ {{ branding.labels.ai_magic }}</span>
+                        </button>
+                    </div>
+
+                    <!-- Per-stage prompts -->
+                    <div class="join join-vertical w-full">
+                        <textarea id="p-image" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Image prompt..."></textarea>
+                        <textarea id="p-video" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Video prompt..."></textarea>
+                        <textarea id="p-music" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Music prompt..."></textarea>
+                        <textarea id="p-tts" class="textarea textarea-bordered join-item text-xs h-14" placeholder="TTS voiceover..."></textarea>
+                    </div>
+                    <!-- Compat shim concatenating the 4 stage fields -->
+                    <textarea id="p-in" class="hidden"></textarea>
+
+                    <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
+                        <div id="ai-s" class="text-xs italic"></div>
+                        <div class="join w-full">
+                            <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
+                            <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                        </div>
+                    </div>
+
+                    <div class="join w-full">
+                        <button class="btn btn-sm btn-primary join-item flex-1" onclick="inject('next')">Queue Next</button>
+                        <button class="btn btn-sm btn-secondary join-item flex-1" onclick="inject('now')">Force Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- Keyboard Shortcuts Help Modal -->
+<dialog id="help-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest">Keyboard Shortcuts</h3>
+        <div class="py-4 space-y-2 text-sm">
+            <div class="flex justify-between"><span>Toggle sidebar</span><kbd class="kbd kbd-sm">[</kbd></div>
+            <div class="flex justify-between"><span>Focus prompt</span><kbd class="kbd kbd-sm">/</kbd></div>
+            <div class="flex justify-between"><span>Run pipeline</span><kbd class="kbd kbd-sm">ctrl</kbd> + <kbd class="kbd kbd-sm">enter</kbd></div>
+            <div class="flex justify-between"><span>Open help</span><kbd class="kbd kbd-sm">?</kbd></div>
+            <div class="flex justify-between"><span>Close modal</span><kbd class="kbd kbd-sm">esc</kbd></div>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-primary btn-sm">Close</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

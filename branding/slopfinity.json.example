@@ -1,0 +1,43 @@
+{
+  "_description": "Slopfinity — default branding profile. Copy this file to branding/slopfinity.json (gitignored) and edit freely. Select active profile via config.json { \"branding\": { \"active\": \"<name>\" } } or the Settings modal.",
+  "app": {
+    "name": "Slopfinity",
+    "tagline": "Philosophical Video Fleet",
+    "short_name": "slop",
+    "logo_emoji": "♾️"
+  },
+  "infinity_mode": {
+    "name": "Smithgetti Mode",
+    "emoji": "🍝",
+    "description": "Autonomous conceptual loops"
+  },
+  "theme": {
+    "default": "dracula",
+    "available": ["dracula", "synthwave", "night", "forest"]
+  },
+  "colors": {
+    "primary": "#ff79c6",
+    "secondary": "#bd93f9",
+    "accent": "#50fa7b",
+    "warning": "#f1fa8c",
+    "danger": "#ff5555"
+  },
+  "labels": {
+    "pipeline": "Pipeline Config",
+    "queue": "Mission Queue",
+    "inject": "Inject Task",
+    "ai_magic": "AI Magic",
+    "gallery_live": "Live Gallery",
+    "gallery_completed": "Completed Gallery",
+    "gallery_keyframes": "Conceptual Keyframes",
+    "concept": "Concept",
+    "base_image": "Base Image",
+    "video_chain": "Video Chain",
+    "audio_music": "Audio / Music",
+    "post_process": "Post Process",
+    "final_merge": "Final Merge"
+  },
+  "footer": {
+    "tagline": "STRIX HALO GFX1151 • UNIFIED ARCHITECTURE"
+  }
+}

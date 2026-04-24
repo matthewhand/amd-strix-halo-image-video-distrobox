@@ -1,20 +1,39 @@
 # Docker Compose Override Example
-# Copy to docker-compose.override.yaml (gitignored) for local customization
+# Copy to docker-compose.override.yaml (gitignored) for local customization.
+#
+# Two common reasons to use this file:
+#   1. Add the Slopfinity dashboard service (not in the committed compose)
+#   2. Override toolbox env/ports/volumes for your machine
 #
 # Usage:
 #   cp docker-compose.override.yaml.example docker-compose.override.yaml
-#   # Edit as needed, then:
-#   docker compose up -d
+#   docker compose --profile slop up -d      # full stack with dashboard
 
 services:
-  strix-halo-toolbox:
-    # Override image tag for local development
-    # image: amd-strix-halo-image-video-toolbox:dev
+  # Slopfinity dashboard — FastAPI + Jinja + DaisyUI over the fleet (:9099)
+  slopfinity:
+    image: amd-strix-halo-image-video-toolbox:latest
+    container_name: strix-halo-slopfinity
+    network_mode: host
+    environment:
+      - PYTHONPATH=/
+      - SLOPFINITY_STATE_DIR=/workspace
+    volumes:
+      - ./comfy-outputs/experiments:/workspace
+      - ./slopfinity:/slopfinity
+      - ./branding:/branding:ro
+      - ./dark_server.py:/dark_server.py
+      - ./fleet_config.py:/fleet_config.py
+    working_dir: /
+    command: python3 -u /dark_server.py
+    profiles:
+      - slopfinity
+      - slop
 
-    # Override ports if needed
-    # environment:
-    #   - QWEN_PORT=8001
-
-    # Add extra volume mounts
-    # volumes:
-    #   - ./my-models:/opt/custom-models
+  # Example toolbox overrides (uncomment + edit as needed)
+  # strix-halo-toolbox:
+  #   image: amd-strix-halo-image-video-toolbox:dev
+  #   environment:
+  #     - QWEN_PORT=8001
+  #   volumes:
+  #     - ./my-models:/opt/custom-models

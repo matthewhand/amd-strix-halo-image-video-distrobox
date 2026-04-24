@@ -1,4 +1,18 @@
 # Docker Compose v2 for AMD Strix Halo Image & Video Toolbox
+#
+# Profiles:
+#   qwen-image   → Qwen Image Studio server on :8000
+#   qwen-tts     → (P4) Qwen TTS server on :8010
+#   comfyui      → ComfyUI server on :8188
+#   slopfinity   → Slopfinity dashboard on :9099 (see override)
+#   slop         → umbrella for the full stack (all of the above)
+#
+# Full stack:      docker compose --profile slop up -d
+# Image-only:      docker compose --profile qwen-image up -d
+# ComfyUI-only:    docker compose --profile comfyui up -d
+#
+# Override ports and paths via .env (see .env.example).
+
 services:
   strix-halo-toolbox:
     build:
@@ -8,10 +22,10 @@ services:
     container_name: strix-halo-toolbox
     restart: unless-stopped
 
-    # Auto-start services
-    profiles:
-      - qwen
-      - comfyui
+    # Toolbox is a pure shell / build anchor. No profile means it starts under
+    # `docker compose up`. The real servers live in the dedicated service
+    # profiles below — use `docker exec -it strix-halo-toolbox bash` for a
+    # ROCm REPL.
 
     # Run as host user so mounted files have correct ownership
     user: "${UID:-1000}:${GID:-1000}"
@@ -23,13 +37,26 @@ services:
       # Set HOME for non-root user (mount targets use this path)
       - HOME=/home/user
 
-      # WAN uses SDPA by default in Docker (more stable than Triton for long runs)
+      # ROCm / Triton / Flash-Attention environment (CRITICAL for gfx1151)
+      # 11.5.1 is required for Strix Halo GPU operations.
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+      - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
+      - QWEN_FA_SHIM=1
       - WAN_ATTENTION_BACKEND=sdpa
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
+      - HIP_VISIBLE_DEVICES=0
+      - ROC_ENABLE_PRE_VEGA=1
+
+      # torchaudio linker fix
+      - LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/torch/lib:${LD_LIBRARY_PATH:-}
+
+      # Explicitly point to CLI wrapper
+      - QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps.py
 
       # Fast model downloads
       - HF_HUB_ENABLE_HF_TRANSFER=1
 
-      # Service Configuration (set to 0 to disable)
+      # Service Configuration (set to 0 to disable in start_docker.sh)
       # - QWEN_PORT=8000
       # - COMFYUI_PORT=8188
 
@@ -43,38 +70,63 @@ services:
       - ${QWEN_OUTPUTS:-./qwen-outputs}:/home/user/.qwen-image-studio
       - ${WAN_MODELS:-./wan-models}:/home/user/wan-models
       - ${COMFY_MODELS:-./comfy-models}:/opt/ComfyUI/models
+      - ${COMFY_INPUT:-./comfy-input}:/opt/ComfyUI/input
       - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
+      - ./scripts/start_docker.sh:/opt/start_docker.sh:ro
 
     security_opt:
       - seccomp:unconfined
 
     working_dir: /workspace
 
-    # Default command for full services mode
-    command: /opt/start_docker.sh
+    # Toolbox is now a pure shell. Real servers live in qwen-image-service
+    # and comfyui-service (see below). Keeping /opt/start_docker.sh mounted
+    # for manual invocation if someone needs the legacy all-in-one behavior.
+    command: ["tail", "-f", "/dev/null"]
 
-  # Qwen-only service profile
-  qwen-service:
+  # Qwen-Image-only service profile. Separate from qwen-tts (P4, port 8010)
+  # so the profile name reflects modality. Mutually exclusive with a toolbox
+  # running start_docker.sh on :8000 — pre-flight guard below exits cleanly
+  # if the port is already bound.
+  qwen-image-service:
     extends: strix-halo-toolbox
-    container_name: strix-halo-qwen
+    container_name: strix-halo-qwen-image
     profiles:
-      - qwen-only
+      - qwen-image
+      - slop
     command: >
       bash -c "
-        echo '🎨 Starting Qwen Image Studio only...'
-        cd /opt/qwen-image-studio
-        python3 qwen-image-mps.py serve --host 0.0.0.0 --port 8000
+        if (echo > /dev/tcp/127.0.0.1/8000) 2>/dev/null ; then
+          echo 'ERROR: Port 8000 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+          echo '       Stop the other Qwen server first, or change QWEN_PORT.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        echo '🎨 Starting Qwen Image Studio...'
+        if [ -f /opt/qwen_launcher.py ] && [ -f /opt/qwen-image-studio/qwen-image-studio/server.py ]; then
+          cp /opt/qwen_launcher.py /opt/qwen-image-studio/qwen-image-mps.py
+        fi
+        cd /opt/qwen-image-studio/qwen-image-studio
+        exec uvicorn server:app --host 0.0.0.0 --port 8000
       "
 
-  # ComfyUI-only service profile
+  # ComfyUI-only service profile. Mutually exclusive with a toolbox running
+  # start_docker.sh on :8188.
   comfyui-service:
     extends: strix-halo-toolbox
     container_name: strix-halo-comfyui
     profiles:
-      - comfyui-only
+      - comfyui
+      - slop
     command: >
       bash -c "
-        echo '🖼️  Starting ComfyUI only (FP16 Mode)...'
+        if (echo > /dev/tcp/127.0.0.1/8188) 2>/dev/null ; then
+          echo 'ERROR: Port 8188 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+          echo '       Stop the other ComfyUI server first.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        echo '🖼️  Starting ComfyUI (FP16 Mode)...'
         cd /opt/ComfyUI
-        python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16
+        exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16
       "

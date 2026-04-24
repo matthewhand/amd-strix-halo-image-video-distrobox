@@ -606,7 +606,11 @@ Use tiled VAE decode (`spatial_tiles: 4`) to avoid OOM on longer videos.
 
 ## 9. ComfyUI (Web UI)
 
-ComfyUI is also available as an interactive web UI at **http://localhost:8188** for drag-and-drop workflow building. See the [COMFYUI_SETUP_GUIDE.md](COMFYUI_SETUP_GUIDE.md) for GUI-specific setup.
+ComfyUI is also available as an interactive web UI at **http://localhost:8188** for drag-and-drop workflow building.
+
+For detailed information on the symlink hacks, CPU offloading, and kernel requirements (6.18+) required for Strix Halo, see:
+
+👉 **[COMFYUI_SETUP_GUIDE.md](COMFYUI_SETUP_GUIDE.md)**
 
 ---
 
