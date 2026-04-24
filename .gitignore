@@ -1,23 +1,39 @@
-# Ignore all markdown files
+# Ignore all markdown files except essential docs
 *.md
-
-# Whitelist essential markdown files
 !README.md
 !COMFYUI_SETUP_GUIDE.md
-!AGENTS.md
+# AGENTS.md is a local agent playbook, intentionally not committed —
+# contents drift per-machine and per-session.
 
-# Ignore Python cache directories
 __pycache__/
+*.log
+*.safetensors
 
-# Local environment
+# Environment files — ignore ALL .env variants except the committed
+# template (.env.example). Covers .env, .env.local, .env.production,
+# .env.<user>, .env.<host>, .env.private, etc.
 .env
+.env.*
+!.env.example
 
-# Model files and outputs (large files, stored elsewhere)
+# Per-user / per-host local override files
+*.local
+*.private
+secrets/
+
+# Private prompt overrides (sensitive moderation-category templates that
+# shouldn't be in public commits). Loaded at runtime via env var
+# MODERATION_TEMPLATES_FILE / SENSITIVE_PROMPTS_DIR. The committed
+# tests/example_prompts/ contains only safe_baseline narratives.
+tests/private_prompts/
+
+# Data directories (created by docker-compose or at runtime)
+huggingface-cache/
+qwen-outputs/
+wan-models/
 comfy-models/
+comfy-outputs/
 outputs/
 ComfyUI_output/
-*.safetensors
 workspace/
-
-# Docker/container specific
 docker/

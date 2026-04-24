@@ -1,0 +1,37 @@
+[
+  {
+    "label": "flying_in_night",
+    "qwen": "A young child stands alone in a lush green meadow, surrounded by tall trees and twinkling firefly lights. The moon is full overhead, casting a silver glow on the scene. The child's eyes shine with excitement as they hold an imaginary kite or wing contraption. Fireflies flicker around them, their soft glow illuminating the surroundings.",
+    "video": "The child takes a step forward, arms outstretched, and begins to flail their arms like wings. Soft rustling sounds of leaves and grass fill the air. The camera zooms in on the child's face as they let out a squeal of delight. As they move forward, fireflies swarm around them, lighting up the darkness.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "lifting_off",
+    "qwen": null,
+    "video": "The child takes another step, and their arms begin to lift off the ground, as if propelled by an invisible force. A gentle hum of buzzing fireflies fills the air. The camera pans up to reveal the child's face, now filled with wonder and a touch of fear. As they rise higher, the fireflies surround them like a golden aura.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "soaring_high",
+    "qwen": null,
+    "video": "The child rises higher, their arms still outstretched, as they soar above the meadow. The camera captures the breathtaking view from above, with fireflies lighting up the landscape like stars. Soft wind whispers through the trees as the child's face relaxes into a smile.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "landing_gently",
+    "qwen": null,
+    "video": "The child begins to descend, their arms slowly lowering back down to earth. A soft thud sounds as they land softly in a bed of grass. The fireflies continue to swirl around them, casting a warm glow on the scene. The camera zooms in on the child's face as they look up at the stars, still grinning from ear to ear.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "twinkling_night",
+    "qwen": null,
+    "video": "The meadow is bathed in a soft, ethereal light, with fireflies twinkling like tiny stars. The child lies down among the grasses, looking up at the night sky filled with millions of sparkling lights. A gentle lullaby-like hum fills the air as the camera pans out to reveal the peaceful scene.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  }
+]
