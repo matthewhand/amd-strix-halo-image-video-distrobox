@@ -1,0 +1,43 @@
+{
+  "_description": "Pastabyss — an alternate branding profile proving the customization system works. Activate by setting `branding.active` to `pastabyss` in config.json, or pick from the Settings dropdown.",
+  "app": {
+    "name": "Pastabyss",
+    "tagline": "Infinite Reflection on Analog Dreams",
+    "short_name": "pasta",
+    "logo_emoji": "🌌"
+  },
+  "infinity_mode": {
+    "name": "Perpetuum Mode",
+    "emoji": "♾️",
+    "description": "Eternal recursion of aesthetic experiments"
+  },
+  "theme": {
+    "default": "synthwave",
+    "available": ["synthwave", "night", "aqua", "coffee", "dracula"]
+  },
+  "colors": {
+    "primary": "#ec4899",
+    "secondary": "#a855f7",
+    "accent": "#22d3ee",
+    "warning": "#fbbf24",
+    "danger": "#ef4444"
+  },
+  "labels": {
+    "pipeline": "Forge",
+    "queue": "Backlog",
+    "inject": "Summon",
+    "ai_magic": "Invoke",
+    "gallery_live": "Scrying Pool",
+    "gallery_completed": "Atelier",
+    "gallery_keyframes": "Sketches",
+    "concept": "Spark",
+    "base_image": "Canvas",
+    "video_chain": "Motion",
+    "audio_music": "Score",
+    "post_process": "Polish",
+    "final_merge": "Seal"
+  },
+  "footer": {
+    "tagline": "STRIX HALO • WHERE BYTES BECOME ART"
+  }
+}

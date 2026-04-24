@@ -1,0 +1,116 @@
+import shutil
+import subprocess
+
+
+def get_sys_stats():
+    s = {"gpu": 0, "vram": 0, "ram_u": 0, "ram_t": 0}
+    try:
+        res = subprocess.run(["rocm-smi", "--showuse", "--showmemuse"], capture_output=True, text=True)
+        for l in res.stdout.split('\n'):
+            if "GPU use (%)" in l: s["gpu"] = int(l.split(':')[-1].strip())
+            if "GPU Memory Allocated (VRAM%)" in l: s["vram"] = int(l.split(':')[-1].strip())
+    except: pass
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            m = {ln.split(':')[0]: ln.split(':')[1].strip() for ln in f}
+        s["ram_u"] = round((int(m['MemTotal'].split()[0]) - int(m['MemAvailable'].split()[0])) / (1024 * 1024), 1)
+        s["ram_t"] = round(int(m['MemTotal'].split()[0]) / (1024 * 1024), 1)
+    except: pass
+    return s
+
+
+def _status_from_pct(pct):
+    if pct >= 90: return "danger"
+    if pct >= 80: return "warn"
+    return "ok"
+
+
+def get_storage():
+    """Return list of {mount, used_gb, total_gb, pct, status}."""
+    mounts = ["/", "/mnt/data", "/mnt/downloads"]
+    out = []
+    for mnt in mounts:
+        try:
+            du = shutil.disk_usage(mnt)
+            total_gb = round(du.total / (1024 ** 3), 1)
+            used_gb = round(du.used / (1024 ** 3), 1)
+            pct = round((du.used / du.total) * 100, 1) if du.total else 0
+            out.append({
+                "mount": mnt,
+                "used_gb": used_gb,
+                "total_gb": total_gb,
+                "pct": pct,
+                "status": _status_from_pct(pct),
+            })
+        except Exception:
+            out.append({
+                "mount": mnt,
+                "used_gb": 0,
+                "total_gb": 0,
+                "pct": 0,
+                "status": "ok",
+                "missing": True,
+            })
+    return out
+
+
+# Reference memory values for Strix Halo unified memory (GB)
+_MODEL_GB = {
+    # base image
+    "qwen": 20,
+    "ernie": 12,
+    # ltx bases / video
+    "ltx-2.3": 28,
+    # video only
+    "wan2.2": 48,
+    "wan2.5": 56,
+    # audio
+    "heartmula": 10,
+    # upscale
+    "ltx-spatial": 18,
+    # none / empty
+    "none": 0,
+    "No Audio": 0,
+    "No Upscale": 0,
+    "": 0,
+}
+
+_OVERHEAD_GB = 6
+
+
+def _lookup(model):
+    if model is None:
+        return 0
+    return _MODEL_GB.get(model, 0)
+
+
+def get_ram_estimate(base_model, video_model, audio_model, upscale_model):
+    """Return {estimated_gb, breakdown:[{stage, model, gb}], status}."""
+    stages = [
+        ("Base Image", base_model),
+        ("Video", video_model),
+        ("Audio", audio_model),
+        ("Upscale", upscale_model),
+    ]
+    breakdown = []
+    total = 0
+    for stage, model in stages:
+        gb = _lookup(model)
+        breakdown.append({"stage": stage, "model": model or "none", "gb": gb})
+        total += gb
+    breakdown.append({"stage": "Overhead", "model": "OS + ComfyUI", "gb": _OVERHEAD_GB})
+    total += _OVERHEAD_GB
+
+    if total >= 100:
+        status = "danger"
+    elif total >= 80:
+        status = "warn"
+    else:
+        status = "ok"
+
+    return {
+        "estimated_gb": round(total, 1),
+        "budget_gb": 128,
+        "breakdown": breakdown,
+        "status": status,
+    }
