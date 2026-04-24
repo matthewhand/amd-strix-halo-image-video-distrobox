@@ -1,6 +1,9 @@
 // Slopfinity minimal service worker — cache-first app shell.
 // Network falls through for API, WS, files, branding, config, tts, etc.
-const CACHE = 'slopfinity-shell-v1';
+// Bump whenever shell assets (app.js, app.css, templates/index.html) change
+// in a way that must invalidate users' caches. Browsers delete any cache
+// whose name differs on next activate.
+const CACHE = 'slopfinity-shell-v2';
 const SHELL = [
   '/',
   '/static/app.css',
