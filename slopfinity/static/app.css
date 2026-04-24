@@ -1,7 +1,6 @@
-.wf-dot { width: 12px; height: 12px; border-radius: 50%; background: currentColor; transition: 0.3s; box-shadow: 0 0 10px currentColor; }
-.wf-step { opacity: 0.4; transition: 0.3s; }
-.wf-step.active { opacity: 1; color: #ff79c6; transform: scale(1.05); }
-.wf-step.done { opacity: 1; color: #50fa7b; }
+/* Stats-navbar tickers (GPU/VRAM). The pipeline steps' wf-* classes were
+   removed when the sidebar switched from `steps steps-vertical` to a plain
+   4-select form. */
 .ticker-bar { display: flex; align-items: flex-end; height: 30px; gap: 2px; }
 .ticker-col { width: 6px; background: #ff79c6; transition: height 0.2s; border-radius: 2px 2px 0 0; }
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
