@@ -530,100 +530,120 @@
 <dialog id="settings-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-2">Settings</h3>
-        <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud provider endpoints are accepted.</p>
+        <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud endpoints accepted.</p>
 
         <div role="tablist" class="tabs tabs-boxed mb-4">
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" checked />
             <div role="tabpanel" class="tab-content pt-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="form-control">
-                <span class="label-text text-xs">Provider</span>
-                <select id="set-provider" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
-                    <option value="lmstudio">LM Studio</option>
-                    <option value="ollama">Ollama</option>
-                    <option value="vllm">vLLM</option>
-                    <option value="llamacpp">llama.cpp</option>
-                    <option value="custom">Custom (OpenAI-compat)</option>
-                </select>
-            </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Scheme</span>
-                <select id="set-scheme" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
-                    <option value="http" selected>http</option>
-                    <option value="https">https</option>
-                </select>
-            </label>
+                <!-- ================== Section 1: Provider connection ================== -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Provider connection</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="form-control">
+                        <span class="label-text text-xs">Provider</span>
+                        <select id="set-provider" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
+                            <option value="lmstudio">LM Studio</option>
+                            <option value="ollama">Ollama</option>
+                            <option value="vllm">vLLM</option>
+                            <option value="llamacpp">llama.cpp</option>
+                            <option value="custom">Custom (OpenAI-compat)</option>
+                        </select>
+                    </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Host</span>
-                <input id="set-host" class="input input-bordered input-sm" value="localhost" oninput="onSettingsUrlChanged()" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Scheme</span>
+                        <select id="set-scheme" class="select select-bordered select-sm" onchange="onSettingsUrlChanged()">
+                            <option value="http" selected>http</option>
+                            <option value="https">https</option>
+                        </select>
+                    </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Port</span>
-                <input id="set-port" type="number" class="input input-bordered input-sm" value="1234" oninput="onSettingsUrlChanged()" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Host</span>
+                        <input id="set-host" class="input input-bordered input-sm" value="localhost" oninput="onSettingsUrlChanged()" />
+                    </label>
 
-            <label class="form-control md:col-span-2">
-                <span class="label-text text-xs">Path prefix (e.g. /v1)</span>
-                <input id="set-path" class="input input-bordered input-sm" value="/v1" oninput="onSettingsUrlChanged()" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Port</span>
+                        <input id="set-port" type="number" class="input input-bordered input-sm" value="1234" oninput="onSettingsUrlChanged()" />
+                    </label>
 
-            <label class="form-control md:col-span-2">
-                <span class="label-text text-xs">Computed base URL</span>
-                <input id="set-base" class="input input-bordered input-sm font-mono text-xs" readonly />
-            </label>
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text text-xs">Path prefix (e.g. /v1)</span>
+                        <input id="set-path" class="input input-bordered input-sm" value="/v1" oninput="onSettingsUrlChanged()" />
+                    </label>
 
-            <div class="md:col-span-2 flex items-center gap-2">
-                <button class="btn btn-sm btn-outline" onclick="probeLan()">Discover LAN</button>
-                <div id="set-probe-chips" class="flex flex-wrap gap-1 text-xs"></div>
-            </div>
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text text-xs">Computed base URL</span>
+                        <input id="set-base" class="input input-bordered input-sm font-mono text-xs" readonly />
+                    </label>
 
-            <label class="form-control md:col-span-2">
-                <span class="label-text text-xs">API key (optional)</span>
-                <div class="join w-full">
-                    <input id="set-api-key" type="password" class="input input-bordered input-sm join-item flex-1" placeholder="leave blank if none" />
-                    <button class="btn btn-sm join-item" type="button" onclick="toggleApiKeyReveal()" id="set-api-reveal">show</button>
+                    <div class="md:col-span-2 flex items-center gap-2">
+                        <button class="btn btn-sm btn-outline" onclick="probeLan()">Discover LAN</button>
+                        <div id="set-probe-chips" class="flex flex-wrap gap-1 text-xs"></div>
+                    </div>
+
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text text-xs">API key (optional)</span>
+                        <div class="join w-full">
+                            <input id="set-api-key" type="password" class="input input-bordered input-sm join-item flex-1" placeholder="leave blank if none" />
+                            <button class="btn btn-sm join-item" type="button" onclick="toggleApiKeyReveal()" id="set-api-reveal">show</button>
+                        </div>
+                    </label>
                 </div>
-            </label>
 
-            <label class="form-control md:col-span-2">
-                <span class="label-text text-xs flex justify-between">
-                    <span>Model</span>
-                    <button class="btn btn-ghost btn-xs" type="button" onclick="reloadModels()">reload</button>
-                </span>
-                <select id="set-model" class="select select-bordered select-sm" onchange="onModelSelectChanged()">
-                    <option value="">(none loaded)</option>
-                </select>
-                <input id="set-model-custom" class="input input-bordered input-sm mt-1 hidden" placeholder="model id..." />
-            </label>
+                <!-- ================== Section 2: Generation ================== -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Generation</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="form-control md:col-span-2">
+                        <span class="label-text text-xs flex justify-between">
+                            <span>Model</span>
+                            <button class="btn btn-ghost btn-xs" type="button" onclick="reloadModels()">reload</button>
+                        </span>
+                        <select id="set-model" class="select select-bordered select-sm" onchange="onModelSelectChanged()">
+                            <option value="">(none loaded)</option>
+                        </select>
+                        <input id="set-model-custom" class="input input-bordered input-sm mt-1 hidden" placeholder="model id..." />
+                    </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Temperature: <span id="set-temp-val" class="font-mono">0.7</span></span>
-                <input id="set-temp" type="range" min="0" max="1.5" step="0.05" value="0.7" class="range range-sm range-primary" oninput="$('set-temp-val').innerText = this.value" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Temperature: <span id="set-temp-val" class="font-mono">0.7</span></span>
+                        <input id="set-temp" type="range" min="0" max="1.5" step="0.05" value="0.7" class="range range-sm range-primary" oninput="$('set-temp-val').innerText = this.value" />
+                    </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Max retries</span>
-                <input id="set-retries" type="number" min="0" max="5" value="2" class="input input-bordered input-sm" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Max retries</span>
+                        <input id="set-retries" type="number" min="0" max="5" value="2" class="input input-bordered input-sm" />
+                    </label>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Timeout (seconds)</span>
-                <input id="set-timeout" type="number" min="1" value="60" class="input input-bordered input-sm" />
-            </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs">Timeout (seconds)</span>
+                        <input id="set-timeout" type="number" min="1" value="60" class="input input-bordered input-sm" />
+                    </label>
+                </div>
 
-            <label class="form-control">
-                <span class="label-text text-xs">Branding profile</span>
-                <select id="set-branding" class="select select-bordered select-sm"></select>
-            </label>
-        </div>
+                <div class="flex items-center gap-3 mt-4">
+                    <button class="btn btn-sm btn-outline btn-accent" onclick="testSettings()">Test</button>
+                    <span id="set-test-badge" class="badge badge-ghost font-mono text-xs">idle</span>
+                </div>
 
-        <div class="flex items-center gap-3 mt-4">
-            <button class="btn btn-sm btn-outline btn-accent" onclick="testSettings()">Test</button>
-            <span id="set-test-badge" class="badge badge-ghost font-mono text-xs">idle</span>
-        </div>
+                <!-- ================== Section 3: Appearance ================== -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Appearance</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="form-control">
+                        <span class="label-text text-xs">Branding profile</span>
+                        <select id="set-branding" class="select select-bordered select-sm"></select>
+                    </label>
+
+                    <label class="form-control">
+                        <span class="label-text text-xs">Theme</span>
+                        <select id="theme-select" class="select select-bordered select-sm" onchange="applyTheme(this.value)">
+                            {% for t in branding.theme.available %}
+                            <option value="{{ t }}" {% if t == branding.theme.default %}selected{% endif %}>{{ t }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
             </div><!-- /LLM tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
