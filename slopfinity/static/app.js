@@ -380,7 +380,8 @@ function connect() {
             const isV = file.endsWith('.mp4');
             const isWav = file.endsWith('.wav');
             const isFinal = isV && /^FINAL_/i.test(file);
-            const kind = isFinal ? 'final' : isV ? 'chain' : isWav ? 'audio' : 'image';
+            // FINAL and chain share the 'chain' filter kind (both are videos); FINAL is just visually accented.
+            const kind = isV ? 'chain' : isWav ? 'audio' : 'image';
             // Unified Slop feed: everything goes into preview-grid; filter chips control visibility.
             const g = $('preview-grid');
             if (!g) return;
@@ -401,12 +402,13 @@ function connect() {
                 'heartmula':'badge-secondary','qwen-tts':'badge-warning','kokoro':'badge-warning',
             };
             const mColor = modelColors[model] || 'badge-ghost';
-            const kindMeta = {
-                'final': ['🎬 FINAL', 'badge-accent', 'border-accent'],
-                'chain': ['⛓ chain', 'badge-primary', 'border-primary'],
-                'image': ['🖼 image', 'badge-secondary', 'border-secondary'],
-                'audio': ['🔊 audio', 'badge-warning', 'border-warning'],
-            }[kind];
+            const kindMeta = isFinal
+                ? ['🎬 FINAL', 'badge-accent', 'border-accent']
+                : {
+                    'chain': ['🎬 video', 'badge-primary', 'border-primary'],
+                    'image': ['🖼 image', 'badge-secondary', 'border-secondary'],
+                    'audio': ['🔊 audio', 'badge-warning', 'border-warning'],
+                  }[kind];
             const c = document.createElement('div');
             c.className = `card card-compact bg-base-100 shadow-lg border ${kindMeta[2]} card-hover overflow-hidden animate-pulse`;
             c.dataset.slopKind = kind;
@@ -431,10 +433,8 @@ function connect() {
             setTimeout(() => c.classList.remove('animate-pulse'), 3000);
             // Apply current filter state to the new card
             _applySlopFilters();
-            // Cap feed to most recent 64 items (but never remove a FINAL)
-            const cards = Array.from(g.children);
-            const nonFinal = cards.filter(x => x.dataset.slopKind !== 'final');
-            if (nonFinal.length > 56) g.removeChild(nonFinal[nonFinal.length - 1]);
+            // Cap feed to most recent 64 cards
+            if (g.children.length > 64) g.removeChild(g.lastChild);
         }
     };
     ws.onclose = () => {

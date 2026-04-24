@@ -187,8 +187,7 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="final" checked><span class="badge badge-sm badge-accent peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 FINAL</span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">⛓ chain</span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 video</span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 image</span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 audio</span></label>
             </div>
@@ -202,13 +201,17 @@
                 {% set is_mp4 = f.endswith('.mp4') %}
                 {% set is_wav = f.endswith('.wav') %}
                 {% set is_final = is_mp4 and f.startswith('FINAL_') %}
-                {% set kind = 'final' if is_final else ('chain' if is_mp4 else ('audio' if is_wav else 'image')) %}
+                {# FINAL_*.mp4 and chain clips are both 'chain' kind for filter purposes; FINAL is just a styling accent. #}
+                {% set kind = 'chain' if is_mp4 else ('audio' if is_wav else 'image') %}
                 {% set model = '' %}
                 {% if f.startswith('test_') %}{% set model = f.split('_')[1] %}
                 {% elif f.startswith('ltx_base_') or (is_mp4 and not is_final) %}{% set model = 'ltx-2.3' %}
                 {% endif %}
                 {% set mcolor = {'qwen':'badge-info','ernie':'badge-error','ltx-2.3':'badge-success','wan2.2':'badge-info','wan2.5':'badge-info','heartmula':'badge-secondary','qwen-tts':'badge-warning'}.get(model, 'badge-ghost') %}
-                {% set kind_meta = {'final': ('🎬 FINAL', 'badge-accent', 'border-accent'), 'chain': ('⛓ chain', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind] %}
+                {% set kind_meta = (
+                    ('🎬 FINAL', 'badge-accent', 'border-accent') if is_final
+                    else {'chain': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind]
+                ) %}
                 <div class="card card-compact bg-base-100 shadow-lg border {{ kind_meta[2] }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
                     <figure class="bg-black aspect-video flex items-center justify-center">
                     {% if is_mp4 %}
