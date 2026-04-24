@@ -192,6 +192,42 @@ async def enhance_distribute(data: dict = Body(...)):
     }
 
 
+@app.get("/subjects/suggest")
+async def subjects_suggest(n: int = 6):
+    """Generate N short visual subject ideas via the configured local LLM.
+
+    Results are cached for 30 seconds keyed on N to avoid hammering the LLM
+    if the UI chip-refresh is spammed.
+    """
+    import time
+    cache = getattr(subjects_suggest, "_cache", None)
+    now = time.time()
+    if cache and now - cache[0] < 30 and cache[1] == n:
+        return {"suggestions": cache[2], "cached": True}
+    sys_p = (
+        "You are a concept artist for an AI video fleet. "
+        f"Output ONLY a JSON array of exactly {n} short visual subject ideas "
+        "(3-8 words each). Cynical, philosophical, visually rich. Just the array."
+    )
+    raw = lmstudio_call(sys_p, f"Give me {n} subject ideas.")
+    suggestions = []
+    try:
+        s = json.loads(raw)
+        if isinstance(s, list):
+            suggestions = s
+    except Exception:
+        start, end = raw.find('['), raw.rfind(']')
+        if start != -1 and end > start:
+            try:
+                suggestions = json.loads(raw[start:end + 1])
+            except Exception:
+                pass
+    suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
+    if suggestions:
+        subjects_suggest._cache = (now, n, suggestions)
+    return {"suggestions": suggestions, "cached": False}
+
+
 @app.post("/config")
 async def update_config(data: dict = Body(...)):
     config = cfg.load_config()

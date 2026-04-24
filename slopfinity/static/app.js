@@ -268,8 +268,9 @@ function connect() {
 
             $('h-m').innerText = d.state.mode;
             $('h-pr').innerText = '"' + d.state.current_prompt + '"';
-            $('h-c').innerText = `V ${d.state.video_index}/${d.state.total_videos} | C ${d.state.chain_index}/${d.state.total_chains}`;
+            $('h-c').innerText = `V ${d.state.video_index}/${d.state.total_videos} · C ${d.state.chain_index}/${d.state.total_chains}`;
             $('h-p').value = (d.state.video_index / Math.max(1, d.state.total_videos)) * 100;
+            updateStageSteps(d.state);
 
             document.querySelectorAll('.wf-step').forEach(s => s.classList.remove('active', 'done'));
             const steps = ['Concept', 'Base-Image', 'Video-Chains', 'Audio-Music', 'Post-Process', 'Final-Merge'];
@@ -286,9 +287,29 @@ function connect() {
             $('q-count').innerText = d.queue.length;
             const qList = $('q-list');
             if (qList) {
-                qList.innerHTML = d.queue.length
-                    ? d.queue.slice(0, 3).map(q => `<div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">${(q.prompt || '').substring(0, 60)}...</div>`).join('')
-                    : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
+                if (!d.queue.length) {
+                    qList.innerHTML = '<li class="text-[10px] text-base-content/40 italic p-2">queue empty — toggle Infinity to start</li>';
+                } else {
+                    const cfg = d.config || {};
+                    qList.innerHTML = d.queue.slice(0, 5).map(q => {
+                        const snap = q.config_snapshot || cfg;
+                        const badges = [];
+                        if (snap.base_model) badges.push(`<span class="badge badge-xs badge-info">${_htmlEscape(snap.base_model)}</span>`);
+                        if (snap.video_model) badges.push(`<span class="badge badge-xs badge-success">${_htmlEscape(snap.video_model)}</span>`);
+                        if (snap.audio_model && snap.audio_model !== 'none') badges.push(`<span class="badge badge-xs badge-secondary">${_htmlEscape(snap.audio_model)}</span>`);
+                        if (snap.upscale_model && snap.upscale_model !== 'none') badges.push(`<span class="badge badge-xs badge-warning">${_htmlEscape(snap.upscale_model)}</span>`);
+                        const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
+                        const promptEsc = _htmlEscape(q.prompt || '');
+                        return `<li><details class="bg-base-200 rounded-md">
+                            <summary class="cursor-pointer p-2 text-xs flex flex-wrap items-center gap-2">
+                                <span class="font-semibold truncate max-w-[50%]" title="${promptEsc}">${_htmlEscape((q.prompt || '').substring(0, 80))}</span>
+                                ${badges.join('')}
+                                <span class="text-[10px] text-base-content/50 font-mono ml-auto">${meta}</span>
+                            </summary>
+                            <div class="p-2 pt-0 text-[11px] text-base-content/70 font-mono whitespace-pre-wrap">${promptEsc}</div>
+                        </details></li>`;
+                    }).join('');
+                }
             }
             const qDrawer = $('queue-drawer-list');
             if (qDrawer) {
@@ -617,13 +638,23 @@ async function inject(prio) {
 async function updatePipeline() {
     const body = {
         infinity_mode: $('inf-on') ? $('inf-on').checked : false,
-        infinity_themes: $('inf-themes') ? $('inf-themes').value.split(',').map(s => s.trim()) : [],
+        // Prefer newline-based subjects from #p-core textarea; fall back to
+        // legacy comma-separated hidden #inf-themes shim for compat.
+        infinity_themes: _subjectsFromTextarea().length
+            ? _subjectsFromTextarea()
+            : ($('inf-themes') ? $('inf-themes').value.split(',').map(s => s.trim()).filter(Boolean) : []),
         base_model: $('cfg-base') ? $('cfg-base').value : '',
         video_model: $('cfg-video') ? $('cfg-video').value : '',
         audio_model: $('cfg-audio') ? $('cfg-audio').value : '',
         upscale_model: $('cfg-upscale') ? $('cfg-upscale').value : '',
-        frames: $('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49,
+        frames: $('cfg-frames') ? parseInt($('cfg-frames').value, 10) :
+                ($('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49),
     };
+    if ($('cfg-chains')) body.chains = parseInt($('cfg-chains').value, 10);
+    if ($('cfg-tier')) body.tier = $('cfg-tier').value;
+    if ($('cfg-consolidation')) body.consolidation = $('cfg-consolidation').value;
+    if ($('cfg-music-gain-db')) body.music_gain_db = parseInt($('cfg-music-gain-db').value, 10);
+    if ($('cfg-fade-s')) body.fade_s = parseFloat($('cfg-fade-s').value);
     await fetch('/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -946,22 +977,86 @@ document.addEventListener('DOMContentLoaded', () => {
     if (p) p.addEventListener('change', applyProviderDefaults);
 });
 
+// -------------------- Single-page layout helpers --------------------
+
+function openPipeline() {
+  const d = document.getElementById('pipeline-modal');
+  if (d && d.showModal) d.showModal();
+}
+
+function _subjectsFromTextarea() {
+  const v = (document.getElementById('p-core') || {}).value || '';
+  return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+}
+
+async function toggleInfinity() {
+  const t = document.getElementById('inf-on');
+  if (!t) return;
+  t.checked = !t.checked;
+  updatePipeline();
+  _updateStartBtn();
+}
+
+function _updateStartBtn() {
+  const t = document.getElementById('inf-on');
+  const b = document.getElementById('btn-start-stop');
+  if (t && b) b.textContent = t.checked ? '⏸ Stop Infinity' : '▶ Start Infinity';
+}
+
+async function regenSuggestions(n = 6) {
+  const box = document.getElementById('subject-chips');
+  if (!box) return;
+  box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+  try {
+    const r = await fetch('/subjects/suggest?n=' + n);
+    const data = await r.json();
+    const arr = data.suggestions || [];
+    if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
+    box.innerHTML = '';
+    arr.forEach(s => {
+      const b = document.createElement('button');
+      b.className = 'btn btn-outline btn-primary btn-xs normal-case';
+      b.textContent = s;
+      b.title = 'Click: append · Shift+click: replace';
+      b.addEventListener('click', (e) => {
+        const ta = document.getElementById('p-core');
+        if (!ta) return;
+        if (e.shiftKey) ta.value = s;
+        else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        updatePipeline();
+      });
+      box.appendChild(b);
+    });
+  } catch (e) {
+    box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+  }
+}
+
+function updateStageSteps(state) {
+  if (!state) return;
+  const steps = document.querySelectorAll('#stage-steps li[data-stage]');
+  if (!steps.length) return;
+  const currentStage = state.step || '';
+  const order = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+  const idx = order.indexOf(currentStage);
+  steps.forEach((el, i) => {
+    el.classList.remove('step-primary', 'step-accent');
+    if (idx < 0) return;
+    if (i < idx) el.classList.add('step-primary');
+    else if (i === idx) el.classList.add('step-accent');
+  });
+  const chainCounter = document.getElementById('chain-counter');
+  if (chainCounter) {
+    chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
+      ? `${state.chain_index}/${state.total_chains}` : '';
+  }
+}
+
+// No-op stubs for reference-modal inline handlers that don't yet exist client-side.
+if (typeof window._onAudioChanged !== 'function') {
+  window._onAudioChanged = function () { /* reserved for future audio-dependent UI */ };
+}
+
 connect();
 _wireLockListeners();
-
-// Auto-open drawer on mobile first visit (remembers user close preference)
-(function () {
-  const drawer = document.getElementById('app-drawer');
-  if (!drawer) return;
-  const narrow = window.innerWidth < 1024;
-  if (narrow && localStorage.getItem('drawer-closed') !== 'true') {
-    drawer.checked = true;
-  }
-  drawer.addEventListener('change', () => {
-    if (drawer.checked) {
-      localStorage.removeItem('drawer-closed');
-    } else if (narrow) {
-      localStorage.setItem('drawer-closed', 'true');
-    }
-  });
-})();
