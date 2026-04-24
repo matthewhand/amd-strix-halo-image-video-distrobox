@@ -103,8 +103,13 @@
                 </div>
             </div>
 
-            <!-- Hero Progress -->
-            <div class="hero bg-neutral text-neutral-content rounded-3xl border border-base-200 shadow-2xl mb-10 overflow-hidden relative">
+            <!-- Hero Idle (compact one-liner, shown when state.mode === Idle) -->
+            <div id="hero-idle" class="alert alert-info mb-6" style="display:{% if state.mode == 'Idle' %}flex{% else %}none{% endif %}">
+                <span>Ready. Type an idea → ✨ {{ branding.labels.ai_magic }} → Generate</span>
+            </div>
+
+            <!-- Hero Progress (full, shown when state.mode !== Idle) -->
+            <div id="hero-card" class="hero bg-neutral text-neutral-content rounded-3xl border border-base-200 shadow-2xl mb-10 overflow-hidden relative" style="display:{% if state.mode == 'Idle' %}none{% else %}block{% endif %}">
                 <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                 <div class="hero-content flex-col items-stretch w-full p-8 gap-4">
                     <div class="card card-body p-0 bg-transparent">
@@ -119,85 +124,82 @@
                         </div>
                         <progress class="progress progress-primary w-full h-3 bg-base-300" id="h-p" value="0" max="100"></progress>
                         <div class="text-lg italic text-neutral-content/70 border-l-4 border-primary pl-4" id="h-pr">"{{ state.current_prompt }}"</div>
-                        <div class="flex items-center gap-2 mt-3">
-                            <span class="text-[11px] uppercase tracking-widest text-neutral-content/50">Scheduler</span>
-                            <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
-                            <div class="flex flex-wrap gap-1" id="sched-timeline">
-                                <span class="text-[11px] text-neutral-content/40 italic">no events yet</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Gallery sections -->
-            <div class="divider divider-accent my-10 text-accent font-black uppercase tracking-[0.3em] text-sm">Gallery</div>
-
-            <div class="flex items-center justify-between mb-6">
-                <h3 class="text-xl font-black text-accent uppercase tracking-widest flex items-center gap-3">
-                    <span class="text-2xl">🔥</span> {{ branding.labels.gallery_live }}
-                    <span class="loading loading-ring loading-md text-accent" id="live-ring" style="display:none"></span>
-                </h3>
-                <div class="badge badge-accent badge-outline font-mono text-xs">streaming</div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12" id="preview-grid"></div>
-
-            <div class="divider divider-primary my-10 text-primary font-black uppercase tracking-[0.3em] text-sm">Video Gallery</div>
-
-            <div class="flex items-center justify-between mb-6">
-                <h3 class="text-xl font-black text-base-content/80 uppercase tracking-widest flex items-center gap-3">
-                    <span class="text-2xl">🎬</span> {{ branding.labels.gallery_completed }}
-                </h3>
-                <div class="badge badge-primary badge-outline font-mono text-xs">MP4 · rendered</div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12" id="v-grid">
-                {% if vids %}
-                    {% for v in vids %}
-                    <div class="card card-compact bg-base-100 shadow-xl border border-base-300 hover:border-primary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
-                        <figure class="relative bg-black">
-                            <video controls loop class="w-full object-cover aspect-video"><source src="/files/{{ v }}"></video>
-                            <div class="absolute top-2 right-2 badge badge-primary badge-sm font-mono uppercase shadow-lg">{{ v.rsplit('.', 1)[-1] }}</div>
-                        </figure>
-                        <div class="card-body !p-3 bg-base-200/60">
-                            <p class="text-[11px] font-mono truncate text-base-content/70" title="{{ v }}">{{ v }}</p>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="col-span-full flex flex-col gap-4 p-10 rounded-xl bg-base-200/30">
-                        <div class="skeleton h-48 w-full"></div>
-                        <p class="text-center text-base-content/40 italic text-sm">No synthesized segments yet — the gallery awaits.</p>
-                    </div>
-                {% endif %}
+            <!-- Scheduler timeline (standalone; folds in the previous "SCHEDULER live · no events yet" subtitle) -->
+            <div class="flex items-center gap-2 mb-8 flex-wrap">
+                <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
+                <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
+                <div class="flex flex-wrap gap-1" id="sched-timeline">
+                    <span class="text-[11px] text-base-content/40 italic">no events yet</span>
+                </div>
             </div>
 
-            <div class="divider divider-secondary my-10 text-secondary font-black uppercase tracking-[0.3em] text-sm">Keyframe Gallery</div>
+            <!-- Output (consolidated Live / Videos / Keyframes; hidden when all grids empty) -->
+            <h2 class="text-xl font-black uppercase tracking-widest mb-4">Output</h2>
 
-            <div class="flex items-center justify-between mb-6">
-                <h3 class="text-xl font-black text-base-content/80 uppercase tracking-widest flex items-center gap-3">
-                    <span class="text-2xl">🖼️</span> {{ branding.labels.gallery_keyframes }}
-                </h3>
-                <div class="badge badge-secondary badge-outline font-mono text-xs">PNG · concept art</div>
+            <div id="output-section" class="mb-12" style="display:{% if vids or imgs %}block{% else %}none{% endif %}">
+                <div role="tablist" class="tabs tabs-boxed mb-6" id="output-tabs">
+                    <a role="tab" class="tab tab-active" data-output-tab="live" onclick="switchOutputTab('live')">
+                        🔥 {{ branding.labels.gallery_live }}
+                        <span class="loading loading-ring loading-xs text-accent ml-2" id="live-ring" style="display:none"></span>
+                    </a>
+                    <a role="tab" class="tab" data-output-tab="videos" onclick="switchOutputTab('videos')">🎬 {{ branding.labels.gallery_completed }}</a>
+                    <a role="tab" class="tab" data-output-tab="keyframes" onclick="switchOutputTab('keyframes')">🖼️ {{ branding.labels.gallery_keyframes }}</a>
+                </div>
+
+                <!-- Live tab -->
+                <div data-output-panel="live">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="preview-grid"></div>
+                </div>
+
+                <!-- Videos tab -->
+                <div data-output-panel="videos" style="display:none">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6" id="v-grid">
+                        {% if vids %}
+                            {% for v in vids %}
+                            <div class="card card-compact bg-base-100 shadow-xl border border-base-300 hover:border-primary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
+                                <figure class="relative bg-black">
+                                    <video controls loop class="w-full object-cover aspect-video"><source src="/files/{{ v }}"></video>
+                                    <div class="absolute top-2 right-2 badge badge-primary badge-sm font-mono uppercase shadow-lg">{{ v.rsplit('.', 1)[-1] }}</div>
+                                </figure>
+                                <div class="card-body !p-3 bg-base-200/60">
+                                    <p class="text-[11px] font-mono truncate text-base-content/70" title="{{ v }}">{{ v }}</p>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Keyframes tab -->
+                <div data-output-panel="keyframes" style="display:none">
+                    <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" id="i-grid">
+                        {% if imgs %}
+                            {% for i in imgs %}
+                            <div class="card card-compact bg-base-100 shadow-lg border border-base-300 hover:border-secondary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
+                                <figure class="relative bg-black aspect-video overflow-hidden">
+                                    <img src="/files/{{ i }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy">
+                                    <div class="absolute top-1.5 right-1.5 badge badge-secondary badge-xs font-mono uppercase shadow">{{ i.rsplit('.', 1)[-1] }}</div>
+                                </figure>
+                                <div class="card-body !p-2 bg-base-200/60">
+                                    <p class="text-[10px] font-mono truncate text-base-content/70" title="{{ i }}">{{ i }}</p>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" id="i-grid">
-                {% if imgs %}
-                    {% for i in imgs %}
-                    <div class="card card-compact bg-base-100 shadow-lg border border-base-300 hover:border-secondary hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group">
-                        <figure class="relative bg-black aspect-video overflow-hidden">
-                            <img src="/files/{{ i }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy">
-                            <div class="absolute top-1.5 right-1.5 badge badge-secondary badge-xs font-mono uppercase shadow">{{ i.rsplit('.', 1)[-1] }}</div>
-                        </figure>
-                        <div class="card-body !p-2 bg-base-200/60">
-                            <p class="text-[10px] font-mono truncate text-base-content/70" title="{{ i }}">{{ i }}</p>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="col-span-full flex flex-col gap-4 p-10 rounded-xl bg-base-200/30">
-                        <div class="skeleton h-40 w-full"></div>
-                        <p class="text-center text-base-content/40 italic text-sm">No keyframes yet — concepts pending.</p>
-                    </div>
-                {% endif %}
+
+            <!-- Output Empty-state card (shown when all grids empty) -->
+            <div id="output-empty" class="card bg-base-200/30 border border-base-300 mb-12" style="display:{% if vids or imgs %}none{% else %}flex{% endif %}">
+                <div class="card-body items-center text-center p-10">
+                    <div class="skeleton h-24 w-24 rounded-full mb-3"></div>
+                    <p class="text-base-content/50 italic">Nothing generated yet — your clips will appear here.</p>
+                </div>
             </div>
 
             <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
