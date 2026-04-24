@@ -40,38 +40,43 @@
         <!-- Main scrollable area -->
         <main class="flex-1 overflow-y-auto custom-scrollbar pb-20 lg:pb-0 p-6">
 
-            <!-- Stats Navbar (compact when idle via JS `stats-navbar-compact` class) -->
-            <div id="stats-navbar" class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-0 z-20 px-4 transition-[padding] duration-200">
-                <div class="flex-1">
-                    <div class="stats stats-vertical lg:stats-horizontal bg-transparent w-full">
-
-                        <div class="stat py-2">
-                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">GPU Load</div>
-                            <div class="stat-value text-2xl font-black text-primary font-mono" id="g-v">0%</div>
-                            <div class="stat-desc"><div class="ticker-bar" id="g-t"></div></div>
-                        </div>
-
-                        <div class="stat py-2">
-                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Unified VRAM</div>
-                            <div class="stat-value text-2xl font-black text-secondary font-mono" id="v-v">0%</div>
-                            <div class="stat-desc"><div class="ticker-bar" id="v-t"></div></div>
-                        </div>
-
-                        <div class="stat py-2">
-                            <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">System RAM</div>
-                            <div class="stat-value text-xl font-bold text-accent font-mono" id="r-v">0 / 0 GB</div>
-                            <div class="stat-desc"><span class="badge badge-ghost badge-sm font-mono">gfx1151</span></div>
-                        </div>
-
-                    </div>
+            <!-- Single consolidated status bar: hardware (GPU/VRAM/RAM) + output counts (MP4/Chains/Base) + storage + sync -->
+            <div id="stats-navbar" class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-0 z-20 px-4 flex-wrap gap-y-1">
+                <div class="flex-1 flex flex-wrap items-center gap-x-6 gap-y-1">
+                    {# Hardware #}
+                    <span class="flex items-baseline gap-1">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
+                        <span class="font-mono font-black text-primary" id="g-v">0%</span>
+                        <span class="ticker-bar ml-1" id="g-t"></span>
+                    </span>
+                    <span class="flex items-baseline gap-1">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">VRAM</span>
+                        <span class="font-mono font-black text-secondary" id="v-v">0%</span>
+                        <span class="ticker-bar ml-1" id="v-t"></span>
+                    </span>
+                    <span class="flex items-baseline gap-1">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
+                        <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
+                    </span>
+                    <span class="divider divider-horizontal mx-0"></span>
+                    {# Output counters #}
+                    <span class="flex items-baseline gap-1" title="Finished MP4s">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">🎬 MP4</span>
+                        <span class="font-mono font-black text-primary text-lg" id="out-finals">0</span>
+                    </span>
+                    <span class="flex items-baseline gap-1" title="Chain clips (10 per final)">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">⛓ clips</span>
+                        <span class="font-mono font-bold text-secondary" id="out-chains">0</span>
+                    </span>
+                    <span class="flex items-baseline gap-1" title="Base PNG keyframes">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">🖼 png</span>
+                        <span class="font-mono font-bold text-accent" id="out-base">0</span>
+                    </span>
                 </div>
 
-                <div class="flex-none gap-2 items-center">
-                    {# Worst storage mount summary; JS hides when all <80% #}
+                <div class="flex-none flex gap-2 items-center">
                     {% set worst = namespace(s=None) %}
-                    {% for s in storage %}
-                        {% if worst.s is none or s.pct > worst.s.pct %}{% set worst.s = s %}{% endif %}
-                    {% endfor %}
+                    {% for s in storage %}{% if worst.s is none or s.pct > worst.s.pct %}{% set worst.s = s %}{% endif %}{% endfor %}
                     {% set any_alert = false %}
                     {% for s in storage %}{% if s.status != 'ok' %}{% set any_alert = true %}{% endif %}{% endfor %}
                     <div id="st-pill"
@@ -81,40 +86,23 @@
                          {% if not any_alert %}style="display:none"{% endif %}>
                         {% if worst.s %}{% if worst.s.status == 'danger' %}🔴{% elif worst.s.status == 'warn' %}🟡{% else %}🟢{% endif %} {{ worst.s.pct }}%{% else %}🟢 0%{% endif %}
                     </div>
-
                     <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
-                        <select id="refresh-interval" class="select select-bordered select-sm w-32" onchange="updateRefresh()">
-                            <option value="5000" selected>Sync: 5s</option>
-                            <option value="15000">Sync: 15s</option>
-                            <option value="0">Sync: OFF</option>
+                        <select id="refresh-interval" class="select select-bordered select-xs w-24" onchange="updateRefresh()">
+                            <option value="5000" selected>5s</option>
+                            <option value="15000">15s</option>
+                            <option value="0">off</option>
                         </select>
                     </div>
                     <kbd class="kbd kbd-sm hidden lg:inline-flex">LIVE</kbd>
                 </div>
             </div>
 
-            <!-- MP4 / output counters -->
-            <div class="stats stats-horizontal bg-base-100/60 backdrop-blur rounded-2xl border border-base-200 shadow mb-6 w-full">
-                <div class="stat py-3">
-                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Finished MP4s</div>
-                    <div class="stat-value text-3xl font-black text-primary font-mono" id="out-finals">0</div>
-                    <div class="stat-desc text-[10px] text-base-content/50 font-mono truncate" id="out-latest">—</div>
-                </div>
-                <div class="stat py-3">
-                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Chain clips</div>
-                    <div class="stat-value text-2xl font-bold text-secondary font-mono" id="out-chains">0</div>
-                    <div class="stat-desc text-[10px] text-base-content/50">10 per final</div>
-                </div>
-                <div class="stat py-3">
-                    <div class="stat-title text-[10px] uppercase tracking-widest text-base-content/50">Base images</div>
-                    <div class="stat-value text-2xl font-bold text-accent font-mono" id="out-base">0</div>
-                    <div class="stat-desc text-[10px] text-base-content/50">PNG keyframes</div>
-                </div>
-            </div>
+            {# Latest-final filename (small desc line below navbar, hidden when empty) #}
+            <div class="text-[10px] text-base-content/40 font-mono mb-4 truncate px-2" id="out-latest"></div>
 
-            <!-- Hero Idle (compact one-liner, shown when state.mode === Idle) -->
-            <div id="hero-idle" class="alert alert-info mb-6" style="display:{% if state.mode == 'Idle' %}flex{% else %}none{% endif %}">
-                <span>Ready. Type an idea → ✨ {{ branding.labels.ai_magic }} → Generate</span>
+            <!-- Hero Idle — tiny status line instead of giant alert -->
+            <div id="hero-idle" class="text-xs text-base-content/60 italic mb-3 px-2" style="display:{% if state.mode == 'Idle' %}block{% else %}none{% endif %}">
+                Idle · type an idea in the sidebar to start
             </div>
 
             <!-- Hero Progress (full, shown when state.mode !== Idle) -->
@@ -156,12 +144,13 @@
                         <span class="loading loading-ring loading-xs text-accent ml-2" id="live-ring" style="display:none"></span>
                     </a>
                     <a role="tab" class="tab" data-output-tab="videos" onclick="switchOutputTab('videos')">🎬 {{ branding.labels.gallery_completed }}</a>
-                    <a role="tab" class="tab" data-output-tab="keyframes" onclick="switchOutputTab('keyframes')">🖼️ {{ branding.labels.gallery_keyframes }}</a>
                 </div>
 
-                <!-- Live tab -->
+                <!-- Live tab — everything streaming (base PNGs, chain MP4s, bridge PNGs) chronologically -->
                 <div data-output-panel="live">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="preview-grid"></div>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="preview-grid"></div>
+                    <!-- Hidden grid kept for back-compat with WS handlers; not displayed. -->
+                    <div id="i-grid" class="hidden"></div>
                 </div>
 
                 <!-- Videos tab -->
