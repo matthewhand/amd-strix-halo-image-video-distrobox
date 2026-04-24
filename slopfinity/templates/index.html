@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ branding.app.name }} Dashboard</title>
+    <meta name="theme-color" content="{{ branding.colors.primary }}" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/app.css" />
@@ -358,21 +361,51 @@
                 <div class="card-body">
                     <div class="flex justify-between items-center">
                         <span class="text-xs font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</span>
-                        <button class="btn btn-xs btn-outline btn-primary gap-1" onclick="enhance()">
+                    </div>
+
+                    <!-- Core idea + global AI Magic button -->
+                    <div class="flex items-start gap-2">
+                        <textarea id="p-core" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="One idea. I'll elaborate into all stages."></textarea>
+                        <button class="btn btn-xs btn-primary gap-1 self-stretch" onclick="enhance()" title="Fan this out across all 4 stages">
                             <span>✨ {{ branding.labels.ai_magic }}</span>
                         </button>
                     </div>
 
-                    <!-- Per-stage prompts -->
-                    <div class="join join-vertical w-full">
-                        <textarea id="p-image" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Image prompt..."></textarea>
-                        <textarea id="p-video" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Video prompt..."></textarea>
-                        <textarea id="p-music" class="textarea textarea-bordered join-item text-xs h-14" placeholder="Music prompt..."></textarea>
-                        <textarea id="p-tts" class="textarea textarea-bordered join-item text-xs h-14" placeholder="TTS voiceover..."></textarea>
+                    <!-- Per-stage prompts with lock badges -->
+                    <div class="flex flex-col w-full gap-1 mt-1">
+                        <div class="flex items-center gap-1">
+                            <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-image" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Image prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-video" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Video prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-music" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Music prompt..."></textarea>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="TTS voiceover..."></textarea>
+                        </div>
                     </div>
                     <!-- Compat shim concatenating the 4 stage fields -->
                     <textarea id="p-in" class="hidden"></textarea>
 
+                    <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
+                        <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
+                        <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
+                        <div id="fanout-body" class="text-xs"></div>
+                        <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
+                        <div class="join w-full">
+                            <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
+                            <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                            <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
+                        </div>
+                    </div>
+
+                    <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
                     <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
                         <div id="ai-s" class="text-xs italic"></div>
                         <div class="join w-full">
@@ -390,6 +423,28 @@
         </div>
     </aside>
 </div>
+
+<!-- Fanout Edit Modal -->
+<dialog id="fanout-edit-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest">Edit Fan-out</h3>
+        <div class="py-2 space-y-2">
+            <label class="text-[10px] uppercase opacity-60">Image</label>
+            <textarea id="fe-image" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">Video</label>
+            <textarea id="fe-video" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">Music</label>
+            <textarea id="fe-music" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+            <label class="text-[10px] uppercase opacity-60">TTS</label>
+            <textarea id="fe-tts" class="textarea textarea-bordered w-full h-16 text-xs"></textarea>
+        </div>
+        <div class="modal-action">
+            <button class="btn btn-sm btn-primary" onclick="commitFanoutEdit()">Apply</button>
+            <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <!-- Keyboard Shortcuts Help Modal -->
 <dialog id="help-modal" class="modal">
