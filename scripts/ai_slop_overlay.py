@@ -17,7 +17,12 @@ sys.path.insert(0, ROOT)
 
 from pipelines import comfy_container, config  # noqa: E402
 
-FONT = "/mnt/downloads/cache/uv/archive-v0/yb0zxu20Wi4T1eLb3SgYF/cv2/qt/fonts/DejaVuSans-Bold.ttf"
+# Override via env for a non-default font path; the default is the system
+# DejaVu Sans Bold which ships with most Debian/Ubuntu installs.
+FONT = os.environ.get(
+    "SLOP_OVERLAY_FONT",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+)
 
 # Scene duration per chain, in seconds (frames / fps)
 CHAINS = {
