@@ -239,9 +239,24 @@ function connect() {
             });
 
             $('q-count').innerText = d.queue.length;
-            $('q-list').innerHTML = d.queue.length
-                ? d.queue.map(q => `<div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">${(q.prompt || '').substring(0, 60)}...</div>`).join('')
-                : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
+            const qList = $('q-list');
+            if (qList) {
+                qList.innerHTML = d.queue.length
+                    ? d.queue.slice(0, 3).map(q => `<div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">${(q.prompt || '').substring(0, 60)}...</div>`).join('')
+                    : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
+            }
+            const qDrawer = $('queue-drawer-list');
+            if (qDrawer) {
+                qDrawer.innerHTML = d.queue.length
+                    ? d.queue.map(q => `<div class="bg-base-300 p-3 rounded text-xs border border-base-200">${(q.prompt || '').substring(0, 200)}</div>`).join('')
+                    : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
+            }
+
+            // Empty-state hint: only when idle AND queue empty.
+            const hint = $('empty-state-hint');
+            if (hint) {
+                hint.style.display = (d.state.mode === 'Idle' && d.queue.length === 0) ? 'flex' : 'none';
+            }
 
             updateStorage(d.storage);
             updateRam(d.ram);
@@ -495,6 +510,11 @@ async function updatePipeline() {
         const res = await fetch('/ram_estimate?' + qs.toString());
         if (res.ok) updateRam(await res.json());
     } catch (e) { /* WS tick will catch up */ }
+}
+
+function openQueueDrawer() {
+    const t = $('queue-drawer-toggle');
+    if (t) t.checked = true;
 }
 
 async function generateTts() {

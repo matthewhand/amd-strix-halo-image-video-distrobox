@@ -227,18 +227,61 @@
         <label for="app-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
         <div class="w-80 min-h-full bg-base-200 border-r border-base-100 flex flex-col p-4 overflow-y-auto custom-scrollbar">
 
-            <div class="flex items-center justify-between mb-6 gap-2">
+            <div class="flex items-center justify-between mb-4 gap-2">
                 <h1 class="text-2xl font-black text-primary uppercase tracking-widest drop-shadow-md flex-1 text-center">{{ branding.app.name }}</h1>
                 <button id="btn-settings" class="btn btn-ghost btn-sm btn-square" title="Settings" onclick="openSettings()">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 </button>
             </div>
 
-            <!-- Pipeline Config -->
-            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
+            <!-- ============================================================== -->
+            <!-- TIER 1 — Primary Input (big, always visible)                   -->
+            <!-- ============================================================== -->
+            <div class="card card-compact bg-base-100 border-2 border-primary shadow-xl mb-4">
                 <div class="card-body">
-                    <h3 class="card-title text-xs font-bold text-accent uppercase tracking-wider">{{ branding.labels.pipeline }}</h3>
+                    <h3 class="card-title text-sm font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</h3>
+                    <textarea id="p-core" class="textarea textarea-lg textarea-primary w-full" placeholder="What do you want? One idea. I'll elaborate into image, video, music and voice."></textarea>
+                    <div class="join w-full mt-2">
+                        <button class="btn btn-primary btn-lg join-item flex-1" onclick="enhance()" title="Fan this out across all 4 stages">✨ AI Magic</button>
+                        <button class="btn btn-secondary btn-lg join-item flex-1" onclick="inject('next')">Generate</button>
+                    </div>
 
+                    <!-- Fan-out preview (inline under Input) -->
+                    <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
+                        <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
+                        <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
+                        <div id="fanout-body" class="text-xs"></div>
+                        <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
+                        <div class="join w-full">
+                            <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
+                            <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                            <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
+                        </div>
+                    </div>
+
+                    <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
+                    <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
+                        <div id="ai-s" class="text-xs italic"></div>
+                        <div class="join w-full">
+                            <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
+                            <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty-state hint (between Tier 1 and Tier 2) -->
+            <div id="empty-state-hint" class="alert alert-info mb-4 text-xs" style="display:none">
+                <span>Type an idea above and hit ✨ AI Magic, then Generate.</span>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- TIER 2 — Models (grouped, open by default)                     -->
+            <!-- ============================================================== -->
+            <div tabindex="0" class="collapse collapse-arrow collapse-open bg-base-100 border border-base-300 shadow-lg mb-4" id="pipeline">
+                <input type="checkbox" checked />
+                <div class="collapse-title text-sm font-bold text-accent uppercase tracking-wider py-3 min-h-0">{{ branding.labels.pipeline }}</div>
+                <div class="collapse-content">
                     <ul class="steps steps-vertical">
                         <li class="step step-primary wf-step" id="s-Concept" data-content="1">
                             <div class="wf-dot hidden"></div>
@@ -310,76 +353,15 @@
                 </div>
             </div>
 
-            <!-- Smithgetti Mode -->
-            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-4">
+            <!-- ============================================================== -->
+            <!-- TIER 3 — Tertiary (collapsed by default)                       -->
+            <!-- ============================================================== -->
+
+            <!-- 3.1 Advanced: per-stage prompts -->
+            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
                 <input type="checkbox" />
-                <div class="collapse-title flex justify-between items-center py-3 min-h-0">
-                    <span class="text-sm font-bold text-secondary uppercase tracking-wider flex items-center gap-2">{{ branding.infinity_mode.emoji }} {{ branding.infinity_mode.name }}</span>
-                    <input type="checkbox" id="inf-on" class="toggle toggle-secondary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline()" onclick="event.stopPropagation()" />
-                </div>
+                <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider py-3 min-h-0">Advanced: per-stage prompts</div>
                 <div class="collapse-content">
-                    <label class="label pt-0"><span class="label-text text-xs opacity-60">Themes (comma separated)</span></label>
-                    <textarea id="inf-themes" class="textarea textarea-bordered w-full h-16 text-xs" placeholder="Themes..." onchange="updatePipeline()">{{ config.infinity_themes | join(', ') }}</textarea>
-                </div>
-            </div>
-
-            <!-- Mission Queue -->
-            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4 min-h-0" id="queue">
-                <div class="card-body">
-                    <div class="flex justify-between items-center">
-                        <h3 class="card-title text-xs font-bold text-accent uppercase tracking-wider">{{ branding.labels.queue }}</h3>
-                        <span class="badge badge-accent badge-sm" id="q-count">{{ queue | length }}</span>
-                    </div>
-                    <div class="overflow-y-auto custom-scrollbar flex-grow max-h-48" id="q-list">
-                        {% if queue %}
-                            {% for q in queue %}
-                            <div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">{{ q.prompt[:80] }}...</div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- TTS Input -->
-            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mb-4">
-                <div class="card-body p-4">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-2">🗣️ Voiceover (Qwen3-TTS)</span>
-                        <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
-                    </div>
-                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
-                    <div class="flex gap-2 mb-2">
-                        <select id="tts-voice" class="select select-bordered select-xs flex-1">
-                            <option value="ryan">Ryan (EN, m)</option>
-                            <option value="eric">Eric (EN, m)</option>
-                            <option value="vivian">Vivian (EN, f)</option>
-                            <option value="olivia">Olivia (EN, f)</option>
-                            <option value="ethan">Ethan (EN, m)</option>
-                        </select>
-                        <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
-                    </div>
-                    <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
-                </div>
-            </div>
-
-            <!-- Inject Task -->
-            <div class="card card-compact bg-base-100 border border-base-300 shadow-lg mt-auto">
-                <div class="card-body">
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs font-bold text-primary uppercase tracking-wider">{{ branding.labels.inject }}</span>
-                    </div>
-
-                    <!-- Core idea + global AI Magic button -->
-                    <div class="flex items-start gap-2">
-                        <textarea id="p-core" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="One idea. I'll elaborate into all stages."></textarea>
-                        <button class="btn btn-xs btn-primary gap-1 self-stretch" onclick="enhance()" title="Fan this out across all 4 stages">
-                            <span>✨ {{ branding.labels.ai_magic }}</span>
-                        </button>
-                    </div>
-
-                    <!-- Per-stage prompts with lock badges -->
                     <div class="flex flex-col w-full gap-1 mt-1">
                         <div class="flex items-center gap-1">
                             <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
@@ -400,36 +382,94 @@
                     </div>
                     <!-- Compat shim concatenating the 4 stage fields -->
                     <textarea id="p-in" class="hidden"></textarea>
-
-                    <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
-                        <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
-                        <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
-                        <div id="fanout-body" class="text-xs"></div>
-                        <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
-                        <div class="join w-full">
-                            <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
-                            <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
-                            <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
-                        </div>
-                    </div>
-
-                    <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
-                    <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
-                        <div id="ai-s" class="text-xs italic"></div>
-                        <div class="join w-full">
-                            <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
-                            <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
-                        </div>
-                    </div>
-
-                    <div class="join w-full">
+                    <div class="join w-full mt-2">
                         <button class="btn btn-sm btn-primary join-item flex-1" onclick="inject('next')">Queue Next</button>
                         <button class="btn btn-sm btn-secondary join-item flex-1" onclick="inject('now')">Force Now</button>
                     </div>
                 </div>
             </div>
+
+            <!-- 3.2 Autonomous Mode (was Smithgetti) -->
+            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
+                <input type="checkbox" />
+                <div class="collapse-title flex justify-between items-center py-3 min-h-0">
+                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center gap-2">{{ branding.infinity_mode.emoji }} {{ branding.infinity_mode.name }}</span>
+                    <input type="checkbox" id="inf-on" class="toggle toggle-secondary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline()" onclick="event.stopPropagation()" />
+                </div>
+                <div class="collapse-content">
+                    <label class="label pt-0"><span class="label-text text-xs opacity-60">Themes (comma separated)</span></label>
+                    <textarea id="inf-themes" class="textarea textarea-bordered w-full h-16 text-xs" placeholder="Themes..." onchange="updatePipeline()">{{ config.infinity_themes | join(', ') }}</textarea>
+                </div>
+            </div>
+
+            <!-- 3.3 Queue -->
+            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3" id="queue">
+                <input type="checkbox" />
+                <div class="collapse-title flex justify-between items-center py-3 min-h-0 pr-10">
+                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider">{{ branding.labels.queue }}</span>
+                    <span class="badge badge-accent badge-sm" id="q-count">{{ queue | length }}</span>
+                </div>
+                <div class="collapse-content">
+                    <div class="overflow-y-auto custom-scrollbar flex-grow max-h-48" id="q-list">
+                        {% if queue %}
+                            {% for q in queue[:3] %}
+                            <div class="bg-base-300 p-2 rounded mb-2 text-xs border border-base-200">{{ q.prompt[:80] }}...</div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
+                        {% endif %}
+                    </div>
+                    <button id="queue-view-all" class="btn btn-xs btn-secondary btn-outline w-full mt-2" onclick="openQueueDrawer()">View all</button>
+                </div>
+            </div>
+
+            <!-- 3.4 Voice (TTS) -->
+            <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-lg mb-3">
+                <input type="checkbox" />
+                <div class="collapse-title flex justify-between items-center py-3 min-h-0 pr-10">
+                    <span class="text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center gap-2">🗣️ Voice (TTS)</span>
+                    <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+                </div>
+                <div class="collapse-content">
+                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
+                    <div class="flex gap-2 mb-2">
+                        <select id="tts-voice" class="select select-bordered select-xs flex-1">
+                            <option value="ryan">Ryan (EN, m)</option>
+                            <option value="eric">Eric (EN, m)</option>
+                            <option value="vivian">Vivian (EN, f)</option>
+                            <option value="olivia">Olivia (EN, f)</option>
+                            <option value="ethan">Ethan (EN, m)</option>
+                        </select>
+                        <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
+                    </div>
+                    <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
+                </div>
+            </div>
         </div>
     </aside>
+
+    <!-- Queue Drawer (shows full queue) -->
+    <div class="drawer drawer-end" id="queue-drawer">
+        <input id="queue-drawer-toggle" type="checkbox" class="drawer-toggle" />
+        <div class="drawer-side z-40">
+            <label for="queue-drawer-toggle" aria-label="close queue drawer" class="drawer-overlay"></label>
+            <div class="w-96 min-h-full bg-base-200 border-l border-base-100 p-4 overflow-y-auto custom-scrollbar">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-black text-accent uppercase tracking-widest">{{ branding.labels.queue }}</h2>
+                    <label for="queue-drawer-toggle" class="btn btn-sm btn-ghost btn-square">✕</label>
+                </div>
+                <div id="queue-drawer-list" class="flex flex-col gap-2">
+                    {% if queue %}
+                        {% for q in queue %}
+                        <div class="bg-base-300 p-3 rounded text-xs border border-base-200">{{ q.prompt[:200] }}</div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Storage Details Modal -->
