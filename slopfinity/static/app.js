@@ -99,6 +99,39 @@ function openGalleryFabDialog(which) {
 }
 window.openGalleryFabDialog = openGalleryFabDialog;
 
+// Sibling helper for the Slop FAB. In Subjects-focused / Queue-focused
+// view modes the inline Slop card is hidden by CSS; the FAB lets the
+// user pop it open in a modal. We reuse the move-card-into-mount
+// pattern so all live handlers + WS bindings keep firing.
+const _slopFocusReturn = { slop: null };
+function openSlopFabDialog() {
+    const card = document.getElementById('output-section');
+    const mount = document.getElementById('focus-slop-mount');
+    const dialog = document.getElementById('focus-slop-modal');
+    if (!card || !mount || !dialog) return;
+    if (!_slopFocusReturn.slop) {
+        _slopFocusReturn.slop = { parent: card.parentNode, next: card.nextSibling };
+    }
+    mount.appendChild(card);
+    // CSS hides #output-section under subjects/queue layouts via
+    // `display:none !important`. Inside the modal mount we want it to
+    // show, so override the hide by setting an inline display.
+    card.style.display = 'block';
+    const onClose = () => {
+        const r = _slopFocusReturn.slop;
+        if (r && r.parent && card.parentNode === mount) {
+            r.parent.insertBefore(card, r.next || null);
+        }
+        // Drop the inline override so the CSS rule resumes control.
+        card.style.display = '';
+        dialog.removeEventListener('close', onClose);
+    };
+    dialog.addEventListener('close', onClose);
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+}
+window.openSlopFabDialog = openSlopFabDialog;
+
 // `selectLayoutView` is the click target for the new navbar View dropdown.
 // It syncs the hidden Settings → Layout radio (single source of truth) and
 // dispatches a `change` event so the existing layout-view handler runs —
@@ -2737,7 +2770,7 @@ function connect() {
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
-                            <span class="ml-auto flex items-center gap-2 min-w-0">${assetBadge}</span>
+                            <span class="ml-auto flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
                             ${timingCol}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose

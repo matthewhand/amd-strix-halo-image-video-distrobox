@@ -1646,6 +1646,28 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+{# Slop FAB — visible in Subjects-focused / Queue-focused modes (the
+   inverse of the gallery FAB). Clicking moves #output-section into the
+   modal mount below so all its handlers stay live. #}
+<div id="focus-slop-fab" aria-hidden="true">
+    <button class="btn btn-circle btn-accent shadow-xl" title="Slop" aria-label="Open Slop" onclick="openSlopFabDialog()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+    </button>
+</div>
+<dialog id="focus-slop-modal" class="modal">
+    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+        <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Slop</h3>
+        <div id="focus-slop-mount" class="w-full flex-1 overflow-y-auto"></div>
+        <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

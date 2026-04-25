@@ -611,3 +611,39 @@ body[data-layout="subjects"] #split-left {
     flex-basis: 100% !important;
     max-width: 100% !important;
 }
+
+/* Right-edge fade: when an asset-link badge is too wide for the row,
+   fade the rightmost ~24 px to transparent so the badge dissolves
+   behind the time/ETA column on its right instead of overlapping it.
+   Pairs with overflow-hidden on the container. Identical pattern to
+   the existing .fade-edges (used by the pipeline toggle row) but
+   right-edge-only so the LEFT side stays sharp. */
+.fade-edges-r {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+            mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+
+/* Slop FAB — surfaces a single floating button to open the Slop card
+   in a modal when the user is in Subjects-focused or Queue-focused mode
+   (Slop is hidden in those layouts). Mirrors the gallery-fab pattern
+   for Subjects + Queue used by Gallery-focused mode. */
+#focus-slop-fab {
+    display: none;
+}
+body[data-layout="subjects"] #focus-slop-fab,
+body[data-layout="queue"] #focus-slop-fab {
+    display: flex;
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    gap: 8px;
+    z-index: 40;
+}
+/* Hide the inline Slop card when the focused-on-something-else views
+   are active. The FAB above replaces it. */
+body[data-layout="subjects"] #output-section,
+body[data-layout="queue"] #output-section,
+body[data-layout="subjects"] #ui-split-handle,
+body[data-layout="queue"] #ui-split-handle {
+    display: none !important;
+}
