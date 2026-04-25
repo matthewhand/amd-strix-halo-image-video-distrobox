@@ -14,6 +14,44 @@ function applyTheme(name) {
 }
 window.applyTheme = applyTheme;
 
+// ---------------------------------------------------------------------------
+// Suggestions hidden-state — when the user clicks the × next to "Need ideas?"
+// the chip area collapses, the 🎲 button hides, and every auto-fetch entry
+// (tryAutoSuggest, _maybePrefetch, carousel right-overlay fresh-fetch) bails
+// out early. The "Need ideas?" label becomes a clickable link to reveal.
+// State persists in localStorage across reloads.
+// ---------------------------------------------------------------------------
+const _SUGGEST_HIDDEN_KEY = 'slopfinity_suggestions_hidden';
+
+function _isSuggestionsHidden() {
+  try { return localStorage.getItem(_SUGGEST_HIDDEN_KEY) === '1'; }
+  catch (_) { return false; }
+}
+
+function toggleSuggestionsHidden(hide) {
+  try { localStorage.setItem(_SUGGEST_HIDDEN_KEY, hide ? '1' : '0'); }
+  catch (_) {}
+  _applySuggestionsHiddenState();
+}
+window.toggleSuggestionsHidden = toggleSuggestionsHidden;
+
+function _applySuggestionsHiddenState() {
+  const hidden = _isSuggestionsHidden();
+  const area = document.getElementById('subjects-suggestions-area');
+  const closeBtn = document.getElementById('subjects-suggestions-close');
+  const suggestBtn = document.getElementById('subjects-suggest-btn');
+  const link = document.getElementById('subjects-suggestions-toggle');
+  if (area) area.style.display = hidden ? 'none' : '';
+  if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
+  if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
+  if (link) {
+    link.classList.toggle('underline', hidden);
+    link.classList.toggle('text-primary', hidden);
+    link.title = hidden ? 'Click to reveal suggestions' : '';
+  }
+}
+document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
+
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -1090,6 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hadCache = _renderCachedSuggestions();
     if (!hadCache && typeof regenSuggestions === 'function') {
         const tryAutoSuggest = () => {
+            if (_isSuggestionsHidden()) return;
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
             // Preferred gate: GPU has been at <=5% for >=3 consecutive
@@ -3100,6 +3139,7 @@ function _wireSuggestCarousel() {
         strip.scrollBy({ left: -strip.clientWidth, behavior: 'smooth' });
     };
     const pageRight = () => {
+        if (_isSuggestionsHidden()) return;
         if (!_atRightEdge()) {
             strip.scrollBy({ left: strip.clientWidth, behavior: 'smooth' });
             return;
@@ -3193,6 +3233,7 @@ function _consumePrefetchedBatch() {
 }
 
 function _maybePrefetch() {
+    if (_isSuggestionsHidden()) return;
     _prefetchStats.triggered += 1;
     if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
         _prefetchStats.skippedGpu += 1;
