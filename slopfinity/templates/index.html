@@ -104,6 +104,15 @@
        structural — every existing #id underneath keeps its identity so WS-driven
        re-renders that target #q-list, #preview-grid, #out-finals, etc. still hit. #}
     <div id="ui-split" class="flex flex-col">
+    {# Collapsible wrapper — when collapsed, only a one-line summary is
+       visible and the slop gallery (lower pane) takes the full viewport.
+       Default `open` keeps current behaviour on first load; user
+       preference persists in localStorage (`slopfinity_top_collapsed`). #}
+    <details id="top-collapsible" open>
+      <summary class="cursor-pointer p-2 bg-base-200/40 rounded flex items-center gap-3 text-xs select-none">
+        <span class="opacity-60">▾</span>
+        <span id="top-collapsible-summary" class="flex-1">Slopping <span class="opacity-60">loading…</span></span>
+      </summary>
     <div id="ui-split-upper" class="ui-split-pane custom-scrollbar">
 
     <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
@@ -241,8 +250,19 @@
                                 </div>
                                 {% if is_active %}
                                     <div class="flex items-center gap-1 mt-1 flex-wrap" data-q-pipeline>
-                                        {% for stage, acro, label in [('Concept','T','Text'),('Base Image','I','Image'),('Video Chains','V','Video'),('Audio','M','Music'),('TTS','S','Voice'),('Post Process','X','Post'),('Final Merge','F','Final')] %}
-                                            <span class="badge badge-xs badge-outline opacity-40 px-1 font-mono text-[9px]" data-stage="{{ stage }}" title="{{ stage }}"><span class="stage-full">{{ label }}</span><span class="stage-short">{{ acro }}</span></span>
+                                        {# `stage` is the canonical state-machine key (must match
+                                           `_STAGE_ORDER` / runner state.json). `display` is the
+                                           user-facing label — "Video Parts" replaces the older
+                                           "Video Chains" wording but the key stays unchanged. #}
+                                        {% for stage, acro, label, display in [
+                                            ('Concept','T','Text','Concept'),
+                                            ('Base Image','I','Image','Base Image'),
+                                            ('Video Chains','V','Video','Video Parts'),
+                                            ('Audio','M','Music','Audio'),
+                                            ('TTS','S','Voice','TTS'),
+                                            ('Post Process','X','Post','Post Process'),
+                                            ('Final Merge','F','Final','Final Merge')] %}
+                                            <span class="badge badge-xs badge-outline opacity-40 px-1 font-mono text-[9px]" data-stage="{{ stage }}" title="{{ display }}"><span class="stage-full">{{ label }}</span><span class="stage-short">{{ acro }}</span></span>
                                         {% endfor %}
                                         <span class="ml-auto flex gap-1">
                                             <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>⏱ 0s</span>
@@ -262,15 +282,9 @@
     </div> {# /split-row #}
 
     </div> {# /ui-split-upper #}
+    </details> {# /top-collapsible #}
     <div id="ui-split-handle" class="flex-none cursor-row-resize select-none" title="Drag to resize · double-click to reset"></div>
     <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
-
-    {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
-    <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">
-        <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
-        <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
-        <div class="flex flex-wrap gap-1" id="sched-timeline"></div>
-    </div>
 
     <!-- Unified Slop feed (all assets — FINAL, chain, image, audio) with filter chips -->
     <section id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
