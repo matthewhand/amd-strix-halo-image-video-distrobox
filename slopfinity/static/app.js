@@ -1131,6 +1131,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (_isSuggestionsHidden()) return;
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
+            // Settings toggle — bail immediately when disabled.
+            // Manual 🎲 button stays available regardless.
+            if (_autoSuggestDisabled()) {
+                console.info('skipping auto-suggest: suggest_auto_disabled');
+                return;
+            }
             // Preferred gate: GPU has been at <=5% for >=3 consecutive
             // seconds. This catches ad-hoc GPU users (manual ComfyUI
             // runs, transient spikes) that the old queue/fleet check
@@ -1251,27 +1257,43 @@ const _GPU_HISTORY_MAX = 30; // keep ~30 s of samples (WS ticks ~1 Hz)
 const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 
 // ---------------------------------------------------------------------------
-// GPU-idle gate audit — every auto-fetch surface that talks to the LLM
+// Auto-fetch gating audit — every auto-fetch surface that talks to the LLM
 // (or anything else that competes with running pipelines) MUST consult
-// _isGpuIdleEnough() first. Manual user-driven actions (button clicks,
-// keyboard shortcuts) are intentionally NOT gated — explicit intent wins.
+// BOTH gates before firing:
 //
-// Gated callers (auto-fetch surfaces):
-//   - tryAutoSuggest (page-load auto-suggest, ~line 1092):
-//       gated; retries every 1 s while GPU busy.
+//   1. _autoSuggestDisabled() — Settings → LLM → Generation toggle. When
+//      ON, every auto path bails immediately. The 🎲 button is NOT gated.
+//   2. _isGpuIdleEnough() — GPU has been at <=5% for >=3 consecutive
+//      seconds. Catches ad-hoc GPU work the older queue/fleet check
+//      missed. The 🎲 button is also NOT gated by this.
+//
+// Gated callers (auto-fetch surfaces) AFTER the marquee rewrite:
+//   - tryAutoSuggest (page-load auto-suggest):
+//       gated by _autoSuggestDisabled(); then by _isGpuIdleEnough()
+//       (retries every 1 s while GPU busy).
 //   - _maybePrefetch (pointerenter / idle triggers):
-//       gated; silent no-op when busy.
-//   - _resetPrefetchIdleTimer's drain → _appendSuggestBatchRow: pulls a
-//       previously-buffered batch into a new marquee row. No fetch
-//       happens, so this path itself is unaffected by the gate; the
+//       gated by _autoSuggestDisabled() then _isGpuIdleEnough();
+//       silent no-op when either fails.
+//   - _resetPrefetchIdleTimer's drain → _appendSuggestBatchRow: pulls
+//       a previously-buffered batch into a new marquee row. No fetch
+//       happens, so this path is unaffected by both gates BUT the
 //       top-up _maybePrefetch() it then triggers IS gated.
 //
 // NOT gated (explicit user intent):
-//   - regenSuggestions() — the 🎲 Suggest button. Manual click always wins.
-//
-// Definition: GPU has been at <=5% for >=3 consecutive seconds. Catches
-// ad-hoc GPU work the older queue/fleet check missed.
+//   - regenSuggestions() — the 🎲 Suggest button. Always fetches fresh.
 // ---------------------------------------------------------------------------
+
+// Returns true when the user has flipped the Settings → LLM → Generation
+// "Disable automatic suggestion fetches" toggle ON. Falls back to false
+// (auto-suggest enabled) until the first WS tick lands.
+function _autoSuggestDisabled() {
+    try {
+        return !!(_lastTick && _lastTick.config && _lastTick.config.suggest_auto_disabled);
+    } catch (_) {
+        return false;
+    }
+}
+
 function _isGpuIdleEnough() {
     const now = Date.now();
     const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
@@ -2477,6 +2499,8 @@ async function openSettings() {
         }
         const sugCustom = $('set-suggest-custom-prompt');
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
+        const sugAutoDis = $('set-suggest-auto-disabled');
+        if (sugAutoDis) sugAutoDis.checked = !!sr.suggest_auto_disabled;
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -2661,6 +2685,8 @@ async function saveSettings() {
     if (sugUseSub) body.suggest_use_subjects = !!sugUseSub.checked;
     const sugCustom = $('set-suggest-custom-prompt');
     if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
+    const sugAutoDis = $('set-suggest-auto-disabled');
+    if (sugAutoDis) body.suggest_auto_disabled = !!sugAutoDis.checked;
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2952,8 +2978,8 @@ function _renderCachedSuggestions() {
 // _isGpuIdleEnough() — manual user click always wins. See the audit
 // block above _isGpuIdleEnough for the full inventory.
 async function regenSuggestions(n = 6) {
-  // The 🎲 button: ALWAYS fires — never gated by GPU idle. Manual user
-  // intent always wins. Renders into the marquee stack as a single row.
+  // The 🎲 button: ALWAYS fires — never gated by GPU idle, never gated by
+  // the suggest_auto_disabled toggle. Manual user intent always wins.
   const box = document.getElementById('subject-chips-stack');
   if (!box) return;
   box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
@@ -2990,13 +3016,14 @@ async function regenSuggestions(n = 6) {
 // appends a new row when buffered batches are present. Manual 🎲 still
 // renders fresh and bypasses the prefetch buffer.
 // ---------------------------------------------------------------------------
+
 // ---------------------------------------------------------------------------
 // Subjects suggestion prefetch — preemptive cache from #76, repurposed
 // to feed the multi-row marquee. Driven by hover/idle signals on the
 // Subjects card; consumed by an idle-time top-up that calls
 // _appendSuggestBatchRow when a buffered batch is ready. Every fetch path
-// here is gated by _isGpuIdleEnough() so we don't compete with running
-// pipelines / ad-hoc GPU users (manual ComfyUI runs, etc.).
+// here is gated by _isGpuIdleEnough() AND by _autoSuggestDisabled() (the
+// new Settings toggle). Manual 🎲 stays exempt from both.
 //
 // Invariants:
 // - At most one inflight request (_prefetchInflight bool).
@@ -3023,6 +3050,8 @@ function _consumePrefetchedBatch() {
 function _maybePrefetch() {
     if (_isSuggestionsHidden()) return;
     _prefetchStats.triggered += 1;
+    // Settings toggle — no auto-fetches when disabled. Manual 🎲 unaffected.
+    if (_autoSuggestDisabled()) return;
     if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
         _prefetchStats.skippedGpu += 1;
         return;

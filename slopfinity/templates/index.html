@@ -835,6 +835,17 @@
 
                     <div class="form-control md:col-span-2">
                         <label class="label cursor-pointer py-1">
+                            <span class="label-text text-xs">Disable automatic suggestion fetches</span>
+                            <input id="set-suggest-auto-disabled" type="checkbox"
+                                class="toggle toggle-primary toggle-sm" />
+                        </label>
+                        <div class="label-text-alt text-[10px] opacity-60 leading-snug">
+                            When ON, the dashboard never auto-fires <code>/subjects/suggest</code> (page-load auto-suggest, hover/scroll/idle prefetch). The 🎲 Suggest button stays unaffected — manual clicks always fetch.
+                        </div>
+                    </div>
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer py-1">
                             <span class="label-text text-xs">Derive suggestions from current Subjects</span>
                             <input id="set-suggest-use-subjects" type="checkbox"
                                 class="toggle toggle-primary toggle-sm" checked />
