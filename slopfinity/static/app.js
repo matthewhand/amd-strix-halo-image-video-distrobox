@@ -156,38 +156,41 @@ async function cancelItem(ts) {
 // Sync the navbar "Idle / Processing / Connection Lost" pill. Called on each
 // WS state tick (live state) and on ws.onclose / onerror (lost connection).
 function _updateConnPill(isRendering, modeStr, step) {
+    // Tri-state header pill (Queue card):
+    //   - WS dead       → ⚠ Connection Lost (error)
+    //   - all paused    → ⏸ Paused (warning)        ← scheduler.paused = true
+    //   - actively working → hidden               (per-item active node speaks)
+    //   - nothing to do → ⚠ Idle (ghost)
     const pill = document.getElementById('conn-pill');
     const text = document.getElementById('conn-pill-text');
     if (!pill || !text) return;
-    const spinner = pill.querySelector('.loading');
+    const setPill = (cls, label) => {
+        pill.className = cls;
+        text.textContent = label;
+        pill.style.display = '';
+    };
     if (!_wsConnected) {
-        pill.className = 'badge badge-sm badge-error rounded-full gap-1 normal-case font-mono';
-        text.textContent = 'Connection Lost';
-        if (spinner) spinner.style.display = 'none';
-        return;
+        return setPill(
+            'badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto',
+            '⚠ Connection Lost'
+        );
+    }
+    const paused = !!(_lastTick && _lastTick.scheduler && _lastTick.scheduler.paused);
+    if (paused) {
+        return setPill(
+            'badge badge-sm badge-warning rounded-full gap-1 normal-case font-mono mx-auto',
+            '⏸ Paused'
+        );
     }
     if (isRendering) {
-        pill.className = 'badge badge-sm badge-primary rounded-full gap-1 normal-case font-mono';
-        // Map fleet's mode/step into an action verb the user can read at a
-        // glance: "Thinking/Concept" → "Texting", "Rendering/Base Image" →
-        // "Imaging", etc. Fall back to the raw mode if step is unfamiliar.
-        const s = step || (_lastTick && _lastTick.state && _lastTick.state.step) || '';
-        const stepVerb = {
-            'Concept':       'Texting',
-            'Base Image':    'Imaging',
-            'Video Chains':  'Videoing',
-            'Audio':         'Composing',
-            'TTS':           'Voicing',
-            'Post Process':  'Polishing',
-            'Final Merge':   'Merging',
-        }[s];
-        text.textContent = stepVerb || modeStr || 'Processing';
-        if (spinner) spinner.style.display = '';
+        // Active node in a queue item already shows the verb — hide the pill.
+        pill.style.display = 'none';
         return;
     }
-    pill.className = 'badge badge-sm badge-ghost rounded-full gap-1 normal-case font-mono';
-    text.textContent = 'Idle';
-    if (spinner) spinner.style.display = 'none';
+    setPill(
+        'badge badge-sm badge-ghost rounded-full gap-1 normal-case font-mono mx-auto',
+        '⚠ Idle'
+    );
 }
 
 async function requeueItem(ts) {
@@ -835,27 +838,28 @@ function connect() {
             const qList = $('q-list');
             const cfg = d.config || {};
             const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
-            // [canonicalStage, shortAcronym, displayLabel]. Canonical matches
-            // state.step from the fleet runner; display is the user-facing word
-            // (we shorten "Base Image" → "Image", "Video Chains" → "Parts" etc).
+            // [canonicalStage, shortAcronym, displayLabel, activeVerb]. The
+            // canonical matches state.step from the fleet runner; display is
+            // the noun for inactive steps; active steps get the verb form
+            // ("Imaging" / "Videoing") so the pipeline node itself speaks
+            // for itself — no separate status pill needed.
             const STAGES = [
-                ['Concept', 'T', 'Text'],
-                ['Base Image', 'I', 'Image'],
-                ['Video Chains', 'V', 'Video'],
-                ['Audio', 'M', 'Music'],
-                ['TTS', 'S', 'Voice'],
-                ['Post Process', 'X', 'Post'],
-                ['Final Merge', 'F', 'Final'],
+                ['Concept',      'T', 'Text',  'Texting'],
+                ['Base Image',   'I', 'Image', 'Imaging'],
+                ['Video Chains', 'V', 'Video', 'Videoing'],
+                ['Audio',        'M', 'Music', 'Composing'],
+                ['TTS',          'S', 'Voice', 'Voicing'],
+                ['Post Process', 'X', 'Post',  'Polishing'],
+                ['Final Merge',  'F', 'Final', 'Merging'],
             ];
             const renderPipelineStrip = (q, opts) => {
                 const isActive = !!(opts && opts.running);
                 const curStep = isActive ? (opts.step || '') : null;
-                // Each step renders both forms — `.stage-full` shows the word,
-                // `.stage-short` shows the acronym. The .pipeline-strip-compact
-                // CSS swaps which one is visible based on container width.
-                const dots = STAGES.map(([stage, acronym, label]) => {
+                const dots = STAGES.map(([stage, acronym, label, verb]) => {
                     if (curStep === stage) {
-                        return `<span class="badge badge-xs badge-primary gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span class="stage-full">${label}</span><span class="stage-short">${acronym}</span></span>`;
+                        // Active node: action verb + spinner. No separate
+                        // status pill needed elsewhere on screen.
+                        return `<span class="badge badge-xs badge-primary gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span>${verb}</span></span>`;
                     }
                     const cls = (isActive && _stageDoneBefore(curStep, stage))
                         ? 'badge-success'
@@ -922,7 +926,9 @@ function connect() {
                         </ul>
                        </div>`;
                 const cls = `bg-base-200 rounded-md${isCancelled ? ' opacity-50 slop-cancelled-fade' : ''}${isActive ? ' ring-2 ring-primary' : ''}`;
-                const stripHTML = isActive ? renderPipelineStrip(q, opts) : '';
+                // Strip shows on EVERY item — pending items get all-dimmed
+                // dots, active gets the verb on the current node.
+                const stripHTML = isCancelled ? '' : renderPipelineStrip(q, opts);
                 // Always-visible row + collapsible reveal. Active items get the
                 // reveal pre-opened so the user sees stage progress without an
                 // extra click. The reveal hosts model badges, size·frames meta,

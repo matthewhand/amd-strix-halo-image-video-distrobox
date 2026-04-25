@@ -151,9 +151,8 @@
         <div class="card-body p-3 gap-2 mb-0">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-bold uppercase tracking-wider text-accent flex-none">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
-                {# Live action-verb pill (Idle / Imaging / Videoing / Connection Lost). Centered between the QUEUE label and the View-all button. #}
-                <span id="conn-pill" class="badge badge-sm badge-ghost rounded-full gap-1 normal-case font-mono mx-auto">
-                    <span class="loading loading-dots loading-xs"></span>
+                {# Connection-lost pill stays here as a fallback only — the active stage badge inside each queue item now carries the live action verb (Imaging/Videoing). Hidden on Idle / when WS is healthy. #}
+                <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
                     <span id="conn-pill-text">Connecting</span>
                 </span>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
