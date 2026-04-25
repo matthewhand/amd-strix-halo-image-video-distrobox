@@ -175,15 +175,51 @@ window.restoreCard = restoreCard;
 
 function _refreshCardVisibility() {
   const ph = document.getElementById('cards-all-hidden-placeholder');
-  if (!ph) return;
   const subjectsHidden = _isCardHidden('subjects');
   const queueHidden    = _isCardHidden('queue');
   const slopHidden     = _isCardHidden('slop');
   const galleryMode    = document.body.dataset.layout === 'gallery';
-  // In gallery mode, Subjects + Queue are still reachable via FABs, so the
-  // placeholder is only meaningful when Slop is also closed.
-  const allGone = galleryMode ? slopHidden : (subjectsHidden && queueHidden && slopHidden);
-  ph.classList.toggle('hidden', !allGone);
+  if (ph) {
+    // In gallery mode, Subjects + Queue are still reachable via FABs, so
+    // the placeholder is only meaningful when Slop is also closed.
+    const allGone = galleryMode ? slopHidden : (subjectsHidden && queueHidden && slopHidden);
+    ph.classList.toggle('hidden', !allGone);
+  }
+  // Hide the vertical divider between Subjects and Queue when only one of
+  // them is visible — there's nothing to drag-resize, and the visible
+  // card should fill the upper pane horizontally instead of sitting in a
+  // half-width column with empty space beside it.
+  const vDivider = document.getElementById('split-divider');
+  if (vDivider) {
+    const oneSide = subjectsHidden !== queueHidden; // exactly one visible
+    vDivider.classList.toggle('hidden', oneSide || (subjectsHidden && queueHidden));
+    const left  = document.getElementById('split-left');
+    const right = document.getElementById('split-right');
+    // When one side is hidden, drop the basis-1/2 cap on the other so it
+    // can grow to fill the row. When both visible, restore equal split.
+    if (left && right) {
+      if (subjectsHidden && !queueHidden) {
+        right.style.flexBasis = '100%';
+        right.style.maxWidth  = '100%';
+      } else if (queueHidden && !subjectsHidden) {
+        left.style.flexBasis  = '100%';
+        left.style.maxWidth   = '100%';
+      } else {
+        left.style.flexBasis  = '';
+        left.style.maxWidth   = '';
+        right.style.flexBasis = '';
+        right.style.maxWidth  = '';
+      }
+    }
+  }
+  // Hide the horizontal divider (between upper [Subjects+Queue] and lower
+  // [Slop]) when one side is empty — same logic, different axis.
+  const hHandle = document.getElementById('ui-split-handle');
+  if (hHandle) {
+    const upperEmpty = subjectsHidden && queueHidden;
+    const oneSide = upperEmpty !== slopHidden; // exactly one half-pane has cards
+    hHandle.classList.toggle('hidden', oneSide || (upperEmpty && slopHidden));
+  }
 }
 window._refreshCardVisibility = _refreshCardVisibility;
 
