@@ -942,6 +942,11 @@ setInterval(() => {
     const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
     const actEl = bar.querySelector('[data-pipeline-activity-text]');
     if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
+    // Mirror activity into the queue header (between QUEUE count and View all).
+    const headerAct = document.getElementById('queue-header-activity');
+    const headerTxt = headerAct && headerAct.querySelector('[data-queue-header-activity-text]');
+    if (headerAct) headerAct.style.display = curStage ? 'inline-flex' : 'none';
+    if (headerTxt && headerTxt.textContent !== activityText) headerTxt.textContent = activityText;
     // Total elapsed / ETA (below the bar). Per-step elapsed/ETA was lifted
     // out of the header row — see _buildActiveJobProgressBar().
     const totEl = bar.querySelector('[data-pipeline-total-elapsed]');
