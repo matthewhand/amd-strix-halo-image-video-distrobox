@@ -6,7 +6,7 @@ ARG INSTALL_GUI=false
 # Base packages (keep compilers/headers for Triton JIT at runtime)
 RUN dnf -y install --setopt=install_weak_deps=False --nodocs \
       libdrm-devel python3.13 python3.13-devel git rsync libatomic bash ca-certificates curl \
-      gcc gcc-c++ binutils make git ffmpeg-free \
+      gcc gcc-c++ binutils make git ffmpeg-free openh264 \
   && dnf clean all && rm -rf /var/cache/dnf/*
 
 # Optional: GUI tools for distrobox (X11/Wayland image viewers)
@@ -81,6 +81,16 @@ RUN git clone --depth=1 https://github.com/kyuz0/wan-video-studio /opt/wan-video
     python -m pip install --prefer-binary \
       opencv-python-headless diffusers tokenizers accelerate \
       imageio[ffmpeg] easydict ftfy dashscope imageio-ffmpeg decord librosa
+
+# heartlib (local Python package — HeartMuLa generation pipeline)
+# IMPORTANT: install with --no-deps to preserve TheRock ROCm torch + ComfyUI-tracked
+# transformers/numpy/tokenizers/accelerate. bitsandbytes intentionally skipped
+# (heartlib doesn't import it; ROCm-incompatible).
+COPY .heartlib /opt/heartlib
+RUN python -m pip install --no-deps -e /opt/heartlib && \
+    pip install --no-deps torchtune==0.4.0 torchao==0.9.0 vector_quantize_pytorch omegaconf 'antlr4-python3-runtime==4.9.*' && \
+    pip install pyarrow dill multiprocess xxhash tiktoken sentencepiece blobfile einx && \
+    python -c "from heartlib import HeartMuLaGenPipeline" || echo "WARN: heartlib import failed"
 
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \

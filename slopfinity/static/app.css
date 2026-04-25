@@ -487,3 +487,76 @@ body[data-layout="gallery"] #gallery-fab {
     gap: 8px;
     z-index: 40;
 }
+
+/* ---------------------------------------------------------------------------
+   Queue-header "assembly line" render-heartbeat animation.
+   Each character of the heartbeat text becomes its own .render-anim-char
+   span. JS sets `--char-pos` on each char (0..1 along the string) and
+   `--progress` on the host (0..1 along the current stage's ETA). A char
+   whose position has been "passed" by the progress fraction gets the
+   .filled class — JS toggles it on each 1 Hz tick (see
+   _updateRenderTextProgress in app.js). Filled chars invert to a solid
+   block of currentColor (`--bc`) with surface-toned text (`--b1`),
+   which yields a clean themed fill that scales with progress.
+
+   The bouncing assembly-line keyframe (render-char-cycle) only plays
+   during the first ~20 % of the stage; after that the host gets
+   data-settled="1" and the animation pauses, so the bulk of the stage
+   shows a quiet, solid fill rather than a constantly-resetting bounce.
+   ------------------------------------------------------------------------- */
+.render-anim {
+    display: inline-flex;
+    gap: 1px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.render-anim-char {
+    display: inline-block;
+    min-width: 0.7em;
+    text-align: center;
+    padding: 0 1px;
+    border: 1px solid var(--bc, currentColor);
+    border-radius: 2px;
+    color: var(--bc, currentColor);
+    background-color: transparent;
+    /* The keyframe handles the bouncing assemble-in look. animation-delay
+       is staggered per char via --char-i so the wave ripples left to right.
+       Once data-settled="1" flips on the host, we pause it (below) and let
+       the static fill carry the visual. */
+    animation: render-char-cycle 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 60ms);
+    /* Smooth the fill toggle so chars don't pop in too abruptly. */
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+    box-sizing: border-box;
+}
+.render-anim-char[data-space="1"] {
+    border-color: transparent;
+    background-color: transparent !important;
+    animation: none;
+    min-width: 0.35em;
+}
+/* Filled = "this character's position is <= current stage progress fraction".
+   Inverts to a solid block: currentColor (themed via --bc) becomes the
+   background and the surface tone (--b1) becomes the text color. */
+.render-anim-char.filled {
+    background-color: var(--bc, currentColor);
+    color: var(--b1, #fff);
+    border-color: var(--bc, currentColor);
+}
+/* Once the stage is past ~20 % progress the bouncing assembly-line stops
+   so the fill reads as a quiet "rendering" indicator rather than a
+   constantly-resetting jitter. The fill itself remains live. */
+.render-anim[data-settled="1"] .render-anim-char {
+    animation-play-state: paused;
+    transform: none;
+}
+@keyframes render-char-cycle {
+    0%   { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
+    35%  { transform: translateY(-2px); border-color: var(--p, currentColor); opacity: 1; }
+    70%  { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.85; }
+    100% { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .render-anim-char { animation: none; transition: none; }
+}
