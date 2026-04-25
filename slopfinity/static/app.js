@@ -493,16 +493,17 @@ function _modelDisplayName(id, role) {
 
 // Build badge HTML strings from a config snapshot, including the LLM that wrote the prompt.
 function _configModelBadges(snap, llmModelId) {
+    // Order matches the pipeline strip: LLM → Image → Video → Music → Voice → Post.
     const out = [];
+    if (llmModelId) {
+        const short = llmModelId.replace(/^.*[\/:]/, '').replace(/\.gguf$/i, '');
+        out.push(`<span class="badge badge-xs badge-accent" title="prompt LLM: ${_htmlEscape(llmModelId)}">${_htmlEscape(short)}</span>`);
+    }
     if (snap.base_model) out.push(`<span class="badge badge-xs badge-info" title="image model">${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
     if (snap.video_model) out.push(`<span class="badge badge-xs badge-success" title="video model">${_htmlEscape(_modelDisplayName(snap.video_model, 'video'))}</span>`);
     if (snap.audio_model && snap.audio_model !== 'none') out.push(`<span class="badge badge-xs badge-secondary" title="music model">${_htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))}</span>`);
     if (snap.tts_model && snap.tts_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="voice model">${_htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))}</span>`);
     if (snap.upscale_model && snap.upscale_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="upscaler">${_htmlEscape(snap.upscale_model)}</span>`);
-    if (llmModelId) {
-        const short = llmModelId.replace(/^.*[\/:]/, '').replace(/\.gguf$/i, '');
-        out.push(`<span class="badge badge-xs badge-accent" title="prompt LLM: ${_htmlEscape(llmModelId)}">${_htmlEscape(short)}</span>`);
-    }
     return out;
 }
 
@@ -838,33 +839,49 @@ function connect() {
             const qList = $('q-list');
             const cfg = d.config || {};
             const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
-            // [canonicalStage, shortAcronym, displayLabel, activeVerb]. The
-            // canonical matches state.step from the fleet runner; display is
-            // the noun for inactive steps; active steps get the verb form
-            // ("Imaging" / "Videoing") so the pipeline node itself speaks
-            // for itself — no separate status pill needed.
+            // [canonicalStage, shortAcronym, displayLabel, activeVerb, tone].
+            // Tone matches the model badge color for the worker that runs
+            // the stage, so the pipeline strip and the Selected-Models row
+            // share a visual language: Image=info(qwen), Video=success(ltx),
+            // Music=secondary(heartmula), Voice=warning(qwen-tts), Concept=
+            // accent(LLM), Final=accent(FINAL accent).
             const STAGES = [
-                ['Concept',      'T', 'Text',  'Texting'],
-                ['Base Image',   'I', 'Image', 'Imaging'],
-                ['Video Chains', 'V', 'Video', 'Videoing'],
-                ['Audio',        'M', 'Music', 'Composing'],
-                ['TTS',          'S', 'Voice', 'Voicing'],
-                ['Post Process', 'X', 'Post',  'Polishing'],
-                ['Final Merge',  'F', 'Final', 'Merging'],
+                ['Concept',      'T', 'Text',  'Texting',    'accent'],
+                ['Base Image',   'I', 'Image', 'Imaging',    'info'],
+                ['Video Chains', 'V', 'Video', 'Videoing',   'success'],
+                ['Audio',        'M', 'Music', 'Composing',  'secondary'],
+                ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
+                ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
+                ['Final Merge',  'F', 'Final', 'Merging',    'accent'],
             ];
             const renderPipelineStrip = (q, opts) => {
                 const isActive = !!(opts && opts.running);
                 const curStep = isActive ? (opts.step || '') : null;
-                const dots = STAGES.map(([stage, acronym, label, verb]) => {
+                const v = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.video_index) || 1) : 0;
+                const c = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) : 0;
+                // Predict the asset filename a stage produces, so completed
+                // stages become clickable links into the asset-info modal.
+                // Returns null when the stage has no on-disk artifact (Concept
+                // is just text; intermediate stages we don't track yet).
+                const stageAsset = (stage, v_idx, c_idx) => {
+                    if (!v_idx) return null;
+                    if (stage === 'Base Image') return `v${v_idx}_base.png`;
+                    if (stage === 'Video Chains' && c_idx > 0) return `v${v_idx}_c${c_idx}.mp4`;
+                    if (stage === 'Final Merge') return `FINAL_${v_idx}.mp4`;
+                    return null;
+                };
+                const dots = STAGES.map(([stage, acronym, label, verb, tone]) => {
                     if (curStep === stage) {
-                        // Active node: action verb + spinner. No separate
-                        // status pill needed elsewhere on screen.
-                        return `<span class="badge badge-xs badge-primary gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span>${verb}</span></span>`;
+                        return `<span class="badge badge-xs badge-${tone} gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span>${verb}</span></span>`;
                     }
-                    const cls = (isActive && _stageDoneBefore(curStep, stage))
-                        ? 'badge-success'
-                        : 'badge-outline opacity-40';
-                    return `<span class="badge badge-xs ${cls} px-1 font-mono text-[9px]" data-stage="${stage}" title="${stage}"><span class="stage-full">${label}</span><span class="stage-short">${acronym}</span></span>`;
+                    const isDone = isActive && _stageDoneBefore(curStep, stage);
+                    const cls = isDone ? `badge-${tone}` : 'badge-outline opacity-40';
+                    const asset = isDone ? stageAsset(stage, v, c) : null;
+                    const inner = `<span class="stage-full">${label}</span><span class="stage-short">${acronym}</span>`;
+                    if (asset) {
+                        return `<button type="button" class="badge badge-xs ${cls} px-1 font-mono text-[9px] cursor-pointer" data-stage="${stage}" title="${stage} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${inner}</button>`;
+                    }
+                    return `<span class="badge badge-xs ${cls} px-1 font-mono text-[9px]" data-stage="${stage}" title="${stage}">${inner}</span>`;
                 }).join('');
                 // Stage-level badges sit at the right of the pipeline strip.
                 const stageNow = (isActive && _stageStartTs) ? '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs) : '⏱ 0s';
