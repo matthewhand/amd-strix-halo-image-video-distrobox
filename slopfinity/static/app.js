@@ -2794,9 +2794,14 @@ function connect() {
                             : (s === 'Concept'
                                 ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
+                        // Three-column row: stage badge LEFT (flex-none),
+                        // prompt + file-asset links CENTER (flex-1 + justify-center
+                        // so they sit in the middle of whatever horizontal space
+                        // the row gets), timing column RIGHT (flex-none, fixed
+                        // width so the right edge aligns down the column).
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
-                            <span class="ml-auto flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
+                            <span class="flex-1 flex items-center justify-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
                             ${timingCol}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
