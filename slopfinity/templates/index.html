@@ -354,6 +354,21 @@
 </div>
 
 <!-- Asset Info Modal -->
+<!-- Per-stage settings popup — opened by clicking a model badge on a queued
+     row. Shows the relevant slice of the queue item's config_snapshot
+     (read-only) plus a button that jumps into the full Pipeline editor. -->
+<dialog id="model-settings-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-lg">
+        <h3 id="model-settings-title" class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Stage settings</h3>
+        <div id="model-settings-body" class="space-y-1 text-sm"></div>
+        <div class="modal-action">
+            <button class="btn btn-sm btn-outline mr-auto" onclick="document.getElementById('model-settings-modal').close(); openPipeline();">Open Pipeline Advanced</button>
+            <form method="dialog"><button class="btn btn-sm">Close</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <dialog id="asset-info-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Asset info</h3>
