@@ -2835,6 +2835,24 @@ function connect() {
                 const polyBadge = q.chaos
                     ? `<span class="text-secondary flex-none" title="Polymorphic — randomized model selections per cycle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M16 3h5v5"/><path d="M4 20l16-16"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>`
                     : '';
+                // Surface "random" / "slopped" model selections as their own
+                // status icons in the summary, alongside infinity/polymorphic.
+                // Single icon per kind regardless of how many roles use it —
+                // the tooltip lists which roles. Reads as a quiet hint that
+                // this iteration's choices weren't fully deterministic.
+                const _modelFields = ['base_model', 'video_model', 'audio_model', 'tts_model', 'upscale_model'];
+                const _randomRoles = _modelFields.filter(f => snap[f] === '__random__');
+                const _sloppedRoles = _modelFields.filter(f => {
+                    const v = snap[f];
+                    return v === '__slopped__' || (typeof v === 'string' && v.startsWith('slopped:'));
+                });
+                const _roleLabel = { base_model: 'image', video_model: 'video', audio_model: 'music', tts_model: 'voice', upscale_model: 'upscale' };
+                const randomBadge = _randomRoles.length
+                    ? `<span class="text-warning flex-none" title="Random model selection per cycle for: ${_randomRoles.map(r => _roleLabel[r]).join(', ')}">🎲</span>`
+                    : '';
+                const sloppedBadge = _sloppedRoles.length
+                    ? `<span class="text-info flex-none" title="Slopped (reusing existing asset) for: ${_sloppedRoles.map(r => _roleLabel[r]).join(', ')}">♻︎</span>`
+                    : '';
                 // Hoist the *active* model badge (the one with the loading
                 // spinner) into the summary so collapsing the <details> still
                 // reveals what's currently working. Completed stages show
@@ -2885,11 +2903,15 @@ function connect() {
                 // and the live pipeline strip + timers.
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${(isActive || _openPendingItems.has(q.ts || 0)) ? 'open' : ''}>
-                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
-                            ${statusChip}${activeBadge}${infBadge}${polyBadge}
-                            <span class="font-semibold truncate flex-1${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
-                            <span class="text-base-content/50 font-mono text-[10px] flex-none hidden sm:inline" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
-                            ${menuHTML}
+                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
+                            <span class="flex-1 min-w-0 flex items-baseline gap-2">
+                                <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
+                            </span>
+                            <span class="flex items-center gap-2 flex-none ml-auto" title="status, active model, modifiers, aspect/frames">
+                                ${statusChip}${activeBadge}${infBadge}${polyBadge}${randomBadge}${sloppedBadge}
+                                <span class="text-base-content/50 font-mono text-[10px] flex-none" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
+                                ${menuHTML}
+                            </span>
                         </summary>
                         <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
                             ${stripHTML}
