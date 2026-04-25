@@ -2463,17 +2463,20 @@ function _refreshChipHighlights() {
 // 🎲 Suggest button still fetches fresh and overwrites the cache.
 const _SUGGEST_CACHE_KEY = 'slopfinity_suggestions_v1';
 
-// Build a single suggestion chip <button>. Pass repeat=true to mark the
-// chip as filler from a wrap-around batch — the click handler still works
-// identically; the data-attribute lets _refillSuggestChips drop fillers
-// before re-measuring on resize.
-function _buildSuggestChip(s, repeat) {
+// In-memory ring buffer of suggestion batches. Each fresh fetch appends a
+// new batch on the right; old batches roll off when we exceed the cap.
+// The strip DOM mirrors the ring — chips for batch[i] are wrapped in a
+// <span data-batch-id="i"> with a 1 px divider between successive batches.
+const _SUGGEST_RING_CAP = 10;
+let _suggestBatches = [];   // array of arrays of strings
+let _suggestBatchSeq = 0;   // monotonic id so we can prune by id, not index
+
+function _makeChipButton(s) {
     const b = document.createElement('button');
     b.className = 'btn btn-outline btn-primary btn-xs normal-case';
     b.textContent = s;
     b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
     b.dataset.suggest = s;
-    if (repeat) b.dataset.suggestionRepeat = 'true';
     b.addEventListener('click', (e) => {
         const ta = document.getElementById('p-core');
         if (!ta) return;
@@ -2488,89 +2491,123 @@ function _buildSuggestChip(s, repeat) {
     return b;
 }
 
-// Most recently rendered base batch — used by _refillSuggestChips on
-// resize so we can re-fill from the same source list without re-fetching.
-let _lastSuggestBatch = [];
-
-// Pixel threshold under which we consider the gap "filled" — also the
-// minimum gap we'll leave at the bottom so chips don't touch the next
-// element.
-const _SUGGEST_FILL_THRESHOLD = 32;
-const _SUGGEST_FILL_MAX_REPEATS = 4;
-
-// Measure the vertical gap between the bottom of the chips container and
-// the top of the next sibling (the Start button row). The user wants the
-// chip area to visually fill this whitespace so there's no awkward gap
-// between the last chip row and the bottom-anchored Start button.
-function _suggestGapPx(box) {
-    const anchor = box && box.nextElementSibling;
-    if (!anchor) return 0;
-    const boxRect = box.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    return Math.max(0, anchorRect.top - boxRect.bottom);
-}
-
-// Append repeats of the base batch until the gap below the chips is
-// smaller than the threshold or we hit the hard repeat cap. Filler chips
-// are tagged with data-suggestion-repeat="true" so we can strip them on
-// resize before re-measuring.
-function _refillSuggestChips() {
-    const box = document.getElementById('subject-chips');
-    if (!box || !_lastSuggestBatch.length) return;
-    // Strip previous fillers — keep only the original batch.
-    box.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
-    let repeats = 0;
-    while (repeats < _SUGGEST_FILL_MAX_REPEATS) {
-        const gap = _suggestGapPx(box);
-        if (gap < _SUGGEST_FILL_THRESHOLD) break;
-        _lastSuggestBatch.forEach(s => box.appendChild(_buildSuggestChip(s, true)));
-        repeats += 1;
-    }
-    _refreshChipHighlights();
-}
-
+// Replace the entire strip with a single batch (used on first paint / cache
+// hydrate / no-suggestions placeholders). Resets the ring buffer.
 function _renderSuggestChips(arr) {
     const box = document.getElementById('subject-chips');
     if (!box) return;
+    box.innerHTML = '';
+    _suggestBatches = [];
+    _suggestBatchSeq = 0;
     if (!arr.length) {
         box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
-        _lastSuggestBatch = [];
         return;
     }
-    box.innerHTML = '';
-    _lastSuggestBatch = arr.slice();
-    arr.forEach(s => box.appendChild(_buildSuggestChip(s, false)));
-    // Defer the fill measurement until layout settles — the chips have
-    // just been inserted and getBoundingClientRect on a freshly attached
-    // node is fine, but a rAF gives the browser a clean frame.
-    requestAnimationFrame(() => _refillSuggestChips());
-    _refreshChipHighlights();
+    _appendSuggestBatch(arr, { scrollIntoView: false });
 }
 
-// Watch for viewport / card-size changes so the fill recalculates when
-// the user drags the split-row divider or resizes the window. Set up
-// once — multiple calls are no-ops.
-let _suggestResizeWired = false;
-function _wireSuggestResize() {
-    if (_suggestResizeWired) return;
+// Append a fresh batch onto the strip (right side) and bookkeep the ring.
+// Drops the oldest batch DOM + entry once we exceed _SUGGEST_RING_CAP.
+function _appendSuggestBatch(arr, { scrollIntoView = true } = {}) {
     const box = document.getElementById('subject-chips');
-    if (!box) return;
-    _suggestResizeWired = true;
-    let pending = false;
-    const schedule = () => {
-        if (pending) return;
-        pending = true;
-        requestAnimationFrame(() => { pending = false; _refillSuggestChips(); });
-    };
-    window.addEventListener('resize', schedule);
-    if (typeof ResizeObserver !== 'undefined') {
-        const ro = new ResizeObserver(schedule);
-        // Observe the card-body so divider drags / textarea growth retrigger.
-        const card = box.closest('.card-body') || box.parentElement;
-        if (card) ro.observe(card);
+    if (!box || !arr || !arr.length) return;
+    // First-ever batch: clear placeholder text node.
+    if (!_suggestBatches.length) box.innerHTML = '';
+    const id = ++_suggestBatchSeq;
+    if (_suggestBatches.length) {
+        const div = document.createElement('span');
+        div.className = 'suggest-batch-divider';
+        div.dataset.batchDivider = String(id);
+        box.appendChild(div);
+    }
+    const wrap = document.createElement('span');
+    wrap.className = 'contents';   // no layout box; chips lay out with the strip
+    wrap.dataset.batchId = String(id);
+    arr.forEach(s => wrap.appendChild(_makeChipButton(s)));
+    box.appendChild(wrap);
+    _suggestBatches.push({ id, items: arr });
+    // Evict oldest if we exceed cap.
+    while (_suggestBatches.length > _SUGGEST_RING_CAP) {
+        const old = _suggestBatches.shift();
+        box.querySelectorAll(`[data-batch-id="${old.id}"], [data-batch-divider="${old.id + 1}"]`)
+            .forEach(n => n.remove());
+    }
+    _refreshChipHighlights();
+    if (scrollIntoView) {
+        // Defer one frame so layout settles, then scroll the new batch into view.
+        requestAnimationFrame(() => {
+            const first = wrap.querySelector('button');
+            if (first && first.scrollIntoView) {
+                first.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+            } else {
+                box.scrollTo({ left: box.scrollWidth, behavior: 'smooth' });
+            }
+        });
     }
 }
-document.addEventListener('DOMContentLoaded', _wireSuggestResize);
+
+// Wire the left/right hover overlays — page on scroll, fetch fresh on
+// right-edge overflow, and grow the frame on first interaction. Idempotent;
+// safe to call again on hot reload.
+let _suggestCollapseTimer = null;
+function _wireSuggestCarousel() {
+    const frame = document.getElementById('subject-chips-frame');
+    const strip = document.getElementById('subject-chips');
+    const left  = document.getElementById('subject-chips-overlay-left');
+    const right = document.getElementById('subject-chips-overlay-right');
+    if (!frame || !strip || !left || !right || frame.dataset.wired === '1') return;
+    frame.dataset.wired = '1';
+
+    const expand = () => {
+        frame.dataset.expanded = 'true';
+        if (_suggestCollapseTimer) { clearTimeout(_suggestCollapseTimer); _suggestCollapseTimer = null; }
+    };
+    const scheduleCollapse = () => {
+        if (_suggestCollapseTimer) clearTimeout(_suggestCollapseTimer);
+        _suggestCollapseTimer = setTimeout(() => { frame.dataset.expanded = 'false'; }, 2000);
+    };
+    frame.addEventListener('mouseenter', expand);
+    frame.addEventListener('mouseleave', scheduleCollapse);
+
+    const atRightEdge = () => (strip.scrollLeft + strip.clientWidth) >= (strip.scrollWidth - 4);
+    const atLeftEdge  = () => strip.scrollLeft <= 4;
+
+    const pageRight = async () => {
+        expand();
+        if (atRightEdge()) {
+            // Already at far right — fetch fresh batch and append.
+            try {
+                const r = await fetch('/subjects/suggest?n=6');
+                const data = await r.json();
+                const arr = data.suggestions || [];
+                if (arr.length) _appendSuggestBatch(arr, { scrollIntoView: true });
+            } catch { /* swallow — overlay is best-effort */ }
+        } else {
+            strip.scrollBy({ left: strip.clientWidth, behavior: 'smooth' });
+        }
+    };
+    const pageLeft = () => {
+        expand();
+        if (!atLeftEdge()) {
+            strip.scrollBy({ left: -strip.clientWidth, behavior: 'smooth' });
+        }
+        // At left edge: nothing to do — older batches already evicted from ring.
+    };
+
+    left.addEventListener('click', pageLeft);
+    right.addEventListener('click', pageRight);
+    const keyHandler = (fn) => (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+    };
+    left.addEventListener('keydown', keyHandler(pageLeft));
+    right.addEventListener('keydown', keyHandler(pageRight));
+}
+// Run wiring once the DOM is ready (script is at end of body, so it is).
+_wireSuggestCarousel();
+
+// (Vertical fill on resize was replaced by the carousel — no-op kept so
+// any stale call sites don't crash.)
+function _wireSuggestResize() { /* no-op */ }
 
 // Render cached suggestions from localStorage if any exist. Returns true
 // if it rendered, false if cache was empty.
@@ -2588,16 +2625,23 @@ function _renderCachedSuggestions() {
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
   if (!box) return;
-  box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+  // First-ever fetch: clear the placeholder. Subsequent fetches append to
+  // the ring instead so the user can scroll back through earlier batches.
+  const isFirst = !_suggestBatches.length;
+  if (isFirst) box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
   try {
     const r = await fetch('/subjects/suggest?n=' + n);
     const data = await r.json();
     const arr = data.suggestions || [];
-    if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
+    if (!arr.length) {
+      if (isFirst) box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
+      return;
+    }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-    _renderSuggestChips(arr);
+    if (isFirst) _renderSuggestChips(arr);
+    else _appendSuggestBatch(arr, { scrollIntoView: true });
   } catch (e) {
-    box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+    if (isFirst) box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
   }
 }
 

@@ -119,6 +119,67 @@
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
 }
 
+/* Subjects "🎲 Suggest" chip carousel — horizontal pannable strip with
+   left/right hover overlays that page through past batches and fetch fresh
+   ones at the right edge. The frame collapses to ~2 chip-rows by default
+   and grows to ~4 rows on hover/first interaction so you can browse a
+   bigger spread without it dominating the column. */
+.suggest-frame {
+    position: relative;
+    overflow: hidden;
+    height: 60px;            /* default ≈ 2 rows of btn-xs chips */
+    transition: height 250ms ease;
+    border-radius: 0.375rem;
+}
+.suggest-frame[data-expanded="true"] { height: 124px; }   /* ≈ 4 rows */
+.suggest-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 0.25rem;
+    padding: 2px 36px;        /* leave room under the overlays */
+    height: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+}
+.suggest-strip::-webkit-scrollbar { display: none; }
+.suggest-strip > button { scroll-snap-align: start; flex: 0 0 auto; }
+.suggest-batch-divider {
+    flex: 0 0 auto;
+    width: 1px;
+    align-self: stretch;
+    background: hsl(var(--bc) / 0.25);
+    margin: 0 4px;
+}
+.suggest-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    pointer-events: none;
+    z-index: 2;
+    color: hsl(var(--bc));
+    font-size: 14px;
+    user-select: none;
+}
+.suggest-overlay-left  { left: 0;  background: linear-gradient(to right, hsl(var(--b1) / 0.95), hsl(var(--b1) / 0)); }
+.suggest-overlay-right { right: 0; background: linear-gradient(to left,  hsl(var(--b1) / 0.95), hsl(var(--b1) / 0)); }
+.suggest-frame:hover .suggest-overlay,
+.suggest-overlay:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.suggest-overlay:hover { color: hsl(var(--p)); }
+.suggest-chevron { font-weight: 700; line-height: 1; }
+
 /* Slop card video controls — fade out the native control overlay until hover
    so the thumbnail isn't visually noisy in a dense grid. */
 #preview-grid video::-webkit-media-controls-panel,
