@@ -38,9 +38,10 @@ def get_sys_stats():
 
 
 def _status_from_pct(pct):
-    # Relaxed: only warn close to full. 72 % isn't actionable noise.
-    if pct >= 95: return "danger"
-    if pct >= 90: return "warn"
+    # Relaxed further: only flag the disk when it is genuinely close to full.
+    # warn at 92 %, danger at 97 % — anything below is operational noise.
+    if pct >= 97: return "danger"
+    if pct >= 92: return "warn"
     return "ok"
 
 
