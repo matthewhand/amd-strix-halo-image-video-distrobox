@@ -2,6 +2,8 @@ import json
 import os
 import time
 
+from . import queue_schema
+
 # In-container slopfinity has cwd=/ but the bind-mount lives at /workspace,
 # so a relative path like "comfy-outputs/..." silently resolves to a ghost
 # file inside the container. Honour SLOPFINITY_STATE_DIR (set to /workspace
@@ -159,8 +161,19 @@ def set_state(mode="Idle", step="Waiting", video=0, total=0, chain=0, total_chai
 def get_queue():
     if os.path.exists(QUEUE_FILE):
         try:
-            with open(QUEUE_FILE, "r") as f: return json.load(f)
-        except: pass
+            with open(QUEUE_FILE, "r") as f:
+                items = json.load(f)
+            changed = False
+            for item in items:
+                before = item.get("schema_version")
+                queue_schema.migrate_legacy(item)
+                if before != queue_schema.SCHEMA_VERSION:
+                    changed = True
+            if changed:
+                save_queue(items)
+            return items
+        except Exception:
+            pass
     return []
 
 def save_queue(q):
