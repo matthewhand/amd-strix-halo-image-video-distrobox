@@ -8,7 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Heavy job: builds the full ROCm image and runs the real worker.
+  # GitHub-hosted runners cannot satisfy this (no AMD GPU, ROCm wheels won't
+  # run, and the build exceeds disk/time limits). Keep the job available for
+  # manual triggers and future self-hosted runners only.
   e2e-qwen-web:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30  # Increased timeout for ROCm builds
 
@@ -58,12 +63,11 @@ jobs:
           *.log
         retention-days: 7
 
-  # Lightweight test for PRs (skips heavy Docker build)
+  # Lightweight job for push + PR: validates syntax and runs the E2E flow
+  # against a stdlib mock worker (no Docker, no GPU). This is what gates CI.
   e2e-qwen-web-light:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    if: github.event_name == 'pull_request'
 
     steps:
     - name: Checkout repository
@@ -80,5 +84,16 @@ jobs:
 
     - name: Run syntax validation
       run: |
-        python -m py_compile tests/e2e_qwen_web_test.py
-        python -c "import tests.e2e_qwen_web_test; print('✅ Test script syntax valid')"
+        python -m py_compile tests/e2e_qwen_web_test.py tests/mock_qwen_server.py
+        python -c "import tests.e2e_qwen_web_test; print('Test script syntax valid')"
+
+    - name: Create test output dir
+      run: |
+        mkdir -p ~/.qwen-image-studio
+        chmod -R 755 ~/.qwen-image-studio
+
+    - name: Run E2E test against mock worker
+      env:
+        MOCK_QWEN_WEB: "1"
+      run: |
+        python tests/e2e_qwen_web_test.py
