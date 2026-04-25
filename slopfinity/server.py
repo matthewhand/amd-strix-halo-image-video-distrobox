@@ -58,6 +58,54 @@ async def favicon():
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
 
 
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe — always 200 if the process is up."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """Readiness probe — checks reachability of dependent subsystems."""
+    import httpx
+    import shutil
+
+    async def _probe(client, name, url, accept_4xx=False):
+        try:
+            r = await client.get(url, timeout=2.0)
+            if accept_4xx:
+                return name, "ok"
+            return name, "ok" if r.status_code < 500 else "down"
+        except Exception:
+            return name, "down"
+
+    targets = [
+        ("comfyui", "http://localhost:8188/system_stats", False),
+        ("qwen_image", "http://localhost:8000/", True),
+        ("qwen_tts", "http://localhost:8010/", True),
+        ("lmstudio", "http://localhost:1234/v1/models", False),
+    ]
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(*[_probe(client, n, u, a) for n, u, a in targets])
+    checks = dict(results)
+
+    # Disk: at least one mount with >5 GB free.
+    disk_ok = False
+    for path in ("/workspace", "/", os.path.expanduser("~")):
+        try:
+            if os.path.exists(path):
+                free_gb = shutil.disk_usage(path).free / (1024 ** 3)
+                if free_gb > 5:
+                    disk_ok = True
+                    break
+        except Exception:
+            continue
+    checks["disk"] = "ok" if disk_ok else "down"
+
+    ready = all(v == "ok" for v in checks.values())
+    return JSONResponse({"ready": ready, "checks": checks}, status_code=200 if ready else 503)
+
+
 @app.middleware("http")
 async def _sw_allowed_header(request: Request, call_next):
     """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
@@ -474,6 +522,24 @@ async def queue_requeue(data: dict = Body(...)):
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     cfg.save_queue(q)
     return {"ok": True}
+
+
+@app.post("/queue/clear-failed")
+async def queue_clear_failed():
+    """Drop all done-but-failed items from the queue history.
+
+    Keeps pending, running, succeeded-done, and cancelled items intact.
+    """
+    q = cfg.get_queue()
+    before = len(q)
+    kept = [
+        item for item in q
+        if not (item.get("status") == "done" and item.get("succeeded") is False)
+    ]
+    removed = before - len(kept)
+    if removed:
+        cfg.save_queue(kept)
+    return {"ok": True, "removed": removed}
 
 
 def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
