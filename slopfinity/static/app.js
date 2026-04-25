@@ -44,6 +44,11 @@ let _jobActuals = {};
 // (subsequent re-renders skip the .stage-just-completed class). Cleared per
 // fresh page load — staleness across reloads is fine, the badge stays put.
 const _displayedDoneStages = new Set();
+// Track which done-queue item is expanded so the WS state tick (which
+// re-renders the queue list wholesale via innerHTML) doesn't clobber the
+// user's open <details>. Single string = single-open enforcement: opening
+// item B implicitly collapses item A.
+let _openDoneItem = null;
 
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
@@ -208,8 +213,14 @@ function _renderDoneItem(q) {
     const previewList = assets.length
         ? `<div class="join join-vertical w-full mt-2">${assets.map(_renderDoneAssetRow).join('')}</div>`
         : `<div class="text-[10px] text-base-content/50 italic mt-2">no asset recorded</div>`;
+    // Persist open state across WS-driven re-renders. The list innerHTML is
+    // replaced ~1Hz, which would otherwise wipe the user's expansion. We
+    // re-emit `open` based on the module-level _openDoneItem on every render
+    // (must NOT rely on the previous DOM since it's already gone).
+    const qid = String(q.ts || q.completed_ts || 0);
+    const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
     return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
-        <details>
+        <details data-q-id="${qid}"${openAttr}>
             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
                 <span class="badge badge-xs ${cls}">${sym} done</span>
                 <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
@@ -619,6 +630,28 @@ document.addEventListener('click', (e) => {
     const filename = nameSpan ? nameSpan.getAttribute('title') : null;
     if (filename) openAssetInfo(filename);
 });
+
+// Done-queue <details> open-state tracker. The queue list is wholesale
+// re-rendered on every WS state tick, so we cannot rely on the DOM to hold
+// the user's expansion. We listen for `toggle` in the capture phase
+// (it doesn't bubble), update the module-level _openDoneItem, and enforce
+// single-open by collapsing any other open done-item.
+document.addEventListener('toggle', (e) => {
+    const det = e.target;
+    if (!(det instanceof HTMLElement)) return;
+    if (det.tagName !== 'DETAILS') return;
+    const qid = det.getAttribute('data-q-id');
+    if (!qid) return;
+    if (det.open) {
+        _openDoneItem = qid;
+        // Single-open enforcement: collapse any other done item currently open.
+        document.querySelectorAll('details[data-q-id][open]').forEach(other => {
+            if (other !== det) other.removeAttribute('open');
+        });
+    } else if (_openDoneItem === qid) {
+        _openDoneItem = null;
+    }
+}, true);
 
 // Map a filename → display badge for the model + role that produced it.
 // Returns { label, color, border, part?, kind } where kind is the filter bucket.
