@@ -254,10 +254,17 @@
     <!-- Queue — sits to the right of Subjects on wide viewports. -->
     <section id="split-right" class="ui-split-card card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
         <div class="card-body p-3 gap-2 mb-0 ui-split-cardbody">
-            <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
                 <span class="text-xs font-bold uppercase tracking-wider text-accent flex-none">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
-                {# Connection-lost pill stays here as a fallback only — the active stage badge inside each queue item now carries the live action verb (Imaging/Videoing). Hidden on Idle / when WS is healthy. #}
-                <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
+                {# Live activity in the middle of the header — spinner + verb
+                   ("rendering image…"). Populated by the WS handler. Hidden when
+                   nothing's running. #}
+                <span id="queue-header-activity" class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate" style="display:none">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    <span data-queue-header-activity-text></span>
+                </span>
+                {# Connection-lost pill stays here as a fallback only. #}
+                <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono flex-none" style="display:none">
                     <span id="conn-pill-text">Connecting</span>
                 </span>
                 <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
@@ -341,7 +348,7 @@
     <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
 
     <!-- Unified Slop feed (all assets — FINAL, chain, image, audio) with filter chips -->
-    <section id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
+    <section id="output-section" class="mb-12 card bg-base-100 border-2 border-primary shadow-xl p-3" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 class="text-xl font-black uppercase tracking-widest flex items-center gap-2">
                 {{ branding.labels.gallery_completed }}
