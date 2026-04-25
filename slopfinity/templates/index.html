@@ -35,7 +35,7 @@
     <!-- Combined header + stats navbar — single sticky strip with brand on left, hardware pills + Latest, conn pill + settings on right. -->
     <!-- flex-nowrap + overflow-hidden on the inner row: when the viewport gets narrow, hardware pills clip behind the gear's left edge instead of wrapping to a second line. Settings gear stays anchored on the right. -->
     <div id="stats-navbar" class="navbar bg-base-200/85 backdrop-blur rounded-2xl border border-base-100 shadow-xl mb-6 sticky top-2 z-30 px-4 flex-nowrap">
-        <div class="flex-1 flex items-center gap-x-6 overflow-hidden min-w-0 [&>*]:flex-shrink-0">
+        <div class="flex-1 flex items-center justify-between gap-2 overflow-hidden min-w-0 [&>*]:flex-shrink-0 [&>span.flex.flex-col]:flex-1">
             <h1 class="text-xl font-black text-primary uppercase tracking-widest mr-2">{{ branding.app.name }}</h1>
             {# Hardware — Strix Halo has 128 GB unified RAM (no separate VRAM). #}
             <span class="flex flex-col items-start gap-0">

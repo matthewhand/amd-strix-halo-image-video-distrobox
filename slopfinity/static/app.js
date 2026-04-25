@@ -621,20 +621,28 @@ async function toggleItemPolymorphic(ts) {
 window.toggleItemPolymorphic = toggleItemPolymorphic;
 
 // Endless Story auto-cycle: when the navbar toggle is on, fetch a fresh
-// suggestion batch every 12 s and replace the marquee stack with it.
+// suggestion batch every 12 s and APPEND a new row (don't replace existing).
+// Cap at _SUGGEST_MAX_ROWS (=5); FIFO eviction kicks in beyond that.
 let _endlessStoryTimer = null;
 function _wireEndlessStoryCycle() {
     const t = document.getElementById('endless-story-toggle');
     if (!t) return;
     const start = () => {
         if (_endlessStoryTimer) return;
-        _endlessStoryTimer = setInterval(() => {
-            // Skip if the user has hidden suggestions or globally disabled auto.
+        _endlessStoryTimer = setInterval(async () => {
+            // Skip if user has hidden suggestions or globally disabled auto.
             if (typeof _isSuggestionsHidden === 'function' && _isSuggestionsHidden()) return;
             if (typeof _autoSuggestDisabled === 'function' && _autoSuggestDisabled()) return;
-            // Use regenSuggestions which clears the stack + appends a fresh row,
-            // honoring the GPU-idle gate via its existing internal checks.
-            if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
+            // Direct fetch + APPEND (vs regenSuggestions which clears the stack)
+            // so existing rows stay visible while new ones queue below them.
+            try {
+                const r = await fetch('/subjects/suggest?n=6');
+                const d = await r.json();
+                const arr = (d && d.suggestions) || [];
+                if (arr.length && typeof _appendSuggestBatchRow === 'function') {
+                    _appendSuggestBatchRow(arr);
+                }
+            } catch (_) {}
         }, 12000);
     };
     const stop = () => {
