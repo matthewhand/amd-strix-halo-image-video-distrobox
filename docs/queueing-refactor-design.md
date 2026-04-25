@@ -1,131 +1,114 @@
-# Queueing Refactor — Design Doc
+# Queueing refactor — design notes
 
-Status: Phase 1 (typed schema + migration) implemented. Phases 2–5 follow.
+This is the running design doc for the four-phase queueing refactor that
+replaces the linear fleet runner with a fan of concurrent stage workers
+backed by a per-stage queue.
 
-## Why
+## Motivation
 
-The current pipeline runs as a single linear process: one queue item at a
-time, each item walking concept → image → video → audio → tts → post →
-merge in a hardcoded sequence inside `slopfinity/workers.py`. This works
-but is leaving substantial throughput on the floor:
+The legacy `run_philosophical_experiments.py` fleet runner walks one job
+through every stage in a fixed order before picking up the next item.
+That serializes:
 
-- **No batching by model.** Two consecutive items both needing the LTX
-  video model still pay the full model-load cost twice if any other stage
-  ran between them. Conversely a wave of "image-only" items still waits
-  in line behind an in-flight video job.
-- **No stage-level parallelism.** While the GPU is busy on a video step,
-  the CPU-bound `merge` (ffmpeg) for the previous item sits idle, and
-  the LLM (`concept`) for the next item likewise waits. The
-  memory-stage-planner (`docs/memory-stage-planner-design.md`) already
-  knows which roles can co-exist; the runner just doesn't use it.
-- **Failure granularity.** A failure in `merge` today re-runs the whole
-  item including the (expensive) video step. Per-stage status would let
-  us resume from the failed stage.
-- **Auto-suspend churn.** Linear walking forces LM Studio / ComfyUI to
-  suspend-resume for every item; a coordinator could group same-role
-  work and suspend siblings once per batch.
+1. **Across-job concurrency** — even when stage budgets fit
+   side-by-side (e.g. Heartmula audio for job N+1 while job N is
+   still in Final Merge), nothing runs in parallel.
+2. **CPU-only stages behind GPU stages** — Concept (LLM) and Final
+   Merge (ffmpeg) sit in the same loop as Image/Video, so a long
+   video render stalls the entire fleet.
+3. **Recovery** — a single failure at any stage kills the whole job
+   row; there's no per-stage retry surface.
 
-## Target architecture
+## Phases
 
-- **Typed queue items** — every item carries a `stages` map keyed by
-  the seven canonical stages (concept, image, video, audio, tts, post,
-  merge), each with its own status (`needs` | `working` | `done` |
-  `failed` | `skipped`) and per-stage metadata (model, started_ts,
-  completed_ts, error). The legacy top-level `status` / `succeeded`
-  fields become a derived view (`overall_status`).
-- **Per-role workers** — one worker process per role (`llm`, `image`,
-  `video`, `audio`, `tts`, `post`, `ffmpeg`). Each worker pulls the
-  next ready stage for its role from the queue, runs it, and writes
-  back per-stage status. Workers stay alive so the model loaded into
-  VRAM persists between adjacent same-role items (free batching).
-- **Scheduler-aware coordinator** — a thin coordinator wakes workers
-  when their role fits the current memory plan (see
-  `docs/memory-stage-planner-design.md` and
-  `docs/concurrent-mode-design.md`) and pauses them otherwise.
-  Auto-suspend (`slopfinity/auto_suspend.py`) hangs off the same
-  signal so co-resident services suspend per-role-batch instead of
-  per-item.
-- **Prerequisite graph** — declarative `PREREQS` (concept → image →
-  video → post; concept → audio; concept → tts; merge needs post +
-  audio + tts) replaces the sequential walk. The coordinator only
-  hands a stage to a worker when its prereqs are `done` or `skipped`.
+| Phase | Scope | PR / status |
+|-------|-------|-------------|
+| 1 | `queue_schema` — per-item `stages.<stage>.status` map (pending/running/done/failed/skipped), migration from legacy queue.json | TBD |
+| 2 | `StageWorker` base class — poll loop, claim/release, status transitions, failure handling | TBD |
+| 3 | Per-stage workers (`ConceptWorker`, `ImageWorker`, `VideoWorker`, `AudioWorker`, `TTSWorker`, `PostWorker`, `MergeWorker`) | TBD |
+| 4 | **Coordinator** — concurrent worker fan, dashboard endpoints, dashboard rendering, CLI | This PR |
 
-## Schema spec (v2)
+Phase 4 lands with **defensive imports** so it can merge before phases 1-3
+(the `Coordinator.run()` raises a clear error until they land, and
+`/coordinator/start` returns 503 with the underlying ImportError).
 
-Each queue item, post-migration:
+## Phase 4 — Coordinator
 
-```json
-{
-  "id": "q-1714000000000-ab12cd",
-  "schema_version": 2,
-  "config_snapshot": { ...same as today... },
-  "stages": {
-    "concept": {"status": "done",    "started_ts": ..., "completed_ts": ...},
-    "image":   {"status": "done",    "model": "qwen", ...},
-    "video":   {"status": "working", "model": "ltx-2.3", "started_ts": ...},
-    "audio":   {"status": "needs",   "model": "heartmula"},
-    "tts":     {"status": "needs",   "model": "qwen-tts"},
-    "post":    {"status": "needs",   "model": "ltx-spatial"},
-    "merge":   {"status": "needs"}
-  }
-}
+```python
+class Coordinator:
+    def __init__(self):
+        self.workers = [
+            ConceptWorker("llm-w0"), ImageWorker("img-w0"),
+            VideoWorker("vid-w0"), AudioWorker("aud-w0"),
+            TTSWorker("tts-w0"), PostWorker("post-w0"),
+            MergeWorker("merge-w0"),
+        ]
+    async def run(self):
+        tasks = [asyncio.create_task(w.loop(poll_interval_s=2.0)) for w in self.workers]
+        await asyncio.gather(*tasks)
 ```
 
-Image-only items get `skipped` set on `video`/`audio`/`tts`/`post`/`merge`
-at migration time so the coordinator never tries to schedule them.
+GPU serialization is unchanged — `scheduler.acquire_gpu` still gates
+budget-conflicting stages. The coordinator only removes the
+single-threaded *job ordering* constraint, not the GPU lock.
 
-`overall_status(item)` derives the legacy bulk status:
-- all `done`/`skipped` (and at least one `done`) → `done`
-- any `failed` → `failed`
-- any `working` → `running`
-- otherwise → `pending`
+### Dashboard control
 
-## Five-phase rollout
+- `POST /coordinator/start` — spawn the worker fan (idempotent).
+- `POST /coordinator/stop` — cancel worker tasks; honours `acquire_gpu`'s
+  `try/finally` so the GPU lock is released cleanly.
+- `GET /coordinator/status` — running flag, worker list, import health.
 
-1. **Schema + migration (this PR).** Land `slopfinity/queue_schema.py`,
-   wire `config.get_queue` to migrate legacy items in place on first
-   read, ship tests. No runtime behaviour changes — the runner still
-   ignores `stages` and reads the legacy fields.
+State persists to `comfy-outputs/experiments/coordinator.state.json` so a
+slopfinity restart can show the previous running flag (auto-restart on
+boot is intentionally **not** wired — the user opts in each session).
 
-2. **Worker base.** Introduce `slopfinity/workers/base.py` with a
-   `RoleWorker` ABC: `claim_next()`, `run(item, stage)`, `mark_done()`,
-   `mark_failed()`. Provide a `LinearDriver` that walks all roles
-   single-threaded — equivalent to today's runner, but reading and
-   writing per-stage status. Ship behind `SLOPFINITY_USE_WORKERS=1`.
+### Dashboard rendering
 
-3. **Stage workers.** Port each stage's existing logic out of
-   `workers.py` into a dedicated `RoleWorker` subclass
-   (`workers/llm.py`, `workers/image.py`, ...). Still single-threaded;
-   the linear driver just dispatches by role.
+`renderPipelineStrip` and `_renderDoneItem` now read per-stage status
+from `item.stages.<stage>.status`. Multiple items can be running at
+once, each with different stages active. The legacy linear `state.step`
+model is kept as a fallback for items written before the refactor lands.
 
-4. **Coordinator.** Replace `LinearDriver` with `Coordinator` that
-   consults `memory_planner` to pick the next role to run, and groups
-   adjacent same-role stages into a batch (worker stays warm). Still
-   one role active at a time, but auto-suspend now fires per-batch and
-   model loads amortise across items.
+A new `pipeline-seg-failed` segment class surfaces partial failures —
+e.g. an item with Image done, Video failed, Audio done renders that
+mosaic correctly instead of collapsing to a single "failed" badge.
 
-5. **Concurrent unlock.** Allow N roles to run simultaneously when
-   the memory plan permits (e.g. `merge` (ffmpeg, CPU) overlapping
-   with `video` (GPU)). Roll out gated by `SLOPFINITY_CONCURRENT=1`.
+### CLI
 
-## Migration notes
+`python -m slopfinity.coordinator` runs the coordinator standalone,
+replacing the legacy fleet runner for users who want the new
+architecture. Flags:
 
-- `config.get_queue()` is the single read path for `queue.json`. It
-  now migrates each item via `queue_schema.migrate_legacy(item)` and
-  re-saves the file when any item lacked `schema_version: 2`.
-  Migration is idempotent — items already at v2 are returned
-  untouched.
-- Legacy fields (`status`, `succeeded`, `image_only`) are preserved
-  on the item; only `stages` and `schema_version` are added. Phase 2+
-  workers will read `stages` exclusively; the dashboard keeps reading
-  the legacy fields until Phase 4.
-- `image_only` is the only non-trivial mapping: those items get
-  `video`/`audio`/`tts`/`post`/`merge` marked `skipped` so the
-  coordinator never offers them to a non-image worker.
-- Done/failed/cancelled legacy items map to `done`/`failed`/`skipped`
-  on **every** stage — this means a re-run won't retry old failures
-  unless the user explicitly resets the per-stage status (a Phase 4
-  dashboard control).
-- The migration is safe to run on the live
-  `comfy-outputs/experiments/queue.json`; the only mutation is adding
-  `id`, `schema_version`, and `stages` keys.
+- `--poll-interval SECONDS` — StageWorker queue-poll cadence (default 2.0).
+- `--log-level LEVEL` — Python logging level (default INFO).
+
+## Migration
+
+> **The legacy fleet runner (`run_philosophical_experiments.py`) is
+> deprecated as of Phase 4.**
+
+Both code paths remain shipped during the transition:
+
+- **Recommended:** `python -m slopfinity.coordinator` (or click "Start
+  Coordinator" on the dashboard once the UI button lands).
+- **Legacy:** `python run_philosophical_experiments.py` continues to
+  work for users who haven't migrated yet.
+
+Do not run both at once — they would race on the same `queue.json`.
+
+The deprecation is not yet annotated in the legacy script itself; that
+will land alongside the Phase-1 schema migration so the runner can read
+the per-stage status it needs to write.
+
+## Open questions
+
+- Should the coordinator auto-start on slopfinity boot when the
+  persisted running flag is `true`? Current answer: no, the user opts
+  in each session to avoid surprises after a crash.
+- What's the right number of workers per stage? Today it's 1-of-each;
+  CPU stages (Concept, Post Process, Final Merge) could profitably run
+  N>1 once the queue claim semantics from Phase 2 are in place.
+- Does the existing `concurrent` flag on queue items still mean
+  anything once the coordinator is the default? Probably no — it
+  becomes a no-op and we can remove it in a follow-up.
