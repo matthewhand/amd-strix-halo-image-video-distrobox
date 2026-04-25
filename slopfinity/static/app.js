@@ -2151,12 +2151,37 @@ function connect() {
                         // it opens the editor at Base Image (Concept itself
                         // isn't editable but Text is the natural entry point
                         // — replaces the standalone `prompts →` button).
+                        // Resolve which model the runner used for THIS stage from
+                        // the snapshot, so the badge shows e.g. "✓ Qwen Image"
+                        // or "✓ LTX-2.3" rather than the generic stage verb.
+                        // Falls back to the stage label if no model is recorded.
+                        const _STAGE_MODEL_FIELD = {
+                            'Concept': null, // uses snap.llm.model_id below
+                            'Base Image': 'base_model',
+                            'Video Chains': 'video_model',
+                            'Audio': 'audio_model',
+                            'TTS': 'tts_model',
+                            'Post Process': 'upscale_model',
+                        };
+                        let modelLabel = label;
+                        if (s === 'Concept') {
+                            const llmId = (cfgSnap.llm && cfgSnap.llm.model_id) || llmModelId || '';
+                            if (llmId) modelLabel = llmId.replace(/^.*\//, '').replace(/\.gguf$/i, '');
+                        } else {
+                            const modelId = cfgSnap[_STAGE_MODEL_FIELD[s] || ''];
+                            if (modelId && modelId !== 'none') {
+                                const role = (s === 'Audio') ? 'audio' : (s === 'Video Chains' ? 'video' : (s === 'Base Image' ? 'image' : s.toLowerCase()));
+                                modelLabel = (typeof _modelDisplayName === 'function')
+                                    ? (_modelDisplayName(modelId, role) || modelId)
+                                    : modelId;
+                            }
+                        }
                         const stageRoleEntry = _PROMPTS_STAGE_MAP.find(([st]) => st === s);
                         const stageLabelHtml = stageRoleEntry
-                            ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Edit prompts (this stage already ran — opens locked)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${label}</button>`
+                            ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts (locked: stage already ran)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${_htmlEscape(modelLabel)}</button>`
                             : (s === 'Concept'
-                                ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Click to edit prompts" aria-label="Click to edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${label}</button>`
-                                : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`);
+                                ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
+                                : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
