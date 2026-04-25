@@ -524,9 +524,9 @@
                     <span>Polymorphic</span>
                 </span>
             </label>
-            <label class="flex items-center gap-2 opacity-50 cursor-not-allowed" title="Concurrent mode is currently unsafe — see docs/concurrent-mode-design.md. The scheduler still serializes all GPU work via a binary lock and there is no budget accumulator yet, so enabling this would either no-op or risk OOM. Locked until the budget-semaphore lands.">
-                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" disabled aria-disabled="true" onchange="_updateSingleLabels(); _updateGenModePill()" />
-                <span class="text-xs single-label flex items-center gap-1" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent <span class="badge badge-xs badge-warning ml-1">experimental · locked</span></span>
+            <label class="flex items-center gap-2" title="Concurrent mode (Phase 5) — multiple GPU stages may run in parallel when their summed budgets fit under MemAvailable − safety_gb. Backed by GPUReservation; live readout in Settings → Diagnostics. Still experimental: trust the STAGE_BUDGETS table is the trust boundary.">
+                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" {% if config.concurrent %}checked{% endif %} onchange="_updateSingleLabels(); _updateGenModePill()" />
+                <span class="text-xs single-label flex items-center gap-1" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent <span class="badge badge-xs badge-warning ml-1">experimental</span></span>
             </label>
         </div>
 
