@@ -774,25 +774,29 @@ function _slopBadgeMeta(file) {
         // Generic mp4 fallback — assume LTX-2.3 since that's the only video model wired in.
         model = 'ltx-2.3';
     }
+    // Role-based color discipline: every badge is colored by what KIND of
+    // asset it produced, never by the model's vendor. This keeps colors
+    // theme-coherent across DaisyUI themes — image is always `info`, video
+    // always `primary`, music always `secondary`, voice always `warning`.
     const map = {
         'qwen': { label: 'Qwen Image', color: 'badge-info' },
-        'ernie': { label: 'Ernie Image', color: 'badge-error' },
-        'ltx-2.3': { label: isMp4 ? 'LTX-2.3 Video' : 'LTX-2.3 Image', color: 'badge-success' },
-        'ltx-bridge': { label: 'LTX Bridge', color: 'badge-success' },
-        'wan2.2': { label: 'Wan 2.2 Video', color: 'badge-info' },
-        'wan2.5': { label: 'Wan 2.5 Video', color: 'badge-info' },
+        'ernie': { label: 'Ernie Image', color: 'badge-info' },
+        'ltx-2.3': { label: isMp4 ? 'LTX-2.3 Video' : 'LTX-2.3 Image', color: isMp4 ? 'badge-primary' : 'badge-info' },
+        'ltx-bridge': { label: 'LTX Bridge', color: 'badge-primary' },
+        'wan2.2': { label: 'Wan 2.2 Video', color: 'badge-primary' },
+        'wan2.5': { label: 'Wan 2.5 Video', color: 'badge-primary' },
         'heartmula': { label: 'Heartmula Music', color: 'badge-secondary' },
         'qwen-tts': { label: 'Qwen TTS', color: 'badge-warning' },
         'kokoro': { label: 'Kokoro TTS', color: 'badge-warning' },
     };
-    const borderByKind = { 'video': 'border-primary', 'image': 'border-secondary', 'audio': 'border-warning' };
+    const borderByKind = { 'video': 'border-primary', 'image': 'border-info', 'audio': 'border-secondary' };
     if (model && map[model]) {
         return { label: map[model].label, color: map[model].color, border: borderByKind[kind], part, kind };
     }
     const fallback = {
         'video': { label: '🎬 video', color: 'badge-primary' },
-        'image': { label: '🖼 image', color: 'badge-secondary' },
-        'audio': { label: '🔊 audio', color: 'badge-warning' },
+        'image': { label: '🖼 image', color: 'badge-info' },
+        'audio': { label: '🔊 audio', color: 'badge-secondary' },
     }[kind];
     return { label: fallback.label, color: fallback.color, border: borderByKind[kind], part, kind };
 }
@@ -873,11 +877,16 @@ function _configModelBadges(snap, llmModelId, activeRole, qTs) {
         const short = llmModelId.replace(/^.*\//, '').replace(/\.gguf$/i, '');
         out.push(mk('llm', 'badge-accent', `prompt LLM: ${llmModelId}`, _htmlEscape(short)));
     }
+    // Role → semantic-token mapping — keep in sync with templates/index.html
+    // queue/SSR badges. Each role owns ONE token across every theme so
+    // switching theme never flips the meaning of a color.
+    //   LLM      → accent      Image    → info      Video    → primary
+    //   Music    → secondary   Voice    → warning   Upscale  → neutral
     if (snap.base_model) out.push(mk('base', 'badge-info', 'image model', _htmlEscape(_modelDisplayName(snap.base_model, 'image'))));
-    if (snap.video_model) out.push(mk('video', 'badge-success', 'video model', _htmlEscape(_modelDisplayName(snap.video_model, 'video'))));
+    if (snap.video_model) out.push(mk('video', 'badge-primary', 'video model', _htmlEscape(_modelDisplayName(snap.video_model, 'video'))));
     if (snap.audio_model && snap.audio_model !== 'none') out.push(mk('audio', 'badge-secondary', 'music model', _htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))));
     if (snap.tts_model && snap.tts_model !== 'none') out.push(mk('tts', 'badge-warning', 'voice model', _htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))));
-    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(mk('upscale', 'badge-warning', 'upscaler', _htmlEscape(snap.upscale_model)));
+    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(mk('upscale', 'badge-neutral', 'upscaler', _htmlEscape(snap.upscale_model)));
     return out;
 }
 
