@@ -647,3 +647,17 @@ body[data-layout="subjects"] #ui-split-handle,
 body[data-layout="queue"] #ui-split-handle {
     display: none !important;
 }
+
+/* daisyUI .divider — used as section separators inside the Settings
+   modal, Pipeline popup, and a few card bodies. Default token is
+   `oklch(var(--bc)/0.1)` which is barely visible; tint to the active
+   theme's primary so the section breaks read as branded structure
+   rather than ghosted lines. ::before / ::after are the lines on
+   either side of the optional text label. */
+.divider::before,
+.divider::after {
+    background-color: hsl(var(--p) / 0.35) !important;
+}
+.divider {
+    color: hsl(var(--bc) / 0.7);
+}
