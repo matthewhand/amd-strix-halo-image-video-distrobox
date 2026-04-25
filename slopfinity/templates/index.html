@@ -56,10 +56,13 @@
                 <span class="font-mono font-black text-info" id="l-v">0%</span>
                 <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
             </span>
-            <span class="flex items-baseline gap-1" title="{{ outputs_disk.used_gb }} / {{ outputs_disk.total_gb }} GB · ticker spans ~1 hour">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span class="opacity-60 normal-case">(1hr)</span></span>
-                <span class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}" id="d-v">{{ outputs_disk.pct }}%</span>
-                <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
+            <span class="flex flex-col items-start gap-0" title="{{ outputs_disk.used_gb }} GB used / {{ outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb) }} GB free · ticker spans ~1 hour">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span class="opacity-60 normal-case">(1hr)</span></span>
+                    <span class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}" id="d-v">{{ outputs_disk.pct }}%</span>
+                    <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none" id="d-r">{{ outputs_disk.used_gb }} used / {{ (outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb)) }} GB free</span>
             </span>
             {# Output counters removed from navbar — now shown inline with Slop filter chip labels. #}
             {# Keep hidden IDs so existing WS / backend bindings don't break. #}

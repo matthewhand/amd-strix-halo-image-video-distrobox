@@ -897,7 +897,13 @@ function updateOutputsDisk(d) {
         d.status === 'danger' ? 'text-error' :
         d.status === 'warn' ? 'text-warning' : 'text-accent'
     );
-    if (el.parentElement) el.parentElement.title = `${d.used_gb} / ${d.total_gb} GB`;
+    const freeGb = (d.free_gb !== undefined) ? d.free_gb : (d.total_gb - d.used_gb);
+    // Update the used/free label beneath the percentage (mirrors RAM r-v line).
+    const drEl = document.getElementById('d-r');
+    if (drEl) drEl.textContent = `${d.used_gb} used / ${Math.round(freeGb * 10) / 10} GB free`;
+    // Wrapper carries the tooltip with both numbers spelled out.
+    const wrap = el.closest('span[title]');
+    if (wrap) wrap.title = `${d.used_gb} GB used / ${Math.round(freeGb * 10) / 10} GB free · ticker spans ~1 hour`;
 }
 
 function updateStorage(storage) {
