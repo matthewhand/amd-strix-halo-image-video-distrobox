@@ -2740,12 +2740,28 @@ function connect() {
                             assetBadge = promptBadge;
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
+                            // Filename = plain text link, NOT a badge. The
+                            // badge formatting was making the asset row read
+                            // as another model chip — but the filename is
+                            // just an output reference. Click opens the file
+                            // in a new tab; click the thumbnail (below) for
+                            // the asset-info modal.
+                            const _isVid = asset && /\.mp4$/i.test(asset);
+                            const _isImg = asset && /\.(png|jpe?g|webp)$/i.test(asset);
+                            const _href = asset ? `/files/${encodeURIComponent(asset)}` : '';
+                            const _thumbCls = "rounded bg-black object-cover flex-none";
+                            const _thumbStyle = "width:32px;height:18px;";
+                            const _thumb = asset && _isVid
+                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video></button>`
+                                : asset && _isImg
+                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
+                                : '';
                             const fileBadge = asset
-                                ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
+                                ? `${_thumb}<a href="${_href}" target="_blank" rel="noopener" class="link link-hover font-mono text-[9px] truncate min-w-0" title="Open ${asset} in a new tab" onclick="event.stopPropagation()">${asset}</a>`
                                 : '';
                             // Stage shows BOTH the prompt badge (if a per-stage
                             // prompt exists from /enhance/distribute) AND the
-                            // file asset badge.
+                            // file asset link + thumbnail.
                             assetBadge = [promptBadge, fileBadge].filter(Boolean).join(' ');
                         }
                         const a = actuals[s];
@@ -2799,16 +2815,18 @@ function connect() {
                             : (s === 'Concept'
                                 ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
-                        // Three-column row: filename/prompt LEFT (flex-1, fades
-                        // into the middle column on overflow), model badge
-                        // CENTER (flex-none — pushed right by the asset's
-                        // flex-1 grow but pulled in front of the timing column
-                        // so model identity is the second-most-prominent
-                        // anchor after the file name), timing RIGHT (flex-none,
-                        // fixed width so the right edge aligns).
+                        // Three-column row, every column flex-none-and-anchored
+                        // so the model badge column lines up vertically
+                        // across stages:
+                        //   LEFT   asset (flex-1, fades right when too wide)
+                        //   MID-R  model badge (fixed-width column, right-aligned
+                        //          contents — text-right + min-w so a long badge
+                        //          ("✓ LTX-2.3 Video") and a short one ("✓ Qwen
+                        //          Image") both end at the same X).
+                        //   RIGHT  timing column (existing fixed-width).
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             <span class="flex-1 flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
-                            ${stageLabelHtml}
+                            <span class="flex-none min-w-[7rem] text-right">${stageLabelHtml}</span>
                             ${timingCol}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
