@@ -1942,18 +1942,10 @@ async function inject(prio, terminate, concurrent, opts) {
     ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
 }
 
-// Refresh the small "Will use:" badge row inside the Pipeline popup so
-// the user can see the active model selection at a glance alongside the
-// RAM estimate. Element ID #subjects-models is preserved for back-compat
-// (originally lived under the Subjects card; relocated by the p5 mobile pass).
-function _renderSubjectsModels() {
-    const row = document.getElementById('subjects-models');
-    if (!row) return;
-    const cfg = (_lastTick && _lastTick.config) || {};
-    const llmId = (cfg.llm && cfg.llm.model_id) || '';
-    const badges = _configModelBadges(cfg, llmId);
-    row.innerHTML = '<span class="text-base-content/50 uppercase tracking-widest mr-1">Will use:</span>' + badges.join(' ');
-}
+// Deprecated: the standalone "Will use" badge row was removed; the RAM
+// estimator breakdown now renders role + model + GB together. Keep this
+// stub so existing callers don't error.
+function _renderSubjectsModels() {}
 
 async function updatePipeline() {
     // Resolve a model select's value, swapping in the slopped sub-select
