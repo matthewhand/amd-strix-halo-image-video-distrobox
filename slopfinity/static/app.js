@@ -1241,6 +1241,19 @@ async function openAssetInfo(filename) {
 }
 
 // Click-to-info wiring for any asset card in the Slop feed
+// Delegated click for the per-stage prompt-peek badges. Stashing the prompt
+// text in data-prompt-text avoids attribute-quoting bugs when the prompt
+// contains apostrophes or quotes (which used to silently break onclick).
+document.addEventListener('click', (e) => {
+    const peek = e.target.closest('.slop-prompt-peek');
+    if (peek) {
+        e.stopPropagation();
+        const txt = peek.getAttribute('data-prompt-text') || '';
+        if (typeof showPromptPeek === 'function') showPromptPeek(txt);
+        return;
+    }
+});
+
 document.addEventListener('click', (e) => {
     const card = e.target.closest('#preview-grid > [data-slop-kind]');
     if (!card) return;
@@ -2125,8 +2138,13 @@ function connect() {
                         } else if (_PROMPT_FIELD_BY_STAGE[s]) {
                             promptForStage = cfgSnap[_PROMPT_FIELD_BY_STAGE[s]] || '';
                         }
+                        // Stash the prompt text in a data attribute to avoid
+                        // attribute-quoting nightmares when the prompt has '
+                        // or " in it (which would break onclick parsing).
+                        // A delegated click handler (wired once at startup)
+                        // reads the data-prompt-text on click.
                         const promptBadge = promptForStage
-                            ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} prompt — click to view" onclick='event.stopPropagation(); showPromptPeek(${JSON.stringify(promptForStage)})'>📝 prompt →</button>`
+                            ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}">📝 prompt →</button>`
                             : '';
                         if (s === 'Concept') {
                             assetBadge = promptBadge;
