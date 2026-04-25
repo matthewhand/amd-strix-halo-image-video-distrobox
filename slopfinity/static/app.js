@@ -1090,6 +1090,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const hadCache = _renderCachedSuggestions();
     if (!hadCache && typeof regenSuggestions === 'function') {
         const tryAutoSuggest = () => {
+            // Settings kill-switch: when "Disable automatic suggestion
+            // fetches" is on, every auto-path becomes a no-op. The 🎲
+            // Suggest button stays exempt by design.
+            if (_autoSuggestDisabled()) {
+                console.info('skipping auto-suggest: disabled by setting');
+                return;
+            }
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
             // Preferred gate: GPU has been at <=5% for >=3 consecutive
@@ -1114,6 +1121,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             regenSuggestions().catch(() => {});
         };
+        // Expose for diagnostics / programmatic verification.
+        window.tryAutoSuggest = tryAutoSuggest;
         setTimeout(tryAutoSuggest, 500);
     }
 });
@@ -1201,6 +1210,18 @@ function updateScheduler(sc) {
 
 // Cache last WS tick for diagnostics-copy / manual refresh.
 let _lastTick = null;
+
+// Read the user's "Disable automatic suggestion fetches" toggle from the
+// most recent WS tick (server pushes the full config blob). Every
+// automatic suggest path (page-load, prefetch, edge fetch) early-bails
+// when this returns true. The 🎲 Suggest button does NOT call this — it
+// is intentionally exempt.
+function _autoSuggestDisabled() {
+    try {
+        const c = (_lastTick && _lastTick.config) || {};
+        return !!c.suggest_auto_disabled;
+    } catch (_) { return false; }
+}
 
 // Rolling GPU utilization history. Used to gate automatic LLM suggestion
 // fetches on a sustained-idle GPU, instead of the older queue/fleet-mode
@@ -2316,6 +2337,8 @@ async function openSettings() {
         }
         const sugCustom = $('set-suggest-custom-prompt');
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
+        const sugAutoOff = $('set-suggest-auto-disabled');
+        if (sugAutoOff) sugAutoOff.checked = !!sr.suggest_auto_disabled;
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -2500,6 +2523,8 @@ async function saveSettings() {
     if (sugUseSub) body.suggest_use_subjects = !!sugUseSub.checked;
     const sugCustom = $('set-suggest-custom-prompt');
     if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
+    const sugAutoOff = $('set-suggest-auto-disabled');
+    if (sugAutoOff) body.suggest_auto_disabled = !!sugAutoOff.checked;
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
