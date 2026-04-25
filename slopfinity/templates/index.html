@@ -43,7 +43,12 @@
         inset: 0;
         z-index: -1;
         pointer-events: none;
-        background-color: rgba(0, 0, 0, {{ ((_aes.dim_pct if _aes.dim_pct is not none else 30) | float) / 100 }});
+        /* Dim overlay uses the theme's base color (--b1) at the configured
+           alpha rather than pure black. This means dark themes get a
+           near-black overlay (no grey-on-grey haze), light themes get a
+           near-white overlay, and the wallpaper still reads as "dimmed
+           toward the page background" on any theme. */
+        background-color: hsl(var(--b1) / {{ ((_aes.dim_pct if _aes.dim_pct is not none else 30) | float) / 100 }});
       }
     </style>
     {% elif branding.background and branding.background.svg %}
