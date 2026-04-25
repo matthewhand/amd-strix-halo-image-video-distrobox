@@ -2645,6 +2645,149 @@ async function regenSuggestions(n = 6) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Carousel prefetch (paired with feat/suggest-hover-paging).
+//
+// The hover-paging branch adds a horizontally-scrolling Subjects carousel with
+// a right-edge overlay that fetches the next batch via GET /subjects/suggest.
+// This module layers a small ahead-of-time cache so that click-to-page is
+// instant rather than blocking on the LLM round-trip.
+//
+// Defensive guards: every wiring point checks `typeof _suggestBatches` so that
+// when the carousel branch is NOT yet on main this code is a complete no-op.
+// ---------------------------------------------------------------------------
+let _prefetchInflight = false;
+let _prefetchedBatches = [];
+const _PREFETCH_CAP = 3;
+let _prefetchN = 6;
+let _prefetchBackoffUntil = 0;
+let _prefetchTotalFetched = 0;
+let _prefetchTotalConsumed = 0;
+let _prefetchIdleTimer = null;
+
+function _suggestPrefetchActive() {
+    // Carousel branch wires up _suggestBatches as an array (FIFO of past+current
+    // batches). Until that lands, prefetch wiring is inert.
+    return typeof _suggestBatches !== 'undefined';
+}
+
+async function _maybePrefetch() {
+    if (document.visibilityState === 'hidden') return;
+    if (!_suggestPrefetchActive()) return;
+    if (_prefetchInflight) return;
+    if (_prefetchedBatches.length >= _PREFETCH_CAP) return;
+    if (Date.now() < _prefetchBackoffUntil) return;
+    _prefetchInflight = true;
+    try {
+        const r = await fetch('/subjects/suggest?n=' + _prefetchN);
+        const data = await r.json();
+        const arr = (data && data.suggestions) || [];
+        if (!arr.length) {
+            // Empty response — back off 30 s to avoid hammering a misconfigured LLM.
+            _prefetchBackoffUntil = Date.now() + 30_000;
+        } else {
+            _prefetchedBatches.push(arr);
+            _prefetchTotalFetched += 1;
+        }
+    } catch {
+        _prefetchBackoffUntil = Date.now() + 30_000;
+    } finally {
+        _prefetchInflight = false;
+    }
+}
+
+// Consumer hook used by the carousel right-overlay click handler. Returns a
+// cached batch synchronously if available, or null. Always tops the buffer off.
+function _consumePrefetchedBatch() {
+    if (!_suggestPrefetchActive()) return null;
+    const batch = _prefetchedBatches.length ? _prefetchedBatches.shift() : null;
+    if (batch) _prefetchTotalConsumed += 1;
+    // Fire-and-forget top-off.
+    _maybePrefetch();
+    return batch;
+}
+
+// Async wait for the inflight prefetch (used when buffer is empty but a fetch
+// is in-flight). Returns the batch when it lands, or null if it errored.
+async function _awaitPrefetchedBatch(timeoutMs = 8000) {
+    if (!_suggestPrefetchActive()) return null;
+    const start = Date.now();
+    while (_prefetchInflight && Date.now() - start < timeoutMs) {
+        await new Promise(res => setTimeout(res, 80));
+    }
+    return _consumePrefetchedBatch();
+}
+
+function _resetIdlePrefetchTimer() {
+    if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
+    _prefetchIdleTimer = setTimeout(() => { _maybePrefetch(); }, 8000);
+}
+
+function _wireCarouselPrefetch() {
+    // No-op if the carousel module variables aren't present yet.
+    if (!_suggestPrefetchActive()) {
+        console.info('[prefetch] carousel branch not present — prefetch inert');
+        return;
+    }
+
+    const frame = document.getElementById('subject-chips')
+        || document.querySelector('.suggestion-frame')
+        || document.querySelector('[data-suggest-frame]');
+    if (!frame) return;
+
+    const parent = frame.parentElement || frame;
+    parent.addEventListener('pointerenter', () => { _maybePrefetch(); });
+
+    const scroller = frame.scrollWidth > frame.clientWidth ? frame : parent;
+    scroller.addEventListener('scroll', () => {
+        const remaining = scroller.scrollWidth - (scroller.scrollLeft + scroller.clientWidth);
+        if (remaining <= 1.5 * scroller.clientWidth) _maybePrefetch();
+    }, { passive: true });
+
+    // Right overlay hover (entering hovers should already start fetching).
+    const rightOverlay = document.querySelector('[data-suggest-overlay="right"]')
+        || document.querySelector('.suggest-right-overlay');
+    if (rightOverlay) {
+        rightOverlay.addEventListener('pointerenter', () => { _maybePrefetch(); });
+    }
+
+    // Idle prefetch: 8 s of no Subjects-textarea input + no chip click.
+    const ta = document.getElementById('p-core');
+    if (ta) ta.addEventListener('input', _resetIdlePrefetchTimer);
+    parent.addEventListener('click', _resetIdlePrefetchTimer);
+    _resetIdlePrefetchTimer();
+
+    // Pause prefetch when the page is hidden — cancel idle timer, no new triggers.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            if (_prefetchIdleTimer) { clearTimeout(_prefetchIdleTimer); _prefetchIdleTimer = null; }
+        } else {
+            _resetIdlePrefetchTimer();
+        }
+    });
+}
+
+// Diagnostic helper — call from devtools console to inspect prefetch state.
+function _dumpSuggestPrefetchStats() {
+    const stats = {
+        active: _suggestPrefetchActive(),
+        inflight: _prefetchInflight,
+        cached: _prefetchedBatches.length,
+        cap: _PREFETCH_CAP,
+        total_fetched: _prefetchTotalFetched,
+        total_consumed: _prefetchTotalConsumed,
+        backoff_remaining_ms: Math.max(0, _prefetchBackoffUntil - Date.now()),
+    };
+    console.log('[prefetch]', stats);
+    return stats;
+}
+window._dumpSuggestPrefetchStats = _dumpSuggestPrefetchStats;
+window._consumePrefetchedBatch = _consumePrefetchedBatch;
+window._awaitPrefetchedBatch = _awaitPrefetchedBatch;
+window._maybePrefetch = _maybePrefetch;
+
+document.addEventListener('DOMContentLoaded', _wireCarouselPrefetch);
+
 function updateStageSteps(state) {
   if (!state) return;
   const steps = document.querySelectorAll('#stage-steps li[data-stage]');
