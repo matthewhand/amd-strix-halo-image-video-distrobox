@@ -569,10 +569,8 @@
                     <span>Polymorphic</span>
                 </span>
             </label>
-            <label class="flex items-center gap-2" title="Concurrent mode (Phase 5) — multiple GPU stages may run in parallel when their summed budgets fit under MemAvailable − safety_gb. Backed by GPUReservation; live readout in Settings → Diagnostics. Still experimental: trust the STAGE_BUDGETS table is the trust boundary.">
-                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" {% if config.concurrent %}checked{% endif %} onchange="_updateSingleLabels(); _updateGenModePill()" />
-                <span class="text-xs single-label flex items-center gap-1" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent <span class="badge badge-xs badge-warning ml-1">experimental</span></span>
-            </label>
+            {# Concurrent toggle moved to Settings → Diagnostics — it's an
+               operational/global behavior, not a per-pipeline-popup choice. #}
         </div>
 
         <!-- ============ Four model selects (image / video / audio / upscale) ============ -->
@@ -1242,7 +1240,31 @@
                     <button class="btn btn-xs btn-outline" onclick="copyDiagnostics()">Copy diagnostics</button>
                     <span id="diag-copy-badge" class="badge badge-ghost badge-sm font-mono">idle</span>
                 </div>
-                <pre id="diag-status" class="bg-base-100 border border-base-300 rounded p-2 text-[10px] font-mono overflow-auto max-h-48">(click Refresh)</pre>
+                <pre id="diag-status" class="bg-base-100 border border-base-300 rounded p-2 text-[10px] font-mono overflow-auto max-h-48 mb-4">(click Refresh)</pre>
+
+                {# UI visibility toggles — control which heavyweight surfaces
+                   render in the dashboard. Persisted in localStorage so state
+                   survives reloads. #}
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-4">UI surfaces</div>
+
+                <label class="label cursor-pointer py-1">
+                    <span class="label-text text-xs">Show top-bar diagnostics (RAM / GPU / Load / Disk)</span>
+                    <input id="ui-show-topbar" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                           onchange="_applyUiToggle('topbar', this.checked)" />
+                </label>
+
+                <label class="label cursor-pointer py-1">
+                    <span class="label-text text-xs">Show queue progress bar</span>
+                    <input id="ui-show-queue-bar" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                           onchange="_applyUiToggle('queueBar', this.checked)" />
+                </label>
+
+                {# Concurrent toggle relocated from the Pipeline popup. It's
+                   global operational state — affects every job, not per-popup. #}
+                <label class="label cursor-pointer py-1" title="Concurrent mode (Phase 5) — multiple GPU stages may run in parallel when their summed budgets fit under MemAvailable − safety_gb. Backed by GPUReservation. Experimental.">
+                    <span class="label-text text-xs flex items-center gap-1">Concurrent mode <span class="badge badge-xs badge-warning ml-1">experimental</span></span>
+                    <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" {% if config.concurrent %}checked{% endif %} onchange="_updateGenModePill && _updateGenModePill()" />
+                </label>
             </div><!-- /Diagnostics tabpanel -->
         </div><!-- /tablist -->
 
