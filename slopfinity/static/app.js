@@ -988,7 +988,7 @@ function connect() {
                         return `<div class="flex items-center gap-2 mt-1">${assetBadge}${timing}</div>`;
                     }).join('');
                 return `
-                    ${completedLines}
+                    ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Slops</div>${completedLines}` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
                         <span class="loading loading-spinner loading-xs text-primary"></span>
                         <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
