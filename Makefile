@@ -8,6 +8,20 @@
 #   make tailwind        — one-shot build of slopfinity/static/tailwind.css
 #   make tailwind-watch  — rebuild on file change (good while iterating)
 #   make tailwind-clean  — drop the binary + the generated CSS
+#
+# License + offline deployment:
+#   The Tailwind CLI (and the CSS it emits) is MIT-licensed. You can
+#   redistribute the generated tailwind.css inside an offline package
+#   (AppImage / tarball / rootfs) freely; ship the upstream LICENSE
+#   from https://github.com/tailwindlabs/tailwindcss alongside it to
+#   stay compliant. The CLI BINARY itself isn't needed at runtime —
+#   only at build time. So an offline deployment looks like:
+#     1. `make tailwind` on a machine with internet access.
+#     2. Bundle slopfinity/static/tailwind.css with the rest of the
+#        static assets (no need to ship bin/tailwindcss).
+#     3. Drop the play-CDN <script src="https://cdn.tailwindcss.com">
+#        tag in templates/index.html for a local <link> to the
+#        bundled file.
 
 TAILWIND_VERSION := latest
 TAILWIND_BIN     := bin/tailwindcss
