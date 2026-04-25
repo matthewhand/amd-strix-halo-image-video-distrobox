@@ -259,6 +259,7 @@ async def inject(
     infinity: str = Form(default=""),
     when_idle: str = Form(default=""),
     chaos: str = Form(default=""),
+    image_only: str = Form(default=""),
 ):
     q = cfg.get_queue()
     if terminate:
@@ -283,6 +284,7 @@ async def inject(
         "infinity": bool(infinity),
         "when_idle": bool(when_idle),
         "chaos": bool(chaos),
+        "image_only": bool(image_only),
     }
     if stage_prompts:
         try:
