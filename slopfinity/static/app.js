@@ -208,7 +208,15 @@ function _renderDoneItem(q) {
         : '';
     const headFile = assets[0] ? _htmlEscape(_truncMiddle(assets[0], 40)) : '';
     const assetCountBadge = assets.length > 1
-        ? `<span class="badge badge-xs badge-ghost">${assets.length}</span>`
+        ? `<span class="badge badge-xs badge-ghost aspect-square min-w-5 h-5 px-0 rounded-full font-mono" title="${assets.length} assets">${assets.length}</span>`
+        : '';
+    const metaParts = [
+        tsHuman ? `<span class="text-[9px] font-mono text-base-content/60">${tsHuman}</span>` : '',
+        dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : '',
+        headFile ? `<span class="text-[9px] font-mono opacity-70 hidden sm:inline truncate max-w-[12rem]">${headFile}</span>` : '',
+    ].filter(Boolean).join('<span class="text-base-content/30">·</span>');
+    const metaGroup = metaParts
+        ? `<span class="inline-flex items-center gap-2 px-2 py-0.5 rounded-md bg-base-300/40 border border-base-300/60">${metaParts}</span>`
         : '';
     const previewList = assets.length
         ? `<div class="join join-vertical w-full mt-2">${assets.map(_renderDoneAssetRow).join('')}</div>`
@@ -225,9 +233,7 @@ function _renderDoneItem(q) {
                 <span class="badge badge-xs ${cls}">${sym} done</span>
                 <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
                 ${assetCountBadge}
-                ${tsHuman ? `<span class="text-[9px] font-mono text-base-content/60">${tsHuman}</span>` : ''}
-                ${dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : ''}
-                ${headFile ? `<span class="text-[9px] font-mono opacity-70 hidden sm:inline">${headFile}</span>` : ''}
+                ${metaGroup}
             </summary>
             <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
                 ${previewList}
