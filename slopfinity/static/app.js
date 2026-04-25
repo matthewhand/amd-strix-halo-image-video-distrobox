@@ -14,6 +14,32 @@ function applyTheme(name) {
 }
 window.applyTheme = applyTheme;
 
+// UI surface toggles (Settings → Diagnostics → UI surfaces). Default ON.
+const _UI_TOGGLE_KEYS = { topbar: 'slopfinity-ui-topbar', queueBar: 'slopfinity-ui-queue-bar' };
+function _isUiToggleOn(name) {
+  try { const v = localStorage.getItem(_UI_TOGGLE_KEYS[name]); return v === null ? true : v === '1'; }
+  catch (_) { return true; }
+}
+function _applyUiToggle(name, on) {
+  try { localStorage.setItem(_UI_TOGGLE_KEYS[name], on ? '1' : '0'); } catch (_) {}
+  if (name === 'topbar') {
+    const navHw = document.querySelector('header .flex-1.flex.items-center.gap-x-6');
+    if (navHw) navHw.style.display = on ? '' : 'none';
+  } else if (name === 'queueBar') {
+    const bar = document.getElementById('active-job-progress-bar');
+    if (bar) bar.style.display = on ? '' : 'none';
+  }
+}
+window._applyUiToggle = _applyUiToggle;
+document.addEventListener('DOMContentLoaded', () => {
+  ['topbar', 'queueBar'].forEach(name => {
+    const on = _isUiToggleOn(name);
+    _applyUiToggle(name, on);
+    const el = document.getElementById(name === 'topbar' ? 'ui-show-topbar' : 'ui-show-queue-bar');
+    if (el) el.checked = on;
+  });
+});
+
 // ---------------------------------------------------------------------------
 // RAM-tight guard — wrapper that shows a confirmation modal before any
 // manual AI button (🎲 Suggest, ✨ Enhance, fan-out, TTS preview) fires
@@ -2339,9 +2365,9 @@ function connect() {
                             ${menuHTML}
                         </summary>
                         <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
-                            <div class="flex items-center gap-1 flex-wrap text-[10px] mt-1">
+                            <div class="${isActive ? 'flex flex-col items-start gap-1' : 'flex items-center gap-1 flex-wrap'} text-[10px] mt-1">
                                 ${badges.join('')}
-                                <span class="text-base-content/50 font-mono ml-auto">${meta}</span>
+                                <span class="text-base-content/50 font-mono ${isActive ? '' : 'ml-auto'}">${meta}</span>
                             </div>
                             ${stripHTML}
                         </div>
@@ -3707,8 +3733,32 @@ function _buildSuggestChip(s) {
             // content.
             const matches = document.querySelectorAll(`#subject-chips-stack button[data-suggest="${CSS.escape(s)}"]`);
             matches.forEach(el => el.classList.add('chip-disappear'));
+            // Snapshot which tracks need re-measuring AFTER removal — the
+            // marquee duration is set as a CSS var based on track width, so
+            // a narrower track (post-removal) translates fewer pixels per
+            // second over the SAME duration → looks slower. Recompute.
+            const tracksToReMeasure = new Set();
+            matches.forEach(el => {
+                const tr = el.closest('.suggest-marquee-track');
+                if (tr) tracksToReMeasure.add(tr);
+            });
             setTimeout(() => {
                 matches.forEach(el => el.remove());
+                tracksToReMeasure.forEach(track => {
+                    const row = track.parentElement;
+                    if (!row) return;
+                    const tw = track.scrollWidth;
+                    const rw = row.clientWidth;
+                    if (tw / 2 <= rw) {
+                        row.classList.add('no-overflow');
+                        track.style.removeProperty('--marquee-duration');
+                    } else {
+                        row.classList.remove('no-overflow');
+                        const px = tw / 2;
+                        const seconds = Math.min(180, Math.max(40, px / 60));
+                        track.style.setProperty('--marquee-duration', seconds + 's');
+                    }
+                });
             }, 320);
         } catch (err) {
             console.warn('chip inject failed', err);
