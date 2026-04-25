@@ -1,8 +1,9 @@
 /* Stats-navbar tickers — bars use DaisyUI bg-primary/secondary/accent utility
    classes (assigned from JS based on the parent's data-tone) so they re-skin
    with the active theme. The .over modifier swaps to the danger color when
-   the metric goes above 80 %. */
-.ticker-bar { display: flex; align-items: flex-end; height: 30px; gap: 2px; }
+   the metric goes above 80 %. row-reverse so the newest sample (last pushed
+   to the history array) renders on the LEFT and history flows to the right. */
+.ticker-bar { display: flex; flex-direction: row-reverse; align-items: flex-end; height: 30px; gap: 2px; }
 .ticker-col { width: 6px; transition: height 0.2s, background-color 0.2s; border-radius: 2px 2px 0 0; }
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
