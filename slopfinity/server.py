@@ -1394,6 +1394,69 @@ async def scheduler_status():
     }
 
 
+# ---------------------------------------------------------------------------
+# Coordinator (Phase 4) start/stop endpoints. The legacy fleet runner is
+# still supported in parallel; users can run either path during transition.
+# ---------------------------------------------------------------------------
+try:
+    from . import coordinator as _coordinator  # noqa: E402
+except Exception as _coord_imp_err:  # pragma: no cover
+    _coordinator = None
+    _coord_imp_err_repr = repr(_coord_imp_err)
+else:
+    _coord_imp_err_repr = None
+
+
+@app.post("/coordinator/start")
+async def coordinator_start():
+    """Spawn the Phase-4 Coordinator (concurrent StageWorker loops).
+
+    Idempotent — calling while already running returns the current status.
+    The legacy fleet runner remains independent; running both at once is
+    not recommended (they would race on the same queue).
+    """
+    if _coordinator is None:
+        return JSONResponse(
+            {"ok": False, "error": "coordinator module unavailable",
+             "detail": _coord_imp_err_repr},
+            status_code=500,
+        )
+    co = _coordinator.get_coordinator()
+    try:
+        await co.start()
+    except RuntimeError as e:
+        # Phases 1-3 may not be merged yet — surface clearly.
+        return JSONResponse(
+            {"ok": False, "error": str(e), **co.status()},
+            status_code=503,
+        )
+    return {"ok": True, **co.status()}
+
+
+@app.post("/coordinator/stop")
+async def coordinator_stop():
+    """Cancel the Coordinator's worker tasks and clear the running flag."""
+    if _coordinator is None:
+        return JSONResponse(
+            {"ok": False, "error": "coordinator module unavailable",
+             "detail": _coord_imp_err_repr},
+            status_code=500,
+        )
+    co = _coordinator.get_coordinator()
+    await co.stop()
+    return {"ok": True, **co.status()}
+
+
+@app.get("/coordinator/status")
+async def coordinator_status():
+    """Snapshot of the Coordinator: running flag + worker list + import health."""
+    if _coordinator is None:
+        return {"ok": False, "error": "coordinator module unavailable",
+                "detail": _coord_imp_err_repr,
+                "running": False, "workers": []}
+    co = _coordinator.get_coordinator()
+    return {"ok": True, "persisted_running": _coordinator.is_running(), **co.status()}
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
