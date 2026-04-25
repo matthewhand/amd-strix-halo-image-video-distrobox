@@ -39,6 +39,12 @@ def migrate_legacy(item: dict) -> dict:
         bulk = "failed"
     elif legacy_status == "cancelled":
         bulk = "skipped"
+    elif legacy_status == "working":
+        # In-flight sentinel from the fleet runner — leave each stage as
+        # `needs` so the coordinator (if it ever picks this up) can still
+        # claim it; the legacy fleet runner doesn't consult `stages` at
+        # all and simply checks `status == 'working'` directly.
+        bulk = "needs"
     else:
         bulk = "needs"
     config = item.get("config_snapshot") or {}
