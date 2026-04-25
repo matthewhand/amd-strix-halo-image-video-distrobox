@@ -580,16 +580,27 @@ function updateRam(ram) {
         const rows = [];
         for (const e of ram.breakdown) {
             if (e.role !== 'overhead' && (!e.gb || e.gb <= 0)) continue;
-            const stage = (e.stage || '').padEnd(7);
+            const stage = (e.stage || '').toString();
             const label = (e.label || e.model || '').toString();
-            const labelTrim = label.length > 22 ? label.slice(0, 21) + '…' : label.padEnd(22);
+            const labelTrim = label.length > 22 ? label.slice(0, 21) + '…' : label;
             const gb = (Math.round((e.gb || 0) * 10) / 10).toFixed(1);
-            rows.push(`<div>${_htmlEscape(stage)} ${_htmlEscape(labelTrim)} <span class="float-right">${gb} GB</span></div>`);
+            rows.push(
+                `<div class="flex items-baseline gap-2">` +
+                  `<span class="opacity-70 w-14 flex-none">${_htmlEscape(stage)}</span>` +
+                  `<span class="flex-1 truncate">${_htmlEscape(labelTrim)}</span>` +
+                  `<span class="font-mono text-right flex-none">${gb} GB</span>` +
+                `</div>`
+            );
         }
-        rows.push('<div class="opacity-50">────────────────────────────</div>');
+        rows.push('<div class="opacity-50 my-1">────────────────────────────</div>');
         const total = (Math.round((ram.estimated_gb || 0) * 10) / 10).toFixed(1);
         const budget = ram.budget_gb || 128;
-        rows.push(`<div><b>Total</b> <span class="float-right"><b>${total} GB</b> / ${budget} GB unified</span></div>`);
+        rows.push(
+            `<div class="flex items-baseline justify-between gap-2">` +
+              `<b>Total</b>` +
+              `<span><b class="font-mono">${total} GB</b> <span class="opacity-60">/ ${budget} GB unified</span></span>` +
+            `</div>`
+        );
         bd.innerHTML = rows.join('');
     }
     el.className = 'alert p-2 ' + (ram.status === 'danger' ? 'alert-error' : ram.status === 'warn' ? 'alert-warning' : 'alert-success');
