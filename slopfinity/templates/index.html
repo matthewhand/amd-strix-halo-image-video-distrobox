@@ -8,6 +8,21 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
+    {# Silence the Tailwind play-CDN production warning. We use the CDN
+       intentionally in this self-hosted dashboard — bundling via the
+       Tailwind CLI is on the backlog as a build-step follow-up. The
+       filter only swallows the exact message Tailwind emits; every
+       other console.warn passes through unchanged. #}
+    <script>
+      (function () {
+        const _origWarn = console.warn;
+        console.warn = function () {
+          const s = arguments[0];
+          if (typeof s === 'string' && s.indexOf('cdn.tailwindcss.com should not be used in production') !== -1) return;
+          return _origWarn.apply(console, arguments);
+        };
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/app.css" />
     {# Aesthetics — full-page background driven by branding.aesthetics.
