@@ -147,27 +147,22 @@
 }
 .pipeline-seg-label {
     position: absolute;
-    left: 50%; top: 30%;
-    transform: translate(-50%, -50%);
+    left: 6px; top: 4px;
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    opacity: 0.65;
+    opacity: 0.75;
     color: hsl(var(--bc));
     white-space: nowrap;
     pointer-events: none;
     z-index: 1;
 }
-.pipeline-seg-current .pipeline-seg-label { opacity: 0.9; }
-/* Inline per-segment timing (elapsed / ETA) sits underneath the stage label
-   so each segment carries its own budget at a glance. Past stages show the
-   recorded actual; current shows live-tick elapsed; future shows an em-dash.
-   Tiny font + low opacity so it doesn't compete with the label. */
+.pipeline-seg-current .pipeline-seg-label { opacity: 0.95; font-weight: 600; }
+/* Inline per-segment timing — also left-aligned, sits below the stage label */
 .pipeline-seg-timing {
     position: absolute;
-    left: 50%; bottom: 10%;
-    transform: translate(-50%, 0);
+    left: 6px; bottom: 4px;
     font-size: 8px;
     font-family: monospace;
     opacity: 0.65;
@@ -264,15 +259,17 @@ textarea.subjects-autogrow {
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: 56px;
-    height: 3px;
-    background: hsl(var(--bc) / 0.30);
-    border-radius: 2px;
-    transition: background-color 0.15s ease;
+    width: 80px;
+    height: 4px;
+    background: hsl(var(--p) / 0.55);
+    border-radius: 3px;
+    box-shadow: 0 0 8px hsl(var(--p) / 0.25);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
 }
 #ui-split-handle:hover::after,
 #ui-split-handle.dragging::after {
     background: hsl(var(--p));
+    box-shadow: 0 0 12px hsl(var(--p) / 0.5);
 }
 /* Splitter container — no longer fixed height. Upper pane is splitter-sized
    (drag-to-resize); lower pane flows naturally and the page body itself

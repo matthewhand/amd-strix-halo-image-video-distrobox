@@ -170,10 +170,15 @@
                     </button>
                 </div>
             </div>
-            <textarea id="p-core" rows="5"
-                class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
-                placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
-                oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+            <div class="flex gap-2 items-stretch">
+                <textarea id="p-core" rows="5"
+                    class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
+                    placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
+                    oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+                <button class="btn btn-primary btn-lg flex-none w-32 self-stretch h-auto whitespace-normal text-sm leading-tight" id="btn-start-stop-inline" onclick="toggleInfinity()" title="Start/queue generation">
+                    {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
+                </button>
+            </div>
             <div id="subjects-need-ideas-row" class="flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1">
                     <a id="subjects-suggestion-prompt-link"
@@ -211,11 +216,11 @@
                 <span id="subject-chips-empty" class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
             </div>
-            <div class="w-full mt-auto">
-                <button class="btn btn-primary btn-lg w-full" id="btn-start-stop" onclick="toggleInfinity()">
-                    {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
-                </button>
-            </div>
+            {# Legacy hidden start button — keeps the original ID alive for any
+               JS that still targets #btn-start-stop. The visible button
+               (#btn-start-stop-inline) is alongside the textarea above. The
+               _updateStartBtn helper writes to BOTH so they stay in sync. #}
+            <button class="hidden" id="btn-start-stop" onclick="toggleInfinity()" tabindex="-1" aria-hidden="true"></button>
         </div>
     </section>
 
@@ -237,9 +242,10 @@
         <li class="step" data-stage="Final Merge"></li>
     </ul>
 
-    {# Drag-handle between Subjects and Queue. Hidden on narrow viewports — the flex direction is column there. #}
-    <div id="split-divider" class="hidden xl:flex items-center justify-center cursor-col-resize w-2 group" title="Drag to resize">
-        <div class="w-1 h-16 rounded bg-base-300 group-hover:bg-primary transition-colors"></div>
+    {# Drag-handle between Subjects and Queue. Highlighted with primary tint
+       so users notice it; hover deepens. Hidden on narrow viewports. #}
+    <div id="split-divider" class="hidden xl:flex items-center justify-center cursor-col-resize w-3 group" title="Drag to resize">
+        <div class="w-1.5 h-20 rounded-full bg-primary/40 group-hover:bg-primary transition-colors shadow-md"></div>
     </div>
 
     <!-- Queue — sits to the right of Subjects on wide viewports. -->
