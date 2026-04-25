@@ -749,6 +749,26 @@
                         <span class="label-text-alt text-[10px] opacity-60 italic">Leave blank to use the built-in default. Used by run_philosophical_experiments.py — restart the runner after saving for changes to take effect.</span>
                         <button class="btn btn-ghost btn-xs mt-1" type="button" onclick="resetFleetPrompt()">↺ Reset to default</button>
                     </div>
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer py-1">
+                            <span class="label-text text-xs">Derive suggestions from current Subjects</span>
+                            <input id="set-suggest-use-subjects" type="checkbox"
+                                class="toggle toggle-primary toggle-sm" checked />
+                        </label>
+                        <div class="label-text-alt text-[10px] opacity-60 leading-snug">
+                            When on, the auto-suggest LLM is asked to match the style/theme of whatever you've typed in Subjects. Off = generic subjects with no context.
+                        </div>
+
+                        <label class="label py-1 mt-2">
+                            <span class="label-text text-xs">Custom suggestion-generation system prompt</span>
+                        </label>
+                        <textarea id="set-suggest-custom-prompt"
+                            class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                            rows="4"
+                            placeholder="Leave blank to use the built-in suggestion system prompt."></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Overrides the LLM's system role for /subjects/suggest. Combine freely with the toggle above.</span>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-3 mt-4">

@@ -2231,6 +2231,15 @@ async function openSettings() {
         if (autoSus) autoSus.checked = !!llm.auto_suspend;
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
+        const sugUseSub = $('set-suggest-use-subjects');
+        if (sugUseSub) {
+            // Default ON when the server hasn't returned the key yet.
+            sugUseSub.checked = (sr.suggest_use_subjects === undefined)
+                ? true
+                : !!sr.suggest_use_subjects;
+        }
+        const sugCustom = $('set-suggest-custom-prompt');
+        if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -2312,6 +2321,10 @@ async function saveSettings() {
         // Empty string is meaningful here (server interprets it as "use built-in default").
         body.philosophical_prompt = fleetPrompt.value;
     }
+    const sugUseSub = $('set-suggest-use-subjects');
+    if (sugUseSub) body.suggest_use_subjects = !!sugUseSub.checked;
+    const sugCustom = $('set-suggest-custom-prompt');
+    if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2621,7 +2634,12 @@ async function regenSuggestions(n = 6) {
   if (!box) return;
   box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
   try {
-    const r = await fetch('/subjects/suggest?n=' + n);
+    // Forward the current Subjects textarea so the server can match
+    // style/theme when `suggest_use_subjects` is enabled. The server ignores
+    // it when the toggle is off, so it's safe to always send.
+    const subjects = (($('p-core') && $('p-core').value) || '').trim();
+    const qs = '?n=' + n + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '');
+    const r = await fetch('/subjects/suggest' + qs);
     const data = await r.json();
     const arr = data.suggestions || [];
     if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
