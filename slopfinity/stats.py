@@ -5,13 +5,29 @@ from pathlib import Path
 
 
 def get_sys_stats():
-    s = {"gpu": 0, "vram": 0, "ram_u": 0, "ram_t": 0}
+    s = {"gpu": 0, "vram": 0, "ram_u": 0, "ram_t": 0, "load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0, "load_pct": 0}
     try:
         res = subprocess.run(["rocm-smi", "--showuse", "--showmemuse"], capture_output=True, text=True)
         for l in res.stdout.split('\n'):
             if "GPU use (%)" in l: s["gpu"] = int(l.split(':')[-1].strip())
             if "GPU Memory Allocated (VRAM%)" in l: s["vram"] = int(l.split(':')[-1].strip())
     except: pass
+    try:
+        # Load average — better than instantaneous CPU% on Linux: captures pending
+        # work + IO wait. /proc/loadavg gives 1m/5m/15m running averages. Express
+        # it as a percentage of the CPU count so the ticker has a 0-100 scale.
+        with open('/proc/loadavg', 'r') as f:
+            parts = f.read().split()
+        s["load_1m"] = float(parts[0])
+        s["load_5m"] = float(parts[1])
+        s["load_15m"] = float(parts[2])
+        try:
+            cpus = max(1, os.cpu_count() or 1)
+        except Exception:
+            cpus = 1
+        s["load_pct"] = min(100, int(round((s["load_1m"] / cpus) * 100)))
+    except Exception:
+        pass
     try:
         with open('/proc/meminfo', 'r') as f:
             m = {ln.split(':')[0]: ln.split(':')[1].strip() for ln in f}
@@ -22,9 +38,26 @@ def get_sys_stats():
 
 
 def _status_from_pct(pct):
-    if pct >= 90: return "danger"
-    if pct >= 80: return "warn"
+    # Relaxed: only warn close to full. 72 % isn't actionable noise.
+    if pct >= 95: return "danger"
+    if pct >= 90: return "warn"
     return "ok"
+
+
+def get_outputs_disk(path):
+    """Return {used_gb, total_gb, pct, status} for the filesystem hosting `path`.
+
+    The navbar uses this to surface a single \"Disk\" % without naming the mount,
+    since the user just cares whether their slop volume is filling up.
+    """
+    try:
+        du = shutil.disk_usage(path)
+        total_gb = round(du.total / (1024 ** 3), 1)
+        used_gb = round(du.used / (1024 ** 3), 1)
+        pct = round((du.used / du.total) * 100, 1) if du.total else 0
+        return {"used_gb": used_gb, "total_gb": total_gb, "pct": pct, "status": _status_from_pct(pct)}
+    except Exception:
+        return {"used_gb": 0, "total_gb": 0, "pct": 0, "status": "ok", "missing": True}
 
 
 def get_storage():

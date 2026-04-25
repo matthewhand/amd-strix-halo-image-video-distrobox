@@ -2,9 +2,15 @@ import json
 import os
 import time
 
-CONFIG_FILE = "comfy-outputs/experiments/config.json"
-STATE_FILE = "comfy-outputs/experiments/state.json"
-QUEUE_FILE = "comfy-outputs/experiments/queue.json"
+# In-container slopfinity has cwd=/ but the bind-mount lives at /workspace,
+# so a relative path like "comfy-outputs/..." silently resolves to a ghost
+# file inside the container. Honour SLOPFINITY_STATE_DIR (set to /workspace
+# in docker-compose.override.yaml) and fall back to the legacy relative path
+# for host-side fleet runners.
+_STATE_DIR = os.environ.get("SLOPFINITY_STATE_DIR") or "comfy-outputs/experiments"
+CONFIG_FILE = os.path.join(_STATE_DIR, "config.json")
+STATE_FILE = os.path.join(_STATE_DIR, "state.json")
+QUEUE_FILE = os.path.join(_STATE_DIR, "queue.json")
 
 DEFAULT_CONFIG = {
     "base_model": "ltx-2.3",
@@ -21,6 +27,9 @@ DEFAULT_CONFIG = {
     "consolidation": "overlay",
     "music_gain_db": 0,
     "fade_s": 0.5,
+    "chaos_mode": False,
+    "chaos_interval_s": 180,
+    "when_idle": False,
 }
 
 def load_config():

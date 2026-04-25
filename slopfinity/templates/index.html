@@ -13,31 +13,36 @@
 </head>
 <body class="min-h-screen bg-base-300 text-base-content">
 
-<!-- Sticky Header -->
-<header class="sticky top-0 z-30 bg-base-200/80 backdrop-blur border-b border-base-100 px-6 py-3 flex items-center justify-between">
-    <h1 class="text-2xl font-black text-primary uppercase tracking-widest">{{ branding.app.name }}</h1>
-    <button id="btn-settings" class="btn btn-ghost btn-sm btn-square text-lg" title="Settings" onclick="openSettings()">⚙</button>
-</header>
+<main class="w-full mx-auto p-4 md:p-6">
 
-<main class="max-w-5xl mx-auto p-4 md:p-6">
-
-    <!-- Sticky stats navbar: hardware (GPU/VRAM/RAM) + output counts (MP4/Chains/Base) + storage + sync -->
-    <div id="stats-navbar" class="navbar bg-base-100/80 backdrop-blur rounded-2xl border border-base-200 shadow-xl mb-6 sticky top-[60px] z-20 px-4 flex-wrap gap-y-1">
-        <div class="flex-1 flex flex-wrap items-center gap-x-6 gap-y-1">
-            {# Hardware #}
+    <!-- Combined header + stats navbar — single sticky strip with brand on left, hardware pills + Latest, conn pill + settings on right. -->
+    <!-- flex-nowrap + overflow-hidden on the inner row: when the viewport gets narrow, hardware pills clip behind the gear's left edge instead of wrapping to a second line. Settings gear stays anchored on the right. -->
+    <div id="stats-navbar" class="navbar bg-base-200/85 backdrop-blur rounded-2xl border border-base-100 shadow-xl mb-6 sticky top-2 z-30 px-4 flex-nowrap">
+        <div class="flex-1 flex items-center gap-x-6 overflow-hidden min-w-0 [&>*]:flex-shrink-0">
+            <h1 class="text-xl font-black text-primary uppercase tracking-widest mr-2">{{ branding.app.name }}</h1>
+            {# Hardware — Strix Halo has 128 GB unified RAM (no separate VRAM). #}
+            <span class="flex flex-col items-start gap-0">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
+                    <span class="font-mono font-black text-secondary" id="v-v">0%</span>
+                    <span class="ticker-bar ml-1" id="v-t" data-tone="secondary"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none" id="r-v">0 / 0 GB</span>
+            </span>
             <span class="flex items-baseline gap-1">
                 <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
                 <span class="font-mono font-black text-primary" id="g-v">0%</span>
-                <span class="ticker-bar ml-1" id="g-t"></span>
+                <span class="ticker-bar ml-1" id="g-t" data-tone="primary"></span>
             </span>
-            <span class="flex items-baseline gap-1">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">VRAM</span>
-                <span class="font-mono font-black text-secondary" id="v-v">0%</span>
-                <span class="ticker-bar ml-1" id="v-t"></span>
+            <span class="flex items-baseline gap-1" title="Load average — system-wide pressure (1m / 5m / 15m). Better signal than instantaneous CPU% because it includes pending + IO-wait. Shown as a percentage of the CPU count.">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">Load</span>
+                <span class="font-mono font-black text-info" id="l-v">0%</span>
+                <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
             </span>
-            <span class="flex items-baseline gap-1">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
-                <span class="font-mono font-bold text-accent" id="r-v">0 / 0 GB</span>
+            <span class="flex items-baseline gap-1" title="{{ outputs_disk.used_gb }} / {{ outputs_disk.total_gb }} GB · ticker spans ~1 hour">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span class="opacity-60 normal-case">(1hr)</span></span>
+                <span class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}" id="d-v">{{ outputs_disk.pct }}%</span>
+                <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
             </span>
             {# Output counters removed from navbar — now shown inline with Slop filter chip labels. #}
             {# Keep hidden IDs so existing WS / backend bindings don't break. #}
@@ -63,46 +68,44 @@
                     <option value="0">off</option>
                 </select>
             </div>
-            <span id="live-dot" class="hidden lg:inline-flex relative w-2.5 h-2.5 ml-1" title="WebSocket live">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-success"></span>
+            <button id="btn-settings" class="btn btn-ghost btn-sm btn-square text-lg text-primary" title="Settings" onclick="openSettings()">⚙</button>
+            {# live-dot lives inside the Settings modal now (Diagnostics tab); keep the element here off-screen so existing JS doesn't choke. #}
+            <span id="live-dot" class="hidden">
+                <span class="rounded-full bg-success"></span>
+                <span class="rounded-full bg-success"></span>
             </span>
         </div>
     </div>
-
-    {# Latest-final filename (small desc line below navbar, hidden when empty) #}
-    <div class="text-[10px] text-base-content/40 font-mono mb-4 truncate px-2" id="out-latest"></div>
 
     <!-- Hero Idle — tiny status line instead of giant alert -->
     {# Idle chip removed — the Start Infinity button already communicates state. #}
     <div id="hero-idle" class="hidden"></div>
 
-    <!-- Subjects card (primary input for Infinity mode) -->
-    <section class="card bg-base-100 border-2 border-primary shadow-xl mb-6">
+    <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
+    <div id="split-row" class="flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
+    <section id="split-left" class="card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
         <div class="card-body gap-3">
             <div class="flex items-center justify-between">
                 <span class="text-sm font-bold uppercase tracking-wider text-primary">Subjects</span>
-                <label class="flex items-center gap-2">
-                    <span class="text-xs">Infinity</span>
-                    <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateStartBtn()" />
-                </label>
+                {# Tiny live-summary of the current Generation tab settings so the user can see what Generate will do without opening the modal. #}
+                <button id="gen-mode-pill" class="btn btn-ghost btn-xs gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline → Generation"></button>
             </div>
             <textarea id="p-core" rows="5"
                 class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
                 placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
-                oninput="updatePipeline()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
-            <div class="flex items-center justify-between gap-2">
+                oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+            <div class="flex items-center gap-2">
                 <span class="text-[10px] text-base-content/50">Need ideas?</span>
                 <button class="btn btn-ghost btn-xs" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
             </div>
             <div id="subject-chips" class="flex flex-wrap gap-1 min-h-[28px]">
                 <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
-            <div class="join w-full">
+            <div class="join w-full mt-auto">
                 <button class="btn btn-primary btn-lg join-item flex-1" id="btn-start-stop" onclick="toggleInfinity()">
-                    {% if config.infinity_mode %}⏸ Stop Infinity{% else %}▶ Start Infinity{% endif %}
+                    {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
                 </button>
-                <button class="btn btn-ghost btn-lg join-item text-xl" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
+                <button class="btn btn-primary btn-outline btn-lg join-item text-xl" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
                         <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
@@ -110,29 +113,100 @@
                     </svg>
                 </button>
             </div>
+            {# Selected Models — what the Generate button will spin up. Lives below the button so it reads naturally as a footer. #}
+            <div id="subjects-models" class="flex flex-wrap items-center gap-1 text-[10px] mt-1">
+                <span class="text-base-content/50 uppercase tracking-widest mr-1">Selected Models:</span>
+            </div>
         </div>
     </section>
 
-    <!-- Breadcrumb stage steps (shown when state.mode !== Idle) -->
-    <section id="hero-card" class="card bg-neutral text-neutral-content rounded-2xl border border-base-200 shadow-xl mb-6" style="display:{% if state.mode == 'Idle' %}none{% else %}block{% endif %}">
-        <div class="card-body p-4 gap-2">
-            <div class="flex justify-between items-center">
-                <span id="h-m" class="text-lg font-black">{{ state.mode }}</span>
-                <span id="h-c" class="badge badge-primary font-mono">V {{ state.video_index }}/{{ state.total_videos }} · C {{ state.chain_index }}/{{ state.total_chains }}</span>
+    {# Hidden compat shims — old IDs the JS still touches; live timers/ETA now
+       render inline against the active queue item via _renderQueuePipeline. #}
+    <span id="h-m" class="hidden">{{ state.mode }}</span>
+    <span id="h-c" class="hidden">0s</span>
+    <span id="h-c-total" class="hidden">0s</span>
+    <span id="h-c-eta" class="hidden"></span>
+    <progress id="h-p" class="hidden" value="0" max="100"></progress>
+    <span id="h-pr" class="hidden">"{{ state.current_prompt }}"</span>
+    <ul id="stage-steps" class="hidden">
+        <li class="step" data-stage="Concept"></li>
+        <li class="step" data-stage="Base Image"></li>
+        <li class="step" data-stage="Video Chains"></li>
+        <li class="step" data-stage="Audio"></li>
+        <li class="step" data-stage="TTS"></li>
+        <li class="step" data-stage="Post Process"></li>
+        <li class="step" data-stage="Final Merge"></li>
+    </ul>
+
+    {# Drag-handle between Subjects and Queue. Hidden on narrow viewports — the flex direction is column there. #}
+    <div id="split-divider" class="hidden xl:flex items-center justify-center cursor-col-resize w-2 group" title="Drag to resize">
+        <div class="w-1 h-16 rounded bg-base-300 group-hover:bg-primary transition-colors"></div>
+    </div>
+
+    <!-- Queue — sits to the right of Subjects on wide viewports. -->
+    <section id="split-right" class="card bg-base-100 border border-base-300 shadow xl:flex-1 xl:basis-1/2 min-w-0">
+        <div class="card-body p-3 gap-2 mb-0">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-accent flex-none">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
+                {# Connection-lost pill stays here as a fallback only — the active stage badge inside each queue item now carries the live action verb (Imaging/Videoing). Hidden on Idle / when WS is healthy. #}
+                <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
+                    <span id="conn-pill-text">Connecting</span>
+                </span>
+                <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
-            <ul id="stage-steps" class="steps w-full text-[11px]">
-                <li class="step" data-stage="Concept">Concept</li>
-                <li class="step" data-stage="Base Image">Image</li>
-                <li class="step" data-stage="Video Chains">Chain <span id="chain-counter" class="ml-1 opacity-70"></span></li>
-                <li class="step" data-stage="Audio">Audio</li>
-                <li class="step" data-stage="TTS">TTS</li>
-                <li class="step" data-stage="Post Process">Post</li>
-                <li class="step" data-stage="Final Merge">Final</li>
+            <ul id="q-list" class="flex flex-col gap-2">
+                {% for q in (queue or [])[:6] %}
+                    {% set is_active = (state.mode != 'Idle' and loop.index0 == 0 and q.status != 'cancelled') %}
+                    {% set snap = q.config_snapshot or config %}
+                    <li class="bg-base-200 rounded-md{% if q.status == 'cancelled' %} opacity-50{% endif %}{% if is_active %} ring-2 ring-primary{% endif %}" data-q-ts="{{ q.ts }}" data-q-status="{{ 'active' if is_active else (q.status or 'pending') }}">
+                        <details {% if is_active %}open{% endif %}>
+                            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
+                                {% if q.status == 'cancelled' %}
+                                    <span class="badge badge-xs badge-ghost">cancelled</span>
+                                {% endif %}
+                                {% if q.infinity %}<span class="badge badge-xs badge-secondary" title="Infinity — re-queues itself after every completion">♾</span>{% endif %}
+                                <span class="font-semibold truncate flex-1{% if q.status == 'cancelled' %} line-through{% endif %}" title="{{ q.prompt }}">{{ q.prompt }}</span>
+                                <div class="dropdown dropdown-end">
+                                    <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions">⋯</label>
+                                    <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
+                                        {% if q.status == 'cancelled' %}
+                                            <li><a onclick="requeueItem({{ q.ts }})">↻ Re-queue</a></li>
+                                        {% else %}
+                                            <li><a onclick="toggleItemInfinity({{ q.ts }})">{% if q.infinity %}▶ Make Single{% else %}♾ Make Infinite{% endif %}</a></li>
+                                            <li><a onclick="cancelItem({{ q.ts }})" class="text-error">✕ Cancel</a></li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </summary>
+                            <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
+                                <div class="flex items-center gap-1 flex-wrap text-[10px] mt-1">
+                                    {% if snap.base_model %}<span class="badge badge-xs badge-info">{{ snap.base_model }}</span>{% endif %}
+                                    {% if snap.video_model %}<span class="badge badge-xs badge-success">{{ snap.video_model }}</span>{% endif %}
+                                    {% if snap.audio_model and snap.audio_model != 'none' %}<span class="badge badge-xs badge-secondary">{{ snap.audio_model }}</span>{% endif %}
+                                    {% if snap.upscale_model and snap.upscale_model != 'none' %}<span class="badge badge-xs badge-warning">{{ snap.upscale_model }}</span>{% endif %}
+                                    <span class="text-base-content/50 font-mono ml-auto">{{ snap.size or '1:1' }}·{{ snap.frames or 17 }}f</span>
+                                </div>
+                                {% if is_active %}
+                                    <div class="flex items-center gap-1 mt-1 flex-wrap" data-q-pipeline>
+                                        {% for stage, acro, label in [('Concept','T','Text'),('Base Image','I','Image'),('Video Chains','V','Video'),('Audio','M','Music'),('TTS','S','Voice'),('Post Process','X','Post'),('Final Merge','F','Final')] %}
+                                            <span class="badge badge-xs badge-outline opacity-40 px-1 font-mono text-[9px]" data-stage="{{ stage }}" title="{{ stage }}"><span class="stage-full">{{ label }}</span><span class="stage-short">{{ acro }}</span></span>
+                                        {% endfor %}
+                                        <span class="ml-auto flex gap-1">
+                                            <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>⏱ 0s</span>
+                                            <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>Σ 0s</span>
+                                            <span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta></span>
+                                        </span>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </details>
+                    </li>
+                {% endfor %}
+                {% if not queue %}<li class="text-[10px] text-base-content/40 italic p-2">queue empty — click Generate to add</li>{% endif %}
             </ul>
-            <progress id="h-p" class="progress progress-primary w-full h-2" value="0" max="100"></progress>
-            <div id="h-pr" class="text-xs italic text-neutral-content/70 truncate">"{{ state.current_prompt }}"</div>
         </div>
     </section>
+    </div> {# /split-row #}
 
     {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
     <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">
@@ -141,47 +215,17 @@
         <div class="flex flex-wrap gap-1" id="sched-timeline"></div>
     </div>
 
-    <!-- Queue -->
-    <section class="card bg-base-100 border border-base-300 shadow mb-6">
-        <div class="card-body p-3 gap-2">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-accent">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
-                <button class="btn btn-ghost btn-xs" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
-            </div>
-            <ul id="q-list" class="flex flex-col gap-1">
-                {% for q in (queue or [])[:5] %}
-                    <li>
-                        <details class="bg-base-200 rounded-md">
-                            <summary class="cursor-pointer p-2 text-xs flex flex-wrap items-center gap-2">
-                                <span class="font-semibold truncate max-w-[50%]" title="{{ q.prompt }}">{{ q.prompt[:80] }}</span>
-                                {# best-effort badges from either the queue's snapshot OR current config #}
-                                {% set snap = q.config_snapshot or config %}
-                                {% if snap.base_model %}<span class="badge badge-xs badge-info">{{ snap.base_model }}</span>{% endif %}
-                                {% if snap.video_model %}<span class="badge badge-xs badge-success">{{ snap.video_model }}</span>{% endif %}
-                                {% if snap.audio_model and snap.audio_model != 'none' %}<span class="badge badge-xs badge-secondary">{{ snap.audio_model }}</span>{% endif %}
-                                {% if snap.upscale_model and snap.upscale_model != 'none' %}<span class="badge badge-xs badge-warning">{{ snap.upscale_model }}</span>{% endif %}
-                                <span class="text-[10px] text-base-content/50 font-mono ml-auto">{{ snap.size or '1:1' }}·{{ snap.frames or 17 }}f</span>
-                            </summary>
-                            <div class="p-2 pt-0 text-[11px] text-base-content/70 font-mono whitespace-pre-wrap">{{ q.prompt }}</div>
-                        </details>
-                    </li>
-                {% endfor %}
-                {% if not queue %}<li class="text-[10px] text-base-content/40 italic p-2">queue empty — toggle Infinity to start</li>{% endif %}
-            </ul>
-        </div>
-    </section>
-
     <!-- Unified Slop feed (all assets — FINAL, chain, image, audio) with filter chips -->
     <section id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 class="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-                🎬 {{ branding.labels.gallery_completed }}
+                {{ branding.labels.gallery_completed }}
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="chain" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 {{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="chain">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 {{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 {{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -193,18 +237,45 @@
                 {% set is_mp4 = f.endswith('.mp4') %}
                 {% set is_wav = f.endswith('.wav') %}
                 {% set is_final = is_mp4 and f.startswith('FINAL_') %}
-                {# FINAL_*.mp4 and chain clips are both 'chain' kind for filter purposes; FINAL is just a styling accent. #}
-                {% set kind = 'chain' if is_mp4 else ('audio' if is_wav else 'image') %}
-                {% set model = '' %}
-                {% if f.startswith('test_') %}{% set model = f.split('_')[1] %}
-                {% elif f.startswith('ltx_base_') or (is_mp4 and not is_final) %}{% set model = 'ltx-2.3' %}
+                {# kind drives filter-chip visibility (video / image / audio).
+                   PNG = image regardless of provenance (qwen base, LTX bridge,
+                   etc); MP4 = video; WAV = audio. Filename intuition wins. #}
+                {% set kind = 'video' if is_mp4 else ('audio' if is_wav else 'image') %}
+                {% set model_id = '' %}
+                {% set part_n = '' %}
+                {% set final_n = '' %}
+                {% set _known_models = ['qwen','ernie','ltx-2.3','ltx-bridge','wan2.2','wan2.5','heartmula','qwen-tts','kokoro'] %}
+                {% if f.startswith('test_') and f.split('_')[1]|lower in _known_models %}{% set model_id = f.split('_')[1]|lower %}
+                {% elif f.startswith('ltx_base_') %}{% set model_id = 'ltx-2.3' %}
+                {% elif is_final %}
+                    {% set _stem = f[6:].split('.')[0] %}
+                    {% set final_n = _stem %}
+                {% elif is_mp4 %}{% set model_id = 'ltx-2.3' %}
+                    {% set _m = f.split('_c') %}
+                    {% if _m | length > 1 %}{% set part_n = _m[1].split('.')[0] %}{% endif %}
+                {% elif f.endswith('.png') and f.startswith('v') and '_base.' in f %}{% set model_id = 'qwen' %}
+                {% elif f.endswith('.png') and f.startswith('v') and '_f' in f %}{% set model_id = 'ltx-bridge' %}{% endif %}
+                {% set _model_map = {
+                    'qwen': ('Qwen Image', 'badge-info'),
+                    'ernie': ('Ernie Image', 'badge-error'),
+                    'ltx-2.3': (('LTX-2.3 Video' if is_mp4 else 'LTX-2.3 Image'), 'badge-success'),
+                    'ltx-bridge': ('LTX Bridge', 'badge-success'),
+                    'wan2.2': ('Wan 2.2 Video', 'badge-info'),
+                    'wan2.5': ('Wan 2.5 Video', 'badge-info'),
+                    'heartmula': ('Heartmula Music', 'badge-secondary'),
+                    'qwen-tts': ('Qwen TTS', 'badge-warning'),
+                    'kokoro': ('Kokoro TTS', 'badge-warning'),
+                } %}
+                {% if is_final %}
+                    {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}{% set border_color = 'border-accent' %}
+                {% elif model_id and model_id in _model_map %}
+                    {% set primary_label = _model_map[model_id][0] %}{% set primary_color = _model_map[model_id][1] %}
+                    {% set border_color = {'video':'border-primary','image':'border-secondary','audio':'border-warning'}[kind] %}
+                {% else %}
+                    {% set _fallback = {'video': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind] %}
+                    {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}{% set border_color = _fallback[2] %}
                 {% endif %}
-                {% set mcolor = {'qwen':'badge-info','ernie':'badge-error','ltx-2.3':'badge-success','wan2.2':'badge-info','wan2.5':'badge-info','heartmula':'badge-secondary','qwen-tts':'badge-warning'}.get(model, 'badge-ghost') %}
-                {% set kind_meta = (
-                    ('🎬 FINAL', 'badge-accent', 'border-accent') if is_final
-                    else {'chain': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind]
-                ) %}
-                <div class="card card-compact bg-base-100 shadow-lg border {{ kind_meta[2] }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
+                <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
                     <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                     {% if is_mp4 %}
                         <video controls muted loop preload="metadata" class="w-full h-full object-contain"><source src="/files/{{ f }}"></video>
@@ -216,8 +287,8 @@
                     </figure>
                     <div class="card-body !p-2 bg-base-200/60 gap-1">
                         <div class="flex flex-wrap items-center gap-1">
-                            <span class="badge badge-xs {{ kind_meta[1] }}">{{ kind_meta[0] }}</span>
-                            {% if model %}<span class="badge badge-xs {{ mcolor }}" title="Generated by {{ model }}">{{ model }}</span>{% endif %}
+                            <span class="badge badge-xs {{ primary_color }}">{{ primary_label }}</span>
+                            {% if part_n %}<span class="badge badge-xs badge-ghost">part {{ part_n }}</span>{% endif %}
                         </div>
                         <span class="text-[10px] font-mono text-base-content/60 truncate" title="{{ f }}">{{ f }}</span>
                     </div>
@@ -272,6 +343,7 @@
         <div id="asset-info-media" class="mb-3"></div>
         <div id="asset-info-body" class="space-y-1 text-sm"></div>
         <div class="modal-action">
+            <button id="asset-delete-btn" class="btn btn-sm btn-error btn-outline mr-auto" onclick="deleteCurrentAsset()">🗑 Delete</button>
             <form method="dialog"><button class="btn btn-sm">Close</button></form>
         </div>
     </div>
@@ -283,198 +355,271 @@
     <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
-        <!-- Models -->
-        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Models</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Base Image</span>
-                <select id="cfg-base" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                    <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
-                    <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
-                    <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
-                </select>
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video Chain</span>
-                <select id="cfg-video" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                    <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
-                    <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
-                    <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
-                </select>
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Audio / Music</span>
-                <select id="cfg-audio" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline(); _onAudioChanged();">
-                    <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Audio</option>
-                    <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula (Music)</option>
-                </select>
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice (TTS)</span>
-                <select id="cfg-tts" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                    <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
-                    <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
-                    <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
-                </select>
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Post Process</span>
-                <select id="cfg-upscale" class="select select-bordered select-sm w-full focus:outline-none" onchange="updatePipeline()">
-                    <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
-                    <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
-                </select>
-            </label>
-        </div>
-
-        <!-- RAM estimator -->
-        <div id="ram-est" class="card card-compact bg-base-100 mt-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
-            <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
-            <div class="ram-txt font-mono text-sm font-bold mt-0.5">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+        <!-- RAM estimator (always visible at top) -->
+        <div id="ram-est" class="card card-compact bg-base-100 mb-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
+            <div class="flex items-center justify-between gap-2">
+                <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
+                <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+            </div>
             <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
         </div>
 
-        <!-- Chain shape -->
-        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Chain shape</div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="form-control md:col-span-3">
-                <span class="label-text text-xs flex justify-between">
-                    <span>Chains per subject</span>
-                    <span class="font-mono"><span id="cfg-chains-val">{{ config.chains or 10 }}</span></span>
-                </span>
-                <input id="cfg-chains" type="range" min="1" max="20" step="1" value="{{ config.chains or 10 }}"
-                       class="range range-sm range-primary"
-                       oninput="$('cfg-chains-val').innerText = this.value"
-                       onchange="updatePipeline()" />
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames</span>
-                <select id="cfg-frames" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                    <option value="17" {% if config.frames == 17 %}selected{% endif %}>17</option>
-                    <option value="33" {% if config.frames == 33 %}selected{% endif %}>33</option>
-                    <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49</option>
-                    <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
-                </select>
-            </label>
-            <label class="form-control" title="How aggressive to ramp quality. auto = start cheap (8 steps, 1:1, 17f) and escalate as pipeline proves stable. Force a level to skip the ramp.">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
-                    Quality ramp
-                    <span class="tooltip tooltip-right cursor-help" data-tip="auto = cheap first, escalate on success · low = 8 steps 1:1 17f · med = 20 steps 4:3 33f · high = 50 steps 16:9 49f">
-                        <span class="text-[9px] opacity-60">ⓘ</span>
-                    </span>
-                </span>
-                <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                    <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto · ramp low→high</option>
-                    <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low · fast preview</option>
-                    <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med · balanced</option>
-                    <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high · max quality</option>
-                </select>
-            </label>
-        </div>
-
-        <!-- Consolidation -->
-        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Consolidation</div>
-        <div id="consolidation-wrap" class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Mode</span>
-                <select id="cfg-consolidation" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                    <option value="overlay" {% if (config.consolidation or 'overlay') == 'overlay' %}selected{% endif %}>overlay (default)</option>
-                    <option value="replace" {% if config.consolidation == 'replace' %}selected{% endif %}>replace</option>
-                </select>
-            </label>
-            <label class="form-control">
-                <span class="label-text text-xs flex justify-between">
-                    <span>Music gain (dB)</span>
-                    <span class="font-mono"><span id="cfg-music-gain-val">{{ config.music_gain_db or 0 }}</span></span>
-                </span>
-                <input id="cfg-music-gain-db" type="range" min="-12" max="6" step="1" value="{{ config.music_gain_db or 0 }}"
-                       class="range range-sm range-primary"
-                       oninput="$('cfg-music-gain-val').innerText = this.value"
-                       onchange="updatePipeline()" />
-            </label>
-            <label class="form-control">
-                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Fade (s)</span>
-                <input id="cfg-fade-s" type="number" step="0.1" min="0" max="3" value="{{ config.fade_s or 0.5 }}"
-                       class="input input-bordered input-sm w-full" onchange="updatePipeline()" />
-            </label>
-        </div>
-
-        <!-- Advanced: per-stage overrides -->
-        <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 mt-6">
-            <input type="checkbox" />
-            <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider">Advanced — per-stage overrides</div>
-            <div class="collapse-content">
-                <div class="flex flex-col w-full gap-1 mt-1">
-                    <div class="flex items-center gap-1">
-                        <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                        <textarea id="p-image" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Image prompt..."></textarea>
+        <!-- Per-stage tabs -->
+        <div role="tablist" class="tabs tabs-lifted">
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="⚡ Generation" checked />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-4 rounded-box">
+                <p class="text-xs text-base-content/70 mb-3">How the next click of <span class="font-bold">Generate</span> dispatches, and how the fleet behaves while looping.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {# Looping group — Infinity is parent, When Idle + Polymorphic tier underneath. #}
+                    <div class="flex flex-col gap-1">
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Looping</div>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Single">Single</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="Single: one pass through your subjects, then stop. Infinity: keep looping the same subject list forever until you toggle it off.">ⓘ</span>
+                        </div>
+                        <div id="when-idle-row" class="flex items-center gap-2 ml-3 pl-3 border-l-2 border-base-300">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="With Infinity + When Idle: the loop only fires while no other queued/manual jobs are running. Once the queue clears it picks back up — gives priority to interactive Generate clicks. Requires Infinity.">ⓘ</span>
+                        </div>
+                        <div id="chaos-row" class="flex items-center gap-2 ml-3 pl-3 border-l-2 border-base-300">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">Polymorphic</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="After every completed job the LLM is asked for fresh subjects that are tangentially related to your current list, then the textarea is overwritten — the fleet drifts into adjacent ideas instead of looping the same set. Requires Infinity.">ⓘ</span>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                        <textarea id="p-video" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Video prompt..."></textarea>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                        <textarea id="p-music" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="Music prompt..."></textarea>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                        <textarea id="p-tts" class="textarea textarea-bordered text-xs h-14 flex-1" placeholder="TTS voiceover..."></textarea>
-                    </div>
-                </div>
-                <!-- Compat shim concatenating the 4 stage fields -->
-                <textarea id="p-in" class="hidden"></textarea>
-                <div class="join w-full mt-2">
-                    <button class="btn btn-sm btn-primary join-item flex-1" onclick="enhance()" title="Fan out across 4 stages">✨ {{ branding.labels.ai_magic }}</button>
-                    <button class="btn btn-sm btn-secondary join-item flex-1" onclick="inject('next')">Queue Next</button>
-                    <button class="btn btn-sm btn-accent join-item flex-1" onclick="inject('now')">Force Now</button>
-                </div>
-
-                <!-- Fan-out preview (inline under Advanced) -->
-                <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
-                    <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out Preview</div>
-                    <div role="tablist" class="tabs tabs-bordered" id="fanout-tabs"></div>
-                    <div id="fanout-body" class="text-xs"></div>
-                    <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
-                    <div class="join w-full">
-                        <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept</button>
-                        <button id="fanout-retry" class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
-                        <button id="fanout-edit" class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
-                    </div>
-                </div>
-
-                <!-- Legacy AI box retained for backwards compat (unused by new flow) -->
-                <div id="ai-box" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2">
-                    <div id="ai-s" class="text-xs italic"></div>
-                    <div class="join w-full">
-                        <button class="btn btn-xs btn-primary join-item flex-1" onclick="applyAi()">Accept</button>
-                        <button class="btn btn-xs btn-ghost join-item flex-1" onclick="enhance()">Retry</button>
+                    {# Dispatch group — three independent flags. #}
+                    <div class="flex flex-col gap-1">
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Dispatch</div>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Now" data-off-label="Generate Now">Generate Now</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="Off (default): the new job appends to the end of the queue. On: it jumps to the front so it runs as soon as the current job finishes.">ⓘ</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="When on, clicking Generate also cancels the currently-running job and any pending items in the queue. Cancelled items stay visible (with requeue) and roll out automatically after ~48 hours.">ⓘ</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-2 flex-1">
+                                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                                <span class="text-xs single-label" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent</span>
+                            </label>
+                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="When on, this job is allowed to run alongside another job that's busy on a different stage (e.g. fire off an image while the queue is grinding through a video). The scheduler still blocks if both jobs would contend for the same GPU stage.">ⓘ</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- TTS -->
-        <div tabindex="0" class="collapse collapse-arrow bg-base-100 border border-base-300 mt-3">
-            <input type="checkbox" />
-            <div class="collapse-title text-xs font-bold text-base-content/60 uppercase tracking-wider flex items-center justify-between">
-                <span>🗣️ Voice (TTS)</span>
-                <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="✎ LLM" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-[10px] uppercase tracking-widest opacity-60">Prompt LLM</span>
+                    <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="The LLM rewrites your subjects into per-stage prompts (Image / Video / Music / Voice). Provider + model are configured in Settings → LLM.">ⓘ</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Model</div>
+                        <div class="badge badge-ghost font-mono" id="cfg-llm-active">{{ (config.llm.model_id if config.llm and config.llm.model_id else 'auto-pick') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Provider</div>
+                        <div class="badge badge-ghost font-mono" id="cfg-llm-provider">{{ (config.llm.provider if config.llm and config.llm.provider else 'lmstudio') }}</div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary btn-outline" onclick="$('pipeline-modal').close(); openSettings();">Open Settings → LLM</button>
             </div>
-            <div class="collapse-content">
-                <textarea id="tts-in" class="textarea textarea-bordered textarea-sm w-full h-16 text-xs mb-2" placeholder="What we want said..."></textarea>
-                <div class="flex gap-2 mb-2">
-                    <select id="tts-voice" class="select select-bordered select-xs flex-1">
-                        <option value="ryan">Ryan (EN, m)</option>
-                        <option value="eric">Eric (EN, m)</option>
-                        <option value="vivian">Vivian (EN, f)</option>
-                        <option value="olivia">Olivia (EN, f)</option>
-                        <option value="ethan">Ethan (EN, m)</option>
+
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🖼 Image" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <label class="form-control mb-2">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image model</span>
+                    <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                        <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
+                        <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
+                        <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
                     </select>
-                    <button class="btn btn-xs btn-primary flex-1" onclick="generateTts()">Generate</button>
+                </label>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image prompt override</span>
+                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('image')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
                 </div>
-                <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
+                <div class="flex items-center gap-1">
+                    <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                    <textarea id="p-image" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                </div>
             </div>
+
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🎬 Video" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
+                    <label class="form-control md:col-span-1">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video model</span>
+                        <select id="cfg-video" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
+                            <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
+                            <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames / part</span>
+                        <select id="cfg-frames" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="17" {% if config.frames == 17 %}selected{% endif %}>17</option>
+                            <option value="33" {% if config.frames == 33 %}selected{% endif %}>33</option>
+                            <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49</option>
+                            <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
+                        </select>
+                    </label>
+                    <label class="form-control" title="How aggressive to ramp quality.">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
+                            Quality ramp
+                            <span class="tooltip tooltip-left cursor-help" data-tip="auto = cheap first, escalate · low = 8/1:1/17f · med = 20/4:3/33f · high = 50/16:9/49f">
+                                <span class="text-[9px] opacity-60">ⓘ</span>
+                            </span>
+                        </span>
+                        <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto · ramp low→high</option>
+                            <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low · fast preview</option>
+                            <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med · balanced</option>
+                            <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high · max quality</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="form-control mb-2">
+                    <span class="label-text text-xs flex justify-between">
+                        <span>Parts per subject</span>
+                        <span class="font-mono"><span id="cfg-chains-val">{{ config.chains or 10 }}</span></span>
+                    </span>
+                    <input id="cfg-chains" type="range" min="1" max="20" step="1" value="{{ config.chains or 10 }}"
+                           class="range range-sm range-primary"
+                           oninput="$('cfg-chains-val').innerText = this.value"
+                           onchange="updatePipeline()" />
+                </label>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video prompt override</span>
+                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('video')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                </div>
+                <div class="flex items-center gap-1">
+                    <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                    <textarea id="p-video" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                </div>
+            </div>
+
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🎵 Music" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music model</span>
+                        <select id="cfg-audio" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onAudioChanged();">
+                            <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Music</option>
+                            <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs flex justify-between">
+                            <span>Music gain (dB)</span>
+                            <span class="font-mono"><span id="cfg-music-gain-val">{{ config.music_gain_db or 0 }}</span></span>
+                        </span>
+                        <input id="cfg-music-gain-db" type="range" min="-12" max="6" step="1" value="{{ config.music_gain_db or 0 }}"
+                               class="range range-sm range-primary"
+                               oninput="$('cfg-music-gain-val').innerText = this.value"
+                               onchange="updatePipeline()" />
+                    </label>
+                </div>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music prompt override</span>
+                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('music')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                </div>
+                <div class="flex items-center gap-1">
+                    <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                    <textarea id="p-music" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto mood from subject..."></textarea>
+                </div>
+            </div>
+
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🗣 Voice" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice model</span>
+                        <select id="cfg-tts" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
+                            <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
+                            <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice preset</span>
+                        <select id="tts-voice" class="select select-bordered select-sm w-full">
+                            <option value="ryan">Ryan (EN, m)</option>
+                            <option value="eric">Eric (EN, m)</option>
+                            <option value="vivian">Vivian (EN, f)</option>
+                            <option value="olivia">Olivia (EN, f)</option>
+                            <option value="ethan">Ethan (EN, m)</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover line</span>
+                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                </div>
+                <div class="flex items-center gap-1 mb-2">
+                    <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                    <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm flex-1 h-10 text-xs" placeholder="One-off TTS preview..."></textarea>
+                    <button class="btn btn-xs btn-primary" onclick="generateTts()">Preview</button>
+                    <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+                </div>
+                <audio id="tts-preview" class="w-full h-8 mt-2" controls preload="none"></audio>
+            </div>
+
+            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🔧 Post" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
+                <div id="consolidation-wrap" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Upscale</span>
+                        <select id="cfg-upscale" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
+                            <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Consolidation</span>
+                        <select id="cfg-consolidation" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="overlay" {% if (config.consolidation or 'overlay') == 'overlay' %}selected{% endif %}>overlay (default)</option>
+                            <option value="replace" {% if config.consolidation == 'replace' %}selected{% endif %}>replace</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Fade (s)</span>
+                        <input id="cfg-fade-s" type="number" step="0.1" min="0" max="3" value="{{ config.fade_s or 0.5 }}"
+                               class="input input-bordered input-sm w-full" onchange="updatePipeline()" />
+                    </label>
+                </div>
+            </div>
+
         </div>
+
+        {# AI Magic is now per-tab (lives inline in the Image / Video / Music / Voice tabs) and only rewrites that single stage. The full fan-out preview infra below remains hidden for back-compat with existing handlers. #}
+        <textarea id="p-in" class="hidden"></textarea>
+        <div id="fanout-preview" class="hidden"></div>
+        <div id="fanout-body" class="hidden"></div>
+        <div id="fanout-warn" class="hidden"></div>
+        <div role="tablist" id="fanout-tabs" class="hidden"></div>
+        <div id="ai-box" class="hidden"><div id="ai-s"></div></div>
 
         <!-- Compat: hidden legacy infinity themes textarea (backend still reads #inf-themes) -->
         <textarea id="inf-themes" class="hidden">{{ (config.infinity_themes or []) | join(', ') }}</textarea>
@@ -553,6 +698,15 @@
     <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-2">Settings</h3>
         <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud endpoints accepted.</p>
+
+        {# Latest finished asset — moved here from the navbar so the top strip stays clean. #}
+        <div id="out-latest-pill" class="flex items-center gap-3 mb-4 p-2 rounded-lg bg-base-300/40 border border-base-300" style="display:none">
+            <span id="out-latest-thumb" class="w-12 h-12 rounded bg-base-300 overflow-hidden flex-shrink-0 cursor-pointer"></span>
+            <div class="flex flex-col flex-1 min-w-0">
+                <span class="text-[10px] uppercase tracking-widest text-base-content/50">Latest output</span>
+                <a id="out-latest-link" href="#" class="link link-hover text-xs font-mono truncate" title=""></a>
+            </div>
+        </div>
 
         <div role="tablist" class="tabs tabs-boxed mb-4">
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" checked />

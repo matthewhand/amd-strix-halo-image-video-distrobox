@@ -13,7 +13,7 @@
   },
   "theme": {
     "default": "dracula",
-    "available": ["dracula", "synthwave", "night", "forest"]
+    "available": ["dracula", "synthwave", "night", "forest", "cyberpunk", "halloween", "luxury", "black", "dim", "sunset", "coffee", "aqua", "valentine", "retro", "lofi", "fantasy", "business", "nord"]
   },
   "colors": {
     "primary": "#ff79c6",
