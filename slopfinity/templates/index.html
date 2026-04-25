@@ -738,6 +738,18 @@
                             is preserved — no model reload.
                         </div>
                     </div>
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label py-1">
+                            <span class="label-text text-xs">Fleet system prompt</span>
+                        </label>
+                        <textarea id="set-fleet-prompt"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="6"
+                          placeholder="The system prompt that the fleet runner sends to the LLM when generating each video idea.">{{ config.philosophical_prompt or '' }}</textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Leave blank to use the built-in default. Used by run_philosophical_experiments.py — restart the runner after saving for changes to take effect.</span>
+                        <button class="btn btn-ghost btn-xs mt-1" type="button" onclick="resetFleetPrompt()">↺ Reset to default</button>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-3 mt-4">

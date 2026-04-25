@@ -12,6 +12,12 @@ CONFIG_FILE = os.path.join(_STATE_DIR, "config.json")
 STATE_FILE = os.path.join(_STATE_DIR, "state.json")
 QUEUE_FILE = os.path.join(_STATE_DIR, "queue.json")
 
+# System prompt used by run_philosophical_experiments.py when calling the
+# local LLM to dream up each fleet video idea. Kept here (not in the gitignored
+# runner) so the dashboard can override it via Settings → LLM → Generation.
+# Must remain byte-identical to the runner's hardcoded fallback.
+DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
+
 DEFAULT_CONFIG = {
     "base_model": "ltx-2.3",
     "video_model": "ltx-2.3",
@@ -30,7 +36,21 @@ DEFAULT_CONFIG = {
     "chaos_mode": False,
     "chaos_interval_s": 180,
     "when_idle": False,
+    "philosophical_prompt": None,
 }
+
+
+def get_philosophical_prompt(config=None):
+    """Resolve the fleet system prompt: stored override or built-in default.
+
+    A stored value of None or "" means "use the default", so the runner and
+    template renderer can call this without branching on emptiness.
+    """
+    c = config if isinstance(config, dict) else load_config()
+    val = c.get("philosophical_prompt")
+    if val is None or val == "":
+        return DEFAULT_PHILOSOPHICAL_PROMPT
+    return val
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
