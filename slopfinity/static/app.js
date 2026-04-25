@@ -2771,8 +2771,17 @@ function connect() {
                         // expanded queue item — each row reads as
                         //   "✓ Image    v3_base.png    [   3m22s / ETA 9m  ]"
                         // with the bracketed part forming a clean column.
+                        // 2× overrun = bold + error tint on the elapsed time
+                        // so the user spots stages that went WAY past their
+                        // rolling-average ETA. Threshold is a multiplier on
+                        // eta_s; only kicks in when eta_s is known and
+                        // duration_s > 2 × eta_s.
+                        const _overrun2x = a && a.eta_s && a.duration_s > 2 * a.eta_s;
+                        const _elapsedCls = _overrun2x
+                            ? "font-mono text-[9px] font-bold text-error"
+                            : "font-mono text-[9px]";
                         const timing = a
-                            ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
+                            ? `<span class="${_elapsedCls}">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
                             : '';
                         // Per-stage meta string — what the user wants to see in
                         // the right-edge cluster alongside the model badge.
@@ -2870,7 +2879,13 @@ function connect() {
                         : 'Video';
                     const _stageElapsed = _stageStartTs ? (Date.now() - _stageStartTs) : 0;
                     const _stageEta = _stageAvgSeconds('Video Chains') || 0;
-                    const _activeTiming = `<span class="font-mono text-[9px]">${_fmtElapsedHtml(_stageElapsed)}</span>${_stageEta ? `<span class="opacity-50 text-[9px]"> / ETA ${_fmtElapsedHtml(_stageEta * 1000)}</span>` : ''}`;
+                    // Mid-flight 2× overrun → bold + error so the user spots
+                    // a chain stage that's pushed way past its rolling avg.
+                    const _liveOverrun2x = _stageEta && _stageElapsed > 2 * _stageEta * 1000;
+                    const _liveElapsedCls = _liveOverrun2x
+                        ? "font-mono text-[9px] font-bold text-error"
+                        : "font-mono text-[9px]";
+                    const _activeTiming = `<span class="${_liveElapsedCls}">${_fmtElapsedHtml(_stageElapsed)}</span>${_stageEta ? `<span class="opacity-50 text-[9px]"> / ETA ${_fmtElapsedHtml(_stageEta * 1000)}</span>` : ''}`;
                     activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming, /* isStageActive */ true);
                 }
                 // Strip the .stage-just-completed class after the animation
