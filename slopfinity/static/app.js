@@ -34,6 +34,10 @@ let _lastStage = null;
 let _jobStartTs = null;
 let _lastJobIndex = null;
 let _wsConnected = false;
+// Per-job per-stage actuals — populated as we observe step transitions.
+// Format: { <video_index>: { <stage>: { duration_s: 12.4, eta_s: 24 } } }
+// Reset when video_index changes (new job).
+let _jobActuals = {};
 
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
@@ -164,8 +168,8 @@ function showPromptPeek(text) {
         <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-2">LLM-rewritten prompt</h3>
         <div class="text-xs whitespace-pre-wrap font-mono bg-base-300/50 p-3 rounded">${_htmlEscape(text || '(empty)')}</div>
         <div class="modal-action">
-            <button class="btn btn-xs" onclick="navigator.clipboard.writeText(${JSON.stringify(text || '')}).catch(()=>{})">Copy</button>
-            <form method="dialog"><button class="btn btn-xs btn-primary">Close</button></form>
+            <button class="btn btn-sm btn-secondary btn-outline" onclick="navigator.clipboard.writeText(${JSON.stringify(text || '')}).catch(()=>{}); this.textContent='✓ Copied'; setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+            <form method="dialog"><button class="btn btn-sm btn-primary">Close</button></form>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>`;
@@ -174,13 +178,18 @@ function showPromptPeek(text) {
 }
 
 async function cancelItem(ts) {
-    if (!ts) return;
+    // ts=0 = the synthetic "running" row that doesn't have a queue entry of
+    // its own (the fleet popped it before processing). For those, /cancel-all
+    // is the right hammer — it writes cancel.flag so the running iter aborts.
+    const url = ts ? '/queue/cancel' : '/cancel-all';
+    const body = ts ? JSON.stringify({ ts }) : undefined;
     try {
-        await fetch('/queue/cancel', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ts }),
-        });
+        const opts = { method: 'POST' };
+        if (ts) {
+            opts.headers = { 'Content-Type': 'application/json' };
+            opts.body = body;
+        }
+        await fetch(url, opts);
     } catch (e) { console.warn('cancel failed', e); }
 }
 
@@ -861,17 +870,28 @@ function connect() {
             // Stage / job start timestamps come from the BACKEND now —
             // server-side broadcast loop tracks step + video_index transitions
             // and stamps `state.stage_started_ts` / `state.job_started_ts`.
-            // That way the timers don't reset when the user reloads the page.
-            // We still record stage durations on transitions for the rolling
-            // ETA history.
+            // We also accumulate per-job per-stage actuals so completed
+            // stages can stick around as a "Stage · 12s (ETA 24s)" history
+            // line in the queue panel.
             if (d.state.step !== _lastStage) {
                 if (_lastStage && _stageStartTs) {
-                    _saveStageDuration(_lastStage, (Date.now() - _stageStartTs) / 1000);
+                    const dur = (Date.now() - _stageStartTs) / 1000;
+                    _saveStageDuration(_lastStage, dur);
                     _renderStageEtas();
+                    // Cache the actual against the ETA-at-start for this job.
+                    const v = _lastJobIndex || 0;
+                    if (v) {
+                        _jobActuals[v] = _jobActuals[v] || {};
+                        _jobActuals[v][_lastStage] = {
+                            duration_s: dur,
+                            eta_s: _stageAvgSeconds(_lastStage),
+                        };
+                    }
                 }
                 _lastStage = d.state.step;
             }
             if (d.state.video_index !== _lastJobIndex) {
+                if (d.state.video_index) _jobActuals[d.state.video_index] = _jobActuals[d.state.video_index] || {};
                 _lastJobIndex = d.state.video_index;
             }
             // Convert backend ts (seconds since epoch) to JS Date.now() base.
@@ -934,42 +954,47 @@ function connect() {
                 const c = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) : 0;
                 if (!isActive) return '';
                 // Activity line: what the fleet is doing right now in plain
-                // English, plus a count of completed stages.
+                // English.
                 const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
-                // Completed-asset links — each completed stage that has a
-                // predictable filename gets a clickable badge.
-                const completedAssets = STAGES
-                    .filter(([s]) => _stageDoneBefore(curStep, s))
-                    .map(([s,,label,,tone]) => {
-                        // Concept's "asset" is the LLM-rewritten prompt — open
-                        // a peek modal showing it instead of the file modal.
-                        if (s === 'Concept') {
-                            const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
-                            const safe = promptText.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                            return `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>${label} →</button>`;
-                        }
-                        const asset = _STAGE_ASSET(s, v, c);
-                        if (!asset) return `<span class="badge badge-xs badge-${tone} opacity-70" title="${s}">${label} ✓</span>`;
-                        return `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${label} →</button>`;
-                    }).join('');
                 const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
                 const stageAvg = _stageAvgSeconds(curStep);
                 const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
                 const jobNow2 = _jobStartTs ? _fmtElapsed(Date.now() - _jobStartTs) : '0s';
                 const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
                 const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
+                // Each completed stage of THIS job becomes a single line:
+                //   [asset-link badge]  ⏱ actual / ETA was-eta
+                // Stage's clickable badge replaces the spinner+text it had
+                // while running. Active stage gets a fresh in-progress line
+                // below it. The user can read top-to-bottom = full history.
+                const actuals = (_jobActuals[v] || {});
+                const completedLines = STAGES
+                    .filter(([s]) => _stageDoneBefore(curStep, s))
+                    .map(([s,,label,,tone]) => {
+                        let assetBadge;
+                        if (s === 'Concept') {
+                            const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
+                            assetBadge = `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>✓ ${label} →</button>`;
+                        } else {
+                            const asset = _STAGE_ASSET(s, v, c);
+                            assetBadge = asset
+                                ? `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>✓ ${label} →</button>`
+                                : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
+                        }
+                        const a = actuals[s];
+                        const timing = a
+                            ? `<span class="font-mono text-[9px]">${_fmtElapsed(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}</span>`
+                            : '';
+                        return `<div class="flex items-center gap-2 mt-1">${assetBadge}${timing}</div>`;
+                    }).join('');
                 return `
-                    ${completedAssets ? `<div class="flex flex-wrap items-center gap-1 mt-1 text-[9px]"><span class="text-base-content/50 uppercase tracking-widest mr-1">outputs</span>${completedAssets}</div>` : ''}
+                    ${completedLines}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
+                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
+                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
                         <span class="loading loading-spinner loading-xs text-primary"></span>
-                        <span class="italic text-base-content/70">${activityText}</span>
-                        <span class="ml-auto flex gap-1">
-                            <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
-                            ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
-                        </span>
-                    </div>
-                    <div class="flex justify-end gap-1 mt-1">
-                        <span class="text-[9px] text-base-content/50 mr-1">Total</span>
+                        <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
+                        <span class="text-[9px] text-base-content/50">Total</span>
                         <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>${jobNow2}</span>
                         ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
                     </div>

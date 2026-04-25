@@ -153,7 +153,7 @@
                 </span>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
-            <ul id="q-list" class="flex flex-col gap-2 max-h-[480px] overflow-y-auto custom-scrollbar">
+            <ul id="q-list" class="flex flex-col gap-2">
                 {% for q in (queue or [])[:12] %}
                     {% set is_active = (state.mode != 'Idle' and loop.index0 == 0 and q.status != 'cancelled') %}
                     {% set snap = q.config_snapshot or config %}
