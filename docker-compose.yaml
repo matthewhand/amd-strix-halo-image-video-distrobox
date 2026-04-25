@@ -146,6 +146,17 @@ services:
     profiles:
       - comfyui
       - slop
+    # ROOT user is required for torch+ROCm to enumerate the GPU. Even with
+    # /dev/kfd mode 666 + privileged + render-group membership, AMDGPU's
+    # init blocks non-root processes (`torch.cuda.is_available() → False` as
+    # uid 1000, True as uid 0). The toolbox container can run unprivileged
+    # because qwen-image-mps does its own GPU init dance, but ComfyUI hits
+    # the device-enumeration path at module-import time.
+    user: "0:0"
+    # `USER` must be set so torch._dynamo's cache_dir() can call getpass.getuser()
+    # without raising — was crash-looping on `OSError: No username set`.
+    environment:
+      - USER=root
     command: >
       bash -c "
         if (echo > /dev/tcp/127.0.0.1/8188) 2>/dev/null ; then

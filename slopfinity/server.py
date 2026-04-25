@@ -14,7 +14,7 @@ from typing import List
 
 from . import config as cfg
 from . import branding as _branding
-from .stats import get_sys_stats, get_storage, get_ram_estimate, get_output_counts
+from .stats import get_sys_stats, get_storage, get_outputs_disk, get_ram_estimate, get_output_counts
 from .llm import lmstudio_call, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
 from . import scheduler as sched
@@ -99,6 +99,7 @@ async def index(request: Request):
     config = cfg.load_config()
     queue = cfg.get_queue()
     storage = get_storage()
+    outputs_disk = get_outputs_disk(EXP_DIR)
     ram = get_ram_estimate(
         config.get("base_model"),
         config.get("video_model"),
@@ -116,6 +117,7 @@ async def index(request: Request):
             "live": live[:48],        # Live Gallery (chain mp4s + pngs, newest first)
             "imgs": imgs[:10],        # back-compat (hidden i-grid)
             "storage": storage,
+            "outputs_disk": outputs_disk,
             "ram": ram,
             "branding": _load_branding(),
             "branding_profiles": _branding.list_profiles(),
@@ -136,7 +138,7 @@ async def enhance(data: dict = Body(...)):
             "'music' = a short mood/genre description for a music generator, "
             "'tts' = a one or two sentence voiceover line. Return ONLY JSON, no prose."
         )
-        raw = lmstudio_call(sys_p, prompt)
+        raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt)
         # Best-effort JSON extraction
         parsed = None
         try:
@@ -161,7 +163,7 @@ async def enhance(data: dict = Body(...)):
                 "tts": parsed.get("tts", ""),
             },
         }
-    suggestion = lmstudio_call(config["enhancer_prompt"], prompt)
+    suggestion = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], prompt)
     return {"suggestion": suggestion}
 
 
@@ -209,7 +211,10 @@ async def subjects_suggest(n: int = 6):
         f"Output ONLY a JSON array of exactly {n} short visual subject ideas "
         "(3-8 words each). Cynical, philosophical, visually rich. Just the array."
     )
-    raw = lmstudio_call(sys_p, f"Give me {n} subject ideas.")
+    # Run the (blocking, network-bound) LLM call in a thread so it doesn't
+    # stall FastAPI's event loop — without this, the WS state broadcast and
+    # other endpoints (Settings open, etc.) freeze for the duration.
+    raw = await asyncio.to_thread(lmstudio_call, sys_p, f"Give me {n} subject ideas.")
     suggestions = []
     try:
         s = json.loads(raw)
@@ -241,20 +246,163 @@ async def inject(
     prompt: str = Form(...),
     priority: str = Form(...),
     stage_prompts: str = Form(default=""),
+    terminate: str = Form(default=""),
+    concurrent: str = Form(default=""),
+    infinity: str = Form(default=""),
+    when_idle: str = Form(default=""),
+    chaos: str = Form(default=""),
 ):
     q = cfg.get_queue()
-    task = {"prompt": prompt, "priority": priority, "ts": time.time()}
+    if terminate:
+        # Mark every pending item cancelled (so the user can see what got
+        # killed) and write a flag the fleet runner watches for.
+        now_ts = time.time()
+        for item in q:
+            if item.get("status") in (None, "pending"):
+                item["status"] = "cancelled"
+                item["cancelled_ts"] = now_ts
+        try:
+            with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
+                f.write(str(now_ts))
+        except Exception:
+            pass
+    task = {
+        "prompt": prompt,
+        "priority": priority,
+        "status": "pending",
+        "ts": time.time(),
+        "concurrent": bool(concurrent),
+        "infinity": bool(infinity),
+        "when_idle": bool(when_idle),
+        "chaos": bool(chaos),
+    }
     if stage_prompts:
         try:
             task["stage_prompts"] = json.loads(stage_prompts)
         except Exception:
             task["stage_prompts_raw"] = stage_prompts
+    pending = [x for x in q if x.get("status") in (None, "pending")]
+    cancelled = [x for x in q if x.get("status") == "cancelled"]
     if priority == "now":
-        q.insert(0, task)
+        pending.insert(0, task)
     else:
-        q.append(task)
-    cfg.save_queue(q)
+        pending.append(task)
+    cfg.save_queue(pending + cancelled)
     return {"status": "ok"}
+
+
+@app.post("/cancel-all")
+async def cancel_all():
+    """Mark every pending queue item as cancelled and signal the fleet runner."""
+    q = cfg.get_queue()
+    now_ts = time.time()
+    n = 0
+    for item in q:
+        if item.get("status") in (None, "pending"):
+            item["status"] = "cancelled"
+            item["cancelled_ts"] = now_ts
+            n += 1
+    try:
+        with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
+            f.write(str(now_ts))
+    except Exception:
+        pass
+    cfg.save_queue(q)
+    return {"status": "ok", "cancelled": n}
+
+
+@app.post("/queue/cancel")
+async def queue_cancel(data: dict = Body(...)):
+    """Cancel a single queue item by ts. If it's the active job (matched by
+    `current` flag in the future, or just the first pending item today), also
+    write a cancel.flag so the fleet runner aborts gracefully."""
+    target_ts = data.get("ts")
+    if target_ts is None:
+        return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
+    q = cfg.get_queue()
+    found = False
+    is_first_pending = True
+    for item in q:
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+            item["status"] = "cancelled"
+            item["cancelled_ts"] = time.time()
+            # Strip infinity so it doesn't re-loop after cancellation.
+            item["infinity"] = False
+            if is_first_pending:
+                try:
+                    with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
+                        f.write(str(time.time()))
+                except Exception:
+                    pass
+            found = True
+            break
+        if item.get("status") in (None, "pending"):
+            is_first_pending = False
+    if not found:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    cfg.save_queue(q)
+    return {"ok": True}
+
+
+@app.post("/queue/edit")
+async def queue_edit(data: dict = Body(...)):
+    """Replace the prompt text of a pending/active queue item by ts."""
+    target_ts = data.get("ts")
+    new_prompt = (data.get("prompt") or "").strip()
+    if target_ts is None:
+        return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
+    if not new_prompt:
+        return JSONResponse({"ok": False, "error": "empty prompt"}, status_code=400)
+    q = cfg.get_queue()
+    found = False
+    for item in q:
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+            item["prompt"] = new_prompt
+            found = True
+            break
+    if not found:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    cfg.save_queue(q)
+    return {"ok": True}
+
+
+@app.post("/queue/toggle-infinity")
+async def queue_toggle_infinity(data: dict = Body(...)):
+    """Flip the `infinity` flag on a queued (or active) item by ts."""
+    target_ts = data.get("ts")
+    if target_ts is None:
+        return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
+    q = cfg.get_queue()
+    new_val = None
+    for item in q:
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+            item["infinity"] = not item.get("infinity", False)
+            new_val = item["infinity"]
+            break
+    if new_val is None:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    cfg.save_queue(q)
+    return {"ok": True, "infinity": new_val}
+
+
+@app.post("/queue/requeue")
+async def queue_requeue(data: dict = Body(...)):
+    """Flip a cancelled queue item back to pending. Identified by ts."""
+    target_ts = data.get("ts")
+    if target_ts is None:
+        return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
+    q = cfg.get_queue()
+    found = False
+    for item in q:
+        if item.get("ts") == target_ts and item.get("status") == "cancelled":
+            item["status"] = "pending"
+            item.pop("cancelled_ts", None)
+            found = True
+            break
+    if not found:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    cfg.save_queue(q)
+    return {"ok": True}
 
 
 def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
@@ -427,6 +575,31 @@ async def asset_info(filename: str):
         "prompt": prompt,
         "url": f"/files/{filename}",
     }
+
+
+@app.delete("/asset/{filename}")
+async def asset_delete(filename: str):
+    """Delete an asset file (and its sidecar JSON if present) from EXP_DIR.
+
+    Filename safety mirrors /asset/ GET — leaf name only. Returns 404 if the
+    file is gone (idempotent in spirit but explicit to surface UI bugs).
+    """
+    if "/" in filename or ".." in filename or filename.startswith("."):
+        return JSONResponse({"ok": False, "error": "invalid filename"}, status_code=400)
+    path = os.path.join(EXP_DIR, filename)
+    if not os.path.isfile(path):
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    try:
+        os.remove(path)
+        sidecar = os.path.join(EXP_DIR, filename + ".json")
+        if os.path.isfile(sidecar):
+            try:
+                os.remove(sidecar)
+            except Exception:
+                pass
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return {"ok": True, "filename": filename}
 
 
 @app.get("/outputs")
@@ -674,6 +847,16 @@ async def broadcast():
             state = cfg.get_state()
             stats = get_sys_stats()
             queue = cfg.get_queue()
+            # Auto-rotate: cancelled items older than 48 h drop out of the
+            # visible queue. Cheap to compute on each tick.
+            cutoff = time.time() - 48 * 3600
+            kept = [
+                x for x in queue
+                if not (x.get("status") == "cancelled" and (x.get("cancelled_ts") or 0) < cutoff)
+            ]
+            if len(kept) != len(queue):
+                cfg.save_queue(kept)
+                queue = kept
             config = cfg.load_config()
             storage = get_storage()
             ram = get_ram_estimate(
@@ -683,6 +866,7 @@ async def broadcast():
                 config.get("upscale_model"),
             )
             outputs = get_output_counts(EXP_DIR)
+            outputs_disk = get_outputs_disk(EXP_DIR)
             # Never broadcast api_key / other sensitive fields.
             safe_config = cfg.redact(config)
             # Drain any pending scheduler events into the rolling buffer.
@@ -702,6 +886,7 @@ async def broadcast():
                 "stats": stats,
                 "queue": queue,
                 "storage": storage,
+                "outputs_disk": outputs_disk,
                 "ram": ram,
                 "config": safe_config,
                 "outputs": outputs,
@@ -734,9 +919,69 @@ async def broadcast():
         await asyncio.sleep(2)
 
 
+async def chaos_rotator():
+    """Background task: when config.chaos_mode is on, every time a job
+    completes (signalled by state.video_index incrementing) ask the LLM for
+    a fresh batch of subjects that are *tangentially related* to the current
+    list, then overwrite config.infinity_themes. The fleet runner picks the
+    new list up on its next subject roll-over.
+    """
+    last_seen_index = None
+    while True:
+        try:
+            config = cfg.load_config()
+            if not config.get("chaos_mode"):
+                last_seen_index = None
+                await asyncio.sleep(15)
+                continue
+            state = cfg.get_state()
+            cur_idx = state.get("video_index") if isinstance(state, dict) else None
+            if last_seen_index is None:
+                last_seen_index = cur_idx
+                await asyncio.sleep(10)
+                continue
+            if cur_idx is None or cur_idx == last_seen_index:
+                # Nothing has completed since we last looked.
+                await asyncio.sleep(10)
+                continue
+            last_seen_index = cur_idx
+            current_subjects = config.get("infinity_themes") or []
+            sample = ", ".join(current_subjects[:8])
+            sys_p = (
+                "You are a concept artist for an AI video fleet. The user is currently "
+                "working with these subjects: [" + sample + "]. Generate 8 NEW visual "
+                "subject ideas that are TANGENTIALLY related to those — riff on the "
+                "themes, motifs, mood, or vibe, but introduce fresh angles. 3-8 words "
+                "each. Cynical, philosophical, surreal, visually rich. Output ONLY a "
+                "JSON array of strings, no prose."
+            )
+            raw = await asyncio.to_thread(lmstudio_call, sys_p, "Give me 8 tangentially-related subject ideas.")
+            arr = []
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    arr = parsed
+            except Exception:
+                a, b = raw.find('['), raw.rfind(']')
+                if a != -1 and b > a:
+                    try:
+                        arr = json.loads(raw[a:b + 1])
+                    except Exception:
+                        arr = []
+            arr = [str(x).strip() for x in arr if str(x).strip()][:8]
+            if arr:
+                config["infinity_themes"] = arr
+                config["infinity_index"] = 0
+                cfg.save_config(config)
+            await asyncio.sleep(5)
+        except Exception:
+            await asyncio.sleep(30)
+
+
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(broadcast())
+    asyncio.create_task(chaos_rotator())
 
 
 if __name__ == "__main__":

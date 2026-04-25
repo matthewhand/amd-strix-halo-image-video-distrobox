@@ -26,6 +26,202 @@ if ('serviceWorker' in navigator) {
 let ws;
 let gH = Array(15).fill(0);
 let vH = Array(15).fill(0);
+let dH = [];
+let lH = Array(15).fill(0);
+let _diskTickCounter = 0;
+let _stageStartTs = null;
+let _lastStage = null;
+let _jobStartTs = null;
+let _lastJobIndex = null;
+let _wsConnected = false;
+
+// Rolling history of recent stage durations (per stage name) persisted in
+// localStorage so ETAs survive page reloads. Format:
+//   { "Concept": [12.4, 9.8, 11.2], "Base Image": [...], ... }
+const _STAGE_HISTORY_KEY = 'slopfinity_stage_durations_v1';
+const _STAGE_HISTORY_KEEP = 5;
+function _loadStageHistory() {
+    try { return JSON.parse(localStorage.getItem(_STAGE_HISTORY_KEY) || '{}') || {}; }
+    catch { return {}; }
+}
+function _saveStageDuration(stage, seconds) {
+    if (!stage || !isFinite(seconds) || seconds <= 0) return;
+    const hist = _loadStageHistory();
+    const arr = Array.isArray(hist[stage]) ? hist[stage] : [];
+    arr.push(seconds);
+    while (arr.length > _STAGE_HISTORY_KEEP) arr.shift();
+    hist[stage] = arr;
+    try { localStorage.setItem(_STAGE_HISTORY_KEY, JSON.stringify(hist)); } catch {}
+}
+// Sensible defaults from observed Strix Halo timings on the low/med tier —
+// used as the rolling-average until enough real samples accumulate. Without
+// these, ETAs are wildly low (only one stage's history shipped → misleading
+// "1m" estimate for a job that actually takes 15-20m).
+const _STAGE_DEFAULT_SECONDS = {
+    'Concept':       8,
+    'Base Image':   180,
+    'Video Chains': 600,
+    'Audio':         60,
+    'TTS':           20,
+    'Post Process':  60,
+    'Final Merge':   20,
+};
+function _stageAvgSeconds(stage) {
+    const arr = _loadStageHistory()[stage];
+    if (arr && arr.length) {
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+    // Fall back to a sensible default; null only if we have no idea at all.
+    return _STAGE_DEFAULT_SECONDS[stage] ?? null;
+}
+// Update the small ≈Ns hint next to each pipeline step + the total ETA badge.
+function _renderStageEtas() {
+    document.querySelectorAll('#stage-steps li[data-stage]').forEach(li => {
+        const avg = _stageAvgSeconds(li.dataset.stage);
+        let hint = li.querySelector('.stage-eta');
+        if (avg == null) { if (hint) hint.remove(); return; }
+        if (!hint) {
+            hint = document.createElement('span');
+            hint.className = 'stage-eta ml-1 opacity-50 text-[9px] font-mono';
+            li.appendChild(hint);
+        }
+        hint.textContent = '≈' + _fmtElapsed(avg * 1000);
+    });
+    // Total ETA badge near the timers — sum of all stages' rolling averages.
+    const total = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge']
+        .map(_stageAvgSeconds)
+        .filter(x => x != null)
+        .reduce((a, b) => a + b, 0);
+    const eta = document.getElementById('h-c-eta');
+    if (eta) eta.textContent = total > 0 ? 'ETA ' + _fmtElapsed(total * 1000) : '';
+}
+
+function _fmtElapsed(ms) {
+    const elapsed = Math.max(0, Math.floor(ms / 1000));
+    if (elapsed >= 3600) {
+        const h = Math.floor(elapsed / 3600);
+        const m = Math.floor((elapsed % 3600) / 60);
+        return `${h}h${String(m).padStart(2, '0')}m`;
+    }
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    return m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+
+// Stage order for "is this stage already done?" lookups in the pipeline strip.
+const _STAGE_ORDER = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+function _stageDoneBefore(curStage, candidate) {
+    const ci = _STAGE_ORDER.indexOf(curStage);
+    const xi = _STAGE_ORDER.indexOf(candidate);
+    return ci > -1 && xi > -1 && xi < ci;
+}
+
+async function editItem(ts, currentPrompt) {
+    if (!ts) return;
+    const next = window.prompt('Edit prompt for this queue item:', currentPrompt || '');
+    if (next == null) return;          // cancelled
+    if (!next.trim()) return;          // refuse empty
+    if (next.trim() === (currentPrompt || '').trim()) return; // no change
+    try {
+        await fetch('/queue/edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ts, prompt: next.trim() }),
+        });
+    } catch (e) { console.warn('edit failed', e); }
+}
+
+async function toggleItemInfinity(ts) {
+    if (!ts) return;
+    try {
+        await fetch('/queue/toggle-infinity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ts }),
+        });
+    } catch (e) { console.warn('toggle-infinity failed', e); }
+}
+
+async function cancelItem(ts) {
+    if (!ts) return;
+    try {
+        await fetch('/queue/cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ts }),
+        });
+    } catch (e) { console.warn('cancel failed', e); }
+}
+
+// Sync the navbar "Idle / Processing / Connection Lost" pill. Called on each
+// WS state tick (live state) and on ws.onclose / onerror (lost connection).
+function _updateConnPill(isRendering, modeStr, step) {
+    const pill = document.getElementById('conn-pill');
+    const text = document.getElementById('conn-pill-text');
+    if (!pill || !text) return;
+    const spinner = pill.querySelector('.loading');
+    if (!_wsConnected) {
+        pill.className = 'badge badge-sm badge-error rounded-full gap-1 normal-case font-mono';
+        text.textContent = 'Connection Lost';
+        if (spinner) spinner.style.display = 'none';
+        return;
+    }
+    if (isRendering) {
+        pill.className = 'badge badge-sm badge-primary rounded-full gap-1 normal-case font-mono';
+        // Map fleet's mode/step into an action verb the user can read at a
+        // glance: "Thinking/Concept" → "Texting", "Rendering/Base Image" →
+        // "Imaging", etc. Fall back to the raw mode if step is unfamiliar.
+        const s = step || (_lastTick && _lastTick.state && _lastTick.state.step) || '';
+        const stepVerb = {
+            'Concept':       'Texting',
+            'Base Image':    'Imaging',
+            'Video Chains':  'Videoing',
+            'Audio':         'Composing',
+            'TTS':           'Voicing',
+            'Post Process':  'Polishing',
+            'Final Merge':   'Merging',
+        }[s];
+        text.textContent = stepVerb || modeStr || 'Processing';
+        if (spinner) spinner.style.display = '';
+        return;
+    }
+    pill.className = 'badge badge-sm badge-ghost rounded-full gap-1 normal-case font-mono';
+    text.textContent = 'Idle';
+    if (spinner) spinner.style.display = 'none';
+}
+
+async function requeueItem(ts) {
+    if (!ts) return;
+    try {
+        await fetch('/queue/requeue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ts }),
+        });
+    } catch (e) { console.warn('requeue failed', e); }
+}
+
+// Tick stage + total elapsed once a second so they don't jump only on WS ticks.
+setInterval(() => {
+    if (!_isRendering) return;
+    // Live update the active queue item's badges (the only ones that exist now).
+    document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
+        if (_stageStartTs) el.textContent = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
+    });
+    document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
+        if (_jobStartTs) el.textContent = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
+    });
+    // Total ETA from rolling stage averages.
+    const totalEta = _STAGE_ORDER
+        .map(_stageAvgSeconds)
+        .filter(x => x != null)
+        .reduce((a, b) => a + b, 0);
+    if (totalEta > 0) {
+        document.querySelectorAll('[data-q-status="active"] [data-q-job-eta]').forEach(el => {
+            el.textContent = 'ETA ' + _fmtElapsed(totalEta * 1000);
+        });
+    }
+}, 1000);
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +247,18 @@ function _statusEmoji(st) {
     if (st === 'danger') return '🔴';
     if (st === 'warn') return '🟡';
     return '🟢';
+}
+
+function updateOutputsDisk(d) {
+    if (!d) return;
+    const el = document.getElementById('d-v');
+    if (!el) return;
+    el.textContent = `${d.pct}%`;
+    el.className = 'font-mono font-black ' + (
+        d.status === 'danger' ? 'text-error' :
+        d.status === 'warn' ? 'text-warning' : 'text-accent'
+    );
+    if (el.parentElement) el.parentElement.title = `${d.used_gb} / ${d.total_gb} GB`;
 }
 
 function updateStorage(storage) {
@@ -125,8 +333,32 @@ function schedBadgeClass(type) {
     return 'badge-ghost';
 }
 
+// Track the asset currently shown in the info modal so the delete button knows what to remove.
+let _currentAssetFilename = null;
+
+async function deleteCurrentAsset() {
+    const filename = _currentAssetFilename;
+    if (!filename) return;
+    if (!confirm(`Delete this asset?\n\n${filename}\n\nThis cannot be undone.`)) return;
+    try {
+        const r = await fetch('/asset/' + encodeURIComponent(filename), { method: 'DELETE' });
+        const j = await r.json();
+        if (!j.ok) { alert('Delete failed: ' + (j.error || 'unknown')); return; }
+        document.querySelectorAll('#preview-grid > [data-slop-kind]').forEach(card => {
+            const t = card.querySelector('[title]');
+            if (t && t.getAttribute('title') === filename) card.remove();
+        });
+        const d = document.getElementById('asset-info-modal');
+        if (d && d.close) d.close();
+        _currentAssetFilename = null;
+    } catch (e) {
+        alert('Delete error: ' + String(e));
+    }
+}
+
 // Asset card click → metadata popover
 async function openAssetInfo(filename) {
+    _currentAssetFilename = filename;
     const d = document.getElementById('asset-info-modal');
     if (!d) return;
     const body = document.getElementById('asset-info-body');
@@ -176,6 +408,101 @@ document.addEventListener('click', (e) => {
     if (filename) openAssetInfo(filename);
 });
 
+// Map a filename → display badge for the model + role that produced it.
+// Returns { label, color, border, part?, kind } where kind is the filter bucket.
+function _slopBadgeMeta(file) {
+    const isMp4 = file.endsWith('.mp4');
+    const isWav = file.endsWith('.wav');
+    const isFinal = isMp4 && /^FINAL_/i.test(file);
+    // Chain-stage PNGs (v<N>_base.png, v<N>_f<M>.png) belong to the video
+    // pipeline even though they're images, so the video filter chip should
+    // surface them alongside chains + FINAL mp4s.
+    const isChainPng = /^v\d+_(base|f\d+)\.png$/i.test(file);
+    const kind = isMp4 ? 'video' : isWav ? 'audio' : (isChainPng ? 'video' : 'image');
+    if (isFinal) {
+        const m = file.match(/^FINAL_([^.]+)\.mp4$/i);
+        return { label: 'FINAL · V' + (m ? m[1] : '?'), color: 'badge-accent', border: 'border-accent', kind };
+    }
+    let model = '';
+    let part = '';
+    const knownModels = new Set(['qwen', 'ernie', 'ltx-2.3', 'ltx-bridge', 'wan2.2', 'wan2.5', 'heartmula', 'qwen-tts', 'kokoro']);
+    const testMatch = file.match(/^test_([a-z0-9.-]+)_/i);
+    if (testMatch && knownModels.has(testMatch[1].toLowerCase())) {
+        model = testMatch[1].toLowerCase();
+    } else if (/^ltx_base_/i.test(file)) {
+        model = 'ltx-2.3';
+    } else if (/^v\d+_base\.png$/i.test(file)) {
+        // Base image of a video pipeline iter — produced by whatever
+        // base_model is configured (qwen by default). We can't tell the
+        // exact model from the filename alone; default to qwen which is
+        // overwhelmingly the common case. Sidecar JSON (now written by
+        // the fleet) will let us be authoritative in a follow-up.
+        model = 'qwen';
+    } else if (/^v\d+_c\d+\.mp4$/i.test(file)) {
+        model = 'ltx-2.3';
+        const pm = file.match(/_c(\d+)\.mp4$/i);
+        if (pm) part = pm[1];
+    } else if (/^v\d+_f\d+\.png$/i.test(file)) {
+        model = 'ltx-bridge';
+    } else if (isMp4) {
+        // Generic mp4 fallback — assume LTX-2.3 since that's the only video model wired in.
+        model = 'ltx-2.3';
+    }
+    const map = {
+        'qwen': { label: 'Qwen Image', color: 'badge-info' },
+        'ernie': { label: 'Ernie Image', color: 'badge-error' },
+        'ltx-2.3': { label: isMp4 ? 'LTX-2.3 Video' : 'LTX-2.3 Image', color: 'badge-success' },
+        'ltx-bridge': { label: 'LTX Bridge', color: 'badge-success' },
+        'wan2.2': { label: 'Wan 2.2 Video', color: 'badge-info' },
+        'wan2.5': { label: 'Wan 2.5 Video', color: 'badge-info' },
+        'heartmula': { label: 'Heartmula Music', color: 'badge-secondary' },
+        'qwen-tts': { label: 'Qwen TTS', color: 'badge-warning' },
+        'kokoro': { label: 'Kokoro TTS', color: 'badge-warning' },
+    };
+    const borderByKind = { 'video': 'border-primary', 'image': 'border-secondary', 'audio': 'border-warning' };
+    if (model && map[model]) {
+        return { label: map[model].label, color: map[model].color, border: borderByKind[kind], part, kind };
+    }
+    const fallback = {
+        'video': { label: '🎬 video', color: 'badge-primary' },
+        'image': { label: '🖼 image', color: 'badge-secondary' },
+        'audio': { label: '🔊 audio', color: 'badge-warning' },
+    }[kind];
+    return { label: fallback.label, color: fallback.color, border: borderByKind[kind], part, kind };
+}
+
+// Pretty display label for a configured model id (from config snapshot).
+function _modelDisplayName(id, role) {
+    if (!id || id === 'none') return '';
+    const map = {
+        'qwen': 'Qwen Image',
+        'qwen-image': 'Qwen Image',
+        'ernie': 'Ernie Image',
+        'ltx-2.3': role === 'image' ? 'LTX-2.3 Image' : 'LTX-2.3 Video',
+        'wan2.2': 'Wan 2.2 Video',
+        'wan2.5': 'Wan 2.5 Video',
+        'heartmula': 'Heartmula Music',
+        'qwen-tts': 'Qwen TTS',
+        'kokoro': 'Kokoro TTS',
+    };
+    return map[id] || id;
+}
+
+// Build badge HTML strings from a config snapshot, including the LLM that wrote the prompt.
+function _configModelBadges(snap, llmModelId) {
+    const out = [];
+    if (snap.base_model) out.push(`<span class="badge badge-xs badge-info" title="image model">${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
+    if (snap.video_model) out.push(`<span class="badge badge-xs badge-success" title="video model">${_htmlEscape(_modelDisplayName(snap.video_model, 'video'))}</span>`);
+    if (snap.audio_model && snap.audio_model !== 'none') out.push(`<span class="badge badge-xs badge-secondary" title="music model">${_htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))}</span>`);
+    if (snap.tts_model && snap.tts_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="voice model">${_htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))}</span>`);
+    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="upscaler">${_htmlEscape(snap.upscale_model)}</span>`);
+    if (llmModelId) {
+        const short = llmModelId.replace(/^.*[\/:]/, '').replace(/\.gguf$/i, '');
+        out.push(`<span class="badge badge-xs badge-accent" title="prompt LLM: ${_htmlEscape(llmModelId)}">${_htmlEscape(short)}</span>`);
+    }
+    return out;
+}
+
 // Slop filter chips — toggle visibility of cards by data-slop-kind.
 function _applySlopFilters() {
     const enabled = {};
@@ -189,8 +516,43 @@ function _applySlopFilters() {
 document.addEventListener('change', e => {
     if (e.target.matches('[data-slop-filter]')) _applySlopFilters();
 });
+// Resizable split between Subjects (left) and Queue (right). The flex-basis
+// of each side is persisted in localStorage so the user's preferred ratio
+// survives reloads.
+function _initSplitDivider() {
+    const row = document.getElementById('split-row');
+    const left = document.getElementById('split-left');
+    const right = document.getElementById('split-right');
+    const handle = document.getElementById('split-divider');
+    if (!row || !left || !right || !handle) return;
+    const KEY = 'slopfinity_split_ratio_v1';
+    const applyRatio = (ratio) => {
+        const r = Math.max(0.2, Math.min(0.8, ratio));
+        left.style.flex = `${r} 1 0`;
+        right.style.flex = `${1 - r} 1 0`;
+    };
+    const stored = parseFloat(localStorage.getItem(KEY));
+    if (isFinite(stored)) applyRatio(stored);
+    let dragging = false;
+    handle.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); document.body.style.userSelect = 'none'; });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const rect = row.getBoundingClientRect();
+        const ratio = (e.clientX - rect.left) / rect.width;
+        applyRatio(ratio);
+        try { localStorage.setItem(KEY, String(Math.max(0.2, Math.min(0.8, ratio)))); } catch {}
+    });
+    document.addEventListener('mouseup', () => { dragging = false; document.body.style.userSelect = ''; });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     _applySlopFilters();
+    _initSplitDivider();
+    if (typeof _updateSingleLabels === 'function') _updateSingleLabels();
+    if (typeof _updateChaosEnabled === 'function') _updateChaosEnabled();
+    if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
+    if (typeof _updateGenModePill === 'function') _updateGenModePill();
+    if (typeof _renderStageEtas === 'function') _renderStageEtas();
     // Auto-fetch subject suggestions on page load so the chip row isn't empty.
     // Cached server-side for 30s, so reloads don't hammer the LLM.
     if (typeof regenSuggestions === 'function') {
@@ -203,7 +565,31 @@ function updateOutputs(o) {
     const f = document.getElementById('out-finals');
     const c = document.getElementById('out-chains');
     const b = document.getElementById('out-base');
-    const l = document.getElementById('out-latest');
+    const l = document.getElementById('out-latest'); // legacy, removed from layout
+    const pill = document.getElementById('out-latest-pill');
+    const link = document.getElementById('out-latest-link');
+    const thumb = document.getElementById('out-latest-thumb');
+    if (pill && link) {
+        if (o.latest_final) {
+            link.textContent = o.latest_final;
+            link.title = o.latest_final;
+            link.href = '/files/' + encodeURIComponent(o.latest_final);
+            link.onclick = (e) => { e.preventDefault(); openAssetInfo(o.latest_final); };
+            // Tiny thumbnail — for mp4 use the <video> first-frame poster, for
+            // png/jpg just an <img>. Click also opens the asset-info modal.
+            if (thumb) {
+                const url = '/files/' + encodeURIComponent(o.latest_final);
+                const isMp4 = /\.mp4$/i.test(o.latest_final);
+                thumb.innerHTML = isMp4
+                    ? `<video src="${url}" muted preload="metadata" class="w-full h-full object-cover" title="${_htmlEscape(o.latest_final)}"></video>`
+                    : `<img src="${url}" class="w-full h-full object-cover" title="${_htmlEscape(o.latest_final)}">`;
+                thumb.onclick = () => openAssetInfo(o.latest_final);
+            }
+            pill.style.display = '';
+        } else {
+            pill.style.display = 'none';
+        }
+    }
     if (f) f.textContent = o.finals ?? 0;
     if (c) c.textContent = o.chains ?? 0;
     if (b) b.textContent = o.base_images ?? 0;
@@ -211,18 +597,15 @@ function updateOutputs(o) {
         l.textContent = o.latest_final ? `latest: ${o.latest_final}` : '';
         l.style.display = o.latest_final ? 'block' : 'none';
     }
-    // Update chip counts inline with filter labels.
-    // chain count includes finals + chain clips; image count = base + bridges; audio count from total WAVs (approx via DOM scan).
-    const totalVideos = (o.finals ?? 0) + (o.chains ?? 0);
-    const chipV = document.querySelector('[data-chip-count="chain"]');
+    // Chip counts come from the actual rendered cards — server-side counters
+    // (`finals`/`chains`/`base_images`) under-count now that chain-stage PNGs
+    // (v<N>_base, v<N>_f<M>) are bucketed under the `video` filter kind.
+    const chipV = document.querySelector('[data-chip-count="video"]');
     const chipI = document.querySelector('[data-chip-count="image"]');
     const chipA = document.querySelector('[data-chip-count="audio"]');
-    if (chipV) chipV.textContent = totalVideos;
-    if (chipI) chipI.textContent = o.base_images ?? 0;
-    if (chipA) {
-        const audioCards = document.querySelectorAll('#preview-grid > [data-slop-kind="audio"]').length;
-        chipA.textContent = audioCards;
-    }
+    if (chipV) chipV.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="video"]').length;
+    if (chipI) chipI.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="image"]').length;
+    if (chipA) chipA.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="audio"]').length;
 }
 
 function updateScheduler(sc) {
@@ -331,6 +714,7 @@ function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}/ws`);
     ws.onopen = () => {
+        _wsConnected = true;
         const w = $('refresh-wrapper');
         if (w) w.style.display = 'none';
         const dot = $('live-dot');
@@ -340,24 +724,92 @@ function connect() {
             if (inner) inner.classList.replace('bg-error', 'bg-success');
             if (ping) ping.classList.replace('bg-error', 'bg-success');
         }
+        _updateConnPill(_isRendering, _lastTick && _lastTick.state && _lastTick.state.mode);
     };
     ws.onmessage = e => {
         const d = JSON.parse(e.data);
         if (d.type === 'state') {
-            $('g-v').innerText = d.stats.gpu + '%';
-            $('v-v').innerText = d.stats.vram + '%';
+            // Tone the percentage colour with the latest ticker column —
+            // text-error above 80 %, otherwise the per-pill tone class. Keeps
+            // the number visually in sync with the bar colour.
+            const _toneClass = (pct, baseTone) => 'font-mono font-black ' + (pct > 80 ? 'text-error' : 'text-' + baseTone);
+            const gpuPct = d.stats.gpu;
+            const gpuEl = $('g-v');
+            if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary'); }
+            // Strix Halo has unified memory — rocm-smi's VRAM% always reads 0,
+            // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
+            const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
+            const ramEl = $('v-v');
+            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'secondary'); }
             $('r-v').innerText = d.stats.ram_u + ' / ' + Math.round(d.stats.ram_t) + ' GB';
 
-            gH.push(d.stats.gpu); vH.push(d.stats.vram);
+            gH.push(d.stats.gpu); vH.push(ramPct);
             if (gH.length > 15) gH.shift();
             if (vH.length > 15) vH.shift();
-            $('g-t').innerHTML = gH.map(v => `<div class="ticker-col" style="height:${Math.max(5, (v / 100) * 30)}px; background:${v > 80 ? '#ff5555' : '#ff79c6'}"></div>`).join('');
-            $('v-t').innerHTML = vH.map(v => `<div class="ticker-col" style="height:${Math.max(5, (v / 100) * 30)}px; background:#bd93f9"></div>`).join('');
+            // Use DaisyUI bg-* utility classes so the ticker tints match the
+            // active theme (and switch when the user changes themes). >80% gets
+            // bg-error to flag pressure regardless of base tone.
+            const _tickerHTML = (vals, tone) => vals.map(v => {
+                const cls = v > 80 ? 'bg-error' : ('bg-' + tone);
+                return `<div class="ticker-col ${cls}" style="height:${Math.max(5, (v / 100) * 30)}px"></div>`;
+            }).join('');
+            $('g-t').innerHTML = _tickerHTML(gH, 'primary');
+            $('v-t').innerHTML = _tickerHTML(vH, 'secondary');
+
+            // Load average (1m) — same tone-flip pattern as GPU/RAM: text-info
+            // normally, text-error above 80 % so the colour tracks the ticker.
+            const loadPct = (typeof d.stats.load_pct === 'number') ? d.stats.load_pct : 0;
+            const loadEl = $('l-v');
+            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'info'); }
+            const loadParent = loadEl && loadEl.parentElement;
+            if (loadParent && d.stats.load_1m != null) {
+                loadParent.title = `1m: ${d.stats.load_1m.toFixed(2)} · 5m: ${d.stats.load_5m.toFixed(2)} · 15m: ${d.stats.load_15m.toFixed(2)} (load average / cpu count)`;
+            }
+            lH.push(loadPct);
+            if (lH.length > 15) lH.shift();
+            const lt = $('l-t');
+            if (lt) lt.innerHTML = _tickerHTML(lH, 'info');
+
+            // Disk ticker: usage barely moves, so sample at 1/120 the rate of
+            // GPU/RAM. With WS broadcasting every 2 s that's one new column
+            // every ~4 minutes; 15 columns ≈ 1 hour of history (matches the
+            // "Disk (1hr)" label).
+            _diskTickCounter = (_diskTickCounter || 0) + 1;
+            if (d.outputs_disk && (_diskTickCounter % 120 === 1 || dH.length === 0)) {
+                // Prefill the rolling buffer with the current value the first
+                // time we see one, so the ticker shows a flat line at the
+                // current usage instead of a single tiny column slowly growing.
+                if (dH.length === 0) dH = Array(15).fill(d.outputs_disk.pct);
+                else dH.push(d.outputs_disk.pct);
+                if (dH.length > 15) dH.shift();
+                const dt = $('d-t');
+                if (dt) dt.innerHTML = _tickerHTML(dH, 'accent');
+            }
 
             $('h-m').innerText = d.state.mode;
             $('h-pr').innerText = '"' + d.state.current_prompt + '"';
-            $('h-c').innerText = `V ${d.state.video_index}/${d.state.total_videos} · C ${d.state.chain_index}/${d.state.total_chains}`;
-            $('h-p').value = (d.state.video_index / Math.max(1, d.state.total_videos)) * 100;
+            // Stage timer resets whenever state.step changes; job/total timer
+            // resets whenever state.video_index advances (new subject = new job).
+            if (d.state.step !== _lastStage) {
+                if (_lastStage && _stageStartTs) {
+                    _saveStageDuration(_lastStage, (Date.now() - _stageStartTs) / 1000);
+                    _renderStageEtas();
+                }
+                _lastStage = d.state.step;
+                _stageStartTs = Date.now();
+            }
+            if (d.state.video_index !== _lastJobIndex) {
+                _lastJobIndex = d.state.video_index;
+                _jobStartTs = Date.now();
+            }
+            const stageEl = $('h-c');
+            if (stageEl && _stageStartTs) stageEl.innerText = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
+            const totalEl = $('h-c-total');
+            if (totalEl && _jobStartTs) totalEl.innerText = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
+            // Progress bar tracks subject-through-list as a rough lifetime indicator.
+            $('h-p').value = d.state.total_videos
+                ? (d.state.video_index / Math.max(1, d.state.total_videos)) * 100
+                : 0;
             updateStageSteps(d.state);
 
             document.querySelectorAll('.wf-step').forEach(s => s.classList.remove('active', 'done'));
@@ -372,37 +824,161 @@ function connect() {
                 }
             });
 
-            $('q-count').innerText = d.queue.length;
+            const isRunning = d.state && d.state.mode && d.state.mode !== 'Idle';
+            _isRendering = isRunning;
+            _updateStartBtn();
+            // Pass mode AND step so the action verb mapping ("Imaging" / "Videoing" /
+            // …) doesn't depend on _lastTick which is set later in this handler.
+            _updateConnPill(isRunning, d.state && d.state.mode, d.state && d.state.step);
+            const qLen = d.queue.length + (isRunning ? 1 : 0);
+            $('q-count').innerText = qLen;
             const qList = $('q-list');
-            if (qList) {
-                if (!d.queue.length) {
-                    qList.innerHTML = '<li class="text-[10px] text-base-content/40 italic p-2">queue empty — toggle Infinity to start</li>';
-                } else {
-                    const cfg = d.config || {};
-                    qList.innerHTML = d.queue.slice(0, 5).map(q => {
-                        const snap = q.config_snapshot || cfg;
-                        const badges = [];
-                        if (snap.base_model) badges.push(`<span class="badge badge-xs badge-info">${_htmlEscape(snap.base_model)}</span>`);
-                        if (snap.video_model) badges.push(`<span class="badge badge-xs badge-success">${_htmlEscape(snap.video_model)}</span>`);
-                        if (snap.audio_model && snap.audio_model !== 'none') badges.push(`<span class="badge badge-xs badge-secondary">${_htmlEscape(snap.audio_model)}</span>`);
-                        if (snap.upscale_model && snap.upscale_model !== 'none') badges.push(`<span class="badge badge-xs badge-warning">${_htmlEscape(snap.upscale_model)}</span>`);
-                        const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
-                        const promptEsc = _htmlEscape(q.prompt || '');
-                        return `<li><details class="bg-base-200 rounded-md">
-                            <summary class="cursor-pointer p-2 text-xs flex flex-wrap items-center gap-2">
-                                <span class="font-semibold truncate max-w-[50%]" title="${promptEsc}">${_htmlEscape((q.prompt || '').substring(0, 80))}</span>
+            const cfg = d.config || {};
+            const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
+            // [canonicalStage, shortAcronym, displayLabel]. Canonical matches
+            // state.step from the fleet runner; display is the user-facing word
+            // (we shorten "Base Image" → "Image", "Video Chains" → "Parts" etc).
+            const STAGES = [
+                ['Concept', 'T', 'Text'],
+                ['Base Image', 'I', 'Image'],
+                ['Video Chains', 'V', 'Video'],
+                ['Audio', 'M', 'Music'],
+                ['TTS', 'S', 'Voice'],
+                ['Post Process', 'X', 'Post'],
+                ['Final Merge', 'F', 'Final'],
+            ];
+            const renderPipelineStrip = (q, opts) => {
+                const isActive = !!(opts && opts.running);
+                const curStep = isActive ? (opts.step || '') : null;
+                // Each step renders both forms — `.stage-full` shows the word,
+                // `.stage-short` shows the acronym. The .pipeline-strip-compact
+                // CSS swaps which one is visible based on container width.
+                const dots = STAGES.map(([stage, acronym, label]) => {
+                    if (curStep === stage) {
+                        return `<span class="badge badge-xs badge-primary gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span class="stage-full">${label}</span><span class="stage-short">${acronym}</span></span>`;
+                    }
+                    const cls = (isActive && _stageDoneBefore(curStep, stage))
+                        ? 'badge-success'
+                        : 'badge-outline opacity-40';
+                    return `<span class="badge badge-xs ${cls} px-1 font-mono text-[9px]" data-stage="${stage}" title="${stage}"><span class="stage-full">${label}</span><span class="stage-short">${acronym}</span></span>`;
+                }).join('');
+                // Stage-level badges sit at the right of the pipeline strip.
+                const stageNow = (isActive && _stageStartTs) ? '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs) : '⏱ 0s';
+                const stageAvg = isActive ? _stageAvgSeconds(curStep) : null;
+                const stageEtaTxt = stageAvg != null ? '~' + _fmtElapsed(stageAvg * 1000) : '';
+                const liveBadges = isActive
+                    ? `<span class="ml-auto flex gap-1">
+                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
+                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
+                    </span>`
+                    : '';
+                // Job-level (total) timer + ETA — second row below the strip,
+                // mirroring the stage row visually so the relationship is clear.
+                const jobNow2 = (isActive && _jobStartTs) ? 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs) : 'Σ 0s';
+                const totalEtaSec2 = isActive
+                    ? _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0)
+                    : 0;
+                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
+                const totalBadges = isActive
+                    ? `<div class="flex justify-end gap-1 mt-1">
+                        <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>${jobNow2}</span>
+                        ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
+                    </div>`
+                    : '';
+                return `<div class="flex items-center gap-1 mt-1" data-q-pipeline>${dots}${liveBadges}</div>`;
+            };
+            const renderItem = (q, opts) => {
+                const snap = (q && q.config_snapshot) || cfg;
+                const badges = _configModelBadges(snap, llmModelId);
+                const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
+                const promptEsc = _htmlEscape(q.prompt || '');
+                const isActive = !!(opts && opts.running);
+                const isCancelled = q.status === 'cancelled';
+                const infBadge = q.infinity
+                    ? `<span class="badge badge-xs badge-secondary" title="Infinity — re-queues itself after every completion">♾</span>`
+                    : '';
+                // Cancelled items keep their badge (so the strikethrough has a
+                // label). Active gets nothing (ring+timers signal it). Pending
+                // items also drop the chip — being in the queue says it all.
+                const statusChip = isCancelled
+                    ? `<span class="badge badge-xs badge-ghost text-[9px]">cancelled</span>`
+                    : '';
+                // Hamburger dropdown — Cancel today, room to grow tomorrow.
+                const infToggleLabel = q.infinity ? '▶ Make Single' : '♾ Make Infinite';
+                const promptForJs = JSON.stringify(q.prompt || '');
+                const menuHTML = isCancelled
+                    ? `<div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions">⋯</label>
+                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
+                            <li><a onclick="requeueItem(${q.ts || 0})">↻ Re-queue</a></li>
+                        </ul>
+                       </div>`
+                    : `<div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions">⋯</label>
+                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
+                            <li><a onclick='editItem(${q.ts || 0}, ${promptForJs})'>✎ Edit prompt</a></li>
+                            <li><a onclick="toggleItemInfinity(${q.ts || 0})">${infToggleLabel}</a></li>
+                            <li><a onclick="cancelItem(${q.ts || 0})" class="text-error">✕ Cancel</a></li>
+                        </ul>
+                       </div>`;
+                const cls = `bg-base-200 rounded-md${isCancelled ? ' opacity-50 slop-cancelled-fade' : ''}${isActive ? ' ring-2 ring-primary' : ''}`;
+                const stripHTML = isActive ? renderPipelineStrip(q, opts) : '';
+                // Always-visible row + collapsible reveal. Active items get the
+                // reveal pre-opened so the user sees stage progress without an
+                // extra click. The reveal hosts model badges, size·frames meta,
+                // and the live pipeline strip + timers.
+                return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
+                    <details ${isActive ? 'open' : ''}>
+                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
+                            ${statusChip}${infBadge}
+                            <span class="font-semibold truncate flex-1${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
+                            ${menuHTML}
+                        </summary>
+                        <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
+                            <div class="flex items-center gap-1 flex-wrap text-[10px] mt-1">
                                 ${badges.join('')}
-                                <span class="text-[10px] text-base-content/50 font-mono ml-auto">${meta}</span>
-                            </summary>
-                            <div class="p-2 pt-0 text-[11px] text-base-content/70 font-mono whitespace-pre-wrap">${promptEsc}</div>
-                        </details></li>`;
-                    }).join('');
+                                <span class="text-base-content/50 font-mono ml-auto">${meta}</span>
+                            </div>
+                            ${stripHTML}
+                            ${totalBadges}
+                        </div>
+                    </details>
+                </li>`;
+            };
+            if (qList) {
+                if (!qLen) {
+                    qList.innerHTML = '<li class="text-[10px] text-base-content/40 italic p-2">queue empty — click Generate to add</li>';
+                } else {
+                    const items = [];
+                    if (isRunning) {
+                        const runItem = {
+                            prompt: d.state.current_prompt || '(running)',
+                            config_snapshot: cfg,
+                            ts: 0,
+                        };
+                        items.push(renderItem(runItem, { running: true, step: d.state.step }));
+                    }
+                    // Cancelled items fade out for ~5 s, then disappear from view.
+                    // The data still persists server-side until the 48 h prune sweep.
+                    const nowSec = Date.now() / 1000;
+                    const visibleQueue = d.queue.filter(q => {
+                        if (q.status !== 'cancelled') return true;
+                        const age = nowSec - (q.cancelled_ts || 0);
+                        return age < 5;
+                    });
+                    items.push(...visibleQueue.slice(0, 11).map(q => renderItem(q, {})));
+                    qList.innerHTML = items.join('');
                 }
             }
             const qDrawer = $('queue-drawer-list');
             if (qDrawer) {
-                qDrawer.innerHTML = d.queue.length
-                    ? d.queue.map(q => `<div class="bg-base-300 p-3 rounded text-xs border border-base-200">${(q.prompt || '').substring(0, 200)}</div>`).join('')
+                const drawerItems = [];
+                if (isRunning) {
+                    drawerItems.push(`<div class="bg-base-300 p-3 rounded text-xs border border-error/40 ring-1 ring-error/40"><span class="badge badge-xs badge-error gap-1"><span class="loading loading-spinner loading-xs"></span>${_htmlEscape(d.state.step || 'running')}</span> ${_htmlEscape((d.state.current_prompt || '').substring(0, 200))}</div>`);
+                }
+                drawerItems.push(...d.queue.map(q => `<div class="bg-base-300 p-3 rounded text-xs border border-base-200">${_htmlEscape((q.prompt || '').substring(0, 200))}</div>`));
+                qDrawer.innerHTML = drawerItems.length
+                    ? drawerItems.join('')
                     : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
             }
 
@@ -442,10 +1018,12 @@ function connect() {
             if (outEmpty) outEmpty.style.display = hasAny ? 'none' : 'flex';
 
             updateStorage(d.storage);
+            updateOutputsDisk(d.outputs_disk);
             updateRam(d.ram);
             updateScheduler(d.scheduler);
             updateOutputs(d.outputs);
             _lastTick = d;
+            _renderSubjectsModels();
             updateDiagnostics(d);
         }
         if (d.type === 'new_file') {
@@ -453,40 +1031,20 @@ function connect() {
             const isV = file.endsWith('.mp4');
             const isWav = file.endsWith('.wav');
             const isFinal = isV && /^FINAL_/i.test(file);
-            // FINAL and chain share the 'chain' filter kind (both are videos); FINAL is just visually accented.
-            const kind = isV ? 'chain' : isWav ? 'audio' : 'image';
-            // Unified Slop feed: everything goes into preview-grid; filter chips control visibility.
+            const isChainPngLive = /^v\d+_(base|f\d+)\.png$/i.test(file);
+            const kind = isV ? 'video' : isWav ? 'audio' : (isChainPngLive ? 'video' : 'image');
             const g = $('preview-grid');
             if (!g) return;
             const outSec = $('output-section');
             const outEmpty = $('output-empty');
             if (outSec) outSec.style.display = 'block';
             if (outEmpty) outEmpty.style.display = 'none';
-            // Parse model from filename.
-            let model = '';
-            const testMatch = file.match(/^test_([a-z0-9.-]+)_/i);
-            if (testMatch) model = testMatch[1];
-            else if (/^ltx_base_/i.test(file)) model = 'ltx-2.3';
-            else if (/^v\d+_c\d+\.mp4$/i.test(file)) model = 'ltx-2.3';
-            else if (/^v\d+_f\d+\.png$/i.test(file)) model = 'ltx-bridge';
-            const modelColors = {
-                'qwen':'badge-info','ernie':'badge-error','ltx-2.3':'badge-success',
-                'ltx-bridge':'badge-success','wan2.2':'badge-info','wan2.5':'badge-info',
-                'heartmula':'badge-secondary','qwen-tts':'badge-warning','kokoro':'badge-warning',
-            };
-            const mColor = modelColors[model] || 'badge-ghost';
-            const kindMeta = isFinal
-                ? ['🎬 FINAL', 'badge-accent', 'border-accent']
-                : {
-                    'chain': ['🎬 video', 'badge-primary', 'border-primary'],
-                    'image': ['🖼 image', 'badge-secondary', 'border-secondary'],
-                    'audio': ['🔊 audio', 'badge-warning', 'border-warning'],
-                  }[kind];
+            const meta = _slopBadgeMeta(file);
             const c = document.createElement('div');
-            c.className = `card card-compact bg-base-100 shadow-lg border ${kindMeta[2]} card-hover overflow-hidden animate-pulse`;
+            c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden animate-pulse`;
             c.dataset.slopKind = kind;
-            const modelBadge = model
-                ? `<span class="badge badge-xs ${mColor}" title="Generated by ${model}">${model}</span>`
+            const partBadge = meta.part
+                ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
                 : '';
             let media;
             if (isV) media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls autoplay muted loop class="w-full h-full object-contain"><source src="/files/${file}"></video></figure>`;
@@ -495,8 +1053,8 @@ function connect() {
             c.innerHTML = `${media}
                 <div class="card-body !p-2 bg-base-200/60 gap-1">
                     <div class="flex flex-wrap items-center gap-1">
-                        <span class="badge badge-xs ${kindMeta[1]}">${kindMeta[0]}</span>
-                        ${modelBadge}
+                        <span class="badge badge-xs ${meta.color}">${meta.label}</span>
+                        ${partBadge}
                     </div>
                     <span class="text-[10px] font-mono text-base-content/60 truncate" title="${file}">${file}</span>
                 </div>`;
@@ -511,6 +1069,8 @@ function connect() {
         }
     };
     ws.onclose = () => {
+        _wsConnected = false;
+        _updateConnPill(false);
         const w = $('refresh-wrapper');
         if (w) w.style.display = '';
         const dot = $('live-dot');
@@ -625,6 +1185,40 @@ function _switchFanoutTab(stage) {
         </div>`;
 }
 
+// Single-tab enhancer — rewrite ONE stage's prompt, leaving the others alone.
+async function enhanceStage(stage) {
+    const fieldMap = { image: 'p-image', video: 'p-video', music: 'p-music', tts: 'p-tts' };
+    const fieldId = fieldMap[stage];
+    if (!fieldId) return;
+    const ta = document.getElementById(fieldId);
+    if (!ta) return;
+    const core = ($('p-core') && $('p-core').value) || '';
+    const seed = (ta.value || '').trim() || core.trim();
+    if (!seed) return;
+    const sys = {
+        image: 'Rewrite the prompt as a detailed visual still-frame description for an AI image generator. Lighting, texture, mood. Under 60 words. Output ONLY the rewritten prompt.',
+        video: 'Rewrite the prompt as a motion/camera description for an AI video generator. Camera movement, pacing, transitions. Under 60 words. Output ONLY the rewritten prompt.',
+        music: 'Rewrite the prompt as a short mood/genre description suitable for a music generator (instruments, tempo, vibe). Under 30 words. Output ONLY the description.',
+        tts: 'Rewrite the prompt as a one or two sentence voiceover line spoken in first or third person. Output ONLY the line.',
+    }[stage] || 'Rewrite the prompt for ' + stage;
+    const orig = ta.value;
+    ta.value = '✨ thinking...';
+    ta.disabled = true;
+    try {
+        const res = await fetch('/enhance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: `${sys}\n\nSubject: ${seed}` }),
+        });
+        const r = await res.json();
+        ta.value = (r.suggestion || orig).trim();
+    } catch (e) {
+        ta.value = orig;
+    } finally {
+        ta.disabled = false;
+    }
+}
+
 async function enhance() {
     const core = ($('p-core') && $('p-core').value) || '';
     const stages = {
@@ -705,20 +1299,56 @@ function applyAi() {
     if (box) box.classList.add('hidden');
 }
 
-async function inject(prio) {
-    const concat = _concatStagePrompts();
+async function inject(prio, terminate, concurrent, opts) {
+    // Per-stage override fields (set in Pipeline modal). If they're all empty
+    // the prompt comes from the Subjects textarea instead — newline = one job.
+    const stageConcat = _concatStagePrompts();
+    const subjectsRaw = ($('p-core') && $('p-core').value || '').trim();
+    const subjects = subjectsRaw
+        ? subjectsRaw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+        : [];
     const stages = {
         image: $('p-image') ? $('p-image').value : '',
         video: $('p-video') ? $('p-video').value : '',
         music: $('p-music') ? $('p-music').value : '',
         tts: $('p-tts') ? $('p-tts').value : '',
     };
-    const f = new FormData();
-    f.append('prompt', concat);
-    f.append('priority', prio);
-    f.append('stage_prompts', JSON.stringify(stages));
-    await fetch('/inject', { method: 'POST', body: f });
+    // Decide what to enqueue: stage-override concat (one job), or one job per
+    // subject line if the user is driving from the Subjects textarea.
+    const prompts = stageConcat ? [stageConcat] : (subjects.length ? subjects : []);
+    if (!prompts.length) {
+        console.warn('inject: no prompt available — Subjects textarea empty and no stage overrides set');
+        return;
+    }
+    // Send one /inject per prompt. Multiple subjects (newline-separated)
+    // become multiple queue items in order.
+    for (const promptText of prompts) {
+        const f = new FormData();
+        f.append('prompt', promptText);
+        f.append('priority', prio);
+        if (terminate) f.append('terminate', '1');
+        if (concurrent) f.append('concurrent', '1');
+        if (opts && opts.infinity) f.append('infinity', '1');
+        if (opts && opts.whenIdle) f.append('when_idle', '1');
+        if (opts && opts.chaos) f.append('chaos', '1');
+        if (stageConcat) f.append('stage_prompts', JSON.stringify(stages));
+        await fetch('/inject', { method: 'POST', body: f });
+    }
+    // Only blank the per-stage overrides — leave the Subjects textarea alone
+    // so the user can re-queue the same set quickly if they want to.
     ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
+}
+
+// Refresh the small "Will use:" badge row beneath the Subjects textarea so
+// the user can see the active model selection at a glance without opening
+// the Pipeline modal.
+function _renderSubjectsModels() {
+    const row = document.getElementById('subjects-models');
+    if (!row) return;
+    const cfg = (_lastTick && _lastTick.config) || {};
+    const llmId = (cfg.llm && cfg.llm.model_id) || '';
+    const badges = _configModelBadges(cfg, llmId);
+    row.innerHTML = '<span class="text-base-content/50 uppercase tracking-widest mr-1">Will use:</span>' + badges.join(' ');
 }
 
 async function updatePipeline() {
@@ -741,6 +1371,8 @@ async function updatePipeline() {
     if ($('cfg-consolidation')) body.consolidation = $('cfg-consolidation').value;
     if ($('cfg-music-gain-db')) body.music_gain_db = parseInt($('cfg-music-gain-db').value, 10);
     if ($('cfg-fade-s')) body.fade_s = parseFloat($('cfg-fade-s').value);
+    if ($('chaos-on')) body.chaos_mode = $('chaos-on').checked;
+    if ($('when-idle-on')) body.when_idle = $('when-idle-on').checked;
     await fetch('/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1075,19 +1707,111 @@ function _subjectsFromTextarea() {
   return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 }
 
+// Generate-button behaviour:
+// Each click ALWAYS queues a new job — there is no longer a global "Stop
+// Infinity" mode. If the Infinity toggle is on, the queued item carries an
+// `infinity:true` flag so the fleet re-appends it after every completion;
+// multiple infinity items round-robin against each other. To stop one, click
+// the ✕ on its queue row.
 async function toggleInfinity() {
-  const t = document.getElementById('inf-on');
-  if (!t) return;
-  t.checked = !t.checked;
-  updatePipeline();
+  const inf = document.getElementById('inf-on');
+  const nowToggle = document.getElementById('now-on');
+  const termToggle = document.getElementById('term-on');
+  const concToggle = document.getElementById('concurrent-on');
+  const idleToggle = document.getElementById('when-idle-on');
+  const chaosToggle = document.getElementById('chaos-on');
+  const prio = nowToggle && nowToggle.checked ? 'now' : 'next';
+  const terminate = !!(termToggle && termToggle.checked);
+  const concurrent = !!(concToggle && concToggle.checked);
+  const infinity = !!(inf && inf.checked);
+  const whenIdle = !!(idleToggle && idleToggle.checked);
+  const chaos = !!(chaosToggle && chaosToggle.checked);
+  await inject(prio, terminate, concurrent, { infinity, whenIdle, chaos });
   _updateStartBtn();
 }
 
+// Tracks whether the fleet is actually rendering right now (driven by the WS
+// state broadcast). Toggling the Infinity checkbox alone doesn't mean we've
+// started — the button label must reflect real state, not just the toggle.
+let _isRendering = false;
+
 function _updateStartBtn() {
-  const t = document.getElementById('inf-on');
   const b = document.getElementById('btn-start-stop');
-  if (t && b) b.textContent = t.checked ? '⏸ Stop Infinity' : '▶ Start Infinity';
+  if (!b) return;
+  // Each click queues a new item. The Infinity toggle in the Generation tab
+  // makes the queued item re-loop after each completion (cancel via the ✕ on
+  // its queue row). Never use this button to stop running jobs.
+  const inf = document.getElementById('inf-on');
+  const now = document.getElementById('now-on');
+  const term = document.getElementById('term-on');
+  if (term && term.checked) { b.textContent = 'Terminate & Queue'; return; }
+  if (inf && inf.checked) {
+    b.textContent = (now && now.checked) ? 'Queue Infinite Slop (now)' : 'Queue Infinite Slop';
+    return;
+  }
+  b.textContent = (now && now.checked) ? 'Queue Now' : 'Queue Slop';
 }
+
+// Polymorphic + When Idle only make sense when the fleet is looping —
+// gray them out otherwise.
+function _updateChaosEnabled() {
+  const inf = document.getElementById('inf-on');
+  const enabled = !!(inf && inf.checked);
+  [
+    ['chaos-on', 'chaos-row'],
+    ['when-idle-on', 'when-idle-row'],
+  ].forEach(([toggleId, rowId]) => {
+    const t = document.getElementById(toggleId);
+    const r = document.getElementById(rowId);
+    if (t) t.disabled = !enabled;
+    if (r) r.classList.toggle('opacity-40', !enabled);
+  });
+}
+
+// Back-compat shim — Terminate is now a flat flag; older callers may still
+// invoke this. No-op preserves the call site.
+function _updateTerminateEnabled() {}
+
+// Build a one-line summary of the Generation tab toggles for the header pill,
+// so the user can glance at it without opening the modal.
+function _updateGenModePill() {
+  const pill = document.getElementById('gen-mode-pill');
+  if (!pill) return;
+  const inf = document.getElementById('inf-on');
+  const idle = document.getElementById('when-idle-on');
+  const poly = document.getElementById('chaos-on');
+  const now = document.getElementById('now-on');
+  const term = document.getElementById('term-on');
+  const conc = document.getElementById('concurrent-on');
+  const parts = [];
+  parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
+  if (inf && inf.checked && idle && idle.checked) parts.push('+idle');
+  if (inf && inf.checked && poly && poly.checked) parts.push('+poly');
+  if (term && term.checked) parts.push('🛑 terminate');
+  else if (now && now.checked) parts.push('⏯ now');
+  else parts.push('queue');
+  if (conc && conc.checked) parts.push('+concurrent');
+  pill.textContent = parts.join(' · ');
+}
+
+// Single-label toggle pattern: each label sits to the right of the toggle and
+// swaps text + emphasis based on the toggle state. data-on-label / data-off-label
+// hold the words; bold + full-opacity when on, dim when off.
+function _updateSingleLabels() {
+  document.querySelectorAll('.single-label').forEach(el => {
+    const t = document.getElementById(el.dataset.toggle);
+    if (!t) return;
+    const isOn = t.checked;
+    const onText = el.dataset.onLabel || '';
+    const offText = el.dataset.offLabel || onText;
+    el.textContent = isOn ? onText : offText;
+    el.classList.toggle('font-bold', isOn);
+    el.classList.toggle('opacity-50', !isOn);
+  });
+}
+// Back-compat shims — older onchange handlers may still reference these.
+function _updateSideLabels() { _updateSingleLabels(); }
+function _updatePrioLabel() { _updateSingleLabels(); _updateStartBtn(); }
 
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
