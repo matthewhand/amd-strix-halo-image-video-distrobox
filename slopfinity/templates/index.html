@@ -222,9 +222,9 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🎬 {{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🖼 {{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">🔊 {{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
