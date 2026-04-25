@@ -587,3 +587,21 @@ body[data-layout="gallery"] #gallery-fab {
 .video-chain-details[open] > summary .video-chain-arrow {
     transform: rotate(90deg);
 }
+
+/* Layout mode: 'queue' — Subjects card hidden, Queue fills the upper pane.
+   Layout mode: 'subjects' — Queue card hidden, Subjects fills the upper pane.
+   Both rely on body[data-layout="..."] being set by _applyLayoutView().
+   The vertical splitter handle is hidden because there's nothing to drag. */
+body[data-layout="queue"] #split-left,
+body[data-layout="subjects"] #split-right {
+    display: none !important;
+}
+body[data-layout="queue"] #split-divider,
+body[data-layout="subjects"] #split-divider {
+    display: none !important;
+}
+body[data-layout="queue"] #split-right,
+body[data-layout="subjects"] #split-left {
+    flex-basis: 100% !important;
+    max-width: 100% !important;
+}
