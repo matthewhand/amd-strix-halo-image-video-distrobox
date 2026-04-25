@@ -1670,16 +1670,13 @@ function connect() {
                     qList.innerHTML = items.join('');
                 }
             }
-            const qDrawer = $('queue-drawer-list');
-            if (qDrawer) {
-                const drawerItems = [];
-                if (isRunning) {
-                    drawerItems.push(`<div class="bg-base-300 p-3 rounded text-xs border border-error/40 ring-1 ring-error/40"><span class="badge badge-xs badge-error gap-1"><span class="loading loading-spinner loading-xs"></span>${_htmlEscape(d.state.step || 'running')}</span> ${_htmlEscape((d.state.current_prompt || '').substring(0, 200))}</div>`);
-                }
-                drawerItems.push(...d.queue.map(q => `<div class="bg-base-300 p-3 rounded text-xs border border-base-200">${_htmlEscape((q.prompt || '').substring(0, 200))}</div>`));
-                qDrawer.innerHTML = drawerItems.length
-                    ? drawerItems.join('')
-                    : '<div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>';
+            // Drawer is now self-managed via /queue/paginated. If it's open
+            // AND showing page 1, refresh that page so new completions show
+            // up live; otherwise leave it alone — user navigates pages with
+            // the prev/next/filter controls.
+            const qDrawerToggle = $('queue-drawer-toggle');
+            if (qDrawerToggle && qDrawerToggle.checked && _queueDrawerOffset === 0) {
+                _loadQueueDrawerPage();
             }
 
             // Empty-state hint: only when idle AND queue empty.
@@ -2104,9 +2101,128 @@ async function updatePipeline() {
     } catch (e) { /* WS tick will catch up */ }
 }
 
+// ── Queue drawer pagination ────────────────────────────────────────────────
+// State for the "View all" drawer. Server-paginated via /queue/paginated;
+// the drawer renders one page at a time so 1000+ done items stay snappy.
+let _queueDrawerOffset = 0;
+let _queueDrawerLimit = 25;
+let _queueDrawerFilter = 'all';
+let _queueDrawerTotal = 0;
+
+function _renderQueueDrawerItem(q) {
+    if (q && q.status === 'done') {
+        // Reuse the canonical done-item renderer so the drawer matches
+        // the inline strip's markup (thumbnails, asset rows, etc.).
+        return `<ul class="m-0 p-0 list-none">${_renderDoneItem(q)}</ul>`;
+    }
+    const cls = q && q.status === 'cancelled' ? 'border-warning/40' :
+                q && q.status === 'pending' ? 'border-base-200' : 'border-base-200';
+    const badge = q && q.status === 'cancelled' ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>' :
+                  q && q.status === 'pending' ? '<span class="badge badge-xs badge-info mr-1">pending</span>' : '';
+    const prompt = _htmlEscape(((q && q.prompt) || '').substring(0, 200));
+    return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${prompt}</div>`;
+}
+
+async function _loadQueueDrawerPage() {
+    const body = $('queue-drawer-body');
+    const info = $('queue-drawer-page-info');
+    const totalEl = $('queue-drawer-total');
+    const prev = $('queue-drawer-prev');
+    const next = $('queue-drawer-next');
+    if (!body) return;
+    try {
+        const qs = new URLSearchParams({
+            offset: String(_queueDrawerOffset),
+            limit: String(_queueDrawerLimit),
+            filter: _queueDrawerFilter,
+        });
+        const res = await fetch('/queue/paginated?' + qs.toString());
+        const r = await res.json();
+        const items = Array.isArray(r.items) ? r.items : [];
+        _queueDrawerTotal = r.total || 0;
+        if (_queueDrawerTotal === 0) {
+            body.innerHTML = '<div class="text-xs text-base-content/50 italic text-center p-4">No queued items yet.</div>';
+        } else {
+            body.innerHTML = items.map(_renderQueueDrawerItem).join('');
+        }
+        const totalPages = Math.max(1, Math.ceil(_queueDrawerTotal / _queueDrawerLimit));
+        const currentPage = Math.floor(_queueDrawerOffset / _queueDrawerLimit) + 1;
+        if (info) info.textContent = `Page ${currentPage} / ${totalPages}`;
+        if (totalEl) totalEl.textContent = `${_queueDrawerTotal} item${_queueDrawerTotal === 1 ? '' : 's'}`;
+        if (prev) prev.classList.toggle('btn-disabled', _queueDrawerOffset <= 0);
+        if (next) next.classList.toggle('btn-disabled', !r.has_more);
+    } catch (e) {
+        body.innerHTML = '<div class="text-xs text-error italic text-center p-4">Failed to load queue page.</div>';
+    }
+}
+
+function _wireQueueDrawerControls() {
+    const toggle = $('queue-drawer-toggle');
+    if (toggle && !toggle._paginatedWired) {
+        toggle.addEventListener('change', () => {
+            if (toggle.checked) {
+                _queueDrawerOffset = 0;
+                _loadQueueDrawerPage();
+            }
+        });
+        toggle._paginatedWired = true;
+    }
+    const prev = $('queue-drawer-prev');
+    if (prev && !prev._wired) {
+        prev.addEventListener('click', () => {
+            if (_queueDrawerOffset <= 0) return;
+            _queueDrawerOffset = Math.max(0, _queueDrawerOffset - _queueDrawerLimit);
+            _loadQueueDrawerPage();
+        });
+        prev._wired = true;
+    }
+    const next = $('queue-drawer-next');
+    if (next && !next._wired) {
+        next.addEventListener('click', () => {
+            if (_queueDrawerOffset + _queueDrawerLimit >= _queueDrawerTotal) return;
+            _queueDrawerOffset += _queueDrawerLimit;
+            _loadQueueDrawerPage();
+        });
+        next._wired = true;
+    }
+    const filt = $('queue-drawer-filter');
+    if (filt && !filt._wired) {
+        filt.addEventListener('change', () => {
+            _queueDrawerFilter = filt.value || 'all';
+            _queueDrawerOffset = 0;
+            _loadQueueDrawerPage();
+        });
+        filt._wired = true;
+    }
+    const psz = $('queue-drawer-pagesize');
+    if (psz && !psz._wired) {
+        psz.addEventListener('change', () => {
+            const v = parseInt(psz.value, 10);
+            if (Number.isFinite(v) && v > 0) {
+                _queueDrawerLimit = v;
+                _queueDrawerOffset = 0;
+                _loadQueueDrawerPage();
+            }
+        });
+        psz._wired = true;
+    }
+}
+
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _wireQueueDrawerControls);
+    } else {
+        _wireQueueDrawerControls();
+    }
+}
+
 function openQueueDrawer() {
     const t = $('queue-drawer-toggle');
-    if (t) t.checked = true;
+    if (t) {
+        t.checked = true;
+        _queueDrawerOffset = 0;
+        _loadQueueDrawerPage();
+    }
 }
 
 async function generateTts() {

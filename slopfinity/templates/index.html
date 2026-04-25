@@ -186,7 +186,7 @@
                 <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
                     <span id="conn-pill-text">Connecting</span>
                 </span>
-                <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
+                <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
             </div>
             <ul id="q-list" class="flex flex-col gap-2 ui-split-scrollarea">
                 {% for q in (queue or [])[:6] %}
@@ -364,14 +364,33 @@
                 <h2 class="text-lg font-black text-accent uppercase tracking-widest">{{ branding.labels.queue }}</h2>
                 <label for="queue-drawer-toggle" class="btn btn-sm btn-ghost btn-square">✕</label>
             </div>
-            <div id="queue-drawer-list" class="flex flex-col gap-2">
-                {% if queue %}
-                    {% for q in queue %}
-                    <div class="bg-base-300 p-3 rounded text-xs border border-base-200">{{ q.prompt[:200] }}</div>
-                    {% endfor %}
-                {% else %}
-                    <div class="text-xs text-base-content/50 italic text-center p-4">Queue empty</div>
-                {% endif %}
+            <div id="queue-drawer-controls" class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <div class="join">
+                    <select id="queue-drawer-filter" class="join-item select select-bordered select-xs">
+                        <option value="all" selected>All</option>
+                        <option value="pending">Pending</option>
+                        <option value="done">Done</option>
+                        <option value="failed">Failed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <select id="queue-drawer-pagesize" class="join-item select select-bordered select-xs">
+                        <option value="10">10/page</option>
+                        <option value="25" selected>25/page</option>
+                        <option value="50">50/page</option>
+                        <option value="100">100/page</option>
+                    </select>
+                </div>
+            </div>
+            <div id="queue-drawer-body" class="flex flex-col gap-2">
+                <div class="text-xs text-base-content/50 italic text-center p-4">Loading…</div>
+            </div>
+            <div id="queue-drawer-pagination" class="flex items-center justify-between gap-2 mt-3">
+                <div class="join">
+                    <button id="queue-drawer-prev" class="join-item btn btn-xs">‹ Prev</button>
+                    <button class="join-item btn btn-xs btn-disabled" id="queue-drawer-page-info">Page 1 / 1</button>
+                    <button id="queue-drawer-next" class="join-item btn btn-xs">Next ›</button>
+                </div>
+                <span id="queue-drawer-total" class="text-[10px] font-mono text-base-content/60"></span>
             </div>
         </div>
     </div>

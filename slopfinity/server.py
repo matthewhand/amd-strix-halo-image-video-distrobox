@@ -483,6 +483,43 @@ async def queue_toggle_infinity(data: dict = Body(...)):
     return {"ok": True, "infinity": new_val}
 
 
+@app.get("/queue/paginated")
+async def queue_paginated(offset: int = 0, limit: int = 25, filter: str = "all"):
+    """Paginated, filtered view of the persisted queue. Newest first.
+
+    Used by the "View all" drawer so the client doesn't have to render
+    1000+ done items in one shot. Filters:
+      - all: every item
+      - pending / done / cancelled: status match
+      - failed: status==done AND succeeded is False
+    """
+    try:
+        offset = max(0, int(offset))
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        limit = max(1, min(500, int(limit)))
+    except (TypeError, ValueError):
+        limit = 25
+    q = cfg.get_queue() or []
+    if filter == "failed":
+        q = [it for it in q if it.get("status") == "done" and it.get("succeeded") is False]
+    elif filter in ("done", "pending", "cancelled"):
+        q = [it for it in q if it.get("status") == filter]
+    # Newest first — completed_ts for done items, ts for everything else.
+    q = sorted(q, key=lambda x: x.get("completed_ts") or x.get("ts") or 0, reverse=True)
+    total = len(q)
+    page = q[offset:offset + limit]
+    return {
+        "items": page,
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "has_more": offset + limit < total,
+        "filter": filter,
+    }
+
+
 @app.post("/queue/requeue")
 async def queue_requeue(data: dict = Body(...)):
     """Flip a cancelled queue item back to pending. Identified by ts."""
