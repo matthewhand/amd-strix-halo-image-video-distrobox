@@ -39,6 +39,12 @@ let _wsConnected = false;
 // Reset when video_index changes (new job).
 let _jobActuals = {};
 
+// Tracks which (v_idx, stage) completion badges have already been shown so
+// renderPipelineStrip only runs the cross-fade animation once per stage flip
+// (subsequent re-renders skip the .stage-just-completed class). Cleared per
+// fresh page load — staleness across reloads is fine, the badge stays put.
+const _displayedDoneStages = new Set();
+
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
 //   { "Concept": [12.4, 9.8, 11.2], "Base Image": [...], ... }
@@ -1103,9 +1109,20 @@ function connect() {
                 // while running. Active stage gets a fresh in-progress line
                 // below it. The user can read top-to-bottom = full history.
                 const actuals = (_jobActuals[v] || {});
+                // Track stages that are *first* appearing as completed in
+                // this render — they get .stage-just-completed for the
+                // cross-fade animation. Pre-existing completions render plain
+                // so we don't restart the animation on every WS tick.
+                const justCompleted = new Set();
                 const completedLines = STAGES
                     .filter(([s]) => _stageDoneBefore(curStep, s))
                     .map(([s,,label,,tone]) => {
+                        const key = `${v}:${s}`;
+                        const isFresh = !_displayedDoneStages.has(key);
+                        if (isFresh) {
+                            justCompleted.add(key);
+                            _displayedDoneStages.add(key);
+                        }
                         let assetBadge;
                         if (s === 'Concept') {
                             const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
@@ -1123,11 +1140,24 @@ function connect() {
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
                         // "✓ Image                        v3_base.png  3m22s / ETA 9m"
-                        return `<div class="flex items-center gap-2 mt-1">
+                        const animCls = isFresh ? ' stage-just-completed' : '';
+                        return `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             <span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
                         </div>`;
                     }).join('');
+                // Strip the .stage-just-completed class after the animation
+                // finishes (600 ms total budget) so the next WS re-render
+                // doesn't accidentally restart it via DOM diffing quirks.
+                if (justCompleted.size) {
+                    setTimeout(() => {
+                        justCompleted.forEach(key => {
+                            document.querySelectorAll(`[data-stage-row="${key}"]`).forEach(el => {
+                                el.classList.remove('stage-just-completed');
+                            });
+                        });
+                    }, 600);
+                }
                 return `
                     ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
