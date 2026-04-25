@@ -2758,6 +2758,23 @@ async function testSettings() {
     }
 }
 
+// Shortcut from "Suggestion Prompt?" link → open Settings, switch to LLM tab,
+// scroll the custom-suggestion-prompt textarea into view, focus it.
+async function openSettingsToSuggestionPrompt() {
+    await openSettings();
+    // The Settings modal uses a tabs-radio pattern; flip the LLM tab on.
+    const llmTab = document.querySelector('input[name="settings_tabs"][aria-label="LLM"]');
+    if (llmTab) llmTab.checked = true;
+    // Wait a frame for the tab content to render, then focus the textarea.
+    requestAnimationFrame(() => {
+        const ta = document.getElementById('set-suggest-custom-prompt');
+        if (ta) {
+            ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => ta.focus(), 200);
+        }
+    });
+}
+
 async function openSettings() {
     const modal = $('settings-modal');
     if (!modal) return;

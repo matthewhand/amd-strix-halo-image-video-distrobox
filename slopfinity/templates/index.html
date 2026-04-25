@@ -135,6 +135,11 @@
                    href="#"
                    class="text-[10px] text-base-content/50 hover:link cursor-pointer"
                    onclick="toggleSuggestionsHidden(false); return false;">Need ideas?</a>
+                <a id="subjects-suggestion-prompt-link"
+                   href="#"
+                   class="text-[10px] text-base-content/50 hover:link cursor-pointer ml-2"
+                   title="Edit the system prompt used for auto-suggestions"
+                   onclick="openSettingsToSuggestionPrompt(); return false;">Suggestion Prompt?</a>
                 <button id="subjects-suggestions-close"
                    type="button"
                    class="btn btn-circle btn-ghost btn-xs h-5 w-5 min-h-0 ml-1"
@@ -145,7 +150,7 @@
                         <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke-linecap="round"/>
                     </svg>
                 </button>
-                <button class="btn btn-ghost btn-xs" id="subjects-suggest-btn" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
+                <button class="btn btn-ghost btn-xs" id="subjects-suggest-btn" onclick="regenSuggestions()" title="Regenerate suggestions">🎲 Regenerate</button>
             </div>
             {# Multi-row marquee stack — each row auto-scrolls horizontally
                at a slow constant speed when its content overflows the row
