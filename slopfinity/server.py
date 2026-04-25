@@ -292,12 +292,16 @@ async def inject(
         except Exception:
             task["stage_prompts_raw"] = stage_prompts
     pending = [x for x in q if x.get("status") in (None, "pending")]
+    done = [x for x in q if x.get("status") == "done"]
     cancelled = [x for x in q if x.get("status") == "cancelled"]
     if priority == "now":
         pending.insert(0, task)
     else:
         pending.append(task)
-    cfg.save_queue(pending + cancelled)
+    # Order on disk: pending (active work) → done (history) → cancelled.
+    # Newly-injected work always sits BEFORE any done records so the fleet's
+    # pop-from-front consumes pending items first.
+    cfg.save_queue(pending + done + cancelled)
     return {"status": "ok"}
 
 

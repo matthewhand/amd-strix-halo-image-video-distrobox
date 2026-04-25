@@ -1115,32 +1115,32 @@ function connect() {
                     // Cap the inline queue at 6 items so the card stays
                     // glanceable; the "View all →" button opens the drawer
                     // which shows the entire queue.
-                    items.push(...visibleQueue.slice(0, 6).map(q => renderItem(q, {})));
-                    // Keep the most-recently-completed job visible at the
-                    // bottom (greyed, no pipeline strip) until the next job
-                    // completes and replaces it. Backend tracks this via
-                    // state.last_completed to survive page refresh.
-                    const last = d.state && d.state.last_completed;
-                    if (last && last.prompt) {
-                        const dur = (last.completed_ts && last.started_ts)
-                            ? _fmtElapsed((last.completed_ts - last.started_ts) * 1000)
-                            : '';
-                        const v = last.video_index || 0;
-                        const finalAsset = v ? `FINAL_${v}.mp4` : null;
+                    // Pending items first (max 6 visible inline).
+                    const pendingOnly = visibleQueue.filter(q => q.status !== 'done');
+                    items.push(...pendingOnly.slice(0, 6).map(q => renderItem(q, {})));
+                    // Done items (newest first) — full audit log of completed
+                    // iters, each with its actual duration and an asset link.
+                    // Limit to most-recent 6 inline; the drawer shows them all.
+                    const doneOnly = visibleQueue.filter(q => q.status === 'done')
+                        .slice().sort((a, b) => (b.completed_ts || 0) - (a.completed_ts || 0));
+                    doneOnly.slice(0, 6).forEach(q => {
+                        const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
+                        const v = q.v_idx || 0;
+                        const finalAsset = v && !q.image_only ? `FINAL_${v}.mp4` : null;
                         const baseAsset = v ? `v${v}_base.png` : null;
-                        const linkAttrs = finalAsset
-                            ? `cursor-pointer" onclick='openAssetInfo(${JSON.stringify(finalAsset)})'`
-                            : baseAsset
-                                ? `cursor-pointer" onclick='openAssetInfo(${JSON.stringify(baseAsset)})'`
-                                : `"`;
-                        items.push(`<li class="bg-base-200/50 rounded-md p-2 opacity-60 ${linkAttrs}>
+                        const asset = finalAsset || baseAsset;
+                        const onClick = asset ? `onclick='openAssetInfo(${JSON.stringify(asset)})'` : '';
+                        const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
+                        const sym = q.succeeded === false ? '✗' : '✓';
+                        items.push(`<li class="bg-base-200/40 rounded-md p-2 opacity-60 hover:opacity-100 cursor-pointer" ${onClick}>
                             <div class="flex items-center gap-2 text-xs flex-wrap">
-                                <span class="badge badge-xs badge-success">✓ done</span>
-                                <span class="font-semibold truncate flex-1" title="${_htmlEscape(last.prompt)}">${_htmlEscape(last.prompt)}</span>
+                                <span class="badge badge-xs ${cls}">${sym} done</span>
+                                <span class="font-semibold truncate flex-1" title="${_htmlEscape(q.prompt || '')}">${_htmlEscape(q.prompt || '')}</span>
                                 ${dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : ''}
+                                ${asset ? `<span class="text-[9px] font-mono opacity-70">${asset}</span>` : ''}
                             </div>
                         </li>`);
-                    }
+                    });
                     qList.innerHTML = items.join('');
                 }
             }
