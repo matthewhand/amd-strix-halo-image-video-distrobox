@@ -877,10 +877,14 @@ const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 function _isGpuIdleEnough() {
     const now = Date.now();
     const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
-    const recent = _gpuPctHistory.filter(e => now - e.ts <= windowMs);
-    // Need at least one sample per second of the window — if WS dropped
-    // or we just connected, treat as not-idle to be safe.
-    if (recent.length < _GPU_IDLE_REQUIRED_SECONDS) return false;
+    // Keep samples covering the window plus the most recent one preceding
+    // it (so a 2 s tick rate still produces evidence spanning >=3 s).
+    const recent = _gpuPctHistory.filter(e => now - e.ts <= windowMs + 2500);
+    // Need >=2 samples AND the oldest one must be at least REQUIRED_SECONDS
+    // old, otherwise we don't yet have evidence covering the full window.
+    if (recent.length < 2) return false;
+    const oldest = recent[0];
+    if (now - oldest.ts < windowMs) return false;
     return recent.every(e => e.pct <= _GPU_IDLE_THRESHOLD_PCT);
 }
 
