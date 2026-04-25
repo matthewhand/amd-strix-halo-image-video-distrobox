@@ -2668,6 +2668,7 @@ function _refreshChipHighlights() {
     const ta = document.getElementById('p-core');
     if (!ta) return;
     const lines = new Set(ta.value.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean));
+    // Walk every chip across every marquee row in the stack.
     document.querySelectorAll('#subject-chips button[data-suggest]').forEach(btn => {
         const here = lines.has((btn.dataset.suggest || '').toLowerCase());
         btn.classList.toggle('btn-primary', !here);
@@ -2707,85 +2708,126 @@ function _buildSuggestChip(s, repeat) {
     return b;
 }
 
-// Most recently rendered base batch — used by _refillSuggestChips on
-// resize so we can re-fill from the same source list without re-fetching.
+// Most recently rendered base batch — kept so future edge-fetch / refill
+// callers (carousel PR #76, etc.) can still introspect the latest items.
 let _lastSuggestBatch = [];
 
-// Pixel threshold under which we consider the gap "filled" — also the
-// minimum gap we'll leave at the bottom so chips don't touch the next
-// element.
-const _SUGGEST_FILL_THRESHOLD = 32;
-const _SUGGEST_FILL_MAX_REPEATS = 4;
+// Cap on how many marquee rows we keep stacked in #subject-chips-stack.
+// Older rows are dropped (FIFO) so the chip area never grows unbounded.
+const _SUGGEST_MAX_ROWS = 4;
 
-// Measure the vertical gap between the bottom of the chips container and
-// the top of the next sibling (the Start button row). The user wants the
-// chip area to visually fill this whitespace so there's no awkward gap
-// between the last chip row and the bottom-anchored Start button.
-function _suggestGapPx(box) {
-    const anchor = box && box.nextElementSibling;
-    if (!anchor) return 0;
-    const boxRect = box.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    return Math.max(0, anchorRect.top - boxRect.bottom);
+// Hide / show the empty-state placeholder ("click 🎲 for suggestions")
+// based on whether the stack contains any rows. Centralised so every
+// path that adds/removes rows stays consistent.
+function _refreshSuggestEmptyState() {
+    const stack = document.getElementById('subject-chips-stack');
+    const empty = document.getElementById('subject-chips-empty');
+    if (!stack || !empty) return;
+    empty.style.display = stack.children.length ? 'none' : '';
 }
 
-// Append repeats of the base batch until the gap below the chips is
-// smaller than the threshold or we hit the hard repeat cap. Filler chips
-// are tagged with data-suggestion-repeat="true" so we can strip them on
-// resize before re-measuring.
-function _refillSuggestChips() {
-    const box = document.getElementById('subject-chips');
-    if (!box || !_lastSuggestBatch.length) return;
-    // Strip previous fillers — keep only the original batch.
-    box.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
-    let repeats = 0;
-    while (repeats < _SUGGEST_FILL_MAX_REPEATS) {
-        const gap = _suggestGapPx(box);
-        if (gap < _SUGGEST_FILL_THRESHOLD) break;
-        _lastSuggestBatch.forEach(s => box.appendChild(_buildSuggestChip(s, true)));
-        repeats += 1;
+// Resize observer marks rows whose duplicated track once again fits the
+// row width as no-overflow (animation off). On a fresh render we set the
+// duration based on the measured track width.
+function _measureMarqueeRow(row) {
+    const track = row.querySelector('.suggest-marquee-track');
+    if (!track) return;
+    const tw = track.scrollWidth;       // contains 2x items
+    const rw = row.clientWidth;
+    if (!rw) return;
+    if (tw / 2 <= rw) {
+        // Single-batch content already fits — no scrolling required.
+        row.classList.add('no-overflow');
+        track.style.removeProperty('--marquee-duration');
+    } else {
+        row.classList.remove('no-overflow');
+        // Speed math: aim for ~60 px/s travel, clamped to a sane band.
+        // duration = (one-copy-width-in-px) / 60 px/s, clamped 40s..180s.
+        const px = tw / 2;
+        const seconds = Math.min(180, Math.max(40, px / 60));
+        track.style.setProperty('--marquee-duration', seconds.toFixed(1) + 's');
     }
+}
+
+// Append a new batch of suggestions as its own marquee row at the bottom
+// of the stack. Items are duplicated inside the track so the linear
+// translateX(-50%) loop is seamless.
+function _appendSuggestBatchRow(items) {
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack || !Array.isArray(items) || !items.length) return;
+    _lastSuggestBatch = items.slice();
+
+    const row = document.createElement('div');
+    row.className = 'suggest-marquee-row';
+    row.dataset.batchId = String(Date.now());
+
+    const track = document.createElement('div');
+    track.className = 'suggest-marquee-track';
+
+    // Duplicate the batch so the -50% wrap-around loop has no blank gap.
+    // Repeated chips reuse the same data-suggest value, so click handling
+    // and highlight refresh keep working transparently.
+    const all = items.concat(items);
+    all.forEach((s, i) => track.appendChild(_buildSuggestChip(s, i >= items.length)));
+    row.appendChild(track);
+    stack.appendChild(row);
+
+    // Cap stack size — drop oldest rows so the chip area stays bounded.
+    while (stack.children.length > _SUGGEST_MAX_ROWS) {
+        stack.removeChild(stack.firstElementChild);
+    }
+
+    // Measure on the next frame so layout has the correct widths.
+    requestAnimationFrame(() => _measureMarqueeRow(row));
+
+    _refreshSuggestEmptyState();
     _refreshChipHighlights();
 }
 
+// Backward-compat entry point — older callers (cache hydrate, regen
+// success, prefetch consumers) hand us a single array and expect the
+// chip area to reflect it. We clear the stack and append as the first
+// row, preserving "wholesale replace" semantics for the initial render.
 function _renderSuggestChips(arr) {
-    const box = document.getElementById('subject-chips');
-    if (!box) return;
-    if (!arr.length) {
-        box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
+    const stack = document.getElementById('subject-chips-stack');
+    const empty = document.getElementById('subject-chips-empty');
+    if (!stack) return;
+    if (!Array.isArray(arr) || !arr.length) {
+        stack.innerHTML = '';
+        if (empty) {
+            empty.textContent = 'no suggestions';
+            empty.classList.remove('text-base-content/30');
+            empty.classList.add('text-warning');
+            empty.style.display = '';
+        }
         _lastSuggestBatch = [];
         return;
     }
-    box.innerHTML = '';
-    _lastSuggestBatch = arr.slice();
-    arr.forEach(s => box.appendChild(_buildSuggestChip(s, false)));
-    // Defer the fill measurement until layout settles — the chips have
-    // just been inserted and getBoundingClientRect on a freshly attached
-    // node is fine, but a rAF gives the browser a clean frame.
-    requestAnimationFrame(() => _refillSuggestChips());
-    _refreshChipHighlights();
+    stack.innerHTML = '';
+    _appendSuggestBatchRow(arr);
 }
 
-// Watch for viewport / card-size changes so the fill recalculates when
-// the user drags the split-row divider or resizes the window. Set up
-// once — multiple calls are no-ops.
+// Watch for viewport / card-size changes so each row re-evaluates its
+// no-overflow state and recomputes duration when its width changes.
 let _suggestResizeWired = false;
 function _wireSuggestResize() {
     if (_suggestResizeWired) return;
-    const box = document.getElementById('subject-chips');
-    if (!box) return;
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
     _suggestResizeWired = true;
     let pending = false;
     const schedule = () => {
         if (pending) return;
         pending = true;
-        requestAnimationFrame(() => { pending = false; _refillSuggestChips(); });
+        requestAnimationFrame(() => {
+            pending = false;
+            stack.querySelectorAll('.suggest-marquee-row').forEach(_measureMarqueeRow);
+        });
     };
     window.addEventListener('resize', schedule);
     if (typeof ResizeObserver !== 'undefined') {
         const ro = new ResizeObserver(schedule);
-        // Observe the card-body so divider drags / textarea growth retrigger.
-        const card = box.closest('.card-body') || box.parentElement;
+        const card = stack.closest('.card-body') || stack.parentElement;
         if (card) ro.observe(card);
     }
 }
@@ -2805,9 +2847,15 @@ function _renderCachedSuggestions() {
 }
 
 async function regenSuggestions(n = 6) {
-  const box = document.getElementById('subject-chips');
-  if (!box) return;
-  box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+  const stack = document.getElementById('subject-chips-stack');
+  const empty = document.getElementById('subject-chips-empty');
+  if (!stack) return;
+  // Show a small inline loading state via the empty placeholder so we
+  // don't blow away existing rows while the fetch is in-flight.
+  if (empty) {
+    empty.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    empty.style.display = stack.children.length ? 'none' : '';
+  }
   try {
     // Forward the current Subjects textarea so the server can match
     // style/theme when `suggest_use_subjects` is enabled. The server ignores
@@ -2817,11 +2865,25 @@ async function regenSuggestions(n = 6) {
     const r = await fetch('/subjects/suggest' + qs);
     const data = await r.json();
     const arr = data.suggestions || [];
-    if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
+    if (!arr.length) {
+      if (empty) {
+        empty.textContent = 'LLM unreachable';
+        empty.classList.remove('text-base-content/30');
+        empty.classList.add('text-warning');
+        empty.style.display = stack.children.length ? 'none' : '';
+      }
+      return;
+    }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-    _renderSuggestChips(arr);
+    // Additive: each fresh batch becomes a new marquee row stacked below
+    // existing ones (capped at _SUGGEST_MAX_ROWS).
+    _appendSuggestBatchRow(arr);
   } catch (e) {
-    box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+    if (empty) {
+      empty.textContent = 'error';
+      empty.classList.add('text-error');
+      empty.style.display = stack.children.length ? 'none' : '';
+    }
   }
 }
 

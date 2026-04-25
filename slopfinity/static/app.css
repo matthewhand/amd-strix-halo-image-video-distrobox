@@ -180,6 +180,40 @@
 .suggest-overlay:hover { color: hsl(var(--p)); }
 .suggest-chevron { font-weight: 700; line-height: 1; }
 
+/* Multi-row marquee — each batch arrives as its own horizontally
+   auto-scrolling row stacked vertically inside #subject-chips-stack.
+   Track content is duplicated 2x in JS so the translateX(-50%) loop
+   appears seamless. Per-row --marquee-duration is set in JS based on
+   measured track width (~60 px/s, clamped 40s..180s). Hover/focus
+   pauses scrolling on the hovered row only. */
+.suggest-marquee-row {
+    position: relative;
+    overflow: hidden;
+    height: 28px;
+    flex: 0 0 auto;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+}
+.suggest-marquee-track {
+    display: inline-flex;
+    gap: 6px;
+    white-space: nowrap;
+    animation: suggest-marquee var(--marquee-duration, 60s) linear infinite;
+    will-change: transform;
+}
+.suggest-marquee-row:hover .suggest-marquee-track,
+.suggest-marquee-row:focus-within .suggest-marquee-track {
+    animation-play-state: paused;
+}
+.suggest-marquee-row.no-overflow .suggest-marquee-track {
+    animation: none;
+    transform: none;
+}
+@keyframes suggest-marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+
 /* Subjects textarea autogrow:
    - PRIMARY layout claim: grows vertically to fill the Subjects card up to
      a JS-managed max-height (card height minus Suggest button + chip row).

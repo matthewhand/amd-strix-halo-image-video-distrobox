@@ -134,8 +134,9 @@
                 <span class="text-[10px] text-base-content/50">Need ideas?</span>
                 <button class="btn btn-ghost btn-xs" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
             </div>
-            <div id="subject-chips" class="flex flex-wrap gap-1 min-h-[28px]">
-                <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
+            <div id="subject-chips" class="flex flex-col gap-1.5 min-h-[28px]">
+                <div id="subject-chips-stack" class="flex flex-col gap-1.5 min-h-0"></div>
+                <span id="subject-chips-empty" class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
             <div class="w-full mt-auto">
                 <button class="btn btn-primary btn-lg w-full" id="btn-start-stop" onclick="toggleInfinity()">
