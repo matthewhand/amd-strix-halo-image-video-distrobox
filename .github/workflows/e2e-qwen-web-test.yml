@@ -8,13 +8,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Heavy job: builds the full ROCm image and runs the real worker.
-  # GitHub-hosted runners cannot satisfy this (no AMD GPU, ROCm wheels won't
-  # run, and the build exceeds disk/time limits). Keep the job available for
-  # manual triggers and future self-hosted runners only.
+  # =====================================================================
+  # DO NOT change runs-on to ubuntu-latest — this job builds a 30 GB ROCm
+  # image and burns CI minutes the user does not have. Self-hosted only.
+  #
+  # The user is on GitHub free tier. Even a manual workflow_dispatch on a
+  # hosted runner consumes minutes from a tight monthly budget AND will
+  # fail (no AMD GPU, no ROCm, disk/time limits). We pin runs-on to a
+  # self-hosted label that does not yet exist, so the job queues
+  # indefinitely on hosted CI and only ever picks up on a future
+  # self-hosted GPU runner registered with these labels.
+  #
+  # The if-gate is also kept so the job does not even attempt to schedule
+  # on push/pull_request — only manual dispatch can enqueue it.
+  # =====================================================================
   e2e-qwen-web:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, amd-gpu]
     timeout-minutes: 30  # Increased timeout for ROCm builds
 
     steps:
