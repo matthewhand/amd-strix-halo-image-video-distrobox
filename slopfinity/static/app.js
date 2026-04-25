@@ -2412,6 +2412,20 @@ function connect() {
             const gpuPct = d.stats.gpu;
             const gpuEl = $('g-v');
             if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary', { invert: true }); }
+            // Subtitle rows: GPU marketing name under GPU; CPU marketing name
+            // under Load. stats.gpu_name / stats.cpu_name are detected once
+            // at module import in stats.py and don't change. Only set when
+            // non-empty so the "—" placeholder remains on detection failure.
+            const _gName = $('g-name');
+            if (_gName && d.stats.gpu_name && _gName.textContent !== d.stats.gpu_name) {
+                _gName.textContent = d.stats.gpu_name;
+                _gName.title = d.stats.gpu_name;
+            }
+            const _lName = $('l-name');
+            if (_lName && d.stats.cpu_name && _lName.textContent !== d.stats.cpu_name) {
+                _lName.textContent = d.stats.cpu_name;
+                _lName.title = d.stats.cpu_name;
+            }
             // Strix Halo has unified memory — rocm-smi's VRAM% always reads 0,
             // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
             const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
