@@ -122,7 +122,14 @@ services:
       - slop
     environment:
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      # Redirect HuggingFace cache to a writable bind-mounted path. The default
+      # /home/user/.cache/huggingface is read-only for the container UID once
+      # the model tries to materialize the CustomVoice subdir, causing every
+      # /tts call to crash with PermissionError. /workspace is the slopfinity
+      # bind mount of ./comfy-outputs/experiments on the host.
+      - HF_HOME=/workspace/.hf-tts-cache
     volumes:
+      - ./comfy-outputs/experiments:/workspace
       - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
       - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
     command: >
