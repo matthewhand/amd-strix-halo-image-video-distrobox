@@ -412,11 +412,15 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image model</span>
-                <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onPseudoChanged && _onPseudoChanged('base', 'image');">
                     <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
                     <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
                     <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
+                    <option disabled>──────────</option>
+                    <option value="__random__">Random</option>
+                    <option value="__slopped__">Slopped</option>
                 </select>
+                <select id="cfg-base-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="image"></select>
             </label>
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video model</span>
@@ -428,18 +432,26 @@
             </label>
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music model</span>
-                <select id="cfg-audio" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onAudioChanged && _onAudioChanged();">
+                <select id="cfg-audio" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onAudioChanged && _onAudioChanged(); _onPseudoChanged && _onPseudoChanged('audio', 'audio');">
                     <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Music</option>
                     <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula</option>
+                    <option disabled>──────────</option>
+                    <option value="__random__">Random</option>
+                    <option value="__slopped__">Slopped</option>
                 </select>
+                <select id="cfg-audio-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="audio"></select>
             </label>
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice model</span>
-                <select id="cfg-tts" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                <select id="cfg-tts" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onPseudoChanged && _onPseudoChanged('tts', 'tts');">
                     <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
                     <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
                     <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
+                    <option disabled>──────────</option>
+                    <option value="__random__">Random</option>
+                    <option value="__slopped__">Slopped</option>
                 </select>
+                <select id="cfg-tts-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="tts"></select>
             </label>
             <label class="form-control sm:col-span-2">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Upscale</span>
@@ -462,9 +474,12 @@
                 <!-- RAM estimator (kept inside Pipeline popup per spec) -->
                 <div id="ram-est" class="border-t border-base-300 pt-2 mt-1 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
                     <div class="flex items-center justify-between gap-2">
-                        <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
+                        <div class="text-[10px] uppercase tracking-widest opacity-60">WILL-USE</div>
                         <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
                     </div>
+                    <!-- Per-model breakdown rendered by updateRam() in app.js. SSR-empty;
+                         the WS tick + popup-open both fire updateRam() shortly after load. -->
+                    <div class="ram-breakdown text-[10px] font-mono leading-tight mt-1 opacity-80"></div>
                     <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
                 </div>
             </div>

@@ -99,8 +99,11 @@ _MODEL_GB = {
     # video only
     "wan2.2": 48,
     "wan2.5": 56,
-    # audio
+    # audio (music)
     "heartmula": 10,
+    # voice (TTS)
+    "qwen-tts": 4,
+    "kokoro": 1,
     # upscale
     "ltx-spatial": 18,
     # none / empty
@@ -110,11 +113,39 @@ _MODEL_GB = {
     "": 0,
 }
 
+# Pretty labels for the WILL-USE breakdown (mirrors _modelDisplayName in app.js).
+_MODEL_LABEL = {
+    "qwen": "Qwen Image",
+    "qwen-image": "Qwen Image",
+    "ernie": "Ernie Image",
+    "ltx-2.3": "LTX-2.3",
+    "wan2.2": "Wan 2.2",
+    "wan2.5": "Wan 2.5",
+    "heartmula": "Heartmula",
+    "qwen-tts": "Qwen-TTS",
+    "kokoro": "Kokoro-TTS",
+    "ltx-spatial": "LTX Spatial x2",
+}
+
+
+def _pretty(model):
+    if not model or model == "none":
+        return "—"
+    if isinstance(model, str) and model.startswith("slopped:"):
+        return "Slopped (" + model.split(":", 1)[1] + ")"
+    return _MODEL_LABEL.get(model, model)
+
 _OVERHEAD_GB = 6
 
 
 def _lookup(model):
     if model is None:
+        return 0
+    # `slopped:<file>` placeholders contribute the same RAM as the role's
+    # default model would — we don't actually load a fresh checkpoint, so
+    # treat them as zero incremental cost. This keeps the WILL-USE numbers
+    # honest even when the user picks an existing asset for a role.
+    if isinstance(model, str) and model.startswith("slopped:"):
         return 0
     return _MODEL_GB.get(model, 0)
 
@@ -149,21 +180,39 @@ def get_output_counts(base_dir=None):
     }
 
 
-def get_ram_estimate(base_model, video_model, audio_model, upscale_model):
-    """Return {estimated_gb, breakdown:[{stage, model, gb}], status}."""
+def get_ram_estimate(base_model, video_model, audio_model, upscale_model, tts_model=None):
+    """Return {estimated_gb, breakdown:[{role, stage, model, label, gb}], status}.
+
+    Each breakdown entry now carries a pretty `label` and a stable `role` key
+    so the UI can render a per-model WILL-USE table with friendly names. The
+    final `Overhead` row keeps role=`overhead` for the same reason.
+    """
     stages = [
-        ("Base Image", base_model),
-        ("Video", video_model),
-        ("Audio", audio_model),
-        ("Upscale", upscale_model),
+        ("image",   "Image",   base_model),
+        ("video",   "Video",   video_model),
+        ("audio",   "Music",   audio_model),
+        ("tts",     "Voice",   tts_model),
+        ("upscale", "Upscale", upscale_model),
     ]
     breakdown = []
     total = 0
-    for stage, model in stages:
+    for role, stage, model in stages:
         gb = _lookup(model)
-        breakdown.append({"stage": stage, "model": model or "none", "gb": gb})
+        breakdown.append({
+            "role":  role,
+            "stage": stage,
+            "model": model or "none",
+            "label": _pretty(model),
+            "gb":    gb,
+        })
         total += gb
-    breakdown.append({"stage": "Overhead", "model": "OS + ComfyUI", "gb": _OVERHEAD_GB})
+    breakdown.append({
+        "role":  "overhead",
+        "stage": "Overhead",
+        "model": "OS + ComfyUI",
+        "label": "OS + ComfyUI",
+        "gb":    _OVERHEAD_GB,
+    })
     total += _OVERHEAD_GB
 
     if total >= 100:
