@@ -2897,6 +2897,120 @@ function _wireSuggestCarousel() {
 }
 document.addEventListener('DOMContentLoaded', _wireSuggestCarousel);
 
+// ---------------------------------------------------------------------------
+// Subjects suggestion prefetch — preemptive cache for carousel paging
+// (restoring PR #57). Driven entirely by hover/scroll/idle signals on the
+// Subjects card; consumed by the carousel right-overlay click handler above
+// (_consumePrefetchedBatch). Every fetch path here is gated by
+// _isGpuIdleEnough() so we don't compete with running pipelines / ad-hoc
+// GPU users (manual ComfyUI runs, etc.).
+//
+// Invariants:
+// - At most one inflight request (_prefetchInflight bool).
+// - At most _PREFETCH_CAP buffered batches (FIFO).
+// - 30 s backoff after empty/errored response.
+// - Cancel idle timer when the page is hidden.
+// ---------------------------------------------------------------------------
+
+const _PREFETCH_CAP = 3;
+const _PREFETCH_BACKOFF_MS = 30_000;
+const _PREFETCH_IDLE_TRIGGER_MS = 8_000;
+const _prefetchedBatches = []; // FIFO of string[]
+let _prefetchInflight = false;
+let _prefetchBackoffUntil = 0;
+let _prefetchIdleTimer = null;
+let _prefetchStats = { triggered: 0, fetched: 0, consumed: 0, skippedGpu: 0, skippedBackoff: 0, skippedFull: 0 };
+
+function _consumePrefetchedBatch() {
+    const next = _prefetchedBatches.shift();
+    if (next) _prefetchStats.consumed += 1;
+    return next || null;
+}
+
+function _maybePrefetch() {
+    _prefetchStats.triggered += 1;
+    if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
+        _prefetchStats.skippedGpu += 1;
+        return;
+    }
+    if (_prefetchInflight) return;
+    if (_prefetchedBatches.length >= _PREFETCH_CAP) {
+        _prefetchStats.skippedFull += 1;
+        return;
+    }
+    if (Date.now() < _prefetchBackoffUntil) {
+        _prefetchStats.skippedBackoff += 1;
+        return;
+    }
+    _prefetchInflight = true;
+    const subjects = (($('p-core') && $('p-core').value) || '').trim();
+    const qs = '?n=6' + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '');
+    fetch('/subjects/suggest' + qs)
+        .then(r => r.json())
+        .then(d => {
+            if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
+                _prefetchedBatches.push(d.suggestions);
+                _prefetchStats.fetched += 1;
+            } else {
+                _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS;
+            }
+        })
+        .catch(() => { _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS; })
+        .finally(() => { _prefetchInflight = false; });
+}
+
+function _resetPrefetchIdleTimer() {
+    if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
+    if (document.hidden) return;
+    _prefetchIdleTimer = setTimeout(() => { _maybePrefetch(); }, _PREFETCH_IDLE_TRIGGER_MS);
+}
+
+let _suggestPrefetchWired = false;
+function _wireSuggestPrefetch() {
+    if (_suggestPrefetchWired) return;
+    const frame = document.getElementById('subject-chips-frame');
+    const strip = document.getElementById('subject-chips');
+    const right = document.getElementById('subject-chips-overlay-right');
+    const ta = document.getElementById('p-core');
+    if (!frame || !strip) return;
+    _suggestPrefetchWired = true;
+
+    frame.addEventListener('pointerenter', () => _maybePrefetch());
+    if (right) right.addEventListener('pointerenter', () => _maybePrefetch());
+
+    // Scroll-near-right-edge trigger (within 1.5 viewports of the right).
+    strip.addEventListener('scroll', () => {
+        const remaining = strip.scrollWidth - (strip.scrollLeft + strip.clientWidth);
+        if (remaining < strip.clientWidth * 1.5) _maybePrefetch();
+    });
+
+    if (ta) {
+        ta.addEventListener('input', _resetPrefetchIdleTimer);
+        ta.addEventListener('focus', _resetPrefetchIdleTimer);
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && _prefetchIdleTimer) {
+            clearTimeout(_prefetchIdleTimer);
+            _prefetchIdleTimer = null;
+        } else if (!document.hidden) {
+            _resetPrefetchIdleTimer();
+        }
+    });
+    _resetPrefetchIdleTimer();
+}
+document.addEventListener('DOMContentLoaded', _wireSuggestPrefetch);
+
+// Devtools helper — `_dumpSuggestPrefetchStats()` from the console.
+window._dumpSuggestPrefetchStats = function () {
+    return {
+        cap: _PREFETCH_CAP,
+        buffered: _prefetchedBatches.length,
+        inflight: _prefetchInflight,
+        backoffMsRemaining: Math.max(0, _prefetchBackoffUntil - Date.now()),
+        stats: { ..._prefetchStats },
+    };
+};
+
 // Hide the entire carousel frame (not just the strip) when the surviving
 // fill scaffold says there's no vertical room. We piggyback on the
 // existing _refillSuggestChips path: when called, sync frame visibility
