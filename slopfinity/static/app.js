@@ -1211,6 +1211,30 @@ const _GPU_IDLE_REQUIRED_SECONDS = 3;
 const _GPU_HISTORY_MAX = 30; // keep ~30 s of samples (WS ticks ~1 Hz)
 const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 
+// ---------------------------------------------------------------------------
+// GPU-idle gate audit — every auto-fetch surface that talks to the LLM
+// (or anything else that competes with running pipelines) MUST consult
+// _isGpuIdleEnough() first. Manual user-driven actions (button clicks,
+// keyboard shortcuts) are intentionally NOT gated — explicit intent wins.
+//
+// Gated callers (auto-fetch surfaces):
+//   - tryAutoSuggest (page-load auto-suggest, ~line 1092):
+//       gated; retries every 1 s while GPU busy.
+//   - _wireSuggestCarousel right-overlay click → fresh-fetch fallback
+//       (when prefetch FIFO is empty): gated; shows brief "is-loading"
+//       hint and bails out.
+//   - _maybePrefetch (pointerenter / scroll / idle triggers):
+//       gated; silent no-op when busy.
+//
+// NOT gated (explicit user intent):
+//   - regenSuggestions() — the 🎲 Suggest button. Manual click always wins.
+//   - _wireSuggestCarousel right-overlay → _consumePrefetchedBatch path:
+//       no fetch, just dequeues a previously-prefetched batch. The
+//       opportunistic top-up _maybePrefetch() it kicks IS gated.
+//
+// Definition: GPU has been at <=5% for >=3 consecutive seconds. Catches
+// ad-hoc GPU work the older queue/fleet check missed.
+// ---------------------------------------------------------------------------
 function _isGpuIdleEnough() {
     const now = Date.now();
     const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
@@ -2706,6 +2730,9 @@ function _renderCachedSuggestions() {
     } catch { return false; }
 }
 
+// 🎲 Suggest button entry point. INTENTIONALLY NOT gated by
+// _isGpuIdleEnough() — manual user click always wins. See the audit
+// block above _isGpuIdleEnough for the full inventory.
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
   if (!box) return;
