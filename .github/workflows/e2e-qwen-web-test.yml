@@ -8,8 +8,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  # =====================================================================
+  # DO NOT change runs-on to ubuntu-latest — this job builds a 30 GB ROCm
+  # image and burns CI minutes the user does not have. Self-hosted only.
+  #
+  # The user is on GitHub free tier. Even a manual workflow_dispatch on a
+  # hosted runner consumes minutes from a tight monthly budget AND will
+  # fail (no AMD GPU, no ROCm, disk/time limits). We pin runs-on to a
+  # self-hosted label that does not yet exist, so the job queues
+  # indefinitely on hosted CI and only ever picks up on a future
+  # self-hosted GPU runner registered with these labels.
+  #
+  # The if-gate is also kept so the job does not even attempt to schedule
+  # on push/pull_request — only manual dispatch can enqueue it.
+  # =====================================================================
   e2e-qwen-web:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, amd-gpu]
     timeout-minutes: 30  # Increased timeout for ROCm builds
 
     steps:
@@ -58,12 +73,11 @@ jobs:
           *.log
         retention-days: 7
 
-  # Lightweight test for PRs (skips heavy Docker build)
+  # Lightweight job for push + PR: validates syntax and runs the E2E flow
+  # against a stdlib mock worker (no Docker, no GPU). This is what gates CI.
   e2e-qwen-web-light:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    if: github.event_name == 'pull_request'
 
     steps:
     - name: Checkout repository
@@ -80,5 +94,16 @@ jobs:
 
     - name: Run syntax validation
       run: |
-        python -m py_compile tests/e2e_qwen_web_test.py
-        python -c "import tests.e2e_qwen_web_test; print('✅ Test script syntax valid')"
+        python -m py_compile tests/e2e_qwen_web_test.py tests/mock_qwen_server.py
+        python -c "import tests.e2e_qwen_web_test; print('Test script syntax valid')"
+
+    - name: Create test output dir
+      run: |
+        mkdir -p ~/.qwen-image-studio
+        chmod -R 755 ~/.qwen-image-studio
+
+    - name: Run E2E test against mock worker
+      env:
+        MOCK_QWEN_WEB: "1"
+      run: |
+        python tests/e2e_qwen_web_test.py

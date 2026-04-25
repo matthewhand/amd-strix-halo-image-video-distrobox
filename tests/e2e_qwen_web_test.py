@@ -8,14 +8,22 @@ Uses ultra-fast settings (4 steps) to speed up testing.
 import sys
 import os
 import time
+import atexit
 import requests
 import json
 from pathlib import Path
 import subprocess
 
+MOCK_MODE = os.environ.get("MOCK_QWEN_WEB") == "1"
+PERSIST_THRESHOLD = 100 if MOCK_MODE else 1_000_000
+
 def test_docker_compose_startup():
     """Test Docker Compose service startup"""
     print("🚀 Testing Docker Compose startup...")
+
+    if MOCK_MODE:
+        print("🧪 MOCK_QWEN_WEB=1 — skipping docker compose startup")
+        return True
 
     try:
         # Check if container is running
@@ -131,7 +139,7 @@ def test_image_persistence(job_data):
                 latest_file = max(png_files, key=lambda p: p.stat().st_mtime)
                 file_size = latest_file.stat().st_size
 
-                if file_size > 1000000:  # > 1MB suggests a real image
+                if file_size > PERSIST_THRESHOLD:  # >1MB normally; >100B in MOCK mode
                     print(f"✅ Image persisted to: {latest_file}")
                     print(f"📊 File size: {file_size:,} bytes")
                     return True
@@ -150,6 +158,10 @@ def test_image_persistence(job_data):
 def test_gpu_utilization():
     """Test GPU is being utilized during generation"""
     print("🔥 Testing GPU utilization...")
+
+    if MOCK_MODE:
+        print("🧪 GPU check skipped on CI mock")
+        return True
 
     try:
         # Simple GPU check inside container
@@ -177,15 +189,55 @@ def cleanup():
     """Clean up test artifacts"""
     print("🧹 Cleaning up...")
 
+    if MOCK_MODE:
+        # No docker stack to tear down in mock mode.
+        return
+
     try:
         subprocess.run(['docker', 'compose', 'down'], check=True)
     except subprocess.CalledProcessError:
         pass  # Ignore cleanup errors
 
+
+def _start_mock_server():
+    """Spawn tests/mock_qwen_server.py as a background subprocess."""
+    script = Path(__file__).resolve().parent / "mock_qwen_server.py"
+    print(f"🧪 Spawning mock server: {script}")
+    proc = subprocess.Popen([sys.executable, str(script)])
+
+    def _stop():
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+    atexit.register(_stop)
+
+    # Poll until the server is bound (max ~5s).
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            r = requests.get("http://localhost:8000/", timeout=1)
+            if r.status_code == 200:
+                print("✅ Mock server is ready")
+                return proc
+        except requests.exceptions.RequestException:
+            time.sleep(0.2)
+    print("⚠️  Mock server did not respond within 5s; continuing anyway")
+    return proc
+
+
 def main():
     """Main test runner"""
     print("🧪 Starting Qwen Image Web UI E2E Test")
     print("=" * 50)
+
+    if MOCK_MODE:
+        _start_mock_server()
 
     test_results = []
 
