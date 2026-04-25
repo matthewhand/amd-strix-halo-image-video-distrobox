@@ -172,8 +172,13 @@
 }
 .suggest-overlay-left  { left: 0;  background: linear-gradient(to right, hsl(var(--b1) / 0.95), hsl(var(--b1) / 0)); }
 .suggest-overlay-right { right: 0; background: linear-gradient(to left,  hsl(var(--b1) / 0.95), hsl(var(--b1) / 0)); }
-.suggest-frame:hover .suggest-overlay,
-.suggest-overlay:focus-visible {
+/* Visibility is gated on BOTH parent-hover (or focus-within) AND the
+   .can-scroll class set by JS (_updateOverlayVisibility) — so the arrows
+   only ever appear when there's actually content to scroll to in that
+   direction. See app.js _updateOverlayVisibility / _wireSuggestCarousel. */
+.suggest-frame:hover .suggest-overlay.can-scroll,
+.suggest-frame:focus-within .suggest-overlay.can-scroll,
+.suggest-overlay.can-scroll:focus-visible {
     opacity: 1;
     pointer-events: auto;
 }
@@ -397,8 +402,8 @@ textarea.subjects-autogrow {
     right: 0;
     background: linear-gradient(to left, hsl(var(--b1) / 0.95), transparent);
 }
-.suggest-frame:hover .suggest-overlay,
-.suggest-frame:focus-within .suggest-overlay {
+.suggest-frame:hover .suggest-overlay.can-scroll,
+.suggest-frame:focus-within .suggest-overlay.can-scroll {
     opacity: 1;
     pointer-events: auto;
 }
