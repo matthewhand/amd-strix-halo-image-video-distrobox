@@ -394,7 +394,7 @@ const _STAGES_META = [
     ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
     ['Audio',        'M', 'Music', 'Composing',  'secondary'],
     ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
-    ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
+    ['Post Process', 'U', 'Upscale',  'Upscaling',  'warning'],
     ['Final Merge',  'F', 'Final', 'Merging',    'accent'],
 ];
 function _stageDoneBefore(curStage, candidate) {
@@ -1430,7 +1430,7 @@ const _STAGE_TEXT = {
     'Video Chains':  'rendering video part',
     'Audio':         'composing music',
     'TTS':           'recording voiceover',
-    'Post Process':  'polishing',
+    'Post Process':  'upscaling',
     'Final Merge':   'merging final',
 };
 
@@ -2145,25 +2145,6 @@ function connect() {
                         });
                     }, 600);
                 }
-                // Build the segments. data-stage on each segment lets the
-                // 1 Hz tick handler find the current one without re-running
-                // renderPipelineStrip (cheaper than re-templating the whole
-                // queue item every second).
-                const segments = _STAGE_ORDER.map((s, i) => {
-                    const isPast = curIdx >= 0 && i < curIdx;
-                    const isCurrent = i === curIdx;
-                    const cls = isPast ? 'pipeline-seg-past'
-                              : isCurrent ? 'pipeline-seg-current'
-                                          : 'pipeline-seg-future';
-                    const overrunCls = (isCurrent && isOverrun) ? ' pipeline-seg-overrun' : '';
-                    const localFill = isPast ? 100 : (isCurrent ? stageProgressFraction * 100 : 0);
-                    const tone = (STAGES.find(x => x[0] === s) || [,,,,'primary'])[4];
-                    const shortLabel = (STAGES.find(x => x[0] === s) || [,,s])[2];
-                    return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: 1 1 0;" data-stage="${s}" data-tone="${tone}">
-                        <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
-                        <span class="pipeline-seg-label">${shortLabel}</span>
-                    </div>`;
-                }).join('');
                 // No more per-item segmented bar — see _buildActiveJobProgressBar()
                 // which renders ONE bar at the top of the queue card. This
                 // function now returns the completed-stages history block only.
