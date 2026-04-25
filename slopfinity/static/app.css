@@ -88,3 +88,10 @@
     #preview-grid video { filter: contrast(0.95); }
     #preview-grid > [data-slop-kind]:hover video { filter: none; }
 }
+
+/* Tint the letter unit suffixes (h/m/s) in elapsed/ETA strings so the
+   numeric digits visually pop without the units disappearing. Emitted
+   by _fmtElapsedHtml() in app.js. */
+.time-unit {
+    opacity: 0.55;
+}
