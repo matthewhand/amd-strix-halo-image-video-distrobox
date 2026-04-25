@@ -10,6 +10,23 @@
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/app.css" />
+    {# Optional repeating SVG background — driven by branding.background. If branding.background.svg is empty/missing, no layer is rendered (matches default behavior). The data-URL approach keeps the asset inline so swapping profiles needs no static-file changes. #}
+    {% if branding.background and branding.background.svg %}
+    <style>
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image: url("data:image/svg+xml;utf8,{{ branding.background.svg | urlencode }}");
+        background-repeat: {{ branding.background.tile or 'repeat' }};
+        background-size: {{ branding.background.size or 'auto' }};
+        opacity: {{ branding.background.opacity if branding.background.opacity is not none else 0.08 }};
+        mix-blend-mode: {{ branding.background.blend or 'normal' }};
+      }
+    </style>
+    {% endif %}
 </head>
 <body class="min-h-screen bg-base-300 text-base-content">
 
