@@ -220,6 +220,12 @@
                 <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
             </div>
+            {# Single segmented progress bar for the currently-active job.
+               Hosted at the top of the queue card so the user reads ONE bar
+               regardless of which queue row is expanded. The 1 Hz tick
+               handler updates segment fill + activity/total rows in place
+               against this host. Hidden when nothing's running. #}
+            <div id="active-job-progress-bar" class="mb-2"></div>
             <ul id="q-list" class="flex flex-col gap-2 ui-split-scrollarea">
                 {% for q in (queue or [])[:6] %}
                     {% set is_active = (state.mode != 'Idle' and loop.index0 == 0 and q.status != 'cancelled') %}
