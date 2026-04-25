@@ -1596,14 +1596,80 @@ const _STAGE_TEXT = {
 // the next heartbeat never arrives and the 1 Hz expiry ticker hides the
 // spinner cleanly. Replaces the old client-side derivation off state.step.
 let _renderHeartbeat = null;
+// Render the heartbeat text as a row of per-character spans so the assembly-
+// line CSS keyframes (bounce/border-pulse) can target each glyph individually.
+// Each char carries its position fraction `--char-pos` (0..1) so the 1 Hz
+// fill pass can compare it to the host's `--progress` value and flip a
+// `.filled` class for inverted text on the "completed" leading characters.
+// Spaces are tagged with data-space="1" so the fill pass skips them.
+function _paintRenderText(host, text) {
+    if (!host) return;
+    const safe = (text == null ? '' : String(text));
+    if (host.dataset.renderedText === safe) return;
+    host.dataset.renderedText = safe;
+    host.classList.add('render-anim');
+    const total = Math.max(1, safe.length);
+    let html = '';
+    for (let i = 0; i < safe.length; i++) {
+        const ch = safe[i];
+        const isSpace = ch === ' ';
+        const pos = (i / total).toFixed(4);
+        // index drives the per-char animation-delay so the assembly-line
+        // bounce ripples left-to-right rather than firing in unison.
+        html += `<span class="render-anim-char"${isSpace ? ' data-space="1"' : ''} `
+              + `style="--char-pos:${pos};--char-i:${i};">`
+              + (isSpace ? '&nbsp;' : _htmlEscape(ch))
+              + '</span>';
+    }
+    host.innerHTML = html;
+}
+
+// Drive the per-char block-fill from the current stage's ETA progress.
+// Mirrors _buildActiveJobProgressBar's stageProgressFraction so the queue
+// header animation and the progress bar agree on "how far through this
+// stage we are". Defaults to 30s when the stage has no historical avg yet
+// (first run) and 0 fraction when there's no live stage timestamp.
+function _updateRenderTextProgress(host) {
+    if (!host) return;
+    const curStep = (_lastTick && _lastTick.state && _lastTick.state.step) || '';
+    let frac = 0;
+    if (curStep && _stageStartTs) {
+        const avg = _stageAvgSeconds(curStep) || 30;
+        frac = Math.min(1, ((Date.now() - _stageStartTs) / 1000) / avg);
+        if (!isFinite(frac) || frac < 0) frac = 0;
+    }
+    host.style.setProperty('--progress', frac.toFixed(4));
+    // Once we settle past the assembly-line bounce window, mark the host
+    // so the keyframe animation is paused via CSS — the fill takes over.
+    host.dataset.settled = frac >= 0.2 ? '1' : '0';
+    const chars = host.children;
+    for (let i = 0; i < chars.length; i++) {
+        const c = chars[i];
+        if (c.dataset.space === '1') {
+            // Spaces never fill — they remain blank dividers.
+            if (c.classList.contains('filled')) c.classList.remove('filled');
+            continue;
+        }
+        const pos = parseFloat(c.style.getPropertyValue('--char-pos')) || 0;
+        const shouldFill = pos <= frac && frac > 0;
+        if (shouldFill !== c.classList.contains('filled')) {
+            c.classList.toggle('filled', shouldFill);
+        }
+    }
+}
+
 function _applyRenderHeartbeat() {
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;
     const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
     const live = !!(_renderHeartbeat && Date.now() < _renderHeartbeat.expiresAt);
     headerAct.style.display = live ? 'inline-flex' : 'none';
-    if (live && txtEl && _renderHeartbeat.text && txtEl.textContent !== _renderHeartbeat.text) {
-        txtEl.textContent = _renderHeartbeat.text;
+    if (live && txtEl && _renderHeartbeat.text) {
+        // Repaint per-char spans only when the underlying text actually
+        // changes (cheap idempotent guard inside _paintRenderText), then
+        // run the fill pass every tick so the bar advances live.
+        _paintRenderText(txtEl, _renderHeartbeat.text);
+        _updateRenderTextProgress(txtEl);
     }
     if (!live && _renderHeartbeat) _renderHeartbeat = null;
 }
