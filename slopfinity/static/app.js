@@ -460,7 +460,7 @@ function _buildActiveJobProgressBar(d) {
             etaSec = stageDurations[i];
         }
         const etaHtml = etaSec ? _fmtElapsedHtml(etaSec * 1000) : '—';
-        return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: ${segWidths[i]} 1 0;" data-stage="${s}" data-tone="${tone}">
+        return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: 1 1 0;" data-stage="${s}" data-tone="${tone}">
             <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
             <span class="pipeline-seg-label">${shortLabel}</span>
             <span class="pipeline-seg-timing"><span data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA ${etaHtml}</span></span>
@@ -2159,7 +2159,7 @@ function connect() {
                     const localFill = isPast ? 100 : (isCurrent ? stageProgressFraction * 100 : 0);
                     const tone = (STAGES.find(x => x[0] === s) || [,,,,'primary'])[4];
                     const shortLabel = (STAGES.find(x => x[0] === s) || [,,s])[2];
-                    return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: ${segWidths[i]} 1 0;" data-stage="${s}" data-tone="${tone}">
+                    return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: 1 1 0;" data-stage="${s}" data-tone="${tone}">
                         <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
                         <span class="pipeline-seg-label">${shortLabel}</span>
                     </div>`;
