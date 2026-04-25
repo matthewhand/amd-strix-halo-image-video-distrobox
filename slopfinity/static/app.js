@@ -3718,7 +3718,7 @@ function _buildSuggestChip(s) {
 }
 
 // Hard cap on rows in the marquee stack — oldest row evicted (FIFO).
-const _SUGGEST_MAX_ROWS = 4;
+const _SUGGEST_MAX_ROWS = 5;
 
 // Append a fresh marquee row to #subject-chips-stack. Items are duplicated
 // (items + items) so the keyframes' translateX(-50%) yields a seamless
