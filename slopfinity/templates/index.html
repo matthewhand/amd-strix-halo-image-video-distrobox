@@ -85,7 +85,42 @@
                     <option value="0">off</option>
                 </select>
             </div>
-            <button id="btn-settings" class="btn btn-ghost btn-sm btn-square text-lg text-primary" title="Settings" onclick="openSettings()">⚙</button>
+            {# Theme dropdown — lists every available theme with a 4-swatch
+               preview pulled from THAT theme's tokens (each <li> sets data-theme
+               so its DaisyUI vars cascade to the swatches). #}
+            <div class="dropdown dropdown-end flex-none">
+                <button id="btn-theme" tabindex="0" class="btn btn-ghost btn-sm btn-square text-primary" title="Theme" aria-label="Theme">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+                        <circle cx="12" cy="12" r="9"/>
+                        <circle cx="7.5" cy="10" r="1" fill="currentColor"/>
+                        <circle cx="12" cy="7" r="1" fill="currentColor"/>
+                        <circle cx="16.5" cy="10" r="1" fill="currentColor"/>
+                        <circle cx="15" cy="15" r="1" fill="currentColor"/>
+                        <path d="M12 21c-3 0-3-1-3-3 0-2 2-2 2-4 0-1 1-2 2-2"/>
+                    </svg>
+                </button>
+                <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-200 rounded-box shadow-xl mt-1 w-56 max-h-96 overflow-y-auto z-50 flex-nowrap">
+                    {% for t in branding.theme.available %}
+                    <li>
+                        <button type="button" data-theme="{{ t }}" onclick="applyTheme('{{ t }}'); document.activeElement.blur();" class="flex items-center gap-2 capitalize">
+                            <span class="flex flex-none gap-0.5 p-0.5 rounded bg-base-100">
+                                <span class="w-3 h-3 rounded-sm bg-primary"></span>
+                                <span class="w-3 h-3 rounded-sm bg-secondary"></span>
+                                <span class="w-3 h-3 rounded-sm bg-accent"></span>
+                                <span class="w-3 h-3 rounded-sm bg-neutral border border-base-content/20"></span>
+                            </span>
+                            <span class="flex-1 text-xs">{{ t }}</span>
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <button id="btn-settings" class="btn btn-ghost btn-sm btn-square text-primary flex-none" title="Settings" onclick="openSettings()" aria-label="Settings">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </button>
             {# live-dot lives inside the Settings modal now (Diagnostics tab); keep the element here off-screen so existing JS doesn't choke. #}
             <span id="live-dot" class="hidden">
                 <span class="rounded-full bg-success"></span>
