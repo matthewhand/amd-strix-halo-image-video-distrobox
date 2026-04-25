@@ -90,7 +90,7 @@
             <textarea id="p-core" rows="5"
                 class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
                 placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
-                oninput="updatePipeline()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+                oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
             <div class="flex items-center gap-2">
                 <span class="text-[10px] text-base-content/50">Need ideas?</span>
                 <button class="btn btn-ghost btn-xs" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>

@@ -918,7 +918,7 @@ function connect() {
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
                 const infBadge = q.infinity
-                    ? `<span class="badge badge-xs badge-secondary" title="Infinity — re-queues itself after every completion">♾</span>`
+                    ? `<span class="badge badge-xs badge-primary text-base font-bold" title="Infinity — re-queues itself after every completion">♾</span>`
                     : '';
                 // Cancelled items keep their badge (so the strikethrough has a
                 // label). Active gets nothing (ring+timers signal it). Pending
@@ -1837,6 +1837,22 @@ function _updateSingleLabels() {
 function _updateSideLabels() { _updateSingleLabels(); }
 function _updatePrioLabel() { _updateSingleLabels(); _updateStartBtn(); }
 
+// Toggle highlight on subject chips that are currently present in the
+// Subjects textarea — re-clicking a present chip is a no-op (use Shift+click
+// to replace). Called on textarea input + after each chip click.
+function _refreshChipHighlights() {
+    const ta = document.getElementById('p-core');
+    if (!ta) return;
+    const lines = new Set(ta.value.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean));
+    document.querySelectorAll('#subject-chips button[data-suggest]').forEach(btn => {
+        const here = lines.has((btn.dataset.suggest || '').toLowerCase());
+        btn.classList.toggle('btn-outline', !here);
+        btn.classList.toggle('btn-primary', !here);
+        btn.classList.toggle('btn-success', here);
+        btn.classList.toggle('opacity-60', here);
+    });
+}
+
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
   if (!box) return;
@@ -1851,17 +1867,27 @@ async function regenSuggestions(n = 6) {
       const b = document.createElement('button');
       b.className = 'btn btn-outline btn-primary btn-xs normal-case';
       b.textContent = s;
-      b.title = 'Click: append · Shift+click: replace';
+      b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
+      b.dataset.suggest = s;
       b.addEventListener('click', (e) => {
         const ta = document.getElementById('p-core');
         if (!ta) return;
-        if (e.shiftKey) ta.value = s;
-        else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+        const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
+        if (e.shiftKey) {
+          ta.value = s;
+        } else if (present) {
+          // Already in the textarea — no-op (chip stays highlighted).
+          return;
+        } else {
+          ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+        }
         ta.dispatchEvent(new Event('input', { bubbles: true }));
         updatePipeline();
+        _refreshChipHighlights();
       });
       box.appendChild(b);
     });
+    _refreshChipHighlights();
   } catch (e) {
     box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
   }
