@@ -648,10 +648,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
     if (typeof _updateGenModePill === 'function') _updateGenModePill();
     if (typeof _renderStageEtas === 'function') _renderStageEtas();
-    // Auto-fetch subject suggestions on page load so the chip row isn't empty.
-    // Cached server-side for 30s, so reloads don't hammer the LLM.
+    // Auto-fetch subject suggestions on page load — but ONLY if the queue
+    // is idle (no pending items, fleet not rendering). Otherwise the user
+    // already has work in flight; no need to push more ideas + steal LLM
+    // cycles from the prompt rewriter mid-iter.
     if (typeof regenSuggestions === 'function') {
-        setTimeout(() => regenSuggestions().catch(() => {}), 500);
+        // Defer: wait for the first WS state tick so we can read queue + mode.
+        const tryAutoSuggest = () => {
+            const t = _lastTick;
+            if (!t) return setTimeout(tryAutoSuggest, 250);
+            const queueBusy = (t.queue || []).some(x => x.status == null || x.status === 'pending');
+            const fleetBusy = t.state && t.state.mode && t.state.mode !== 'Idle';
+            if (queueBusy || fleetBusy) {
+                console.info('skipping auto-suggest: queue active');
+                return;
+            }
+            regenSuggestions().catch(() => {});
+        };
+        setTimeout(tryAutoSuggest, 500);
     }
 });
 
