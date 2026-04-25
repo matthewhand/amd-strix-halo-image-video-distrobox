@@ -195,6 +195,50 @@ textarea.subjects-autogrow {
     transition: height 0.08s ease-out;
 }
 
+/* Horizontal draggable splitter between the upper "input" section
+   (Subjects + Queue) and the lower "output" section (Slop preview grid).
+   The handle reads as a small grab-pill themable via DaisyUI tokens.
+   Position is persisted in localStorage as a percentage (key set in app.js).
+   On narrow viewports (< 768 px) we collapse the fixed-height container so
+   the page reverts to natural document flow — the handle stays visible but
+   inert. */
+#ui-split-handle {
+    height: 8px;
+    background: linear-gradient(to bottom, transparent, hsl(var(--bc) / 0.15), transparent);
+    border-top: 1px solid hsl(var(--bc) / 0.10);
+    border-bottom: 1px solid hsl(var(--bc) / 0.10);
+    position: relative;
+    margin: 4px 0;
+    touch-action: none;
+}
+#ui-split-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 56px;
+    height: 3px;
+    background: hsl(var(--bc) / 0.30);
+    border-radius: 2px;
+    transition: background-color 0.15s ease;
+}
+#ui-split-handle:hover::after,
+#ui-split-handle.dragging::after {
+    background: hsl(var(--p));
+}
+@media (max-width: 768px) {
+    #ui-split {
+        height: auto !important;
+        display: block !important;
+    }
+    #ui-split-upper, #ui-split-lower {
+        overflow: visible !important;
+        flex: none !important;
+    }
+    #ui-split-handle { pointer-events: none; opacity: 0.4; }
+}
+
 /* Slop card video controls — fade out the native control overlay until hover
    so the thumbnail isn't visually noisy in a dense grid. */
 #preview-grid video::-webkit-media-controls-panel,
