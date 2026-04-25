@@ -889,7 +889,9 @@ function connect() {
                         ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
                     </div>`
                     : '';
-                return `<div class="flex items-center gap-1 mt-1" data-q-pipeline>${dots}${liveBadges}</div>`;
+                // Strip + (active-only) total-row in one go so renderItem
+                // gets a single string instead of having to track scopes.
+                return `<div class="flex items-center gap-1 mt-1" data-q-pipeline>${dots}${liveBadges}</div>${totalBadges}`;
             };
             const renderItem = (q, opts) => {
                 const snap = (q && q.config_snapshot) || cfg;
@@ -946,7 +948,6 @@ function connect() {
                                 <span class="text-base-content/50 font-mono ml-auto">${meta}</span>
                             </div>
                             ${stripHTML}
-                            ${totalBadges}
                         </div>
                     </details>
                 </li>`;
