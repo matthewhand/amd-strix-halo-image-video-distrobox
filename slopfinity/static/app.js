@@ -49,6 +49,15 @@ const _displayedDoneStages = new Set();
 // user's open <details>. Single string = single-open enforcement: opening
 // item B implicitly collapses item A.
 let _openDoneItem = null;
+// Per-job progress-bar state machine. Drives the elapsed-vs-ETA bar in the
+// pipeline strip. Values: 'filling' | 'overrun' | 'success' | 'failed' |
+// 'cancelled'. Set from the WS handler when we observe a video_index
+// transition (= previous job finished) and from the 1 Hz tick (= elapsed
+// crossed ETA → overrun). Bare object so v_idx can be a numeric key.
+let _progressBarState = {};
+// Timestamp (ms) the most recent job finished, so the celebrate/alert
+// flourish animation has a clean 1.5 s lifetime before settling to static.
+let _progressBarFinishTs = {};
 
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
@@ -110,7 +119,7 @@ function _renderStageEtas() {
             hint.className = 'stage-eta ml-1 opacity-50 text-[9px] font-mono';
             li.appendChild(hint);
         }
-        hint.textContent = '≈' + _fmtElapsed(avg * 1000);
+        hint.innerHTML = '≈' + _fmtElapsedHtml(avg * 1000);
     });
     // Total ETA badge near the timers — sum of all stages' rolling averages.
     const total = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge']
@@ -118,7 +127,7 @@ function _renderStageEtas() {
         .filter(x => x != null)
         .reduce((a, b) => a + b, 0);
     const eta = document.getElementById('h-c-eta');
-    if (eta) eta.textContent = total > 0 ? 'ETA ' + _fmtElapsed(total * 1000) : '';
+    if (eta) eta.innerHTML = total > 0 ? 'ETA ' + _fmtElapsedHtml(total * 1000) : '';
 }
 
 function _fmtElapsed(ms) {
@@ -131,6 +140,13 @@ function _fmtElapsed(ms) {
     const m = Math.floor(elapsed / 60);
     const s = elapsed % 60;
     return m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+
+// Same shape as _fmtElapsed but returns HTML with letter-units wrapped in
+// <span class="time-unit"> so CSS can dim them. Safe to insert via innerHTML
+// (no user input — output is fully derived from a numeric ms argument).
+function _fmtElapsedHtml(ms) {
+    return _fmtElapsed(ms).replace(/([hms]+)/g, '<span class="time-unit">$1</span>');
 }
 
 // ----- Done queue items: thumbnail / mini-player / asset link expanded card.
@@ -188,7 +204,7 @@ function _renderDoneAssetRow(filename) {
 }
 
 function _renderDoneItem(q) {
-    const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
+    const dur = q.duration_s ? _fmtElapsedHtml(q.duration_s * 1000) : '';
     const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
     const sym = q.succeeded === false ? '✗' : '✓';
     const promptEsc = _htmlEscape(q.prompt || '');
@@ -227,6 +243,19 @@ function _renderDoneItem(q) {
     // (must NOT rely on the previous DOM since it's already gone).
     const qid = String(q.ts || q.completed_ts || 0);
     const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
+    // Static 100% progress bar — same visual as the live one so the row
+    // doesn't shrink on completion. Color matches the done badge: green
+    // success, red error. (Cancelled items don't reach _renderDoneItem;
+    // they're filtered out by the visibleQueue logic.) If this job was
+    // marked finished within the last 1.5 s, layer on a one-shot
+    // celebrate/alert flourish (3 quick pulses) for the visual hand-off
+    // from "active row finished" → "done row appeared".
+    const doneFillCls = q.succeeded === false ? 'slop-progress-error' : 'slop-progress-success';
+    const finishTs = q.v_idx ? _progressBarFinishTs[q.v_idx] : 0;
+    const flourishCls = (finishTs && (Date.now() - finishTs) < 1500)
+        ? (q.succeeded === false ? ' slop-progress-alert' : ' slop-progress-celebrate')
+        : '';
+    const progressHTML = `<div class="slop-progress mt-1"><div class="slop-progress-fill ${doneFillCls}${flourishCls}" style="width:100%;"></div></div>`;
     return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
         <details data-q-id="${qid}"${openAttr}>
             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
@@ -236,6 +265,7 @@ function _renderDoneItem(q) {
                 ${metaGroup}
             </summary>
             <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
+                ${progressHTML}
                 ${previewList}
             </div>
         </details>
@@ -376,16 +406,60 @@ async function requeueItem(ts) {
     } catch (e) { console.warn('requeue failed', e); }
 }
 
+// Compute the exponentially-slowing pulse period (in seconds) used while
+// a job is overrunning its ETA. Starts at ~1 s when ETA is just hit, grows
+// with sqrt(overrun_seconds), and asymptotes near 8 s so a long-overrunning
+// job becomes a slow heartbeat rather than a frantic strobe.
+function _overrunPulsePeriod(overrunSec) {
+    const o = Math.max(0, overrunSec);
+    return Math.min(8, 1 + 0.5 * Math.sqrt(o));
+}
+
+// Update the active job's progress bar each tick. Reads elapsed/ETA from
+// the same module globals the badge text uses, so the bar and badges
+// never disagree.
+function _updateActiveProgressBar() {
+    const bar = document.querySelector('[data-q-status="active"] [data-progress-bar]');
+    if (!bar) return;
+    const fill = bar.querySelector('.slop-progress-fill');
+    if (!fill) return;
+    const totalEtaSec = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
+    const elapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
+    const etaMs = totalEtaSec * 1000;
+    const vIdx = bar.dataset.vIdx;
+    if (etaMs <= 0) {
+        // No ETA yet — show an empty bar in primary; nothing to celebrate.
+        fill.style.width = '0%';
+        return;
+    }
+    if (elapsedMs >= etaMs) {
+        // Overrun — bar pinned at 100% with a slowing warning pulse.
+        const overrunSec = (elapsedMs - etaMs) / 1000;
+        const period = _overrunPulsePeriod(overrunSec);
+        fill.style.width = '100%';
+        fill.style.setProperty('--pulse-period', period.toFixed(2) + 's');
+        fill.classList.remove('slop-progress-success', 'slop-progress-error', 'slop-progress-neutral', 'slop-progress-celebrate', 'slop-progress-alert');
+        fill.classList.add('slop-progress-warning', 'slop-progress-overrun');
+        if (vIdx) _progressBarState[vIdx] = 'overrun';
+    } else {
+        // Filling — linear width, primary color, no animation.
+        const pct = Math.max(0, Math.min(100, (elapsedMs / etaMs) * 100));
+        fill.style.width = pct.toFixed(2) + '%';
+        fill.classList.remove('slop-progress-warning', 'slop-progress-overrun', 'slop-progress-success', 'slop-progress-error', 'slop-progress-neutral', 'slop-progress-celebrate', 'slop-progress-alert');
+        if (vIdx) _progressBarState[vIdx] = 'filling';
+    }
+}
+
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
 setInterval(() => {
     if (!_isRendering) return;
     // Live update the active queue item's badges. Format must match the
     // renderItem template exactly or the badges flicker between the two.
     document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
-        if (_stageStartTs) el.textContent = _fmtElapsed(Date.now() - _stageStartTs);
+        if (_stageStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
     });
     document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
-        if (_jobStartTs) el.textContent = _fmtElapsed(Date.now() - _jobStartTs);
+        if (_jobStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
     });
     // Total ETA from rolling stage averages.
     const totalEta = _STAGE_ORDER
@@ -394,9 +468,10 @@ setInterval(() => {
         .reduce((a, b) => a + b, 0);
     if (totalEta > 0) {
         document.querySelectorAll('[data-q-status="active"] [data-q-job-eta]').forEach(el => {
-            el.textContent = 'ETA ' + _fmtElapsed(totalEta * 1000);
+            el.innerHTML = 'ETA ' + _fmtElapsedHtml(totalEta * 1000);
         });
     }
+    _updateActiveProgressBar();
 }, 1000);
 
 const $ = (id) => document.getElementById(id);
@@ -1197,6 +1272,21 @@ function connect() {
                 _lastStage = d.state.step;
             }
             if (d.state.video_index !== _lastJobIndex) {
+                // Previous job (if any) just finished — flip its progress
+                // bar into success / failed / cancelled so the strip can
+                // celebrate before the row is replaced. We infer outcome
+                // by scanning the queue's done entries for a matching v_idx.
+                if (_lastJobIndex) {
+                    const prev = _lastJobIndex;
+                    const doneRec = (d.queue || []).find(q => q.status === 'done' && q.v_idx === prev);
+                    if (doneRec) {
+                        _progressBarState[prev] = doneRec.succeeded === false ? 'failed' : 'success';
+                    } else {
+                        // No done record means it was cancelled or vanished.
+                        _progressBarState[prev] = 'cancelled';
+                    }
+                    _progressBarFinishTs[prev] = Date.now();
+                }
                 _lastJobIndex = d.state.video_index;
             }
             // Hydrate _jobActuals from backend so refresh doesn't lose the
@@ -1219,9 +1309,9 @@ function connect() {
             _stageStartTs = stageTs ? stageTs * 1000 : Date.now();
             _jobStartTs = jobTs ? jobTs * 1000 : Date.now();
             const stageEl = $('h-c');
-            if (stageEl && _stageStartTs) stageEl.innerText = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
+            if (stageEl && _stageStartTs) stageEl.innerHTML = '⏱ ' + _fmtElapsedHtml(Date.now() - _stageStartTs);
             const totalEl = $('h-c-total');
-            if (totalEl && _jobStartTs) totalEl.innerText = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
+            if (totalEl && _jobStartTs) totalEl.innerHTML = 'Σ ' + _fmtElapsedHtml(Date.now() - _jobStartTs);
             // Progress bar tracks subject-through-list as a rough lifetime indicator.
             $('h-p').value = d.state.total_videos
                 ? (d.state.video_index / Math.max(1, d.state.total_videos)) * 100
@@ -1278,12 +1368,12 @@ function connect() {
                 // Match the 1Hz interval handler exactly (no '⏱ '/'Σ ' prefix
                 // — the labels next to the badges already convey what they
                 // mean) so live updates don't flicker.
-                const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
+                const stageNow = _stageStartTs ? _fmtElapsedHtml(Date.now() - _stageStartTs) : _fmtElapsedHtml(0);
                 const stageAvg = _stageAvgSeconds(curStep);
-                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
-                const jobNow2 = _jobStartTs ? _fmtElapsed(Date.now() - _jobStartTs) : '0s';
+                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsedHtml(stageAvg * 1000) : '';
+                const jobNow2 = _jobStartTs ? _fmtElapsedHtml(Date.now() - _jobStartTs) : _fmtElapsedHtml(0);
                 const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
-                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
+                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsedHtml(totalEtaSec2 * 1000) : '';
                 // Each completed stage of THIS job becomes a single line:
                 //   [asset-link badge]  ⏱ actual / ETA was-eta
                 // Stage's clickable badge replaces the spinner+text it had
@@ -1316,7 +1406,7 @@ function connect() {
                         }
                         const a = actuals[s];
                         const timing = a
-                            ? `<span class="font-mono text-[9px]">${_fmtElapsed(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}</span>`
+                            ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
                             : '';
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
@@ -1339,6 +1429,15 @@ function connect() {
                         });
                     }, 600);
                 }
+                // Initial progress-bar geometry. The 1 Hz tick takes over
+                // immediately after render; this just avoids a one-frame
+                // flash at 0%.
+                const initElapsed = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
+                const initEta = totalEtaSec2 * 1000;
+                const initOver = initEta > 0 && initElapsed >= initEta;
+                const initPct = initEta > 0 ? Math.max(0, Math.min(100, (initElapsed / initEta) * 100)) : 0;
+                const initFillCls = initOver ? 'slop-progress-warning slop-progress-overrun' : '';
+                const initPeriod = initOver ? _overrunPulsePeriod((initElapsed - initEta) / 1000).toFixed(2) + 's' : '1s';
                 return `
                     ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
@@ -1346,6 +1445,9 @@ function connect() {
                         <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
                         <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
                         ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
+                    </div>
+                    <div class="slop-progress" data-progress-bar data-v-idx="${v}">
+                        <div class="slop-progress-fill ${initFillCls}" style="width:${initPct.toFixed(2)}%; --pulse-period:${initPeriod};"></div>
                     </div>
                     <div class="flex items-center justify-end gap-1 mt-1 text-[9px]">
                         <span class="text-base-content/50">Total</span>
