@@ -20,11 +20,13 @@
         <div class="flex-1 flex flex-wrap items-center gap-x-6 gap-y-1">
             <h1 class="text-xl font-black text-primary uppercase tracking-widest mr-2">{{ branding.app.name }}</h1>
             {# Hardware — Strix Halo has 128 GB unified RAM (no separate VRAM). #}
-            <span class="flex items-baseline gap-1">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
-                <span class="font-mono font-black text-secondary" id="v-v">0%</span>
-                <span class="ticker-bar ml-1" id="v-t" data-tone="secondary"></span>
-                <span class="font-mono text-[10px] text-base-content/50 ml-1" id="r-v">0 / 0 GB</span>
+            <span class="flex flex-col items-start gap-0">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
+                    <span class="font-mono font-black text-secondary" id="v-v">0%</span>
+                    <span class="ticker-bar ml-1" id="v-t" data-tone="secondary"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none" id="r-v">0 / 0 GB</span>
             </span>
             <span class="flex items-baseline gap-1">
                 <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>

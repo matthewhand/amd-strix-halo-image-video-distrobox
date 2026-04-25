@@ -484,6 +484,35 @@ function _slopBadgeMeta(file) {
     return { label: fallback.label, color: fallback.color, border: borderByKind[kind], part, kind };
 }
 
+// Map fleet stage → which model role's badge should pulse + which asset
+// filename was produced for that stage. Used by the queue-item reveal so
+// the active badge spins, and completed stages append a clickable asset link.
+const _STAGE_ROLE = {
+    'Concept':       'llm',
+    'Base Image':    'base',
+    'Video Chains':  'video',
+    'Audio':         'audio',
+    'TTS':           'tts',
+    'Post Process':  'upscale',
+    'Final Merge':   'video',
+};
+const _STAGE_ASSET = (stage, v_idx, c_idx) => {
+    if (!v_idx) return null;
+    if (stage === 'Base Image') return `v${v_idx}_base.png`;
+    if (stage === 'Video Chains' && c_idx > 0) return `v${v_idx}_c${c_idx}.mp4`;
+    if (stage === 'Final Merge') return `FINAL_${v_idx}.mp4`;
+    return null;
+};
+const _STAGE_TEXT = {
+    'Concept':       'generating prompts',
+    'Base Image':    'rendering image',
+    'Video Chains':  'rendering video chain',
+    'Audio':         'composing music',
+    'TTS':           'recording voiceover',
+    'Post Process':  'polishing',
+    'Final Merge':   'merging final',
+};
+
 // Pretty display label for a configured model id (from config snapshot).
 function _modelDisplayName(id, role) {
     if (!id || id === 'none') return '';
@@ -502,18 +531,24 @@ function _modelDisplayName(id, role) {
 }
 
 // Build badge HTML strings from a config snapshot, including the LLM that wrote the prompt.
-function _configModelBadges(snap, llmModelId) {
+function _configModelBadges(snap, llmModelId, activeRole) {
     // Order matches the pipeline strip: LLM → Image → Video → Music → Voice → Post.
+    // activeRole (optional) — string like 'llm'/'base'/'video'/'audio'/'tts'/
+    // 'upscale' — that badge gets an inline spinner so the user can see at
+    // a glance which model is currently working.
+    const spin = role => activeRole === role
+        ? '<span class="loading loading-spinner loading-xs mr-1"></span>'
+        : '';
     const out = [];
     if (llmModelId) {
         const short = llmModelId.replace(/^.*[\/:]/, '').replace(/\.gguf$/i, '');
-        out.push(`<span class="badge badge-xs badge-accent" title="prompt LLM: ${_htmlEscape(llmModelId)}">${_htmlEscape(short)}</span>`);
+        out.push(`<span class="badge badge-xs badge-accent gap-1" title="prompt LLM: ${_htmlEscape(llmModelId)}">${spin('llm')}${_htmlEscape(short)}</span>`);
     }
-    if (snap.base_model) out.push(`<span class="badge badge-xs badge-info" title="image model">${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
-    if (snap.video_model) out.push(`<span class="badge badge-xs badge-success" title="video model">${_htmlEscape(_modelDisplayName(snap.video_model, 'video'))}</span>`);
-    if (snap.audio_model && snap.audio_model !== 'none') out.push(`<span class="badge badge-xs badge-secondary" title="music model">${_htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))}</span>`);
-    if (snap.tts_model && snap.tts_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="voice model">${_htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))}</span>`);
-    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(`<span class="badge badge-xs badge-warning" title="upscaler">${_htmlEscape(snap.upscale_model)}</span>`);
+    if (snap.base_model) out.push(`<span class="badge badge-xs badge-info gap-1" title="image model">${spin('base')}${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
+    if (snap.video_model) out.push(`<span class="badge badge-xs badge-success gap-1" title="video model">${spin('video')}${_htmlEscape(_modelDisplayName(snap.video_model, 'video'))}</span>`);
+    if (snap.audio_model && snap.audio_model !== 'none') out.push(`<span class="badge badge-xs badge-secondary gap-1" title="music model">${spin('audio')}${_htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))}</span>`);
+    if (snap.tts_model && snap.tts_model !== 'none') out.push(`<span class="badge badge-xs badge-warning gap-1" title="voice model">${spin('tts')}${_htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))}</span>`);
+    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(`<span class="badge badge-xs badge-warning gap-1" title="upscaler">${spin('upscale')}${_htmlEscape(snap.upscale_model)}</span>`);
     return out;
 }
 
@@ -876,60 +911,46 @@ function connect() {
                 const curStep = isActive ? (opts.step || '') : null;
                 const v = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.video_index) || 1) : 0;
                 const c = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) : 0;
-                // Predict the asset filename a stage produces, so completed
-                // stages become clickable links into the asset-info modal.
-                // Returns null when the stage has no on-disk artifact (Concept
-                // is just text; intermediate stages we don't track yet).
-                const stageAsset = (stage, v_idx, c_idx) => {
-                    if (!v_idx) return null;
-                    if (stage === 'Base Image') return `v${v_idx}_base.png`;
-                    if (stage === 'Video Chains' && c_idx > 0) return `v${v_idx}_c${c_idx}.mp4`;
-                    if (stage === 'Final Merge') return `FINAL_${v_idx}.mp4`;
-                    return null;
-                };
-                const dots = STAGES.map(([stage, acronym, label, verb, tone]) => {
-                    if (curStep === stage) {
-                        return `<span class="badge badge-xs badge-${tone} gap-1 px-2 font-mono text-[10px]" data-stage="${stage}" title="${stage}"><span class="loading loading-spinner loading-xs"></span><span>${verb}</span></span>`;
-                    }
-                    const isDone = isActive && _stageDoneBefore(curStep, stage);
-                    const cls = isDone ? `badge-${tone}` : 'badge-outline opacity-40';
-                    const asset = isDone ? stageAsset(stage, v, c) : null;
-                    const inner = `<span class="stage-full">${label}</span><span class="stage-short">${acronym}</span>`;
-                    if (asset) {
-                        return `<button type="button" class="badge badge-xs ${cls} px-1 font-mono text-[9px] cursor-pointer" data-stage="${stage}" title="${stage} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${inner}</button>`;
-                    }
-                    return `<span class="badge badge-xs ${cls} px-1 font-mono text-[9px]" data-stage="${stage}" title="${stage}">${inner}</span>`;
-                }).join('');
-                // Stage-level badges sit at the right of the pipeline strip.
-                const stageNow = (isActive && _stageStartTs) ? '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs) : '⏱ 0s';
-                const stageAvg = isActive ? _stageAvgSeconds(curStep) : null;
-                const stageEtaTxt = stageAvg != null ? '~' + _fmtElapsed(stageAvg * 1000) : '';
-                const liveBadges = isActive
-                    ? `<span class="ml-auto flex gap-1">
-                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
-                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
-                    </span>`
-                    : '';
-                // Job-level (total) timer + ETA — second row below the strip,
-                // mirroring the stage row visually so the relationship is clear.
-                const jobNow2 = (isActive && _jobStartTs) ? 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs) : 'Σ 0s';
-                const totalEtaSec2 = isActive
-                    ? _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0)
-                    : 0;
+                if (!isActive) return '';
+                // Activity line: what the fleet is doing right now in plain
+                // English, plus a count of completed stages.
+                const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
+                // Completed-asset links — each completed stage that has a
+                // predictable filename gets a clickable badge.
+                const completedAssets = STAGES
+                    .filter(([s]) => _stageDoneBefore(curStep, s))
+                    .map(([s,,label,,tone]) => {
+                        const asset = _STAGE_ASSET(s, v, c);
+                        if (!asset) return `<span class="badge badge-xs badge-${tone} opacity-70" title="${s}">${label} ✓</span>`;
+                        return `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${label} →</button>`;
+                    }).join('');
+                const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
+                const stageAvg = _stageAvgSeconds(curStep);
+                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
+                const jobNow2 = _jobStartTs ? _fmtElapsed(Date.now() - _jobStartTs) : '0s';
+                const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
                 const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
-                const totalBadges = isActive
-                    ? `<div class="flex justify-end gap-1 mt-1">
+                return `
+                    <div class="flex items-center gap-2 text-[10px] mt-1">
+                        <span class="loading loading-spinner loading-xs text-primary"></span>
+                        <span class="italic text-base-content/70">${activityText}</span>
+                        <span class="ml-auto flex gap-1">
+                            <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
+                            ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
+                        </span>
+                    </div>
+                    ${completedAssets ? `<div class="flex flex-wrap items-center gap-1 mt-1 text-[9px]"><span class="text-base-content/50 uppercase tracking-widest mr-1">outputs</span>${completedAssets}</div>` : ''}
+                    <div class="flex justify-end gap-1 mt-1">
+                        <span class="text-[9px] text-base-content/50 mr-1">Total</span>
                         <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>${jobNow2}</span>
                         ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
-                    </div>`
-                    : '';
-                // Strip + (active-only) total-row in one go so renderItem
-                // gets a single string instead of having to track scopes.
-                return `<div class="flex items-center gap-1 mt-1" data-q-pipeline>${dots}${liveBadges}</div>${totalBadges}`;
+                    </div>
+                `;
             };
             const renderItem = (q, opts) => {
                 const snap = (q && q.config_snapshot) || cfg;
-                const badges = _configModelBadges(snap, llmModelId);
+                const activeRole = (opts && opts.running && opts.step) ? _STAGE_ROLE[opts.step] : null;
+                const badges = _configModelBadges(snap, llmModelId, activeRole);
                 const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
                 const promptEsc = _htmlEscape(q.prompt || '');
                 const isActive = !!(opts && opts.running);
