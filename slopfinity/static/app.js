@@ -55,7 +55,16 @@ document.addEventListener('DOMContentLoaded', () => {
 const _LAYOUT_VIEW_KEY = 'slopfinity-layout-view';
 function _applyLayoutView(view) {
   try { localStorage.setItem(_LAYOUT_VIEW_KEY, view); } catch (_) {}
-  if (view === 'gallery') document.body.dataset.layout = 'gallery';
+  // Four layout modes drive what the dashboard shows:
+  //   default  — Subjects + Queue + Slop (full dashboard)
+  //   queue    — Queue + Slop (Subjects hidden; Queue fills upper pane)
+  //   subjects — Subjects + Slop (Queue hidden; Subjects fills upper pane)
+  //   gallery  — Slop only (existing behaviour; upper pane fully hidden,
+  //              Subjects/Queue still reachable via FABs)
+  // The CSS rules in app.css gate visibility off body[data-layout="..."],
+  // mirroring how gallery already worked.
+  const valid = new Set(['gallery', 'queue', 'subjects']);
+  if (valid.has(view)) document.body.dataset.layout = view;
   else delete document.body.dataset.layout;
 }
 window._applyLayoutView = _applyLayoutView;
@@ -2117,6 +2126,13 @@ function updateOutputs(o) {
     if (chipV) chipV.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="video"]').length;
     if (chipI) chipI.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="image"]').length;
     if (chipA) chipA.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="audio"]').length;
+    // Parts chip — count of intermediate/partial assets (chain mp4s, base
+    // pngs, bridge frames) currently in the gallery. Anything NOT marked
+    // data-slop-final="1" is a part. This fixes the chip showing "0" when
+    // partials are clearly visible — the count was never wired.
+    const chipP = document.querySelector('[data-chip-count="parts"]')
+                || document.querySelector('[data-chip-count="assets"]');
+    if (chipP) chipP.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind][data-slop-final="0"]').length;
 }
 
 function updateScheduler(sc) {

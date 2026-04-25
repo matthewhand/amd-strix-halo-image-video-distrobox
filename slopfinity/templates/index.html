@@ -122,13 +122,35 @@
                         </button>
                     </li>
                     <li>
+                        <button type="button" data-view-option="subjects" onclick="selectLayoutView('subjects'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="18" rx="2" fill="currentColor" opacity="0.5"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Subjects focused</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="subjects">●</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" data-view-option="queue" onclick="selectLayoutView('queue'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="18" rx="2" fill="currentColor" opacity="0.5"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                                <line x1="6" y1="8" x2="74" y2="8" stroke="currentColor" stroke-width="1.5"/>
+                                <line x1="6" y1="14" x2="60" y2="14" stroke="currentColor" stroke-width="1.5"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Queue focused</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="queue">●</span>
+                        </button>
+                    </li>
+                    <li>
                         <button type="button" data-view-option="gallery" onclick="selectLayoutView('gallery'); document.activeElement.blur();" class="flex items-center gap-2">
                             <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
                                 <rect x="2"  y="2"  width="76" height="46" rx="2" fill="currentColor" opacity="0.7"/>
                                 <circle cx="64" cy="40" r="4" fill="currentColor"/>
                                 <circle cx="74" cy="40" r="4" fill="currentColor"/>
                             </svg>
-                            <span class="flex-1 text-xs">Gallery focused</span>
+                            <span class="flex-1 text-xs">Slop focused</span>
                             <span class="text-[10px] text-primary hidden" data-view-check="gallery">●</span>
                         </button>
                     </li>
@@ -234,8 +256,11 @@
                             </svg>
                         </button>
                     </div>
-                    {# Close (×) — hides the Subjects card; persisted in localStorage. #}
-                    <button class="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100 card-close-btn" title="Hide Subjects card" aria-label="Hide Subjects card" onclick="closeCard('subjects')">×</button>
+                    {# Card close-button removed — card visibility is now driven
+                       entirely by the View dropdown (Default / Subjects / Queue
+                       / Slop focused). Per-card × buttons would compete with
+                       that mental model and let the user reach a state the
+                       dropdown can't represent. #}
                 </div>
             </div>
             <div class="flex gap-2 items-stretch">
@@ -339,8 +364,8 @@
                 <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
                 <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
-                {# Close (×) — hides the Queue card; persisted in localStorage. #}
-                <button class="btn btn-ghost btn-xs btn-square flex-none opacity-50 hover:opacity-100 card-close-btn" title="Hide Queue card" aria-label="Hide Queue card" onclick="closeCard('queue')">×</button>
+                {# Per-card × removed — visibility driven entirely by the View
+                   dropdown (see top of page). #}
             </div>
             {# Single segmented progress bar for the currently-active job.
                Hosted at the top of the queue card so the user reads ONE bar
@@ -438,8 +463,9 @@
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
                 <label class="cursor-pointer" title="Show intermediate assets (chain mp4s, base pngs, bridge frames). Off = only final products."><input type="checkbox" class="peer hidden" data-slop-filter="assets"><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">assets <span class="ml-1 font-mono opacity-70" data-chip-count="assets">0</span></span></label>
-                {# Close (×) — hides the Slop output card; persisted in localStorage. #}
-                <button class="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100 ml-1 card-close-btn" title="Hide Slop card" aria-label="Hide Slop card" onclick="closeCard('slop')">×</button>
+                {# Per-card × removed — visibility driven entirely by the View
+                   dropdown. The Slop card is the focus of the gallery view;
+                   no other view path expects it hidden. #}
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
