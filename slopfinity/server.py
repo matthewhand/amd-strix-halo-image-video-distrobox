@@ -1604,6 +1604,35 @@ async def broadcast():
                     await c.send_json(msg)
                 except Exception:
                     pass
+            # Render heartbeat — single source of truth for the queue-header
+            # activity label. Backend-driven so a stalled scheduler can no
+            # longer leave the spinner stuck on. Client treats `expires_ts`
+            # as a TTL: if the next heartbeat doesn't arrive within ~15 s
+            # the label hides itself client-side.
+            try:
+                if state.get('mode') != 'Idle' and state.get('step'):
+                    _step_text_map = {
+                        'Concept': 'rewriting prompt…',
+                        'Base Image': 'rendering image…',
+                        'Video Chains': 'rendering video part…',
+                        'Audio': 'composing music…',
+                        'TTS': 'recording voiceover…',
+                        'Post Process': 'upscaling…',
+                        'Final Merge': 'merging final…',
+                    }
+                    _hb_text = _step_text_map.get(state['step'], 'working…')
+                    _hb_msg = {
+                        "type": "render_heartbeat",
+                        "text": _hb_text,
+                        "expires_ts": time.time() + 15,
+                    }
+                    for c in list(clients):
+                        try:
+                            await c.send_json(_hb_msg)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             try:
                 curr = set(os.listdir(EXP_DIR))
             except Exception:
