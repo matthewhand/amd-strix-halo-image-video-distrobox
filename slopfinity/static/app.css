@@ -201,17 +201,37 @@ textarea.subjects-autogrow {
 #ui-split-handle.dragging::after {
     background: hsl(var(--p));
 }
-/* Splitter pane sizing — both upper and lower share the same shrink/grow
-   contract: flex:1 1 0 (NOT 1 1 auto, which lets natural content height push
-   the pane outward and defeats the squash) and min-height:0 (so flex children
-   can shrink below their content size). overflow:hidden on the pane itself
-   forces the SQUASH to propagate down to the inner cards instead of letting
-   the pane scroll and the cards keep their intrinsic height. The cards
-   themselves carry the scroll affordance. */
-.ui-split-pane {
-    flex: 1 1 0;
-    min-height: 0;
+/* Splitter container — no longer fixed height. Upper pane is splitter-sized
+   (drag-to-resize); lower pane flows naturally and the page body itself
+   scrolls when slop content extends past the viewport. */
+#ui-split {
+    display: flex;
+    flex-direction: column;
+}
+/* Upper pane: splitter sets an explicit pixel height in JS. Cap to a sane
+   range so a corrupt stored value can't collapse or eat the viewport.
+   overflow:hidden preserves PR #74's content-squash so Subjects + Queue
+   cards still scroll internally instead of pushing the pane outward. */
+#ui-split-upper {
+    flex: 0 0 auto;
+    min-height: 200px;
+    max-height: 80vh;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+/* Lower pane: natural flow. No height cap, no internal scroll — the
+   document body scrolls instead, so infinite-scroll feels like a normal
+   feed. */
+#ui-split-lower {
+    flex: 0 0 auto;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+}
+/* Legacy class kept for any inner descendants that still reference it. */
+.ui-split-pane {
+    min-height: 0;
     display: flex;
     flex-direction: column;
 }
@@ -269,13 +289,12 @@ textarea.subjects-autogrow {
         min-height: 0;
         overflow-y: auto;
     }
-    /* Lower pane: its first child is #sched-strip (often hidden) followed by
-       #output-section. Let the section take remaining height and scroll
-       internally so the slop grid never forces the pane outward. */
+    /* Lower pane: flows with the page body now (no inner scroll). The
+       output section just renders at its natural height and the document
+       scrolls. */
     #ui-split-lower > #output-section {
-        flex: 1 1 0;
+        flex: 0 0 auto;
         min-height: 0;
-        overflow-y: auto;
     }
 }
 @media (max-width: 768px) {
