@@ -35,9 +35,21 @@
     <!-- Combined header + stats navbar — single sticky strip with brand on left, hardware pills + Latest, conn pill + settings on right. -->
     <!-- flex-nowrap + overflow-hidden on the inner row: when the viewport gets narrow, hardware pills clip behind the gear's left edge instead of wrapping to a second line. Settings gear stays anchored on the right. -->
     <div id="stats-navbar" class="navbar bg-base-200/85 backdrop-blur rounded-2xl border border-base-100 shadow-xl mb-6 sticky top-2 z-30 px-4 flex-nowrap">
-        <div class="flex-1 flex items-center justify-between gap-2 overflow-hidden min-w-0 [&>*]:flex-shrink-0 [&>span.flex.flex-col]:flex-1">
-            <h1 class="text-xl font-black text-primary uppercase tracking-widest mr-2">{{ branding.app.name }}</h1>
-            {# Hardware — Strix Halo has 128 GB unified RAM (no separate VRAM). #}
+        <div class="flex items-center gap-2 overflow-hidden min-w-0 [&>*]:flex-shrink-0">
+            <h1 class="text-xl font-black text-primary uppercase tracking-widest mr-2 flex-none">{{ branding.app.name }}</h1>
+        </div>
+        {# Hardware pills — own flex container that distributes the four pills
+           evenly across the middle of the navbar; brand stays left, controls
+           stay right. #}
+        <div class="flex-1 flex items-center justify-around gap-2 overflow-hidden min-w-0 [&>*]:flex-shrink-0 px-2">
+            <span class="flex flex-col items-start gap-0" title="{{ outputs_disk.used_gb }} GB used / {{ outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb) }} GB free · ticker spans ~1 hour">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span class="opacity-60 normal-case">(1hr)</span></span>
+                    <span class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}" id="d-v">{{ outputs_disk.pct }}%</span>
+                    <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none" id="d-r">{{ outputs_disk.used_gb }} used / {{ (outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb)) }} GB free</span>
+            </span>
             <span class="flex flex-col items-start gap-0">
                 <span class="flex items-baseline gap-1">
                     <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
@@ -51,19 +63,13 @@
                 <span class="font-mono font-black text-primary" id="g-v">0%</span>
                 <span class="ticker-bar ml-1" id="g-t" data-tone="primary"></span>
             </span>
-            <span class="flex items-baseline gap-1" title="Load average — system-wide pressure (1m / 5m / 15m). Better signal than instantaneous CPU% because it includes pending + IO-wait. Shown as a percentage of the CPU count.">
+            <span class="flex items-baseline gap-1" title="Load average — system-wide pressure (1m / 5m / 15m).">
                 <span class="text-[10px] uppercase tracking-widest text-base-content/50">Load</span>
                 <span class="font-mono font-black text-info" id="l-v">0%</span>
                 <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
             </span>
-            <span class="flex flex-col items-start gap-0" title="{{ outputs_disk.used_gb }} GB used / {{ outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb) }} GB free · ticker spans ~1 hour">
-                <span class="flex items-baseline gap-1">
-                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span class="opacity-60 normal-case">(1hr)</span></span>
-                    <span class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}" id="d-v">{{ outputs_disk.pct }}%</span>
-                    <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
-                </span>
-                <span class="font-mono text-[9px] text-base-content/50 leading-none" id="d-r">{{ outputs_disk.used_gb }} used / {{ (outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb)) }} GB free</span>
-            </span>
+        </div>
+        <div class="flex items-center gap-2 flex-none">
             {# Output counters removed from navbar — now shown inline with Slop filter chip labels. #}
             {# Keep hidden IDs so existing WS / backend bindings don't break. #}
             <span class="hidden" id="out-finals">0</span><span class="hidden" id="out-chains">0</span><span class="hidden" id="out-base">0</span>
