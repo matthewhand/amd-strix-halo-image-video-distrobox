@@ -87,12 +87,14 @@ function _applySuggestionsHiddenState() {
   const suggestBtn = document.getElementById('subjects-suggest-btn');
   const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
   const toggleBtn = document.getElementById('subjects-suggestions-toggle');
+  const endlessBtn = document.getElementById('subjects-endless-story');
   if (area) area.style.display = hidden ? 'none' : '';
   if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
-  // Hide Regenerate + Suggestion Prompt buttons when suggestions are hidden;
-  // the "Need Suggestions?" toggle button stays visible to invite reveal.
+  // Hide Regenerate + Suggestion Prompt + Endless Story when suggestions are
+  // hidden; the "Need Suggestions?" toggle stays visible to invite reveal.
   if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
   if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
+  if (endlessBtn) endlessBtn.style.display = hidden ? 'none' : '';
   if (toggleBtn) {
     toggleBtn.classList.toggle('btn-primary', !hidden);
     toggleBtn.classList.toggle('btn-outline', true);
