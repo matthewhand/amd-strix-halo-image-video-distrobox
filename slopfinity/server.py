@@ -588,6 +588,102 @@ async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale
     )
 
 
+@app.get("/pipeline/plan")
+async def pipeline_plan(lookahead: int = 2):
+    """Compute the Belady-MIN resident-set plan for the active job + first
+    `lookahead` queued jobs. Advisory only — the scheduler does not yet honour
+    this plan (see docs/memory-stage-planner-design.md).
+
+    Response shape:
+      {
+        budget_gb: float,
+        mem_available_gb: float,
+        sequence: [{stage, role, model, gb, job_index}, ...],
+        decisions: [{step, load, keep, evict, resident_after}, ...],
+        savings: {naive_loads, planned_loads, saved_loads, est_saved_seconds},
+      }
+    """
+    from .memory_planner import (
+        build_sequence_for_job,
+        plan_resident_set,
+        naive_load_count,
+        planned_load_count,
+    )
+
+    config = cfg.load_config()
+    queue = cfg.get_queue() or []
+
+    # Active job uses the current config selections; queued items may override
+    # base/video/audio/tts/upscale per item, falling back to config defaults.
+    def _job_models(job: dict | None) -> tuple:
+        j = job or {}
+        return (
+            j.get("base_model")    or config.get("base_model"),
+            j.get("video_model")   or config.get("video_model"),
+            j.get("audio_model")   or config.get("audio_model"),
+            j.get("tts_model")     or config.get("tts_model"),
+            j.get("upscale_model") or config.get("upscale_model"),
+        )
+
+    pending = [j for j in queue if (j.get("status") in (None, "pending"))]
+    jobs_to_plan = [None] + pending[: max(0, int(lookahead))]
+
+    sequence = []
+    flat_for_planner = []
+    for ji, job in enumerate(jobs_to_plan):
+        base, video, audio, tts_, upscale = _job_models(job)
+        steps = build_sequence_for_job(base, video, audio, tts_, upscale)
+        for s in steps:
+            flat_for_planner.append(s)
+            sequence.append({
+                "stage":     s.stage,
+                "role":      s.role,
+                "model":     s.model,
+                "gb":        s.gb,
+                "job_index": ji,
+            })
+
+    # Budget: MEM_AVAILABLE - SAFETY - OVERHEAD. Floor at 1 GB so a totally
+    # starved host still produces a (degraded) plan rather than crashing.
+    mem_avail = sched._mem_available_gb()
+    budget = max(1.0, mem_avail - sched.SAFETY_GB - sched.OVERHEAD_GB)
+
+    decisions_raw = plan_resident_set(flat_for_planner, budget_gb=budget)
+    decisions = [
+        {
+            "step":           {"stage": d.step.stage, "role": d.step.role,
+                               "model": d.step.model, "gb": d.step.gb},
+            "load":           d.load,
+            "keep":           d.keep,
+            "evict":          d.evict,
+            "resident_after": d.resident_after,
+        }
+        for d in decisions_raw
+    ]
+
+    naive = naive_load_count(flat_for_planner)
+    planned = planned_load_count(decisions_raw)
+    # Rough cost per cold-load: ~90 s aiter JIT + ~90 s checkpoint load ≈ 180 s
+    # for a freshly-loaded model. Used purely to translate "loads saved" into
+    # a human-readable wall-clock figure for the UI.
+    est_saved_seconds = max(0, (naive - planned)) * 180
+
+    return {
+        "budget_gb":         round(budget, 1),
+        "mem_available_gb":  mem_avail,
+        "lookahead":         int(lookahead),
+        "queued_jobs_planned": len(jobs_to_plan) - 1,
+        "sequence":          sequence,
+        "decisions":         decisions,
+        "savings": {
+            "naive_loads":       naive,
+            "planned_loads":     planned,
+            "saved_loads":       max(0, naive - planned),
+            "est_saved_seconds": est_saved_seconds,
+        },
+    }
+
+
 @app.get("/asset/{filename}")
 async def asset_info(filename: str):
     """Return metadata about a single asset file: kind, model, size, mtime,

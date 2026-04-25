@@ -521,6 +521,72 @@ function updateRam(ram) {
     el.id = 'ram-est';
 }
 
+// Render the Belady-MIN load plan inside the Pipeline popup. Lazy: only
+// fetched when the user expands <details id="load-plan-details">. The plan
+// is advisory — surfaced so the user can see which model boundaries the
+// scheduler *could* skip cold-loads at if Phase 2 wires it in. See
+// docs/memory-stage-planner-design.md.
+async function loadPlanRender() {
+    const body = $('load-plan-body');
+    if (!body) return;
+    body.innerHTML = '<span class="opacity-50">loading…</span>';
+    let plan;
+    try {
+        const r = await fetch('/pipeline/plan');
+        plan = await r.json();
+    } catch (e) {
+        body.innerHTML = '<span class="text-error">failed to fetch /pipeline/plan</span>';
+        return;
+    }
+    if (!plan || !Array.isArray(plan.decisions)) {
+        body.innerHTML = '<span class="text-error">empty plan</span>';
+        return;
+    }
+    const rows = [];
+    // Header: budget + projected savings.
+    const sv = plan.savings || {};
+    const savedSec = sv.est_saved_seconds || 0;
+    const savedMin = Math.floor(savedSec / 60);
+    const savedTail = savedSec % 60;
+    rows.push(
+        `<div class="opacity-70">budget ${plan.budget_gb} GB · ` +
+        `${plan.queued_jobs_planned} queued + active · ` +
+        `<b>${sv.naive_loads || 0} → ${sv.planned_loads || 0} loads</b> ` +
+        `(saved ${sv.saved_loads || 0} ≈ ${savedMin}m${savedTail}s)</div>`
+    );
+    rows.push('<div class="opacity-50">────────────────────────────</div>');
+    // Per-step decision rows.
+    for (let i = 0; i < plan.decisions.length; i++) {
+        const d = plan.decisions[i];
+        const tag = d.load && d.load.length ? 'LOAD ' : 'HIT  ';
+        const cls = d.load && d.load.length ? '' : 'text-success';
+        const stage = (d.step.stage || '').padEnd(11);
+        const model = (d.step.model || '').padEnd(12);
+        const gb = (Math.round((d.step.gb || 0) * 10) / 10).toFixed(1);
+        rows.push(
+            `<div class="${cls}">` +
+            `<span class="opacity-60">${(i + 1).toString().padStart(2, ' ')}.</span> ` +
+            `${_htmlEscape(tag)} ${_htmlEscape(stage)} ${_htmlEscape(model)} ` +
+            `<span class="opacity-50">${gb} GB</span>` +
+            `</div>`
+        );
+        if (d.evict && d.evict.length) {
+            rows.push(
+                `<div class="text-warning pl-6">` +
+                `↳ evict ${_htmlEscape(d.evict.join(', '))}` +
+                `</div>`
+            );
+        }
+    }
+    rows.push('<div class="opacity-50">────────────────────────────</div>');
+    rows.push(
+        `<div class="opacity-60 italic">` +
+        `Advisory only — scheduler still cold-loads on every stage. ` +
+        `Phase 2: wire into acquire_gpu.</div>`
+    );
+    body.innerHTML = rows.join('');
+}
+
 // Show/hide the slopped sub-select for a given role and populate it on demand.
 // Wired via inline onchange handlers on cfg-base / cfg-audio / cfg-tts.
 //   selId    - 'base' | 'audio' | 'tts'  (matches cfg-<id>)

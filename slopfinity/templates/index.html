@@ -497,6 +497,20 @@
                     <div class="ram-breakdown text-[10px] font-mono leading-tight mt-1 opacity-80"></div>
                     <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
                 </div>
+                <!-- ============ Load plan (Belady-MIN advisory) ============ -->
+                {# Lazy-rendered when the user expands the <details>. Calls
+                   /pipeline/plan with the active job + queued items, then
+                   walks the decision list and prints a compact breakdown.
+                   See docs/memory-stage-planner-design.md. #}
+                <details id="load-plan-details" class="mt-1 border-t border-base-300 pt-2"
+                         ontoggle="if(this.open){loadPlanRender()}">
+                    <summary class="text-[10px] uppercase tracking-widest opacity-60 cursor-pointer select-none">
+                        Load plan <span class="opacity-50 normal-case tracking-normal">(advisory — model cold-load avoidance)</span>
+                    </summary>
+                    <div id="load-plan-body" class="text-[10px] font-mono leading-tight mt-1 opacity-80">
+                        <span class="opacity-50">loading…</span>
+                    </div>
+                </details>
             </div>
         </div>
 
