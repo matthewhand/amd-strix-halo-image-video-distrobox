@@ -259,12 +259,13 @@ async function requeueItem(ts) {
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
 setInterval(() => {
     if (!_isRendering) return;
-    // Live update the active queue item's badges (the only ones that exist now).
+    // Live update the active queue item's badges. Format must match the
+    // renderItem template exactly or the badges flicker between the two.
     document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
-        if (_stageStartTs) el.textContent = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
+        if (_stageStartTs) el.textContent = _fmtElapsed(Date.now() - _stageStartTs);
     });
     document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
-        if (_jobStartTs) el.textContent = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
+        if (_jobStartTs) el.textContent = _fmtElapsed(Date.now() - _jobStartTs);
     });
     // Total ETA from rolling stage averages.
     const totalEta = _STAGE_ORDER
@@ -971,6 +972,9 @@ function connect() {
                 // Activity line: what the fleet is doing right now in plain
                 // English.
                 const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
+                // Match the 1Hz interval handler exactly (no '⏱ '/'Σ ' prefix
+                // — the labels next to the badges already convey what they
+                // mean) so live updates don't flicker.
                 const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
                 const stageAvg = _stageAvgSeconds(curStep);
                 const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
