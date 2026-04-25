@@ -744,6 +744,7 @@ async def settings_post(data: dict = Body(...)):
             current_llm["timeout_s"] = max(1, int(current_llm.get("timeout_s", 60)))
         except Exception:
             current_llm["timeout_s"] = 60
+        current_llm["auto_suspend"] = bool(current_llm.get("auto_suspend", False))
         c["llm"] = current_llm
     # Allow pass-through updates for a few other top-level buckets (e.g. scheduler)
     for bucket in ("scheduler",):
@@ -826,6 +827,24 @@ async def free_endpoint():
 async def emergency_free_endpoint():
     """ComfyUI /free + pkill stray model launchers."""
     result = await sched.emergency_free()
+    return {"ok": True, **result}
+
+
+@app.post("/llm/suspend")
+async def llm_suspend_endpoint():
+    """Manually SIGSTOP any running local LLM (LM Studio / Ollama).
+
+    Independent of the `llm.auto_suspend` toggle — gives the user a one-shot
+    pause for ad-hoc memory triage. Resume via POST /llm/resume.
+    """
+    result = await asyncio.to_thread(sched.suspend_llm)
+    return {"ok": True, **result}
+
+
+@app.post("/llm/resume")
+async def llm_resume_endpoint():
+    """Manually SIGCONT any suspended local LLM process."""
+    result = await asyncio.to_thread(sched.resume_llm)
     return {"ok": True, **result}
 
 
