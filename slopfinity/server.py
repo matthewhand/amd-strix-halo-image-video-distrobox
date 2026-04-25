@@ -49,6 +49,14 @@ app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Serve the multi-res favicon. Browsers fetch /favicon.ico unconditionally
+    so without this route every page load logs a 404."""
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
+
+
 @app.middleware("http")
 async def _sw_allowed_header(request: Request, call_next):
     """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
