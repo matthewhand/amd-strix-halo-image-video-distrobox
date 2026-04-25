@@ -566,17 +566,12 @@ function _buildActiveJobProgressBar(d) {
             <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
                 <div class="flex" data-pipeline-segments>${segments}</div>
             </div>
-            <div class="flex items-center justify-between gap-2 px-1 mt-1 text-[10px]">
-                <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
-                    <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
-                </span>
-                <span class="opacity-60 flex items-center gap-1 flex-none">
-                    <span class="opacity-70">Total</span>
-                    <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
-                    <span class="opacity-50">/</span>
-                    <span class="opacity-70">ETA</span>
-                    <span data-pipeline-total-eta>${totalEtaHTML}</span>
-                </span>
+            <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
+                <span class="opacity-70">Total</span>
+                <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
+                <span class="opacity-50">/</span>
+                <span class="opacity-70">ETA</span>
+                <span data-pipeline-total-eta>${totalEtaHTML}</span>
             </div>
         </div>
     `;
@@ -948,9 +943,10 @@ setInterval(() => {
     }
     // Activity text — re-derive in case stage label changed (rare, but cheap).
     const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
-    const actEl = bar.querySelector('[data-pipeline-activity-text]');
-    if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
-    // Mirror activity into the queue header (between QUEUE count and View all).
+    // Single source of truth for the rendering label: the queue header. The
+    // duplicate that used to live below the progress bar was dropped — we
+    // only want one. Hide it entirely if there's no current stage (idle or
+    // error state — curStage falsy).
     const headerAct = document.getElementById('queue-header-activity');
     const headerTxt = headerAct && headerAct.querySelector('[data-queue-header-activity-text]');
     if (headerAct) headerAct.style.display = curStage ? 'inline-flex' : 'none';
