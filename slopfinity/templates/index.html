@@ -94,6 +94,46 @@
                     <option value="0">off</option>
                 </select>
             </div>
+            {# View / layout dropdown — relocates the Settings → Layout
+               radio toggle into the navbar so the user can flip between
+               the full-dashboard and gallery-focused views without opening
+               Settings. The hidden radios in Settings remain the source of
+               truth — selectLayoutView() syncs them and dispatches `change`
+               so the existing layout-view handler runs (no duplicated logic). #}
+            <div class="dropdown dropdown-end flex-none">
+                <button id="btn-view" tabindex="0" class="btn btn-ghost btn-sm btn-square text-primary" title="View" aria-label="View">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+                        <rect x="3" y="3" width="7" height="9" rx="1"/>
+                        <rect x="14" y="3" width="7" height="5" rx="1"/>
+                        <rect x="14" y="12" width="7" height="9" rx="1"/>
+                        <rect x="3" y="16" width="7" height="5" rx="1"/>
+                    </svg>
+                </button>
+                <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-200 rounded-box shadow-xl mt-1 w-56 z-50 flex-nowrap">
+                    <li>
+                        <button type="button" data-view-option="default" onclick="selectLayoutView('default'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="36" height="18" rx="2" fill="currentColor" opacity="0.4"/>
+                                <rect x="42" y="2"  width="36" height="18" rx="2" fill="currentColor" opacity="0.4"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Full dashboard</span>
+                            <span class="text-[10px] text-primary" data-view-check="default">●</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" data-view-option="gallery" onclick="selectLayoutView('gallery'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="46" rx="2" fill="currentColor" opacity="0.7"/>
+                                <circle cx="64" cy="40" r="4" fill="currentColor"/>
+                                <circle cx="74" cy="40" r="4" fill="currentColor"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Gallery focused</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="gallery">●</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
             {# Theme dropdown — lists every available theme with a 4-swatch
                preview pulled from THAT theme's tokens (each <li> sets data-theme
                so its DaisyUI vars cascade to the swatches). #}
@@ -142,6 +182,21 @@
     {# Idle chip removed — the Start Infinity button already communicates state. #}
     <div id="hero-idle" class="hidden"></div>
 
+    {# All-cards-hidden placeholder — appears above the splitter when every
+       primary card (Subjects / Queue / Slop) is closed. The three buttons
+       call restoreCard(id) to bring each one back. The placeholder itself
+       is toggled by _refreshCardVisibility() in app.js. #}
+    <div id="cards-all-hidden-placeholder" class="hidden card bg-base-100 border-2 border-dashed border-primary/40 shadow mb-6 p-6 text-center">
+        <div class="flex flex-col items-center gap-3">
+            <span class="text-sm uppercase tracking-widest opacity-70">No panels visible — add one back</span>
+            <div class="flex flex-wrap items-center justify-center gap-2">
+                <button class="btn btn-sm btn-primary" onclick="restoreCard('subjects')">Subjects</button>
+                <button class="btn btn-sm btn-accent" onclick="restoreCard('queue')">Queue</button>
+                <button class="btn btn-sm btn-secondary" onclick="restoreCard('slop')">Slop</button>
+            </div>
+        </div>
+    </div>
+
     {# Horizontal draggable splitter — wraps Subjects/Queue (upper) and Slop output (lower)
        so the user can re-balance vertical room. Hidden behavior on narrow viewports
        (handle still rendered, but flex stacks naturally). The wrapper is purely
@@ -168,15 +223,19 @@
                 {# Right-side cluster: live summary pill + pipeline-config button sit together so the
                    header reads "Subjects · [gen-mode-pill][pipeline-button]". The join groups them
                    visually so they look like one control with two halves. #}
-                <div class="join">
-                    <button id="gen-mode-pill" class="btn btn-ghost btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
-                    <button id="pipeline-config-button" class="btn btn-outline btn-primary btn-xs join-item text-base" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
-                            <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
-                            <line x1="4" y1="18" x2="16" y2="18"/><circle cx="19" cy="18" r="2.5" fill="currentColor"/>
-                        </svg>
-                    </button>
+                <div class="flex items-center gap-1">
+                    <div class="join">
+                        <button id="gen-mode-pill" class="btn btn-ghost btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
+                        <button id="pipeline-config-button" class="btn btn-outline btn-primary btn-xs join-item text-base" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
+                                <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
+                                <line x1="4" y1="18" x2="16" y2="18"/><circle cx="19" cy="18" r="2.5" fill="currentColor"/>
+                            </svg>
+                        </button>
+                    </div>
+                    {# Close (×) — hides the Subjects card; persisted in localStorage. #}
+                    <button class="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100 card-close-btn" title="Hide Subjects card" aria-label="Hide Subjects card" onclick="closeCard('subjects')">×</button>
                 </div>
             </div>
             <div class="flex gap-2 items-stretch">
@@ -276,6 +335,8 @@
                 <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
                 <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
+                {# Close (×) — hides the Queue card; persisted in localStorage. #}
+                <button class="btn btn-ghost btn-xs btn-square flex-none opacity-50 hover:opacity-100 card-close-btn" title="Hide Queue card" aria-label="Hide Queue card" onclick="closeCard('queue')">×</button>
             </div>
             {# Single segmented progress bar for the currently-active job.
                Hosted at the top of the queue card so the user reads ONE bar
@@ -360,11 +421,13 @@
                 {{ branding.labels.gallery_completed }}
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
-            <div class="flex flex-wrap gap-1" id="slop-filters">
+            <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
                 {# Filter chip colors aligned to PR #58 token map: video=primary, image=info, audio=secondary #}
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-info peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                {# Close (×) — hides the Slop output card; persisted in localStorage. #}
+                <button class="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100 ml-1 card-close-btn" title="Hide Slop card" aria-label="Hide Slop card" onclick="closeCard('slop')">×</button>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -405,15 +468,19 @@
                     'qwen-tts': ('Qwen TTS', 'badge-warning'),
                     'kokoro': ('Kokoro TTS', 'badge-warning'),
                 } %}
+                {# Card outer border is uniform across all asset kinds (matches
+                   the parent #output-section's border-primary). The per-asset
+                   colour lives on the inner badge so users still tell videos /
+                   images / audio / FINAL apart at a glance. #}
                 {% if is_final %}
-                    {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}{% set border_color = 'border-accent' %}
+                    {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}
                 {% elif model_id and model_id in _model_map %}
                     {% set primary_label = _model_map[model_id][0] %}{% set primary_color = _model_map[model_id][1] %}
-                    {% set border_color = {'video':'border-primary','image':'border-secondary','audio':'border-warning'}[kind] %}
                 {% else %}
-                    {% set _fallback = {'video': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind] %}
-                    {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}{% set border_color = _fallback[2] %}
+                    {% set _fallback = {'video': ('🎬 video', 'badge-primary'), 'image': ('🖼 image', 'badge-secondary'), 'audio': ('🔊 audio', 'badge-warning')}[kind] %}
+                    {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}
                 {% endif %}
+                {% set border_color = 'border-primary' %}
                 <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
                     <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                     {% if is_mp4 %}
@@ -1186,6 +1253,118 @@
                     <span class="font-semibold not-italic">Music · heartmula track</span> group above so it's clear they affect the audio mix.
                 </div>
             </div><!-- /Pipeline Advanced tabpanel -->
+
+            {# Prompts tab — every hardcoded prompt-template the pipeline ships
+               with, surfaced for end-user tuning. Each textarea is empty when
+               the user hasn't customised that prompt; the placeholder shows the
+               built-in default. Saving an empty value is interpreted as "use
+               built-in default" by the server (POST /settings).
+
+               Wire-up is in app.js: openSettings() pre-fills every textarea
+               from /settings GET; saveSettings() POSTs them back as top-level
+               keys (fanout_system_prompt, fleet_user_prompt_template,
+               infinity_user_prompt_template, chaos_suggest_system_prompt,
+               void_fallback_template, enhancer_prompt). #}
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Prompts" />
+            <div role="tabpanel" class="tab-content pt-4">
+                <p class="text-[11px] opacity-60 italic mb-3 leading-snug">
+                    Every prompt below is a system or template string the
+                    pipeline currently has hardcoded. Leave a textarea blank
+                    to use the built-in default. Templates use
+                    <code class="font-mono">{slot}</code> placeholders &mdash;
+                    helper text under each field calls them out. Changes are
+                    picked up on the <em>next</em> queue item / iteration; the
+                    fleet runner re-reads <code>config.json</code> per cycle.
+                </p>
+
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Concept-stage rewriter system prompt</span>
+                        </label>
+                        <textarea id="set-prompts-enhancer"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="4"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Used by <code>slopfinity/workers/concept.py</code> when re-writing each user-injected prompt before image generation. Stored in <code>config.json</code> &rarr; <code>enhancer_prompt</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-enhancer','enhancer_prompt')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Multi-stage fan-out system prompt</span>
+                        </label>
+                        <textarea id="set-prompts-fanout"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="5"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Used by <code>POST /enhance/distribute</code> (the AI Magic split-into-image/video/music/tts button). Stored as <code>fanout_system_prompt</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-fanout','fanout_system_prompt')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Fleet rewriter user-message template</span>
+                        </label>
+                        <textarea id="set-prompts-fleet-user"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="4"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Used by <code>run_fleet.py</code> when re-writing each queued prompt. Available slot: <code>{seed}</code> &mdash; the user's raw prompt. Stored as <code>fleet_user_prompt_template</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-fleet-user','fleet_user_prompt_template')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Infinity-mode user-message template</span>
+                        </label>
+                        <textarea id="set-prompts-infinity"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="3"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Used by <code>run_fleet.py</code> infinity branch (rotates through Subjects). Available slot: <code>{theme}</code>. Stored as <code>infinity_user_prompt_template</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-infinity','infinity_user_prompt_template')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">Chaos-mode tangential-suggest system prompt</span>
+                        </label>
+                        <textarea id="set-prompts-chaos"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="5"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Background loop in <code>slopfinity/server.py</code> that re-suggests Subjects in chaos mode. Available slot: <code>{subjects_csv}</code>. Stored as <code>chaos_suggest_system_prompt</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-chaos','chaos_suggest_system_prompt')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-xs font-semibold">VOID-style no-LLM fallback prompt</span>
+                        </label>
+                        <textarea id="set-prompts-void"
+                          class="textarea textarea-bordered textarea-sm w-full font-mono text-[11px] leading-snug"
+                          rows="2"
+                          placeholder="(loading default…)"></textarea>
+                        <span class="label-text-alt text-[10px] opacity-60 italic">Used by <code>run_fleet.py</code> only when no LLM is reachable. Available slot: <code>{style}</code>. Stored as <code>void_fallback_template</code>.</span>
+                        <button class="btn btn-ghost btn-xs mt-1 self-start" type="button" onclick="resetPromptField('set-prompts-void','void_fallback_template')">&#x21ba; Reset to default</button>
+                    </div>
+
+                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-2">Already plumbed</div>
+                    <div class="text-[11px] opacity-60 leading-snug">
+                        These two prompts have their canonical editor in the LLM tab &mdash; jump there to edit:
+                        <ul class="list-disc list-inside mt-1 space-y-1">
+                            <li><span class="font-semibold">Fleet system prompt</span> (<code>philosophical_prompt</code>) &mdash; <a href="#" class="link link-primary" onclick="document.querySelector('input[name=settings_tabs][aria-label=LLM]').checked=true; setTimeout(()=>{const el=document.getElementById('set-fleet-prompt'); if(el){el.scrollIntoView({block:'center'}); el.focus();}},50); return false;">open in LLM tab</a></li>
+                            <li><span class="font-semibold">Subjects-suggest system prompt</span> (<code>suggest_custom_prompt</code>) &mdash; <a href="#" class="link link-primary" onclick="document.querySelector('input[name=settings_tabs][aria-label=LLM]').checked=true; setTimeout(()=>{const el=document.getElementById('set-suggest-custom-prompt'); if(el){el.scrollIntoView({block:'center'}); el.focus();}},50); return false;">open in LLM tab</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3 mt-4">
+                    <button class="btn btn-sm btn-primary" onclick="saveSettings()">Save</button>
+                    <span class="text-[10px] opacity-50 italic">Save writes every Settings tab in one POST.</span>
+                </div>
+            </div><!-- /Prompts tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
             <div role="tabpanel" class="tab-content pt-4">
