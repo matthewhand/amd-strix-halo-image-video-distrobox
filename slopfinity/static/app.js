@@ -2367,7 +2367,7 @@ function connect() {
                 const snap = (q && q.config_snapshot) || cfg;
                 const activeRole = (opts && opts.running && opts.step) ? _STAGE_ROLE[opts.step] : null;
                 const badges = _configModelBadges(snap, llmModelId, activeRole, q.ts || 0);
-                const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
+                const meta = `<span class="opacity-50">size</span> ${_htmlEscape(snap.size || '1:1')} <span class="opacity-30">·</span> ${snap.frames || 17} <span class="opacity-50">frames</span>`;
                 const promptEsc = _htmlEscape(q.prompt || '');
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
