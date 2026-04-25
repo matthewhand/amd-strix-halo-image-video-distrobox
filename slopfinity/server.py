@@ -303,7 +303,9 @@ async def pipeline_slopped(role: str):
     except Exception:
         pass
     files.sort(key=lambda x: x[1], reverse=True)
-    return {"role": role, "files": [n for n, _ in files[:200]]}
+    # Cap to 60 most-recent: the image role renders these as thumbnails and
+    # we want the modal to stay snappy. Audio/tts also share this cap.
+    return {"role": role, "files": [n for n, _ in files[:60]]}
 
 
 @app.post("/inject")
