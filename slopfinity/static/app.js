@@ -1608,9 +1608,10 @@ async function inject(prio, terminate, concurrent, opts) {
     ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
 }
 
-// Refresh the small "Will use:" badge row beneath the Subjects textarea so
-// the user can see the active model selection at a glance without opening
-// the Pipeline modal.
+// Refresh the small "Will use:" badge row inside the Pipeline popup so
+// the user can see the active model selection at a glance alongside the
+// RAM estimate. Element ID #subjects-models is preserved for back-compat
+// (originally lived under the Subjects card; relocated by the p5 mobile pass).
 function _renderSubjectsModels() {
     const row = document.getElementById('subjects-models');
     if (!row) return;
