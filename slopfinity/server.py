@@ -58,54 +58,6 @@ async def favicon():
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
 
 
-@app.get("/healthz")
-async def healthz():
-    """Liveness probe — always 200 if the process is up."""
-    return {"status": "ok"}
-
-
-@app.get("/readyz")
-async def readyz():
-    """Readiness probe — checks reachability of dependent subsystems."""
-    import httpx
-    import shutil
-
-    async def _probe(client, name, url, accept_4xx=False):
-        try:
-            r = await client.get(url, timeout=2.0)
-            if accept_4xx:
-                return name, "ok"
-            return name, "ok" if r.status_code < 500 else "down"
-        except Exception:
-            return name, "down"
-
-    targets = [
-        ("comfyui", "http://localhost:8188/system_stats", False),
-        ("qwen_image", "http://localhost:8000/", True),
-        ("qwen_tts", "http://localhost:8010/", True),
-        ("lmstudio", "http://localhost:1234/v1/models", False),
-    ]
-    async with httpx.AsyncClient() as client:
-        results = await asyncio.gather(*[_probe(client, n, u, a) for n, u, a in targets])
-    checks = dict(results)
-
-    # Disk: at least one mount with >5 GB free.
-    disk_ok = False
-    for path in ("/workspace", "/", os.path.expanduser("~")):
-        try:
-            if os.path.exists(path):
-                free_gb = shutil.disk_usage(path).free / (1024 ** 3)
-                if free_gb > 5:
-                    disk_ok = True
-                    break
-        except Exception:
-            continue
-    checks["disk"] = "ok" if disk_ok else "down"
-
-    ready = all(v == "ok" for v in checks.values())
-    return JSONResponse({"ready": ready, "checks": checks}, status_code=200 if ready else 503)
-
-
 @app.middleware("http")
 async def _sw_allowed_header(request: Request, call_next):
     """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
@@ -524,24 +476,6 @@ async def queue_requeue(data: dict = Body(...)):
     return {"ok": True}
 
 
-@app.post("/queue/clear-failed")
-async def queue_clear_failed():
-    """Drop all done-but-failed items from the queue history.
-
-    Keeps pending, running, succeeded-done, and cancelled items intact.
-    """
-    q = cfg.get_queue()
-    before = len(q)
-    kept = [
-        item for item in q
-        if not (item.get("status") == "done" and item.get("succeeded") is False)
-    ]
-    removed = before - len(kept)
-    if removed:
-        cfg.save_queue(kept)
-    return {"ok": True, "removed": removed}
-
-
 def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
     """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
 
@@ -652,6 +586,102 @@ async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale
         upscale or None,
         tts or None,
     )
+
+
+@app.get("/pipeline/plan")
+async def pipeline_plan(lookahead: int = 2):
+    """Compute the Belady-MIN resident-set plan for the active job + first
+    `lookahead` queued jobs. Advisory only — the scheduler does not yet honour
+    this plan (see docs/memory-stage-planner-design.md).
+
+    Response shape:
+      {
+        budget_gb: float,
+        mem_available_gb: float,
+        sequence: [{stage, role, model, gb, job_index}, ...],
+        decisions: [{step, load, keep, evict, resident_after}, ...],
+        savings: {naive_loads, planned_loads, saved_loads, est_saved_seconds},
+      }
+    """
+    from .memory_planner import (
+        build_sequence_for_job,
+        plan_resident_set,
+        naive_load_count,
+        planned_load_count,
+    )
+
+    config = cfg.load_config()
+    queue = cfg.get_queue() or []
+
+    # Active job uses the current config selections; queued items may override
+    # base/video/audio/tts/upscale per item, falling back to config defaults.
+    def _job_models(job: dict | None) -> tuple:
+        j = job or {}
+        return (
+            j.get("base_model")    or config.get("base_model"),
+            j.get("video_model")   or config.get("video_model"),
+            j.get("audio_model")   or config.get("audio_model"),
+            j.get("tts_model")     or config.get("tts_model"),
+            j.get("upscale_model") or config.get("upscale_model"),
+        )
+
+    pending = [j for j in queue if (j.get("status") in (None, "pending"))]
+    jobs_to_plan = [None] + pending[: max(0, int(lookahead))]
+
+    sequence = []
+    flat_for_planner = []
+    for ji, job in enumerate(jobs_to_plan):
+        base, video, audio, tts_, upscale = _job_models(job)
+        steps = build_sequence_for_job(base, video, audio, tts_, upscale)
+        for s in steps:
+            flat_for_planner.append(s)
+            sequence.append({
+                "stage":     s.stage,
+                "role":      s.role,
+                "model":     s.model,
+                "gb":        s.gb,
+                "job_index": ji,
+            })
+
+    # Budget: MEM_AVAILABLE - SAFETY - OVERHEAD. Floor at 1 GB so a totally
+    # starved host still produces a (degraded) plan rather than crashing.
+    mem_avail = sched._mem_available_gb()
+    budget = max(1.0, mem_avail - sched.SAFETY_GB - sched.OVERHEAD_GB)
+
+    decisions_raw = plan_resident_set(flat_for_planner, budget_gb=budget)
+    decisions = [
+        {
+            "step":           {"stage": d.step.stage, "role": d.step.role,
+                               "model": d.step.model, "gb": d.step.gb},
+            "load":           d.load,
+            "keep":           d.keep,
+            "evict":          d.evict,
+            "resident_after": d.resident_after,
+        }
+        for d in decisions_raw
+    ]
+
+    naive = naive_load_count(flat_for_planner)
+    planned = planned_load_count(decisions_raw)
+    # Rough cost per cold-load: ~90 s aiter JIT + ~90 s checkpoint load ≈ 180 s
+    # for a freshly-loaded model. Used purely to translate "loads saved" into
+    # a human-readable wall-clock figure for the UI.
+    est_saved_seconds = max(0, (naive - planned)) * 180
+
+    return {
+        "budget_gb":         round(budget, 1),
+        "mem_available_gb":  mem_avail,
+        "lookahead":         int(lookahead),
+        "queued_jobs_planned": len(jobs_to_plan) - 1,
+        "sequence":          sequence,
+        "decisions":         decisions,
+        "savings": {
+            "naive_loads":       naive,
+            "planned_loads":     planned,
+            "saved_loads":       max(0, naive - planned),
+            "est_saved_seconds": est_saved_seconds,
+        },
+    }
 
 
 @app.get("/asset/{filename}")
