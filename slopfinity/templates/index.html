@@ -692,6 +692,36 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+<!-- Per-stage Prompts Quick-Edit Modal -->
+<!--
+    Shortcut path to the four canonical per-stage prompt overrides
+    (image_prompt / video_prompt / music_prompt / tts_prompt). The
+    fleet runner re-reads config.json on entry to each stage, so any
+    save here is picked up live by stages that have not yet started.
+    Already-running and completed stages render disabled (locked).
+    The Settings → Pipeline Advanced tab remains the canonical
+    edit surface; this modal just exposes the same fields one click
+    away from the active queue strip.
+-->
+<dialog id="prompts-edit-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
+        <h3 class="font-bold text-lg text-primary uppercase tracking-widest">Prompts</h3>
+        <p class="text-[11px] opacity-60 italic mt-1">
+            Edit the per-stage prompts for the active job. Saved values apply
+            to any stage that has not started yet — already-running or
+            completed stages are unaffected.
+        </p>
+        <div id="prompts-edit-rows" class="flex flex-col gap-3 mt-4">
+            <!-- one row per stage; populated by JS -->
+        </div>
+        <div class="modal-action">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('prompts-edit-modal').close()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="savePromptsEdit()">Save</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <!-- Keyboard Shortcuts Help Modal -->
 <dialog id="help-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100">

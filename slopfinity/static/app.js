@@ -354,6 +354,115 @@ function showPromptPeek(text) {
     dlg.showModal();
 }
 
+// Per-stage prompts quick-edit modal — shortcut to image_prompt /
+// video_prompt / music_prompt / tts_prompt. Live-pickup is a property
+// of the runner: it re-reads config.json on entry to each stage, so a
+// save before the stage starts will be honoured automatically. Stages
+// that already ran (or are running right now) render disabled with a
+// "locked" badge — editing them after the fact is a no-op.
+//
+// _STAGE_ORDER drives status: any stage with index < curIdx is done,
+// the index == curIdx stage is running, > curIdx is pending. Concept
+// is intentionally absent from the editable map — the LLM has already
+// emitted the rewritten prompt by the time any image/video/etc stage
+// starts, so editing "Concept" wouldn't change downstream behaviour.
+const _PROMPTS_STAGE_MAP = [
+    ['Base Image',   'image', 'image_prompt'],
+    ['Video Chains', 'video', 'video_prompt'],
+    ['Audio',        'audio', 'music_prompt'],
+    ['TTS',          'tts',   'tts_prompt'],
+];
+const _PROMPTS_ROLE_TO_KEY = {
+    image: 'image_prompt',
+    video: 'video_prompt',
+    audio: 'music_prompt',
+    tts:   'tts_prompt',
+};
+
+function _buildPromptRow(stage, role, value, { locked, status }) {
+    const lockTitle = status === 'done'
+        ? 'Stage complete — edits will not apply'
+        : 'Stage in progress — edits will not apply';
+    const lockNote = locked
+        ? `<span class="badge badge-xs badge-neutral ml-2" title="${lockTitle}">locked: ${status}</span>`
+        : `<span class="badge badge-xs badge-success ml-2" title="Stage has not run yet — edits will apply">live</span>`;
+    return `
+        <div class="form-control" data-prompt-stage="${stage}" data-prompt-role="${role}">
+            <label class="label py-0.5">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-70">
+                    ${stage} (${role})
+                </span>
+                ${lockNote}
+            </label>
+            <textarea class="textarea textarea-bordered textarea-sm font-mono text-[11px]"
+                      ${locked ? 'disabled' : ''}
+                      rows="2"
+                      placeholder="(use default for ${role})">${_htmlEscape(value || '')}</textarea>
+        </div>
+    `;
+}
+
+function openPromptsEdit(focusStage = null) {
+    const modal = document.getElementById('prompts-edit-modal');
+    const rowsEl = document.getElementById('prompts-edit-rows');
+    if (!modal || !rowsEl) return;
+    const config = (_lastTick && _lastTick.config) || {};
+    const state = (_lastTick && _lastTick.state) || {};
+    const curStage = state.step || '';
+    const curIdx = _STAGE_ORDER.indexOf(curStage);
+    const rows = [];
+    for (const [stage, role, cfgKey] of _PROMPTS_STAGE_MAP) {
+        const i = _STAGE_ORDER.indexOf(stage);
+        // When the fleet is idle (curIdx === -1) treat every stage as
+        // pending — the next started job will pick up whatever the user
+        // saves here.
+        let status;
+        if (curIdx < 0) status = 'pending';
+        else if (i < curIdx) status = 'done';
+        else if (i === curIdx) status = 'running';
+        else status = 'pending';
+        const locked = status !== 'pending';
+        rows.push(_buildPromptRow(stage, role, config[cfgKey] || '', { locked, status }));
+    }
+    rowsEl.innerHTML = rows.join('');
+    if (focusStage) {
+        const ta = rowsEl.querySelector(`[data-prompt-stage="${focusStage}"] textarea`);
+        if (ta && !ta.disabled) setTimeout(() => ta.focus(), 50);
+    }
+    modal.showModal();
+}
+
+async function savePromptsEdit() {
+    const rowsEl = document.getElementById('prompts-edit-rows');
+    if (!rowsEl) return;
+    const payload = {};
+    rowsEl.querySelectorAll('[data-prompt-stage]').forEach(row => {
+        const role = row.dataset.promptRole;
+        const ta = row.querySelector('textarea');
+        if (!ta || ta.disabled) return;
+        const cfgKey = _PROMPTS_ROLE_TO_KEY[role];
+        if (cfgKey) payload[cfgKey] = ta.value;
+    });
+    const modal = document.getElementById('prompts-edit-modal');
+    if (Object.keys(payload).length === 0) {
+        if (modal) modal.close();
+        return;
+    }
+    try {
+        await fetch('/config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        // The fleet runner re-reads config.json on each stage entry, so
+        // saving here means any not-yet-started stage will pick up the
+        // new prompt without further coordination.
+    } catch (e) {
+        console.warn('save prompts failed', e);
+    }
+    if (modal) modal.close();
+}
+
 async function cancelItem(ts) {
     // ts=0 = the synthetic "running" row that doesn't have a queue entry of
     // its own (the fleet popped it before processing). For those, /cancel-all
@@ -1556,12 +1665,16 @@ function connect() {
                         }
                         let assetBadge;
                         if (s === 'Concept') {
-                            const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
-                            assetBadge = `<button type="button" class="badge badge-xs badge-outline cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>prompt →</button>`;
+                            // Concept stage: clicking opens the multi-stage
+                            // prompts editor focused on the first editable
+                            // stage (Base Image). The LLM-rewritten prompt
+                            // peek modal (showPromptPeek) is still defined
+                            // and used for inactive items in other contexts.
+                            assetBadge = `<button type="button" class="badge badge-xs badge-outline cursor-pointer" title="Edit per-stage prompts (live pickup before stage starts)" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">prompts →</button>`;
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
                             assetBadge = asset
-                                ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
+                                ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
                                 : '';
                         }
                         const a = actuals[s];
@@ -1572,8 +1685,16 @@ function connect() {
                         // the RIGHT (push with ml-auto). Reads as a list:
                         // "✓ Image                        v3_base.png  3m22s / ETA 9m"
                         const animCls = isFresh ? ' stage-just-completed' : '';
+                        // The stage label itself doubles as a shortcut to the
+                        // prompts editor focused on that stage — only for
+                        // stages that have an editable prompt key. Other
+                        // stages render a plain span (no extra affordance).
+                        const stageRoleEntry = _PROMPTS_STAGE_MAP.find(([st]) => st === s);
+                        const stageLabelHtml = stageRoleEntry
+                            ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Edit prompts (this stage already ran — opens locked)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${label}</button>`
+                            : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
                         return `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
-                            <span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>
+                            ${stageLabelHtml}
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
                         </div>`;
                     }).join('');
