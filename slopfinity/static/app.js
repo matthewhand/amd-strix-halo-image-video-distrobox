@@ -1339,38 +1339,27 @@ function _htmlEscape(s) {
     }[c]));
 }
 
+// Render the fan-out as 4 stacked / 2x2 boxes — every stage prompt visible
+// at once. Replaces the older tab-switcher UI; the user wanted to see all
+// suggestions side-by-side rather than clicking through tabs.
 function _renderFanoutPreview(stages) {
-    const tabs = $('fanout-tabs');
-    const body = $('fanout-body');
-    if (!tabs || !body) return;
-    tabs.innerHTML = STAGE_NAMES.map((n, i) =>
-        `<a role="tab" class="tab ${i === 0 ? 'tab-active' : ''}" data-stage="${n}" onclick="_switchFanoutTab('${n}')">${n}</a>`
-    ).join('');
-    body.dataset.stages = JSON.stringify(stages);
-    _switchFanoutTab('image');
-}
-
-function _switchFanoutTab(stage) {
-    const tabs = $('fanout-tabs');
-    const body = $('fanout-body');
-    if (!tabs || !body) return;
-    tabs.querySelectorAll('.tab').forEach(el => {
-        el.classList.toggle('tab-active', el.dataset.stage === stage);
+    STAGE_NAMES.forEach(n => {
+        const box = $('fanout-' + n);
+        if (box) box.textContent = (stages && stages[n]) || '';
+        // Mirror the lock state from the corresponding p-<stage> textarea so
+        // the user can see at a glance which boxes will be skipped on Accept.
+        const lockBadge = $('fanout-' + n + '-lock');
+        const srcLock = $('lock-' + n);
+        if (lockBadge && srcLock) {
+            const locked = srcLock.dataset.locked === '1';
+            lockBadge.textContent = locked ? '🔒' : '🔓';
+            lockBadge.title = locked
+                ? 'Locked — your existing text will be preserved'
+                : 'Unlocked — will be overwritten on Accept';
+            lockBadge.classList.toggle('badge-warning', locked);
+            lockBadge.classList.toggle('badge-ghost', !locked);
+        }
     });
-    const stages = JSON.parse(body.dataset.stages || '{}');
-    const before = _stageVal(stage);
-    const after = stages[stage] || '';
-    body.innerHTML = `
-        <div class="grid grid-cols-1 gap-2">
-            <div>
-                <div class="text-[10px] uppercase opacity-60">Before</div>
-                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap">${_htmlEscape(before) || '<em class="opacity-40">(empty)</em>'}</div>
-            </div>
-            <div>
-                <div class="text-[10px] uppercase opacity-60">After</div>
-                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap border-l-2 border-primary">${_htmlEscape(after) || '<em class="opacity-40">(empty)</em>'}</div>
-            </div>
-        </div>`;
 }
 
 // Single-tab enhancer — rewrite ONE stage's prompt, leaving the others alone.
@@ -1421,8 +1410,12 @@ async function enhance() {
     if (preview) preview.classList.remove('hidden');
     const warn = $('fanout-warn');
     if (warn) { warn.classList.add('hidden'); warn.innerText = ''; }
-    const body = $('fanout-body');
-    if (body) body.innerHTML = '<em class="opacity-60">Conjuring brilliance...</em>';
+    // Loading placeholder — drop a "thinking" hint into each of the 4 boxes
+    // so the preview reflects active work even before the LLM responds.
+    STAGE_NAMES.forEach(n => {
+        const box = $('fanout-' + n);
+        if (box) box.textContent = '✨ thinking...';
+    });
     try {
         const res = await fetch('/enhance/distribute', {
             method: 'POST',
@@ -1437,11 +1430,17 @@ async function enhance() {
                 warn.classList.remove('hidden');
                 warn.innerText = 'Restored dropped tokens: ' + (r.preserved_dropped || []).join(', ');
             }
-        } else if (body) {
-            body.innerText = '(no response)';
+        } else {
+            STAGE_NAMES.forEach(n => {
+                const box = $('fanout-' + n);
+                if (box) box.textContent = '(no response)';
+            });
         }
     } catch (e) {
-        if (body) body.innerText = 'Error: ' + e;
+        STAGE_NAMES.forEach(n => {
+            const box = $('fanout-' + n);
+            if (box) box.textContent = 'Error: ' + e;
+        });
     }
 }
 
