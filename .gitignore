@@ -45,6 +45,7 @@ logs/
 # External model repos and datasets (too big for git)
 LTX-2/
 ComfyUI-LTXVideo/
+.heartlib/
 
 # IDE / editor / local AI assistant state
 .claude/
