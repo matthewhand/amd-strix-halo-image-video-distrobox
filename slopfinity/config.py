@@ -25,6 +25,21 @@ DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
 DEFAULT_SUGGEST_USE_SUBJECTS = True
 DEFAULT_SUGGEST_CUSTOM_PROMPT = ""
 
+# Auto-suspend list — see docs/auto-suspend-design.md. Each entry pairs a
+# co-resident service with one of four suspension methods. The scheduler
+# fires `auto_suspend.suspend_all(...)` on every GPU stage entry and
+# `resume_all(...)` on exit.
+DEFAULT_AUTO_SUSPEND = [
+    {"id": "lmstudio", "label": "LLM (LM Studio)", "enabled": True,
+     "method": "sigstop", "process_name": "LM Studio"},
+    {"id": "comfyui", "label": "ComfyUI", "enabled": False,
+     "method": "rest_unload", "endpoint": "http://localhost:8188/free"},
+    {"id": "qwen-tts", "label": "Qwen-TTS worker", "enabled": False,
+     "method": "docker_stop", "container": "strix-halo-qwen-tts"},
+    {"id": "ollama", "label": "Ollama LLM", "enabled": False,
+     "method": "sigstop", "process_name": "ollama"},
+]
+
 DEFAULT_CONFIG = {
     "base_model": "ltx-2.3",
     "video_model": "ltx-2.3",
@@ -46,6 +61,7 @@ DEFAULT_CONFIG = {
     "philosophical_prompt": None,
     "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
+    "auto_suspend": DEFAULT_AUTO_SUSPEND,
 }
 
 
@@ -61,6 +77,30 @@ def get_philosophical_prompt(config=None):
         return DEFAULT_PHILOSOPHICAL_PROMPT
     return val
 
+def _merge_auto_suspend(stored):
+    """Merge canonical DEFAULT_AUTO_SUSPEND entries by id into `stored`.
+
+    User edits to existing entries (enabled/method/process_name/...) win.
+    New canonical entries (added in a later release) appear automatically.
+    Unknown user-added entries (custom services) are preserved.
+    """
+    if not isinstance(stored, list):
+        return list(DEFAULT_AUTO_SUSPEND)
+    by_id = {e.get("id"): e for e in stored if isinstance(e, dict) and e.get("id")}
+    out = []
+    seen = set()
+    # Canonical order first.
+    for d in DEFAULT_AUTO_SUSPEND:
+        eid = d["id"]
+        out.append(by_id.get(eid, dict(d)))
+        seen.add(eid)
+    # Append any user-only / custom entries the canonical list doesn't know.
+    for e in stored:
+        if isinstance(e, dict) and e.get("id") and e["id"] not in seen:
+            out.append(e)
+    return out
+
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -68,9 +108,10 @@ def load_config():
                 c = json.load(f)
                 for k, v in DEFAULT_CONFIG.items():
                     if k not in c: c[k] = v
+                c["auto_suspend"] = _merge_auto_suspend(c.get("auto_suspend"))
                 return c
         except: pass
-    return DEFAULT_CONFIG
+    return dict(DEFAULT_CONFIG, auto_suspend=list(DEFAULT_AUTO_SUSPEND))
 
 SENSITIVE_KEYS = {"api_key"}
 

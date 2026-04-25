@@ -2304,8 +2304,7 @@ async function openSettings() {
         $('set-temp-val').innerText = $('set-temp').value;
         $('set-retries').value = llm.max_retries ?? 2;
         $('set-timeout').value = llm.timeout_s ?? 60;
-        const autoSus = $('set-llm-auto-suspend');
-        if (autoSus) autoSus.checked = !!llm.auto_suspend;
+        renderAutoSuspendList(sr.auto_suspend);
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const sugUseSub = $('set-suggest-use-subjects');
@@ -2360,21 +2359,120 @@ async function openSettings() {
     }
 }
 
-async function saveAutoSuspend() {
-    // Inline-save the LLM auto-suspend toggle without closing the Settings
-    // modal. Lets the user flip the switch and immediately see its effect on
-    // the next stage start, without re-opening Settings to hit Save.
-    const el = $('set-llm-auto-suspend');
-    if (!el) return;
-    try {
-        await fetch('/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ llm: { auto_suspend: !!el.checked } }),
+// ---------------------------------------------------------------------------
+// Auto-suspend list UI — replaces PR #40's single LLM toggle. Each row is
+// an entry from config.auto_suspend; users can enable/disable, change the
+// suspension method, edit method-specific config, and add/remove entries.
+// ---------------------------------------------------------------------------
+
+const AUTO_SUSPEND_METHODS = [
+    { value: 'sigstop', label: 'pause via SIGSTOP', fields: ['process_name'] },
+    { value: 'rest_unload', label: 'unload via REST', fields: ['endpoint'] },
+    { value: 'docker_stop', label: 'docker stop', fields: ['container'] },
+    { value: 'sigterm', label: 'SIGTERM (one-shot)', fields: ['process_name'] },
+];
+
+function autoSuspendMethodMeta(method) {
+    return AUTO_SUSPEND_METHODS.find(m => m.value === method) || AUTO_SUSPEND_METHODS[0];
+}
+
+function renderAutoSuspendList(entries) {
+    const host = $('auto-suspend-list');
+    if (!host) return;
+    host.innerHTML = '';
+    const list = Array.isArray(entries) ? entries : [];
+    list.forEach((e, i) => host.appendChild(renderAutoSuspendRow(e, i)));
+}
+
+function renderAutoSuspendRow(entry, idx) {
+    const row = document.createElement('div');
+    row.className = 'flex flex-wrap items-center gap-2 p-1 rounded border border-base-300/40';
+    row.dataset.asIdx = String(idx);
+    row.dataset.asId = entry.id || `entry-${idx}`;
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'checkbox checkbox-xs checkbox-primary';
+    cb.checked = !!entry.enabled;
+    cb.dataset.asField = 'enabled';
+    row.appendChild(cb);
+
+    const label = document.createElement('span');
+    label.className = 'text-xs flex-1 min-w-[10rem]';
+    label.innerText = entry.label || entry.id || `Service ${idx + 1}`;
+    row.appendChild(label);
+
+    const sel = document.createElement('select');
+    sel.className = 'select select-bordered select-xs';
+    sel.dataset.asField = 'method';
+    AUTO_SUSPEND_METHODS.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m.value; o.innerText = m.label;
+        if (m.value === entry.method) o.selected = true;
+        sel.appendChild(o);
+    });
+    sel.onchange = () => {
+        // Re-render this row so method-specific fields match the new method.
+        const list = readAutoSuspendList();
+        list[idx] = { ...list[idx], method: sel.value };
+        renderAutoSuspendList(list);
+    };
+    row.appendChild(sel);
+
+    // Method-specific config field(s).
+    const meta = autoSuspendMethodMeta(entry.method);
+    meta.fields.forEach(f => {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'input input-bordered input-xs flex-1 min-w-[8rem] font-mono text-[11px]';
+        inp.placeholder = f;
+        inp.value = entry[f] || '';
+        inp.dataset.asField = f;
+        row.appendChild(inp);
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-ghost btn-xs';
+    del.innerText = '×';
+    del.title = 'Remove';
+    del.onclick = () => {
+        const list = readAutoSuspendList();
+        list.splice(idx, 1);
+        renderAutoSuspendList(list);
+    };
+    row.appendChild(del);
+
+    return row;
+}
+
+function readAutoSuspendList() {
+    const host = $('auto-suspend-list');
+    if (!host) return [];
+    const out = [];
+    host.querySelectorAll('[data-as-idx]').forEach(row => {
+        const e = { id: row.dataset.asId };
+        row.querySelectorAll('[data-as-field]').forEach(el => {
+            const f = el.dataset.asField;
+            if (el.type === 'checkbox') e[f] = !!el.checked;
+            else e[f] = el.value;
         });
-    } catch (e) {
-        console.error('saveAutoSuspend failed', e);
-    }
+        // Preserve label by id where we can recognize it.
+        const known = (window.__autoSuspendLabels || {})[e.id];
+        if (known) e.label = known;
+        out.push(e);
+    });
+    return out;
+}
+
+function addAutoSuspendEntry() {
+    const list = readAutoSuspendList();
+    const id = `service-${Date.now().toString(36)}`;
+    list.push({
+        id, label: 'New service', enabled: false,
+        method: 'sigstop', process_name: '',
+    });
+    renderAutoSuspendList(list);
 }
 
 async function saveSettings() {
@@ -2390,8 +2488,8 @@ async function saveSettings() {
             temperature: parseFloat($('set-temp').value),
             max_retries: parseInt($('set-retries').value, 10),
             timeout_s: parseInt($('set-timeout').value, 10),
-            auto_suspend: !!($('set-llm-auto-suspend') && $('set-llm-auto-suspend').checked),
         },
+        auto_suspend: readAutoSuspendList(),
     };
     const fleetPrompt = $('set-fleet-prompt');
     if (fleetPrompt) {
