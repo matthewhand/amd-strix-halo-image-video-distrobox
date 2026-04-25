@@ -56,7 +56,8 @@ def get_outputs_disk(path):
         total_gb = round(du.total / (1024 ** 3), 1)
         used_gb = round(du.used / (1024 ** 3), 1)
         pct = round((du.used / du.total) * 100, 1) if du.total else 0
-        return {"used_gb": used_gb, "total_gb": total_gb, "pct": pct, "status": _status_from_pct(pct)}
+        free_gb = round(du.free / (1024 ** 3), 1)
+        return {"used_gb": used_gb, "total_gb": total_gb, "free_gb": free_gb, "pct": pct, "status": _status_from_pct(pct)}
     except Exception:
         return {"used_gb": 0, "total_gb": 0, "pct": 0, "status": "ok", "missing": True}
 
