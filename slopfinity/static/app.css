@@ -71,6 +71,54 @@
     transform-origin: left center;
 }
 
+/* Per-job progress bar (queue strip).
+   States are managed in app.js via classes:
+     .slop-progress-filling   — linear fill 0→100%, primary color
+     .slop-progress-overrun   — stays full + warning + pulsating glow at
+                                 a JS-driven exponentially-slowing period
+                                 (CSS var --pulse-period)
+     .slop-progress-success   — green; emits a 1.5 s celebrate flourish then static
+     .slop-progress-failed    — red;   emits a 1.5 s alert flourish then static
+     .slop-progress-cancelled — neutral grey, static
+   The width transition smooths out 1 Hz tick jumps so the bar appears to
+   crawl rather than step. */
+.slop-progress {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: hsl(var(--bc) / 0.12);
+    overflow: hidden;
+    margin-top: 4px;
+}
+.slop-progress > .slop-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 3px;
+    background: hsl(var(--p));
+    transition: width 0.5s linear, background-color 0.3s ease;
+}
+.slop-progress-fill.slop-progress-warning  { background: hsl(var(--wa)); }
+.slop-progress-fill.slop-progress-success  { background: hsl(var(--su)); }
+.slop-progress-fill.slop-progress-error    { background: hsl(var(--er)); }
+.slop-progress-fill.slop-progress-neutral  { background: hsl(var(--bc) / 0.4); }
+
+@keyframes slopfinity-progress-pulse {
+    0%, 100% { opacity: 1;    box-shadow: 0 0 0 rgba(0,0,0,0); }
+    50%      { opacity: 0.55; box-shadow: 0 0 8px currentColor; }
+}
+.slop-progress-overrun {
+    color: hsl(var(--wa));
+    animation: slopfinity-progress-pulse var(--pulse-period, 1s) ease-in-out infinite;
+}
+.slop-progress-celebrate {
+    color: hsl(var(--su));
+    animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
+}
+.slop-progress-alert {
+    color: hsl(var(--er));
+    animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
+}
+
 /* Slop card video controls — fade out the native control overlay until hover
    so the thumbnail isn't visually noisy in a dense grid. */
 #preview-grid video::-webkit-media-controls-panel,
@@ -87,4 +135,11 @@
 @-moz-document url-prefix() {
     #preview-grid video { filter: contrast(0.95); }
     #preview-grid > [data-slop-kind]:hover video { filter: none; }
+}
+
+/* Tint the letter unit suffixes (h/m/s) in elapsed/ETA strings so the
+   numeric digits visually pop without the units disappearing. Emitted
+   by _fmtElapsedHtml() in app.js. */
+.time-unit {
+    opacity: 0.55;
 }
