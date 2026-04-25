@@ -205,8 +205,10 @@ function _renderDoneAssetRow(filename) {
 
 function _renderDoneItem(q) {
     const dur = q.duration_s ? _fmtElapsedHtml(q.duration_s * 1000) : '';
-    const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
-    const sym = q.succeeded === false ? '✗' : '✓';
+    const failed = q.succeeded === false;
+    const cls = failed ? 'badge-error' : 'badge-success';
+    const sym = failed ? '✗' : '✓';
+    const verdict = failed ? 'failed' : 'done';
     const promptEsc = _htmlEscape(q.prompt || '');
     // Backwards-compat: pre-asset-tracking done records only have v_idx /
     // image_only. Synthesize a best-guess single-asset list from that so old
@@ -259,7 +261,7 @@ function _renderDoneItem(q) {
     return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
         <details data-q-id="${qid}"${openAttr}>
             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
-                <span class="badge badge-xs ${cls}">${sym} done</span>
+                <span class="badge badge-xs ${cls}">${sym} ${verdict}</span>
                 <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
                 ${assetCountBadge}
                 ${metaGroup}
@@ -1347,6 +1349,7 @@ function connect() {
             _updateConnPill(isRunning, d.state && d.state.mode, d.state && d.state.step);
             const qLen = d.queue.length + (isRunning ? 1 : 0);
             $('q-count').innerText = qLen;
+            _refreshClearFailedVisibility(d.queue);
             const qList = $('q-list');
             const cfg = d.config || {};
             const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
@@ -2009,6 +2012,27 @@ async function updatePipeline() {
 function openQueueDrawer() {
     const t = $('queue-drawer-toggle');
     if (t) t.checked = true;
+}
+
+async function clearFailedQueue() {
+    const btn = document.getElementById('btn-clear-failed');
+    if (btn) btn.disabled = true;
+    try {
+        const r = await fetch('/queue/clear-failed', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) console.warn('clear-failed:', j);
+    } catch (e) {
+        console.warn('clear-failed fetch:', e);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function _refreshClearFailedVisibility(queue) {
+    const btn = document.getElementById('btn-clear-failed');
+    if (!btn) return;
+    const anyFailed = (queue || []).some(q => q.status === 'done' && q.succeeded === false);
+    btn.style.display = anyFailed ? '' : 'none';
 }
 
 async function generateTts() {
