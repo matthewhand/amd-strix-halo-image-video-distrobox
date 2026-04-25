@@ -518,7 +518,8 @@ function _buildActiveJobProgressBar(d) {
         ? 0
         : Math.min(1, stageElapsedSec / curStageAvg);
     const isOverrun = curIdx >= 0 && _stageStartTs && stageElapsedSec > curStageAvg;
-    const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
+    // Activity text is no longer derived here — the queue-header label is
+    // backend-driven via the `render_heartbeat` WS event with a TTL.
     const jobElapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
     const totalElapsedHTML = _fmtElapsedHtml(jobElapsedMs);
     const totalEtaHTML = _fmtElapsedHtml(totalSec * 1000);
@@ -941,16 +942,12 @@ setInterval(() => {
         const segElapsedEl = curSeg.querySelector('[data-seg-elapsed]');
         if (segElapsedEl) segElapsedEl.innerHTML = _fmtElapsedHtml(stageElapsed * 1000);
     }
-    // Activity text — re-derive in case stage label changed (rare, but cheap).
-    const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
-    // Single source of truth for the rendering label: the queue header. The
-    // duplicate that used to live below the progress bar was dropped — we
-    // only want one. Hide it entirely if there's no current stage (idle or
-    // error state — curStage falsy).
-    const headerAct = document.getElementById('queue-header-activity');
-    const headerTxt = headerAct && headerAct.querySelector('[data-queue-header-activity-text]');
-    if (headerAct) headerAct.style.display = curStage ? 'inline-flex' : 'none';
-    if (headerTxt && headerTxt.textContent !== activityText) headerTxt.textContent = activityText;
+    // Activity text is now backend-driven via the `render_heartbeat` WS
+    // event — _applyRenderHeartbeat() owns the queue-header-activity DOM,
+    // gated by the heartbeat's TTL so a stalled scheduler can't leave the
+    // spinner stuck on. The 1Hz expiry ticker (setInterval below) keeps
+    // the label hiding itself if heartbeats stop arriving.
+    if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
     // Total elapsed / ETA (below the bar). Per-step elapsed/ETA was lifted
     // out of the header row — see _buildActiveJobProgressBar().
     const totEl = bar.querySelector('[data-pipeline-total-elapsed]');
@@ -1592,6 +1589,28 @@ const _STAGE_TEXT = {
     'Final Merge':   'merging final',
 };
 
+// Backend-driven activity heartbeat. The server emits a `render_heartbeat`
+// WS event every ~2 s while a stage is running, carrying an `expires_ts`
+// (~15 s in the future). The queue-header-activity label only shows while
+// `Date.now() < _renderHeartbeat.expiresAt` — so if the backend stalls,
+// the next heartbeat never arrives and the 1 Hz expiry ticker hides the
+// spinner cleanly. Replaces the old client-side derivation off state.step.
+let _renderHeartbeat = null;
+function _applyRenderHeartbeat() {
+    const headerAct = document.getElementById('queue-header-activity');
+    if (!headerAct) return;
+    const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
+    const live = !!(_renderHeartbeat && Date.now() < _renderHeartbeat.expiresAt);
+    headerAct.style.display = live ? 'inline-flex' : 'none';
+    if (live && txtEl && _renderHeartbeat.text && txtEl.textContent !== _renderHeartbeat.text) {
+        txtEl.textContent = _renderHeartbeat.text;
+    }
+    if (!live && _renderHeartbeat) _renderHeartbeat = null;
+}
+// 1 Hz expiry tick — fires regardless of WS traffic so a stalled backend
+// hides the label within ~1 s of the TTL elapsing.
+setInterval(_applyRenderHeartbeat, 1000);
+
 // Pretty display label for a configured model id (from config snapshot).
 function _modelDisplayName(id, role) {
     if (!id || id === 'none') return '';
@@ -2050,6 +2069,15 @@ function connect() {
     };
     ws.onmessage = e => {
         const d = JSON.parse(e.data);
+        if (d.type === 'render_heartbeat') {
+            // Backend-driven activity label with TTL — see _applyRenderHeartbeat.
+            _renderHeartbeat = {
+                text: d.text || 'working…',
+                expiresAt: (typeof d.expires_ts === 'number' ? d.expires_ts * 1000 : Date.now() + 15000),
+            };
+            _applyRenderHeartbeat();
+            return;
+        }
         if (d.type === 'state') {
             // Tone the percentage colour with the latest ticker column —
             // text-error above 80 %, otherwise the per-pill tone class. Keeps
