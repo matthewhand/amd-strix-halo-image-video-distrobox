@@ -85,14 +85,19 @@ function _applySuggestionsHiddenState() {
   const area = document.getElementById('subjects-suggestions-area');
   const closeBtn = document.getElementById('subjects-suggestions-close');
   const suggestBtn = document.getElementById('subjects-suggest-btn');
-  const link = document.getElementById('subjects-suggestions-toggle');
+  const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
+  const toggleBtn = document.getElementById('subjects-suggestions-toggle');
   if (area) area.style.display = hidden ? 'none' : '';
   if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
+  // Hide Regenerate + Suggestion Prompt buttons when suggestions are hidden;
+  // the "Need Suggestions?" toggle button stays visible to invite reveal.
   if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
-  if (link) {
-    link.classList.toggle('underline', hidden);
-    link.classList.toggle('text-primary', hidden);
-    link.title = hidden ? 'Click to reveal suggestions' : '';
+  if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('btn-primary', !hidden);
+    toggleBtn.classList.toggle('btn-outline', true);
+    toggleBtn.title = hidden ? 'Reveal suggestion controls' : 'Hide suggestion controls';
+    toggleBtn.setAttribute('aria-pressed', !hidden);
   }
 }
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
@@ -1818,6 +1823,18 @@ async function saveSchedSafety(v) {
     }
 }
 
+async function saveSchedUsePlanner(checked) {
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduler: { use_planner: !!checked } }),
+        });
+    } catch (e) {
+        console.warn('saveSchedUsePlanner failed', e);
+    }
+}
+
 function updateDiagnostics(d) {
     const g = $('diag-gpu'); if (g && d.stats) g.innerText = d.stats.gpu + '%';
     const v = $('diag-vram'); if (v && d.stats) v.innerText = d.stats.vram + '%';
@@ -3157,6 +3174,9 @@ async function openSettings() {
             safetyEl.value = safety;
             const lbl = $('sched-safety-val'); if (lbl) lbl.innerText = safety;
         }
+        const usePlanner = !!(sr.scheduler && sr.scheduler.use_planner);
+        const planEl = $('sched-use-planner');
+        if (planEl) planEl.checked = usePlanner;
         // Hydrate theme selector from localStorage (falling back to branding default).
         const themeSel = $('theme-select');
         if (themeSel) {
