@@ -90,11 +90,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install requests pytest
+        python -m pip install requests pytest fastapi 'uvicorn[standard]' jinja2 python-multipart
 
     - name: Run syntax validation
       run: |
-        python -m py_compile tests/e2e_qwen_web_test.py tests/mock_qwen_server.py
+        python -m py_compile tests/e2e_qwen_web_test.py tests/mock_qwen_server.py \
+          tests/mock_llm_server.py tests/mock_tts_server.py \
+          tests/test_ai_mock_integration.py
         python -c "import tests.e2e_qwen_web_test; print('Test script syntax valid')"
 
     - name: Create test output dir
@@ -107,3 +109,10 @@ jobs:
         MOCK_QWEN_WEB: "1"
       run: |
         python tests/e2e_qwen_web_test.py
+
+    - name: Run AI mock integration test
+      env:
+        LLM_PROVIDER_BASE_URL: http://127.0.0.1:11434
+        TTS_WORKER_URL: http://127.0.0.1:8010/tts
+      run: |
+        python -m pytest tests/test_ai_mock_integration.py -v
