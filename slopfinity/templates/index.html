@@ -103,13 +103,13 @@
        (handle still rendered, but flex stacks naturally). The wrapper is purely
        structural — every existing #id underneath keeps its identity so WS-driven
        re-renders that target #q-list, #preview-grid, #out-finals, etc. still hit. #}
-    <div id="ui-split" class="flex flex-col" style="height: calc(100vh - 120px)">
-    <div id="ui-split-upper" class="overflow-auto custom-scrollbar" style="flex: 1 1 auto; min-height: 200px;">
+    <div id="ui-split" class="flex flex-col" style="height: calc(100vh - 120px); min-height: 0;">
+    <div id="ui-split-upper" class="ui-split-pane custom-scrollbar">
 
     <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
-    <div id="split-row" class="flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
-    <section id="split-left" class="card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
-        <div class="card-body gap-3">
+    <div id="split-row" class="ui-split-row flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
+    <section id="split-left" class="ui-split-card card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
+        <div class="card-body gap-3 ui-split-cardbody">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-bold uppercase tracking-wider text-primary">Subjects</span>
                 {# Right-side cluster: live summary pill + pipeline-config button sit together so the
@@ -169,8 +169,8 @@
     </div>
 
     <!-- Queue — sits to the right of Subjects on wide viewports. -->
-    <section id="split-right" class="card bg-base-100 border border-base-300 shadow xl:flex-1 xl:basis-1/2 min-w-0">
-        <div class="card-body p-3 gap-2 mb-0">
+    <section id="split-right" class="ui-split-card card bg-base-100 border border-base-300 shadow xl:flex-1 xl:basis-1/2 min-w-0">
+        <div class="card-body p-3 gap-2 mb-0 ui-split-cardbody">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-bold uppercase tracking-wider text-accent flex-none">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
                 {# Connection-lost pill stays here as a fallback only — the active stage badge inside each queue item now carries the live action verb (Imaging/Videoing). Hidden on Idle / when WS is healthy. #}
@@ -179,7 +179,7 @@
                 </span>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
-            <ul id="q-list" class="flex flex-col gap-2">
+            <ul id="q-list" class="flex flex-col gap-2 ui-split-scrollarea">
                 {% for q in (queue or [])[:6] %}
                     {% set is_active = (state.mode != 'Idle' and loop.index0 == 0 and q.status != 'cancelled') %}
                     {% set snap = q.config_snapshot or config %}
@@ -235,7 +235,7 @@
 
     </div> {# /ui-split-upper #}
     <div id="ui-split-handle" class="flex-none cursor-row-resize select-none" title="Drag to resize · double-click to reset"></div>
-    <div id="ui-split-lower" class="overflow-auto custom-scrollbar" style="flex: 1 1 auto; min-height: 200px;">
+    <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
 
     {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
     <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">

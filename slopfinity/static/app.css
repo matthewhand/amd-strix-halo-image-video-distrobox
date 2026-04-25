@@ -227,6 +227,66 @@ textarea.subjects-autogrow {
 #ui-split-handle.dragging::after {
     background: hsl(var(--p));
 }
+/* Splitter pane sizing — both upper and lower share the same shrink/grow
+   contract: flex:1 1 0 (NOT 1 1 auto, which lets natural content height push
+   the pane outward and defeats the squash) and min-height:0 (so flex children
+   can shrink below their content size). overflow:hidden on the pane itself
+   forces the SQUASH to propagate down to the inner cards instead of letting
+   the pane scroll and the cards keep their intrinsic height. The cards
+   themselves carry the scroll affordance. */
+.ui-split-pane {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+/* The Subjects+Queue row fills its parent pane's height so each card sees
+   100% of the available vertical room (capped, not unbounded). */
+.ui-split-row {
+    min-height: 0;
+}
+@media (min-width: 1280px) {
+    .ui-split-row {
+        flex: 1 1 0;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+    }
+    .ui-split-card {
+        min-height: 0;
+        max-height: 100%;
+        overflow: hidden;
+    }
+    .ui-split-cardbody {
+        min-height: 0;
+        flex: 1 1 0;
+        overflow: hidden;
+    }
+    /* Subjects textarea (#p-core) — let it shrink with its parent card; its
+       row count gives the natural size, but min-height:0 means it gives up
+       height before the buttons below get clipped. */
+    #split-left #p-core {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+    /* Queue list — scroll internally when squashed instead of pushing the
+       card outward. Already a flex item; min-height:0 + overflow-y:auto is
+       what unlocks shrinking-with-scroll. */
+    .ui-split-scrollarea {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    /* Lower pane: its first child is #sched-strip (often hidden) followed by
+       #output-section. Let the section take remaining height and scroll
+       internally so the slop grid never forces the pane outward. */
+    #ui-split-lower > #output-section {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+    }
+}
 @media (max-width: 768px) {
     #ui-split {
         height: auto !important;
@@ -235,6 +295,7 @@ textarea.subjects-autogrow {
     #ui-split-upper, #ui-split-lower {
         overflow: visible !important;
         flex: none !important;
+        display: block !important;
     }
     #ui-split-handle { pointer-events: none; opacity: 0.4; }
 }
