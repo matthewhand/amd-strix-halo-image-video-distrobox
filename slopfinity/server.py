@@ -861,6 +861,11 @@ async def broadcast():
     # panel can keep it visible (greyed) until the NEXT job completes —
     # see UI request: "completed items stay until the next one completes".
     _last_completed = None
+    # Per-current-job stage actuals: { video_index: { 'Concept': {duration_s, ended_ts}, ... } }
+    # Resets when video_index changes. Lets the frontend show timing for
+    # past stages (Text, Image, Video, …) on the active row even after
+    # the user refreshes the page — JS-local _jobActuals doesn't survive.
+    _job_stage_actuals = {}
     _prev_state = None
     while True:
         try:
@@ -869,10 +874,17 @@ async def broadcast():
             cur_step = state.get("step")
             cur_v = state.get("video_index")
             if cur_step != _stage_track["step"]:
+                # Stage transition — record the OUTGOING stage's actual duration
+                # against the current job before flipping.
+                outgoing = _stage_track["step"]
+                if outgoing and cur_v:
+                    _job_stage_actuals.setdefault(cur_v, {})[outgoing] = {
+                        "duration_s": now_ts - _stage_track["since"],
+                        "ended_ts": now_ts,
+                    }
                 _stage_track["step"] = cur_step
                 _stage_track["since"] = now_ts
             if cur_v != _job_track["video_index"]:
-                # The PREVIOUS job (if any) just completed — snapshot it.
                 if _prev_state and _prev_state.get("video_index"):
                     _last_completed = {
                         "video_index": _prev_state.get("video_index"),
@@ -880,11 +892,14 @@ async def broadcast():
                         "completed_ts": now_ts,
                         "started_ts": _job_track["since"],
                     }
+                # Drop stale per-job actuals for old jobs (keep only the new one).
+                _job_stage_actuals = {cur_v: _job_stage_actuals.get(cur_v, {})} if cur_v else {}
                 _job_track["video_index"] = cur_v
                 _job_track["since"] = now_ts
             state["stage_started_ts"] = _stage_track["since"]
             state["job_started_ts"] = _job_track["since"]
             state["last_completed"] = _last_completed
+            state["stage_actuals"] = _job_stage_actuals.get(cur_v, {}) if cur_v else {}
             _prev_state = state
             stats = get_sys_stats()
             queue = cfg.get_queue()

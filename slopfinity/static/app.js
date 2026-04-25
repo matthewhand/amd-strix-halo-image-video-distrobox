@@ -894,21 +894,25 @@ function connect() {
                     const dur = (Date.now() - _stageStartTs) / 1000;
                     _saveStageDuration(_lastStage, dur);
                     _renderStageEtas();
-                    // Cache the actual against the ETA-at-start for this job.
-                    const v = _lastJobIndex || 0;
-                    if (v) {
-                        _jobActuals[v] = _jobActuals[v] || {};
-                        _jobActuals[v][_lastStage] = {
-                            duration_s: dur,
-                            eta_s: _stageAvgSeconds(_lastStage),
-                        };
-                    }
                 }
                 _lastStage = d.state.step;
             }
             if (d.state.video_index !== _lastJobIndex) {
-                if (d.state.video_index) _jobActuals[d.state.video_index] = _jobActuals[d.state.video_index] || {};
                 _lastJobIndex = d.state.video_index;
+            }
+            // Hydrate _jobActuals from backend so refresh doesn't lose the
+            // Text/Image/Video timing rows. Backend tracks stage transitions
+            // in state.stage_actuals = { stage_name: { duration_s, ended_ts } }
+            // for the current job; we re-shape it into our lookup format.
+            const v = d.state.video_index;
+            if (v && d.state.stage_actuals) {
+                _jobActuals[v] = _jobActuals[v] || {};
+                for (const [stage, info] of Object.entries(d.state.stage_actuals)) {
+                    _jobActuals[v][stage] = {
+                        duration_s: info.duration_s,
+                        eta_s: _stageAvgSeconds(stage),
+                    };
+                }
             }
             // Convert backend ts (seconds since epoch) to JS Date.now() base.
             const stageTs = d.state.stage_started_ts;
