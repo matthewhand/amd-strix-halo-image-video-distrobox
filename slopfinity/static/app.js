@@ -1148,8 +1148,7 @@ function connect() {
             const isV = file.endsWith('.mp4');
             const isWav = file.endsWith('.wav');
             const isFinal = isV && /^FINAL_/i.test(file);
-            const isChainPngLive = /^v\d+_(base|f\d+)\.png$/i.test(file);
-            const kind = isV ? 'video' : isWav ? 'audio' : (isChainPngLive ? 'video' : 'image');
+            const kind = isV ? 'video' : isWav ? 'audio' : 'image';
             const g = $('preview-grid');
             if (!g) return;
             const outSec = $('output-section');

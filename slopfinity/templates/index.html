@@ -237,11 +237,9 @@
                 {% set is_wav = f.endswith('.wav') %}
                 {% set is_final = is_mp4 and f.startswith('FINAL_') %}
                 {# kind drives filter-chip visibility (video / image / audio).
-                   FINAL_*.mp4, chain clips, AND chain-stage PNGs (v<N>_base.png /
-                   v<N>_f<M>.png) all share 'video' kind so the video chip surfaces
-                   the whole pipeline output, not just the final aggregations. #}
-                {% set _chain_png = f.endswith('.png') and (f.startswith('v') and ('_base.' in f or '_f' in f)) %}
-                {% set kind = 'video' if (is_mp4 or _chain_png) else ('audio' if is_wav else 'image') %}
+                   PNG = image regardless of provenance (qwen base, LTX bridge,
+                   etc); MP4 = video; WAV = audio. Filename intuition wins. #}
+                {% set kind = 'video' if is_mp4 else ('audio' if is_wav else 'image') %}
                 {% set model_id = '' %}
                 {% set part_n = '' %}
                 {% set final_n = '' %}
