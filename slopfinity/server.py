@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
 import json
+import random
 import subprocess
 import time
 import asyncio
@@ -113,6 +114,7 @@ async def index(request: Request):
         config.get("video_model"),
         config.get("audio_model"),
         config.get("upscale_model"),
+        config.get("tts_model"),
     )
     return templates.TemplateResponse(
         request=request,
@@ -241,12 +243,67 @@ async def subjects_suggest(n: int = 6):
     return {"suggestions": suggestions, "cached": False}
 
 
+# Real-model candidate pools per role. `__random__` picks uniformly from
+# the role's pool when /config arrives. Keep these in sync with the option
+# lists in templates/index.html.
+_RANDOM_CANDIDATES = {
+    "base_model":  ["qwen", "ernie"],
+    "audio_model": ["heartmula"],
+    "tts_model":   ["qwen-tts", "kokoro"],
+}
+
+
 @app.post("/config")
 async def update_config(data: dict = Body(...)):
     config = cfg.load_config()
+    # Resolve `__random__` placeholders to a concrete model from the role's
+    # candidate pool. We persist the chosen model (not the sentinel) so the
+    # rest of the pipeline never has to know about pseudo-models. `__slopped__`
+    # without a concrete file selection is treated the same as `__random__`
+    # (fall back to a real model) — the UI is responsible for sending
+    # `slopped:<filename>` once the user picks one.
+    for role, pool in _RANDOM_CANDIDATES.items():
+        v = data.get(role)
+        if v == "__random__" or v == "__slopped__":
+            data[role] = random.choice(pool) if pool else "none"
     config.update(data)
     cfg.save_config(config)
     return {"status": "ok"}
+
+
+# File-extension filters for the slopped sub-select per role. Voice (TTS) and
+# music both produce WAVs in the current pipeline so they share the same set.
+_SLOPPED_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp"),
+    "audio": (".wav", ".mp3", ".flac", ".ogg"),
+    "tts":   (".wav", ".mp3", ".flac", ".ogg"),
+}
+
+
+@app.get("/pipeline/slopped")
+async def pipeline_slopped(role: str):
+    """List existing assets in EXP_DIR matching the given role's extensions.
+
+    Used by the pipeline popup to populate the small `<select>` shown beneath
+    a model dropdown when the user picks `Slopped`. Returns up to 200 entries,
+    newest first.
+    """
+    exts = _SLOPPED_EXTS.get(role)
+    if not exts:
+        return {"role": role, "files": []}
+    files = []
+    try:
+        for name in os.listdir(EXP_DIR):
+            if not name.lower().endswith(exts):
+                continue
+            path = os.path.join(EXP_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            files.append((name, os.path.getmtime(path)))
+    except Exception:
+        pass
+    files.sort(key=lambda x: x[1], reverse=True)
+    return {"role": role, "files": [n for n, _ in files[:200]]}
 
 
 @app.post("/inject")
@@ -521,8 +578,14 @@ async def mux(data: dict = Body(...)):
 
 
 @app.get("/ram_estimate")
-async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale: str = ""):
-    return get_ram_estimate(base or None, video or None, audio or None, upscale or None)
+async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale: str = "", tts: str = ""):
+    return get_ram_estimate(
+        base or None,
+        video or None,
+        audio or None,
+        upscale or None,
+        tts or None,
+    )
 
 
 @app.get("/asset/{filename}")
@@ -943,6 +1006,7 @@ async def broadcast():
                 config.get("video_model"),
                 config.get("audio_model"),
                 config.get("upscale_model"),
+                config.get("tts_model"),
             )
             outputs = get_output_counts(EXP_DIR)
             outputs_disk = get_outputs_disk(EXP_DIR)

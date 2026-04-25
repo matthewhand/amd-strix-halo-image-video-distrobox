@@ -474,13 +474,66 @@ function updateRam(ram) {
     if (!el) return;
     const txt = el.querySelector('.ram-txt');
     const bar = el.querySelector('.ram-bar');
+    const bd  = el.querySelector('.ram-breakdown');
     if (txt) txt.innerText = `${ram.estimated_gb} / ${ram.budget_gb || 128} GB unified`;
     if (bar) {
-        bar.className = 'ram-bar progress w-full ' + progressClass(ram.status);
+        bar.className = 'ram-bar progress w-full mt-1 ' + progressClass(ram.status);
         bar.value = Math.min(100, (ram.estimated_gb / (ram.budget_gb || 128)) * 100);
+    }
+    // Per-model WILL-USE rows. We hide entries with gb===0 unless they're
+    // overhead, so the table doesn't get polluted with `Voice  —  0.0 GB`
+    // lines when the user has TTS off. The server emits role-keyed entries
+    // in pipeline order; we render them as a fixed-width table.
+    if (bd && Array.isArray(ram.breakdown)) {
+        const rows = [];
+        for (const e of ram.breakdown) {
+            if (e.role !== 'overhead' && (!e.gb || e.gb <= 0)) continue;
+            const stage = (e.stage || '').padEnd(7);
+            const label = (e.label || e.model || '').toString();
+            const labelTrim = label.length > 22 ? label.slice(0, 21) + '…' : label.padEnd(22);
+            const gb = (Math.round((e.gb || 0) * 10) / 10).toFixed(1);
+            rows.push(`<div>${_htmlEscape(stage)} ${_htmlEscape(labelTrim)} <span class="float-right">${gb} GB</span></div>`);
+        }
+        rows.push('<div class="opacity-50">────────────────────────────</div>');
+        const total = (Math.round((ram.estimated_gb || 0) * 10) / 10).toFixed(1);
+        const budget = ram.budget_gb || 128;
+        rows.push(`<div><b>Total</b> <span class="float-right"><b>${total} GB</b> / ${budget} GB unified</span></div>`);
+        bd.innerHTML = rows.join('');
     }
     el.className = 'alert p-2 ' + (ram.status === 'danger' ? 'alert-error' : ram.status === 'warn' ? 'alert-warning' : 'alert-success');
     el.id = 'ram-est';
+}
+
+// Show/hide the slopped sub-select for a given role and populate it on demand.
+// Wired via inline onchange handlers on cfg-base / cfg-audio / cfg-tts.
+//   selId    - 'base' | 'audio' | 'tts'  (matches cfg-<id>)
+//   roleName - 'image' | 'audio' | 'tts' (server /pipeline/slopped role param)
+async function _onPseudoChanged(selId, roleName) {
+    const top = $('cfg-' + selId);
+    const sub = $('cfg-' + selId + '-slopped');
+    if (!top || !sub) return;
+    if (top.value !== '__slopped__') {
+        sub.classList.add('hidden');
+        sub.innerHTML = '';
+        return;
+    }
+    sub.classList.remove('hidden');
+    if (sub.options.length === 0) {
+        sub.innerHTML = '<option value="">loading…</option>';
+        try {
+            const r = await fetch('/pipeline/slopped?role=' + encodeURIComponent(roleName));
+            const j = await r.json();
+            const files = (j && j.files) || [];
+            if (!files.length) {
+                sub.innerHTML = '<option value="">(no existing files)</option>';
+                return;
+            }
+            sub.innerHTML = '<option value="">— pick a file —</option>'
+                + files.map(f => `<option value="slopped:${_htmlEscape(f)}">${_htmlEscape(f)}</option>`).join('');
+        } catch (e) {
+            sub.innerHTML = '<option value="">(error)</option>';
+        }
+    }
 }
 
 function schedBadgeClass(type) {
@@ -1659,6 +1712,20 @@ function _renderSubjectsModels() {
 }
 
 async function updatePipeline() {
+    // Resolve a model select's value, swapping in the slopped sub-select
+    // value when the user has picked __slopped__ AND chosen a concrete file.
+    // If they haven't picked yet, leave `__slopped__` so the server's random
+    // fallback kicks in (rather than persisting the sentinel).
+    const _resolve = (topId, subId) => {
+        const top = $(topId) ? $(topId).value : '';
+        if (top !== '__slopped__') return top;
+        const sub = $(subId);
+        const subVal = sub ? sub.value : '';
+        return subVal && subVal.startsWith('slopped:') ? subVal : '__slopped__';
+    };
+    const baseVal  = _resolve('cfg-base',  'cfg-base-slopped');
+    const audioVal = _resolve('cfg-audio', 'cfg-audio-slopped');
+    const ttsVal   = _resolve('cfg-tts',   'cfg-tts-slopped');
     const body = {
         infinity_mode: $('inf-on') ? $('inf-on').checked : false,
         // Prefer newline-based subjects from #p-core textarea; fall back to
@@ -1666,9 +1733,10 @@ async function updatePipeline() {
         infinity_themes: _subjectsFromTextarea().length
             ? _subjectsFromTextarea()
             : ($('inf-themes') ? $('inf-themes').value.split(',').map(s => s.trim()).filter(Boolean) : []),
-        base_model: $('cfg-base') ? $('cfg-base').value : '',
+        base_model: baseVal,
         video_model: $('cfg-video') ? $('cfg-video').value : '',
-        audio_model: $('cfg-audio') ? $('cfg-audio').value : '',
+        audio_model: audioVal,
+        tts_model: ttsVal,
         upscale_model: $('cfg-upscale') ? $('cfg-upscale').value : '',
         frames: $('cfg-frames') ? parseInt($('cfg-frames').value, 10) :
                 ($('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49),
@@ -1692,6 +1760,7 @@ async function updatePipeline() {
             video: body.video_model,
             audio: body.audio_model,
             upscale: body.upscale_model,
+            tts: body.tts_model,
         });
         const res = await fetch('/ram_estimate?' + qs.toString());
         if (res.ok) updateRam(await res.json());
