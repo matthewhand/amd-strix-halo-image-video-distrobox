@@ -440,7 +440,7 @@
                         <div class="badge badge-ghost font-mono" id="cfg-llm-provider">{{ (config.llm.provider if config.llm and config.llm.provider else 'lmstudio') }}</div>
                     </div>
                 </div>
-                <button type="button" class="btn btn-sm btn-secondary btn-outline" onclick="$('pipeline-modal').close(); openSettingsModal && openSettingsModal();">Open Settings → LLM</button>
+                <button type="button" class="btn btn-sm btn-secondary btn-outline" onclick="$('pipeline-modal').close(); openSettings();">Open Settings → LLM</button>
             </div>
 
             <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🖼 Image" />
