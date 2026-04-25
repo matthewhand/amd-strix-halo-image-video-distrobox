@@ -246,6 +246,15 @@ textarea.subjects-autogrow {
 .ui-split-row {
     min-height: 0;
 }
+/* Queue list — keep the rendered height stable regardless of how many items
+   are queued. New items scroll internally instead of pushing the whole page
+   down. The lg+ block below replaces this cap with the splitter's flex
+   constraints once the side-by-side layout kicks in. */
+#q-list {
+    max-height: 50vh;
+    min-height: 0;
+    overflow-y: auto;
+}
 @media (min-width: 1280px) {
     .ui-split-row {
         flex: 1 1 0;
@@ -274,6 +283,14 @@ textarea.subjects-autogrow {
        card outward. Already a flex item; min-height:0 + overflow-y:auto is
        what unlocks shrinking-with-scroll. */
     .ui-split-scrollarea {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    /* At lg+ the splitter's flex constraints govern queue size, so release
+       the viewport-relative caps applied above. */
+    #q-list {
+        max-height: none;
         flex: 1 1 0;
         min-height: 0;
         overflow-y: auto;
