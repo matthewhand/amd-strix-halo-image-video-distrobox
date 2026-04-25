@@ -3080,24 +3080,41 @@ async function toggleInfinity() {
 // started — the button label must reflect real state, not just the toggle.
 let _isRendering = false;
 
+// Compose the start-button label from every Generation toggle that affects
+// the queued action. Pattern:
+//   "[Terminate and ]Queue [Infinite ][Polymorphic ]Slop[ (now[, when idle])]"
+// so the user can see — without opening the modal — exactly what the next
+// click will do. Each toggle's onchange must call _updateStartBtn() so the
+// label stays in sync.
+function _composeStartBtnLabel() {
+  const $ = (id) => document.getElementById(id);
+  const term = !!($('term-on') && $('term-on').checked);
+  const inf = !!($('inf-on') && $('inf-on').checked);
+  const idle = !!($('when-idle-on') && $('when-idle-on').checked);
+  const chaos = !!($('chaos-on') && $('chaos-on').checked);
+  const now = !!($('now-on') && $('now-on').checked);
+
+  let label = '';
+  if (term) label += 'Terminate and ';
+  label += 'Queue ';
+  if (inf) label += 'Infinite ';
+  if (chaos) label += 'Polymorphic ';
+  label += 'Slop';
+
+  const modifiers = [];
+  if (now) modifiers.push('now');
+  if (idle) modifiers.push('when idle');
+  if (modifiers.length) label += ' (' + modifiers.join(', ') + ')';
+  return label;
+}
+
 function _updateStartBtn() {
   const b = document.getElementById('btn-start-stop');
   if (!b) return;
   // Each click queues a new item. The Infinity toggle in the Generation tab
   // makes the queued item re-loop after each completion (cancel via the ✕ on
   // its queue row). Never use this button to stop running jobs.
-  const inf = document.getElementById('inf-on');
-  const now = document.getElementById('now-on');
-  const term = document.getElementById('term-on');
-  const termOn = !!(term && term.checked);
-  const infOn = !!(inf && inf.checked);
-  if (termOn && infOn) { b.textContent = 'Terminate and Queue Infinite Slop'; return; }
-  if (termOn) { b.textContent = 'Terminate & Queue'; return; }
-  if (infOn) {
-    b.textContent = (now && now.checked) ? 'Queue Infinite Slop (now)' : 'Queue Infinite Slop';
-    return;
-  }
-  b.textContent = (now && now.checked) ? 'Queue Now' : 'Queue Slop';
+  b.textContent = _composeStartBtnLabel();
 }
 
 // Polymorphic + When Idle only make sense when the fleet is looping —
