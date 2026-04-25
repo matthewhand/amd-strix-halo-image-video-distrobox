@@ -1234,7 +1234,7 @@ const _STAGE_ASSET = (stage, v_idx, c_idx) => {
 const _STAGE_TEXT = {
     'Concept':       'generating prompts',
     'Base Image':    'rendering image',
-    'Video Chains':  'rendering video chain',
+    'Video Chains':  'rendering video part',
     'Audio':         'composing music',
     'TTS':           'recording voiceover',
     'Post Process':  'polishing',
@@ -1340,7 +1340,7 @@ function openModelSettingsPopup(role, qTs) {
     } else if (role === 'video') {
         push('Model',        _modelDisplayName(snap.video_model, 'video'));
         push('Frames',       snap.frames);
-        push('Chains',       snap.chains);
+        push('Parts',        snap.chains);
         push('Quality ramp', snap.video_quality_ramp ? 'on' : 'off');
     } else if (role === 'audio') {
         push('Model',        _modelDisplayName(snap.audio_model, 'audio'));
@@ -1516,15 +1516,9 @@ function updateOutputs(o) {
 function updateScheduler(sc) {
     if (!sc) return;
     const events = (sc.events || []).slice(-5);
-    // Hide the whole strip when we have nothing to show (reduces visual noise when idle).
-    const strip = $('sched-strip');
-    if (strip) strip.style.display = (events.length > 0 || sc.paused) ? 'flex' : 'none';
-    const pauseBadge = $('sched-pause-badge');
-    if (pauseBadge) {
-        pauseBadge.innerText = sc.paused ? 'paused' : 'live';
-        pauseBadge.className = 'badge badge-sm font-mono ' + (sc.paused ? 'badge-warning' : 'badge-ghost');
-    }
-    // Settings-modal Scheduler tab badge
+    // Settings-modal Scheduler tab badge — the only place scheduler state
+    // surfaces in the UI now (the main-page strip was removed; the Settings
+    // → Scheduler tab is the proper home for this content).
     const statusBadge = $('sched-status-badge');
     if (statusBadge) {
         statusBadge.innerText = sc.paused ? '⏸ Paused' : '▶ Running';
@@ -1542,7 +1536,6 @@ function updateScheduler(sc) {
             `<span id="${idPrefix}-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tipFor(e)}">${e.type}: ${labelFor(e)}</span>`
         ).join('');
     };
-    renderEvents($('sched-timeline'), 'sched-event');
     renderEvents($('sched-recent'), 'sched-recent-event');
 }
 
@@ -1832,7 +1825,7 @@ function connect() {
             const STAGES = [
                 ['Concept',      'T', 'Text',  'Texting',    'accent'],
                 ['Base Image',   'I', 'Image', 'Imaging',    'info'],
-                ['Video Chains', 'V', 'Video', 'Videoing',   'success'],
+                ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
                 ['Audio',        'M', 'Music', 'Composing',  'secondary'],
                 ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
                 ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
@@ -2123,6 +2116,28 @@ function connect() {
             updateRam(d.ram);
             updateScheduler(d.scheduler);
             updateOutputs(d.outputs);
+            // Populate the collapsible top-section summary line — visible
+            // only when the user has collapsed the top pane. Kept in sync
+            // each WS tick so re-expanding/re-collapsing reflects current
+            // state.
+            try {
+                const sumEl = document.getElementById('top-collapsible-summary');
+                if (sumEl) {
+                    const mode = (d.state && d.state.mode) || 'Idle';
+                    const v = d.state && d.state.video_index;
+                    const tot = d.state && d.state.total_videos;
+                    const pending = (d.queue || []).filter(q => q.status == null || q.status === 'pending').length;
+                    const done = (d.queue || []).filter(q => q.status === 'done' && q.succeeded !== false).length;
+                    const failed = (d.queue || []).filter(q => q.status === 'done' && q.succeeded === false).length;
+                    const parts = [];
+                    parts.push(mode === 'Idle' ? '<span class="opacity-60">Idle</span>' : `<b>${mode}</b>`);
+                    if (v && tot) parts.push(`video ${v}/${tot}`);
+                    if (pending) parts.push(`queue ${pending} pending`);
+                    if (done) parts.push(`<span class="text-success">${done} done</span>`);
+                    if (failed) parts.push(`<span class="text-error">${failed} failed</span>`);
+                    sumEl.innerHTML = parts.join(' · ');
+                }
+            } catch (_) { /* summary is best-effort */ }
             _lastTick = d;
             // Push GPU% sample for the auto-suggest idle gate.
             try {
@@ -3535,8 +3550,12 @@ function updateStageSteps(state) {
   });
   const chainCounter = document.getElementById('chain-counter');
   if (chainCounter) {
+    // Element id is legacy ("chain-counter"); display text now reads
+    // "Part X of Y" to match the user-facing rename. The state keys
+    // (`chain_index`, `total_chains`) come straight from the runner and
+    // stay unchanged.
     chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
-      ? `${state.chain_index}/${state.total_chains}` : '';
+      ? `Part ${state.chain_index} of ${state.total_chains}` : '';
   }
 }
 
@@ -3547,6 +3566,31 @@ if (typeof window._onAudioChanged !== 'function') {
 
 connect();
 _wireLockListeners();
+
+// ---------------------------------------------------------------------------
+// Top-section collapsible — persist open/closed in localStorage so the user's
+// preference survives reloads. The <details> element starts `open` in the
+// template so first-load matches existing behaviour; if the user has previously
+// collapsed it, we strip the attribute on init.
+// ---------------------------------------------------------------------------
+(function wireTopCollapsible() {
+    const init = () => {
+        const COLLAPSE_KEY = 'slopfinity_top_collapsed';
+        const top = document.getElementById('top-collapsible');
+        if (!top) return;
+        try {
+            if (localStorage.getItem(COLLAPSE_KEY) === '1') top.removeAttribute('open');
+        } catch (_) {}
+        top.addEventListener('toggle', () => {
+            try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) {}
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
 
 // ===========================================================================
 // Draggable horizontal splitter between the Subjects/Queue (upper) and the
