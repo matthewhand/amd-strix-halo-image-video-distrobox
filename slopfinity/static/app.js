@@ -2015,12 +2015,12 @@ function connect() {
                         }
                         let assetBadge;
                         if (s === 'Concept') {
-                            // Concept stage: clicking opens the multi-stage
-                            // prompts editor focused on the first editable
-                            // stage (Base Image). The LLM-rewritten prompt
-                            // peek modal (showPromptPeek) is still defined
-                            // and used for inactive items in other contexts.
-                            assetBadge = `<button type="button" class="badge badge-xs badge-outline cursor-pointer" title="Edit per-stage prompts (live pickup before stage starts)" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">prompts →</button>`;
+                            // Concept stage: the Text tick badge itself is now
+                            // the prompts-editor shortcut (see stageLabelHtml
+                            // below). Drop the separate `prompts →` button so
+                            // there's a single click target instead of two
+                            // adjacent ones doing the same thing.
+                            assetBadge = '';
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
                             assetBadge = asset
@@ -2036,13 +2036,16 @@ function connect() {
                         // "✓ Image                        v3_base.png  3m22s / ETA 9m"
                         const animCls = isFresh ? ' stage-just-completed' : '';
                         // The stage label itself doubles as a shortcut to the
-                        // prompts editor focused on that stage — only for
-                        // stages that have an editable prompt key. Other
-                        // stages render a plain span (no extra affordance).
+                        // prompts editor focused on that stage. For Concept,
+                        // it opens the editor at Base Image (Concept itself
+                        // isn't editable but Text is the natural entry point
+                        // — replaces the standalone `prompts →` button).
                         const stageRoleEntry = _PROMPTS_STAGE_MAP.find(([st]) => st === s);
                         const stageLabelHtml = stageRoleEntry
                             ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Edit prompts (this stage already ran — opens locked)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${label}</button>`
-                            : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
+                            : (s === 'Concept'
+                                ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Click to edit prompts" aria-label="Click to edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${label}</button>`
+                                : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`);
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
