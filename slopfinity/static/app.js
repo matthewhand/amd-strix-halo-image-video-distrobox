@@ -1234,7 +1234,7 @@ const _STAGE_ASSET = (stage, v_idx, c_idx) => {
 const _STAGE_TEXT = {
     'Concept':       'generating prompts',
     'Base Image':    'rendering image',
-    'Video Chains':  'rendering video chain',
+    'Video Chains':  'rendering video part',
     'Audio':         'composing music',
     'TTS':           'recording voiceover',
     'Post Process':  'polishing',
@@ -1340,7 +1340,7 @@ function openModelSettingsPopup(role, qTs) {
     } else if (role === 'video') {
         push('Model',        _modelDisplayName(snap.video_model, 'video'));
         push('Frames',       snap.frames);
-        push('Chains',       snap.chains);
+        push('Parts',        snap.chains);
         push('Quality ramp', snap.video_quality_ramp ? 'on' : 'off');
     } else if (role === 'audio') {
         push('Model',        _modelDisplayName(snap.audio_model, 'audio'));
@@ -1825,7 +1825,7 @@ function connect() {
             const STAGES = [
                 ['Concept',      'T', 'Text',  'Texting',    'accent'],
                 ['Base Image',   'I', 'Image', 'Imaging',    'info'],
-                ['Video Chains', 'V', 'Video', 'Videoing',   'success'],
+                ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
                 ['Audio',        'M', 'Music', 'Composing',  'secondary'],
                 ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
                 ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
@@ -3550,8 +3550,12 @@ function updateStageSteps(state) {
   });
   const chainCounter = document.getElementById('chain-counter');
   if (chainCounter) {
+    // Element id is legacy ("chain-counter"); display text now reads
+    // "Part X of Y" to match the user-facing rename. The state keys
+    // (`chain_index`, `total_chains`) come straight from the runner and
+    // stay unchanged.
     chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
-      ? `${state.chain_index}/${state.total_chains}` : '';
+      ? `Part ${state.chain_index} of ${state.total_chains}` : '';
   }
 }
 

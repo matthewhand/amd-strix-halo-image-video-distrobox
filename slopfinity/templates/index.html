@@ -250,8 +250,19 @@
                                 </div>
                                 {% if is_active %}
                                     <div class="flex items-center gap-1 mt-1 flex-wrap" data-q-pipeline>
-                                        {% for stage, acro, label in [('Concept','T','Text'),('Base Image','I','Image'),('Video Chains','V','Video'),('Audio','M','Music'),('TTS','S','Voice'),('Post Process','X','Post'),('Final Merge','F','Final')] %}
-                                            <span class="badge badge-xs badge-outline opacity-40 px-1 font-mono text-[9px]" data-stage="{{ stage }}" title="{{ stage }}"><span class="stage-full">{{ label }}</span><span class="stage-short">{{ acro }}</span></span>
+                                        {# `stage` is the canonical state-machine key (must match
+                                           `_STAGE_ORDER` / runner state.json). `display` is the
+                                           user-facing label — "Video Parts" replaces the older
+                                           "Video Chains" wording but the key stays unchanged. #}
+                                        {% for stage, acro, label, display in [
+                                            ('Concept','T','Text','Concept'),
+                                            ('Base Image','I','Image','Base Image'),
+                                            ('Video Chains','V','Video','Video Parts'),
+                                            ('Audio','M','Music','Audio'),
+                                            ('TTS','S','Voice','TTS'),
+                                            ('Post Process','X','Post','Post Process'),
+                                            ('Final Merge','F','Final','Final Merge')] %}
+                                            <span class="badge badge-xs badge-outline opacity-40 px-1 font-mono text-[9px]" data-stage="{{ stage }}" title="{{ display }}"><span class="stage-full">{{ label }}</span><span class="stage-short">{{ acro }}</span></span>
                                         {% endfor %}
                                         <span class="ml-auto flex gap-1">
                                             <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>⏱ 0s</span>
