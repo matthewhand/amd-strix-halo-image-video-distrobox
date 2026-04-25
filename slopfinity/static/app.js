@@ -2141,7 +2141,13 @@ function updateOutputs(o) {
     const chipA = document.querySelector('[data-chip-count="audio"]');
     if (chipV) chipV.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="video"]').length;
     if (chipI) chipI.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="image"]').length;
-    if (chipA) chipA.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="audio"]').length;
+    // 'audio' is the legacy chip — count both music + speech under it for
+    // back-compat in case the old chip is still in the DOM during transition.
+    if (chipA) chipA.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="music"], #preview-grid > [data-slop-kind="speech"]').length;
+    const chipM = document.querySelector('[data-chip-count="music"]');
+    const chipS = document.querySelector('[data-chip-count="speech"]');
+    if (chipM) chipM.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="music"]').length;
+    if (chipS) chipS.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind="speech"]').length;
     // Parts chip — count of intermediate/partial assets (chain mp4s, base
     // pngs, bridge frames) currently in the gallery. Anything NOT marked
     // data-slop-final="1" is a part. This fixes the chip showing "0" when
