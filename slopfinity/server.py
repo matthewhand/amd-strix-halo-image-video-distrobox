@@ -1700,7 +1700,7 @@ async def broadcast():
                     _step_text_map = {
                         'Concept': 'rewriting prompt',
                         'Base Image': 'rendering image',
-                        'Video Chains': 'rendering video part',
+                        'Video Chains': 'rendering video',
                         'Audio': 'composing music',
                         'TTS': 'recording voiceover',
                         'Post Process': 'upscaling',

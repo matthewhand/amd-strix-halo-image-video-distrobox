@@ -2568,7 +2568,14 @@ function connect() {
                             <span class="hidden sm:inline truncate">${_htmlEscape(chainName)}</span>
                         </a>
                     </div>`);
-                    if (i < c) {
+                    if (i < _maxPart) {
+                        // Bridge i = extracted last frame of chain i, fed as
+                        // input to chain i+1. Render it whenever there's a
+                        // chain i+1 in this view (so completed chains always
+                        // show their bridge, including the one feeding the
+                        // currently-active chain). Previously gated on i<c
+                        // which dropped the bridge between the last finished
+                        // chain and the in-flight one.
                         const bridgeName = bridges[i] || `${stem}_f${i}.png`;
                         const bridgeHref = `/files/${encodeURIComponent(bridgeName)}`;
                         partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-ffmpeg-bridge="${v}:${i}">
@@ -2597,7 +2604,7 @@ function connect() {
                 // details (consistent with how disclosure widgets read).
                 return `<details class="mt-1 video-chain-details" data-video-chain="${v}">
                     <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono opacity-90 whitespace-nowrap">
-                        <span class="badge badge-xs badge-success gap-1"><span class="video-chain-arrow inline-block transition-transform">▸</span>${_htmlEscape(_label)} · ${c} part${c === 1 ? '' : 's'}</span>
+                        <span class="badge badge-xs badge-success gap-1"><span class="video-chain-arrow inline-block transition-transform">▸</span>${_htmlEscape(_label)} · ${_totalChains} part${_totalChains === 1 ? '' : 's'}</span>
                         ${_timing}
                         <a href="${c1Href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0" onclick="event.stopPropagation()">
                             <video src="${c1Href}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
