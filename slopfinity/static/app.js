@@ -2774,6 +2774,22 @@ function connect() {
                         const timing = a
                             ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
                             : '';
+                        // Per-stage meta string — what the user wants to see in
+                        // the right-edge cluster alongside the model badge.
+                        // Image stages → resolution; Video parts → duration in
+                        // seconds (frames/24); Audio + TTS → configured length;
+                        // Final Merge → total length (chains × frames / 24).
+                        const _aspectToRes = {'1:1':'1024×1024','4:3':'1152×864','3:4':'864×1152','16:9':'1280×720','9:16':'720×1280'};
+                        const _frames = Number(cfgSnap.frames) || 0;
+                        const _chains = Number(cfgSnap.chains) || 0;
+                        let _meta = '';
+                        if (s === 'Base Image') _meta = _aspectToRes[cfgSnap.size] || cfgSnap.size || '';
+                        else if (s === 'Video Chains' && _frames) _meta = `${(_frames / 24).toFixed(1)}s × ${_chains}`;
+                        else if ((s === 'Audio' || s === 'TTS') && cfgSnap.audio_duration_s) _meta = `${Math.round(cfgSnap.audio_duration_s)}s`;
+                        else if (s === 'Final Merge' && _frames && _chains) _meta = `${((_frames * _chains) / 24).toFixed(1)}s`;
+                        const _metaHtml = _meta
+                            ? `<span class="text-base-content/60 font-mono text-[9px] flex-none">${_htmlEscape(_meta)}</span>`
+                            : '';
                         const timingCol = `<span class="flex-none w-32 text-right font-mono">${timing}</span>`;
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
@@ -2815,19 +2831,21 @@ function connect() {
                             : (s === 'Concept'
                                 ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
-                        // Three-column row, every column flex-none-and-anchored
-                        // so the model badge column lines up vertically
-                        // across stages:
-                        //   LEFT   asset (flex-1, fades right when too wide)
-                        //   MID-R  model badge (fixed-width column, right-aligned
-                        //          contents — text-right + min-w so a long badge
-                        //          ("✓ LTX-2.3 Video") and a short one ("✓ Qwen
-                        //          Image") both end at the same X).
-                        //   RIGHT  timing column (existing fixed-width).
+                        // Right-edge cluster mirrors the queue summary row:
+                        //   [meta+timing] [model-badge] [menu-width spacer]
+                        // — anchored by min-widths so columns line up vertically
+                        // across every stage. The spacer reserves the same
+                        // horizontal space as the summary's ⋯ menu so model
+                        // badges align across summary AND output rows.
+                        const _metaTimingHtml = _metaHtml || timing
+                            ? `<span class="flex-none flex items-center gap-1 text-right font-mono text-[9px] text-base-content/60">${_metaHtml}${timing ? `<span class="opacity-70">${timing}</span>` : ''}</span>`
+                            : '';
+                        const _menuSpacer = `<span class="flex-none w-7" aria-hidden="true"></span>`;
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             <span class="flex-1 flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
+                            ${_metaTimingHtml}
                             <span class="flex-none min-w-[7rem] text-right">${stageLabelHtml}</span>
-                            ${timingCol}
+                            ${_menuSpacer}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
                         // SUMMARY shows "<N> parts · <slug>" with the first
@@ -2960,12 +2978,15 @@ function connect() {
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${(isActive || _openPendingItems.has(q.ts || 0)) ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
-                            <span class="flex-1 min-w-0 flex items-baseline gap-2">
+                            <span class="flex items-center gap-1 flex-none">
+                                ${statusChip}${infBadge}${polyBadge}${randomBadge}${sloppedBadge}
+                            </span>
+                            <span class="flex-1 min-w-0">
                                 <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             </span>
-                            <span class="flex items-center gap-2 flex-none ml-auto" title="status, active model, modifiers, aspect/frames">
-                                ${statusChip}${activeBadge}${infBadge}${polyBadge}${randomBadge}${sloppedBadge}
-                                <span class="text-base-content/50 font-mono text-[10px] flex-none" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
+                            <span class="flex items-center gap-2 flex-none ml-auto">
+                                <span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
+                                <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
                                 ${menuHTML}
                             </span>
                         </summary>
