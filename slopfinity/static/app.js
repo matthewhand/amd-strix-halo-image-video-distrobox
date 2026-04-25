@@ -520,6 +520,43 @@ async function toggleItemInfinity(ts) {
     } catch (e) { console.warn('toggle-infinity failed', e); }
 }
 
+async function toggleItemPolymorphic(ts) {
+    if (!ts) return;
+    try {
+        await fetch('/queue/toggle-polymorphic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ts }),
+        });
+    } catch (e) { console.warn('toggle-polymorphic failed', e); }
+}
+window.toggleItemPolymorphic = toggleItemPolymorphic;
+
+// Endless Story auto-cycle: when the navbar toggle is on, fetch a fresh
+// suggestion batch every 12 s and replace the marquee stack with it.
+let _endlessStoryTimer = null;
+function _wireEndlessStoryCycle() {
+    const t = document.getElementById('endless-story-toggle');
+    if (!t) return;
+    const start = () => {
+        if (_endlessStoryTimer) return;
+        _endlessStoryTimer = setInterval(() => {
+            // Skip if the user has hidden suggestions or globally disabled auto.
+            if (typeof _isSuggestionsHidden === 'function' && _isSuggestionsHidden()) return;
+            if (typeof _autoSuggestDisabled === 'function' && _autoSuggestDisabled()) return;
+            // Use regenSuggestions which clears the stack + appends a fresh row,
+            // honoring the GPU-idle gate via its existing internal checks.
+            if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
+        }, 12000);
+    };
+    const stop = () => {
+        if (_endlessStoryTimer) { clearInterval(_endlessStoryTimer); _endlessStoryTimer = null; }
+    };
+    t.addEventListener('change', () => { t.checked ? start() : stop(); });
+    if (t.checked) start();
+}
+document.addEventListener('DOMContentLoaded', _wireEndlessStoryCycle);
+
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
 // Lighter than openAssetInfo (which is for files); this is just text.
 function showPromptPeek(text) {
@@ -2181,6 +2218,9 @@ function connect() {
                 const infBadge = q.infinity
                     ? `<span class="badge badge-xs badge-primary text-base font-bold" title="Infinity — re-queues itself after every completion">♾</span>`
                     : '';
+                const polyBadge = q.chaos
+                    ? `<span class="badge badge-xs badge-secondary text-base font-bold" title="Polymorphic — randomized model selections per cycle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M16 3h5v5"/><path d="M4 20l16-16"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>`
+                    : '';
                 // Cancelled items keep their badge (so the strikethrough has a
                 // label). Active gets nothing (ring+timers signal it). Pending
                 // items also drop the chip — being in the queue says it all.
@@ -2209,6 +2249,7 @@ function connect() {
                         <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
                             <li><a onclick='event.stopPropagation();editItem(${q.ts || 0}, ${promptForJs})'>✎ Edit prompt</a></li>
                             <li><a onclick="event.stopPropagation();toggleItemInfinity(${q.ts || 0})">${infToggleLabel}</a></li>
+                            <li><a onclick="event.stopPropagation();toggleItemPolymorphic(${q.ts || 0})">${q.chaos ? '✖ Disable Polymorphic' : '⤳ Enable Polymorphic'}</a></li>
                             <li><a onclick="event.stopPropagation();cancelItem(${q.ts || 0})" class="text-error">✕ Cancel</a></li>
                         </ul>
                        </div>`;
@@ -2223,7 +2264,7 @@ function connect() {
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${isActive ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
-                            ${statusChip}${infBadge}
+                            ${statusChip}${infBadge}${polyBadge}
                             <span class="font-semibold truncate flex-1${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             ${menuHTML}
                         </summary>
@@ -3548,18 +3589,37 @@ function _buildSuggestChip(s) {
     b.type = 'button';
     b.className = 'btn btn-outline btn-primary btn-xs normal-case';
     b.textContent = s;
-    b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
+    b.title = 'Click: queue this prompt as a one-shot · Shift+click: append to Subjects';
     b.dataset.suggest = s;
-    b.addEventListener('click', (e) => {
-        const ta = document.getElementById('p-core');
-        if (!ta) return;
-        const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
-        if (e.shiftKey) ta.value = s;
-        else if (present) return;
-        else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        updatePipeline();
-        _refreshChipHighlights();
+    b.addEventListener('click', async (e) => {
+        // Default click: inject the chip text as a single queue item — does
+        // NOT touch the Subjects textarea. Shift+click: legacy behavior of
+        // appending into Subjects (for the user who actually wants to build
+        // an infinity-themes list manually).
+        if (e.shiftKey) {
+            const ta = document.getElementById('p-core');
+            if (!ta) return;
+            const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
+            if (present) return;
+            ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            updatePipeline();
+            _refreshChipHighlights();
+            return;
+        }
+        // One-shot inject: send this single prompt straight to the queue.
+        try {
+            const f = new FormData();
+            f.append('prompt', s);
+            f.append('priority', 'next');
+            await fetch('/inject', { method: 'POST', body: f });
+            // Brief visual feedback on the clicked chip
+            b.classList.add('btn-success');
+            b.classList.remove('btn-primary');
+            setTimeout(() => { b.classList.remove('btn-success'); b.classList.add('btn-primary'); }, 800);
+        } catch (err) {
+            console.warn('chip inject failed', err);
+        }
     });
     return b;
 }

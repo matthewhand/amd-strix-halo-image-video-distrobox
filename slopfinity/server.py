@@ -670,6 +670,25 @@ async def queue_toggle_infinity(data: dict = Body(...)):
     return {"ok": True, "infinity": new_val}
 
 
+@app.post("/queue/toggle-polymorphic")
+async def queue_toggle_polymorphic(data: dict = Body(...)):
+    """Flip the `chaos` (polymorphic) flag on a queued item by ts."""
+    target_ts = data.get("ts")
+    if target_ts is None:
+        return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
+    q = cfg.get_queue()
+    new_val = None
+    for item in q:
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+            item["chaos"] = not item.get("chaos", False)
+            new_val = item["chaos"]
+            break
+    if new_val is None:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    cfg.save_queue(q)
+    return {"ok": True, "chaos": new_val}
+
+
 @app.get("/queue/paginated")
 async def queue_paginated(offset: int = 0, limit: int = 25, filter: str = "all"):
     """Paginated, filtered view of the persisted queue. Newest first.
