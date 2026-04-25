@@ -18,6 +18,13 @@ QUEUE_FILE = os.path.join(_STATE_DIR, "queue.json")
 # Must remain byte-identical to the runner's hardcoded fallback.
 DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
 
+# Defaults for the auto-suggest LLM call (the 🎲 Suggest button on Subjects).
+# `suggest_use_subjects` controls whether we feed the LLM the user's current
+# Subjects textarea content as style/theme context. `suggest_custom_prompt`
+# overrides the built-in suggestion system prompt entirely (empty = default).
+DEFAULT_SUGGEST_USE_SUBJECTS = True
+DEFAULT_SUGGEST_CUSTOM_PROMPT = ""
+
 DEFAULT_CONFIG = {
     "base_model": "ltx-2.3",
     "video_model": "ltx-2.3",
@@ -37,6 +44,8 @@ DEFAULT_CONFIG = {
     "chaos_interval_s": 180,
     "when_idle": False,
     "philosophical_prompt": None,
+    "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
+    "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
 }
 
 
