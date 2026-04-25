@@ -147,20 +147,17 @@
                 </button>
                 <button class="btn btn-ghost btn-xs" id="subjects-suggest-btn" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
             </div>
-            {# Carousel frame wraps the chips strip so the left/right hover-overlays
-               can page through earlier / newer suggestion batches without competing
-               with the existing chip render path. The strip itself keeps id
-               #subject-chips so all existing JS (autogrow / fill / highlight /
-               cache-render / regenSuggestions) continues to work unchanged.
-               The frame is also tagged #subjects-suggestions-area so the
-               close-× toggle can hide the entire chip area in one shot. #}
+            {# Multi-row marquee stack — each row auto-scrolls horizontally
+               at a slow constant speed when its content overflows the row
+               width. New batches arrive as new rows below; capped at 4 rows
+               (oldest evicted). Hover or focus pauses the row's animation.
+               The chip render path inserts rows; the textarea-highlight
+               path (_refreshChipHighlights) walks every row in the stack.
+               Wrapped in #subjects-suggestions-area so the close-× toggle
+               (PR #82) can hide the chip area in one shot. #}
             <div id="subjects-suggestions-area">
-            <div id="subject-chips-frame" class="suggest-frame relative">
-                <button id="subject-chips-overlay-left" type="button" class="suggest-overlay suggest-overlay-left" aria-label="earlier suggestions" tabindex="0">‹</button>
-                <button id="subject-chips-overlay-right" type="button" class="suggest-overlay suggest-overlay-right" aria-label="more suggestions" tabindex="0">›</button>
-                <div id="subject-chips" class="suggest-strip flex flex-wrap gap-1 min-h-[28px]">
-                    <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
-                </div>
+            <div id="subject-chips-stack" class="flex flex-col gap-1.5 min-h-0">
+                <span id="subject-chips-empty" class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
             </div>
             <div class="w-full mt-auto">
