@@ -802,17 +802,32 @@ document.addEventListener('DOMContentLoaded', _wireEndlessStoryCycle);
 
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
 // Lighter than openAssetInfo (which is for files); this is just text.
-function showPromptPeek(text) {
+function showPromptPeek(text, stage) {
     const existing = document.getElementById('prompt-peek-modal');
     if (existing) existing.remove();
     const dlg = document.createElement('dialog');
     dlg.id = 'prompt-peek-modal';
     dlg.className = 'modal';
-    // Store the raw prompt on the button; let the click handler read it back.
-    // Avoids HTML-attribute-quoting hell (JSON.stringify of a prompt with
-    // any double-quote or backtick will corrupt the inline onclick).
+    // Header labels which stage this prompt feeds. Maps the canonical
+    // stage names to the user-facing role ("Image" / "Video" / etc) so
+    // the modal title reads "Video prompt" rather than "Video Chains
+    // prompt". Falls back to a neutral label when stage is unknown.
+    const _stageRoleLabel = {
+        'Concept':       'Concept',
+        'Base Image':    'Image',
+        'Video Chains':  'Video',
+        'Audio':         'Music',
+        'TTS':           'Voice',
+        'Post Process':  'Upscale',
+        'Final Merge':   'Final',
+    };
+    const _label = stage ? (_stageRoleLabel[stage] || stage) : 'LLM-rewritten';
+    const _subtitle = stage
+        ? `Sent to the ${_label.toLowerCase()} model for this iteration. Editable in <button type="button" class="link link-primary" onclick="document.getElementById('prompt-peek-modal').close(); openPromptsEdit('${_htmlEscape(stage)}')">Pipeline Advanced → ${_htmlEscape(_label)}</button>.`
+        : 'The LLM-rewritten prompt the runner used.';
     dlg.innerHTML = `<div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
-        <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-2">LLM-rewritten prompt</h3>
+        <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-1">${_htmlEscape(_label)} prompt</h3>
+        <p class="text-[10px] text-base-content/60 italic mb-3">${_subtitle}</p>
         <div class="text-xs whitespace-pre-wrap font-mono bg-base-300/50 p-3 rounded">${_htmlEscape(text || '(empty)')}</div>
         <div class="modal-action">
             <button id="prompt-peek-copy" class="btn btn-sm btn-secondary btn-outline">Copy</button>
@@ -1492,7 +1507,8 @@ document.addEventListener('click', (e) => {
     if (peek) {
         e.stopPropagation();
         const txt = peek.getAttribute('data-prompt-text') || '';
-        if (typeof showPromptPeek === 'function') showPromptPeek(txt);
+        const stage = peek.getAttribute('data-prompt-stage') || '';
+        if (typeof showPromptPeek === 'function') showPromptPeek(txt, stage);
         return;
     }
 });
@@ -2490,7 +2506,7 @@ function connect() {
             // first frame as a poster). Text is whitespace-nowrap so
             // narrow viewports don't break "extract last frame N →" across
             // two lines.
-            const _buildVideoChainCollapsible = (v, c, q, modelLabel, timingHtml) => {
+            const _buildVideoChainCollapsible = (v, c, q, modelLabel, timingHtml, isStageActive) => {
                 const cached = _assetsByVidx.get(v) || {};
                 const bridges = cached.bridges || {};
                 const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
@@ -2502,14 +2518,47 @@ function connect() {
                 const c1Href = `/files/${encodeURIComponent(c1Name)}`;
                 const thumbCls = "rounded bg-black object-cover flex-none";
                 const thumbStyle = "width:48px;height:27px;";
+                // Per-part rows: each chain mp4 is rendered as
+                //   "<video model> · part i"  + thumbnail.
+                // The currently-being-rendered part (only when stage is the
+                // active one) gets a loading spinner inside the chip — same
+                // visual contract as the active model badge in the summary.
+                // c here = chain_index from state (count of FINISHED chains
+                // for the active stage; total chains for completed stages).
+                // For active: the IN-FLIGHT part is c+1 (the one being
+                // rendered right now, frames landing on disk); we cap at
+                // total_chains so we don't run past the end.
                 const partRows = [];
-                for (let i = 1; i <= c; i++) {
+                const _activeChainIdx = isStageActive
+                    ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) + 1
+                    : 0;
+                const _totalChains = isStageActive
+                    ? ((_lastTick && _lastTick.state && _lastTick.state.total_chains) || c)
+                    : c;
+                const _maxPart = Math.max(c, _activeChainIdx);
+                const _partLabel = modelLabel || 'Video';
+                for (let i = 1; i <= _maxPart; i++) {
                     const chainName = `${stem}_c${i}.mp4`;
                     const chainHref = `/files/${encodeURIComponent(chainName)}`;
-                    partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-80 pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-chain-row="${v}:${i}">
-                        <span class="badge badge-xs badge-success">part ${i}</span>
+                    const isActivePart = isStageActive && i === _activeChainIdx;
+                    const _spinner = isActivePart
+                        ? '<span class="loading loading-spinner loading-xs mr-1"></span>'
+                        : '';
+                    const _badgeTone = isActivePart ? 'badge-warning' : 'badge-success';
+                    // Poster picks the on-disk PNG that's visually closest to
+                    // chain i's first frame: bridge i-1 (the extracted last
+                    // frame of the previous chain, which became the input
+                    // image for this one) for i>1, or the base image for i=1.
+                    // This guarantees a thumbnail even when the browser
+                    // wouldn't auto-render a poster from preload="metadata".
+                    const _posterName = i === 1
+                        ? `${stem}_base.png`
+                        : (bridges[i - 1] || `${stem}_f${i - 1}.png`);
+                    const _posterAttr = `poster="/files/${encodeURIComponent(_posterName)}"`;
+                    partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-chain-row="${v}:${i}">
+                        <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
                         <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0">
-                            <video src="${chainHref}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
+                            <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video>
                             <span class="hidden sm:inline truncate">${_htmlEscape(chainName)}</span>
                         </a>
                     </div>`);
@@ -2540,7 +2589,7 @@ function connect() {
                 // row. The arrow is wrapped in .video-chain-arrow so a CSS
                 // rule can rotate it 90° when [open] is set on the parent
                 // details (consistent with how disclosure widgets read).
-                return `<details class="mt-1 ml-1 pl-2 border-l border-base-300/50 video-chain-details" data-video-chain="${v}">
+                return `<details class="mt-1 video-chain-details" data-video-chain="${v}">
                     <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono opacity-90 whitespace-nowrap">
                         <span class="badge badge-xs badge-success gap-1"><span class="video-chain-arrow inline-block transition-transform">▸</span>${_htmlEscape(_label)} · ${c} part${c === 1 ? '' : 's'}</span>
                         ${_timing}
@@ -2608,7 +2657,7 @@ function connect() {
                         // A delegated click handler (wired once at startup)
                         // reads the data-prompt-text on click.
                         const promptBadge = promptForStage
-                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}">📝 prompt →</button>`
+                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}" data-prompt-stage="${_htmlEscape(s)}">📝 prompt →</button>`
                             : '';
                         if (s === 'Concept') {
                             assetBadge = promptBadge;
@@ -2685,7 +2734,7 @@ function connect() {
                         // overarching collapsible title represents the entire
                         // video-generation chain for this iter.
                         if (s === 'Video Chains' && v && c > 0) {
-                            row += _buildVideoChainCollapsible(v, c, q, modelLabel, timing);
+                            row += _buildVideoChainCollapsible(v, c, q, modelLabel, timing, /* isStageActive */ false);
                         }
                         return row;
                     }).join('');
@@ -2702,7 +2751,7 @@ function connect() {
                     const _stageElapsed = _stageStartTs ? (Date.now() - _stageStartTs) : 0;
                     const _stageEta = _stageAvgSeconds('Video Chains') || 0;
                     const _activeTiming = `<span class="font-mono text-[9px]">${_fmtElapsedHtml(_stageElapsed)}</span>${_stageEta ? `<span class="opacity-50 text-[9px]"> / ETA ${_fmtElapsedHtml(_stageEta * 1000)}</span>` : ''}`;
-                    activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming);
+                    activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming, /* isStageActive */ true);
                 }
                 // Strip the .stage-just-completed class after the animation
                 // finishes (600 ms total budget) so the next WS re-render
