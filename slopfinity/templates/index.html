@@ -1266,12 +1266,86 @@
                     <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" {% if config.concurrent %}checked{% endif %} onchange="_updateGenModePill && _updateGenModePill()" />
                 </label>
             </div><!-- /Diagnostics tabpanel -->
+
+            {# Layout tab — choose between full-dashboard and gallery-focused
+               views. Persisted in localStorage (`slopfinity-layout-view`). #}
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Layout" />
+            <div role="tabpanel" class="tab-content pt-4">
+                <p class="text-[11px] opacity-60 italic mb-3">Switch between full-dashboard and gallery-focused views. The gallery view hides the Subjects + Queue cards and exposes them as floating buttons that open in modals.</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="cursor-pointer">
+                        <input type="radio" name="layout-view" value="default" class="hidden peer" checked />
+                        <div class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                            <div class="text-xs font-bold mb-1">Default</div>
+                            <div class="text-[10px] opacity-60 mb-2">Subjects + Queue + Slop. Splitter-resizable.</div>
+                            <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="36" height="18" rx="2" fill="currentColor" opacity="0.4"/>
+                                <rect x="42" y="2"  width="36" height="18" rx="2" fill="currentColor" opacity="0.4"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                            </svg>
+                        </div>
+                    </label>
+                    <label class="cursor-pointer">
+                        <input type="radio" name="layout-view" value="gallery" class="hidden peer" />
+                        <div class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                            <div class="text-xs font-bold mb-1">Gallery-focused</div>
+                            <div class="text-[10px] opacity-60 mb-2">Slop fills viewport. Subjects + Queue open via floating buttons.</div>
+                            <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="46" rx="2" fill="currentColor" opacity="0.7"/>
+                                <circle cx="64" cy="40" r="4" fill="currentColor"/>
+                                <circle cx="74" cy="40" r="4" fill="currentColor"/>
+                            </svg>
+                        </div>
+                    </label>
+                </div>
+            </div><!-- /Layout tabpanel -->
         </div><!-- /tablist -->
 
         <div class="modal-action">
             <button class="btn btn-sm btn-primary" onclick="saveSettings()">Save</button>
             <form method="dialog"><button class="btn btn-sm btn-ghost">Cancel</button></form>
         </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+{# Gallery-mode floating action buttons + modal hosts. Hidden by default;
+   CSS reveals when body[data-layout="gallery"]. The dialogs serve as
+   relocation targets — when opened, the existing #split-left / #split-right
+   cards are MOVED into them so handlers + state stay intact. #}
+<div id="gallery-fab" aria-hidden="true">
+    <button class="btn btn-circle btn-primary shadow-xl" title="Subjects" aria-label="Open Subjects" onclick="openGalleryFabDialog('subjects')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="13" x2="15" y2="13"/>
+            <line x1="9" y1="17" x2="13" y2="17"/>
+        </svg>
+    </button>
+    <button class="btn btn-circle btn-secondary shadow-xl" title="Queue" aria-label="Open Queue" onclick="openGalleryFabDialog('queue')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8"  y1="6"  x2="21" y2="6"/>
+            <line x1="8"  y1="12" x2="21" y2="12"/>
+            <line x1="8"  y1="18" x2="21" y2="18"/>
+            <line x1="3"  y1="6"  x2="3.01" y2="6"/>
+            <line x1="3"  y1="12" x2="3.01" y2="12"/>
+            <line x1="3"  y1="18" x2="3.01" y2="18"/>
+        </svg>
+    </button>
+</div>
+<dialog id="gallery-subjects-modal" class="modal">
+    <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg uppercase tracking-widest mb-2">Subjects</h3>
+        <div id="gallery-subjects-mount"></div>
+        <div class="modal-action"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="gallery-queue-modal" class="modal">
+    <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg uppercase tracking-widest mb-2">Queue</h3>
+        <div id="gallery-queue-mount"></div>
+        <div class="modal-action"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>

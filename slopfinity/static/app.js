@@ -41,6 +41,66 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Layout view (Settings → Layout). Two views:
+//   - default : Subjects + Queue cards on top, Slop output below.
+//   - gallery : Slop fills the viewport. Subjects + Queue collapse
+//               out of view; two FABs open them in modals.
+//
+// The DOM-move pattern below is critical: when a FAB is clicked we MOVE
+// the existing #split-left or #split-right node into the dialog mount,
+// open the dialog, and on close MOVE it back to its original parent at
+// its original position. This keeps every existing event handler /
+// observer / live-update binding alive — no markup duplication.
+// ---------------------------------------------------------------------------
+const _LAYOUT_VIEW_KEY = 'slopfinity-layout-view';
+function _applyLayoutView(view) {
+  try { localStorage.setItem(_LAYOUT_VIEW_KEY, view); } catch (_) {}
+  if (view === 'gallery') document.body.dataset.layout = 'gallery';
+  else delete document.body.dataset.layout;
+}
+window._applyLayoutView = _applyLayoutView;
+
+// Track where each card lived so we can put it back exactly where we found it.
+const _galleryReturn = { subjects: null, queue: null };
+
+function openGalleryFabDialog(which) {
+  const cardId = which === 'subjects' ? 'split-left' : 'split-right';
+  const mountId = which === 'subjects' ? 'gallery-subjects-mount' : 'gallery-queue-mount';
+  const dialogId = which === 'subjects' ? 'gallery-subjects-modal' : 'gallery-queue-modal';
+  const card = document.getElementById(cardId);
+  const mount = document.getElementById(mountId);
+  const dialog = document.getElementById(dialogId);
+  if (!card || !mount || !dialog) return;
+  // Remember original parent + nextSibling so we can restore exactly.
+  if (!_galleryReturn[which]) {
+    _galleryReturn[which] = { parent: card.parentNode, next: card.nextSibling };
+  }
+  mount.appendChild(card);
+  // Re-bind one-shot close listener that moves the card back.
+  const onClose = () => {
+    const r = _galleryReturn[which];
+    if (r && r.parent && card.parentNode === mount) {
+      r.parent.insertBefore(card, r.next || null);
+    }
+    dialog.removeEventListener('close', onClose);
+  };
+  dialog.addEventListener('close', onClose);
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
+}
+window.openGalleryFabDialog = openGalleryFabDialog;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const v = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
+  _applyLayoutView(v);
+  const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
+  if (r) r.checked = true;
+  document.querySelectorAll('input[name="layout-view"]').forEach(el => {
+    el.addEventListener('change', e => { _applyLayoutView(e.target.value); });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // RAM-tight guard — wrapper that shows a confirmation modal before any
 // manual AI button (🎲 Suggest, ✨ Enhance, fan-out, TTS preview) fires
 // when GET /system/ram reports tight=true. Returns true iff the action
