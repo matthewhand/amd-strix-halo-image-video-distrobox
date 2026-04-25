@@ -1520,6 +1520,24 @@ document.addEventListener('toggle', (e) => {
     }
 }, true);
 
+// Pending/active queue-item open tracker. Same problem as done-items: the
+// queue list re-renders ~1 Hz off WS ticks, which would drop any <details>
+// the user manually expanded. We persist user-toggled open-ness across
+// re-renders by stashing the queue item's `data-q-ts` in a module-level
+// Set; the renderItem template reads from this set when emitting `open`.
+const _openPendingItems = new Set();
+document.addEventListener('toggle', (e) => {
+    const det = e.target;
+    if (!(det instanceof HTMLElement)) return;
+    if (det.tagName !== 'DETAILS') return;
+    const li = det.closest('li[data-q-ts]');
+    if (!li) return;
+    const ts = parseInt(li.getAttribute('data-q-ts') || '0', 10);
+    if (!ts) return;  // ts=0 is the synthetic running placeholder; skip.
+    if (det.open) _openPendingItems.add(ts);
+    else _openPendingItems.delete(ts);
+}, true);
+
 // Map a filename → display badge for the model + role that produced it.
 // Returns { label, color, border, part?, kind } where kind is the filter bucket.
 function _slopBadgeMeta(file) {
@@ -2755,7 +2773,7 @@ function connect() {
                 // extra click. The reveal hosts model badges, size·frames meta,
                 // and the live pipeline strip + timers.
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
-                    <details ${isActive ? 'open' : ''}>
+                    <details ${(isActive || _openPendingItems.has(q.ts || 0)) ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
                             ${statusChip}${activeBadge}${infBadge}${polyBadge}
                             <span class="font-semibold truncate flex-1${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
