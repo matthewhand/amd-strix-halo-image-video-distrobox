@@ -1041,14 +1041,14 @@ async def llm_suspend_endpoint():
     Independent of the `llm.auto_suspend` toggle — gives the user a one-shot
     pause for ad-hoc memory triage. Resume via POST /llm/resume.
     """
-    result = await asyncio.to_thread(sched.suspend_llm)
+    result = await sched.suspend_llm_async()
     return {"ok": True, **result}
 
 
 @app.post("/llm/resume")
 async def llm_resume_endpoint():
     """Manually SIGCONT any suspended local LLM process."""
-    result = await asyncio.to_thread(sched.resume_llm)
+    result = await sched.resume_llm_async()
     return {"ok": True, **result}
 
 
