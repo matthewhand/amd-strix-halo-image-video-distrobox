@@ -796,6 +796,18 @@
                         <span class="label-text text-xs">Timeout (seconds)</span>
                         <input id="set-timeout" type="number" min="1" value="60" class="input input-bordered input-sm" />
                     </label>
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer py-1">
+                            <span class="label-text text-xs">Auto-suspend LLM during GPU inference</span>
+                            <input id="set-llm-auto-suspend" type="checkbox" class="toggle toggle-primary toggle-sm" onchange="saveAutoSuspend()" />
+                        </label>
+                        <div class="label-text-alt opacity-60 leading-snug">
+                            Sends SIGSTOP to LM Studio / Ollama before each heavy GPU stage
+                            and SIGCONT after, freeing ~8 GB of unified RAM. Process state
+                            is preserved — no model reload.
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-3 mt-4">
