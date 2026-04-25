@@ -265,13 +265,6 @@
     <div id="ui-split-handle" class="flex-none cursor-row-resize select-none" title="Drag to resize · double-click to reset"></div>
     <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
 
-    {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
-    <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">
-        <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
-        <span class="badge badge-sm badge-ghost font-mono" id="sched-pause-badge">live</span>
-        <div class="flex flex-wrap gap-1" id="sched-timeline"></div>
-    </div>
-
     <!-- Unified Slop feed (all assets — FINAL, chain, image, audio) with filter chips -->
     <section id="output-section" class="mb-12" style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">

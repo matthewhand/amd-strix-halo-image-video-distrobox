@@ -1516,15 +1516,9 @@ function updateOutputs(o) {
 function updateScheduler(sc) {
     if (!sc) return;
     const events = (sc.events || []).slice(-5);
-    // Hide the whole strip when we have nothing to show (reduces visual noise when idle).
-    const strip = $('sched-strip');
-    if (strip) strip.style.display = (events.length > 0 || sc.paused) ? 'flex' : 'none';
-    const pauseBadge = $('sched-pause-badge');
-    if (pauseBadge) {
-        pauseBadge.innerText = sc.paused ? 'paused' : 'live';
-        pauseBadge.className = 'badge badge-sm font-mono ' + (sc.paused ? 'badge-warning' : 'badge-ghost');
-    }
-    // Settings-modal Scheduler tab badge
+    // Settings-modal Scheduler tab badge — the only place scheduler state
+    // surfaces in the UI now (the main-page strip was removed; the Settings
+    // → Scheduler tab is the proper home for this content).
     const statusBadge = $('sched-status-badge');
     if (statusBadge) {
         statusBadge.innerText = sc.paused ? '⏸ Paused' : '▶ Running';
@@ -1542,7 +1536,6 @@ function updateScheduler(sc) {
             `<span id="${idPrefix}-${i}" class="badge badge-sm ${schedBadgeClass(e.type)} tooltip tooltip-bottom" data-tip="${tipFor(e)}">${e.type}: ${labelFor(e)}</span>`
         ).join('');
     };
-    renderEvents($('sched-timeline'), 'sched-event');
     renderEvents($('sched-recent'), 'sched-recent-event');
 }
 
