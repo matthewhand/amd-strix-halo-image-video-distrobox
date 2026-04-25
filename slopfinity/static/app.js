@@ -2343,10 +2343,10 @@ function _refreshChipHighlights() {
     const lines = new Set(ta.value.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean));
     document.querySelectorAll('#subject-chips button[data-suggest]').forEach(btn => {
         const here = lines.has((btn.dataset.suggest || '').toLowerCase());
-        btn.classList.toggle('btn-outline', !here);
         btn.classList.toggle('btn-primary', !here);
+        btn.classList.toggle('btn-outline', here);
         btn.classList.toggle('btn-success', here);
-        btn.classList.toggle('opacity-60', here);
+        btn.classList.remove('opacity-60');
     });
 }
 
