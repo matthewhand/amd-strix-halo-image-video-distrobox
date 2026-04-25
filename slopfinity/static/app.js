@@ -2500,10 +2500,15 @@ function connect() {
                 // (in-flight) stage and there's no completed-row counterpart.
                 const _label = modelLabel || 'Video';
                 const _timing = timingHtml || '';
-                return `<details class="mt-1 ml-1 pl-2 border-l border-base-300/50" data-video-chain="${v}">
+                // Expander arrow lives INSIDE the model badge — they're
+                // semantically the same affordance ("expand the chain"), and
+                // collapsing them into one chip drops a stray glyph from the
+                // row. The arrow is wrapped in .video-chain-arrow so a CSS
+                // rule can rotate it 90° when [open] is set on the parent
+                // details (consistent with how disclosure widgets read).
+                return `<details class="mt-1 ml-1 pl-2 border-l border-base-300/50 video-chain-details" data-video-chain="${v}">
                     <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono opacity-90 whitespace-nowrap">
-                        <span class="opacity-50 select-none">▸</span>
-                        <span class="badge badge-xs badge-success">${_htmlEscape(_label)} · ${c} part${c === 1 ? '' : 's'}</span>
+                        <span class="badge badge-xs badge-success gap-1"><span class="video-chain-arrow inline-block transition-transform">▸</span>${_htmlEscape(_label)} · ${c} part${c === 1 ? '' : 's'}</span>
                         ${_timing}
                         <a href="${c1Href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0" onclick="event.stopPropagation()">
                             <video src="${c1Href}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>

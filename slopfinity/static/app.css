@@ -581,3 +581,9 @@ body[data-layout="gallery"] #gallery-fab {
 @media (prefers-reduced-motion: reduce) {
     .render-anim-char { animation: none; transition: none; }
 }
+
+/* Video Chains collapsible: arrow inside the model-id badge rotates 90° when
+   the <details> is open, giving the chip a single combined affordance. */
+.video-chain-details[open] > summary .video-chain-arrow {
+    transform: rotate(90deg);
+}

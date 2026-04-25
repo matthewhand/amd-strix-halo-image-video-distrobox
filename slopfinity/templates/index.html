@@ -1586,19 +1586,24 @@
         </svg>
     </button>
 </div>
+{# Gallery-mode FAB popups for Subjects + Queue. Sized to take the full
+   viewport width up to 5xl (~1024 px) and ~85 vh tall, so the queue list
+   and subject textarea actually have room to breathe. The mounted content
+   uses w-full so the textarea + queue items expand to fill, not sit at
+   their default narrow width. #}
 <dialog id="gallery-subjects-modal" class="modal">
-    <div class="modal-box max-w-3xl">
-        <h3 class="font-bold text-lg uppercase tracking-widest mb-2">Subjects</h3>
-        <div id="gallery-subjects-mount"></div>
-        <div class="modal-action"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
+    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+        <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Subjects</h3>
+        <div id="gallery-subjects-mount" class="w-full flex-1 overflow-y-auto"></div>
+        <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 <dialog id="gallery-queue-modal" class="modal">
-    <div class="modal-box max-w-3xl">
-        <h3 class="font-bold text-lg uppercase tracking-widest mb-2">Queue</h3>
-        <div id="gallery-queue-mount"></div>
-        <div class="modal-action"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
+    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+        <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Queue</h3>
+        <div id="gallery-queue-mount" class="w-full flex-1 overflow-y-auto"></div>
+        <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
