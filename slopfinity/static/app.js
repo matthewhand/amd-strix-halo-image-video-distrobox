@@ -503,20 +503,20 @@ function _buildActiveJobProgressBar(d) {
         <div class="pipeline-bar-wrap"
              data-pipeline-bar
              data-cur-stage="${curStep || ''}">
-            <div class="flex items-center justify-between gap-2 px-1 mb-1 text-[10px]">
-                <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
-                    <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
-                </span>
-            </div>
             <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
                 <div class="flex" data-pipeline-segments>${segments}</div>
             </div>
-            <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
-                <span class="opacity-70">Total</span>
-                <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
-                <span class="opacity-50">/</span>
-                <span class="opacity-70">ETA</span>
-                <span data-pipeline-total-eta>${totalEtaHTML}</span>
+            <div class="flex items-center justify-between gap-2 px-1 mt-1 text-[10px]">
+                <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
+                    <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
+                </span>
+                <span class="opacity-60 flex items-center gap-1 flex-none">
+                    <span class="opacity-70">Total</span>
+                    <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
+                    <span class="opacity-50">/</span>
+                    <span class="opacity-70">ETA</span>
+                    <span data-pipeline-total-eta>${totalEtaHTML}</span>
+                </span>
             </div>
         </div>
     `;
