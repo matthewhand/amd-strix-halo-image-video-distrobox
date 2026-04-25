@@ -678,12 +678,18 @@ setInterval(() => {
         const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
         const actEl = bar.querySelector('[data-pipeline-activity-text]');
         if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
-        // Remaining = totalSec - (completed + partial).
-        const completedDur = stageDurations.slice(0, curIdx).reduce((a, b) => a + b, 0);
-        const partialDur = stageDurations[curIdx] * fraction;
-        const remaining = Math.max(0, totalSec - (completedDur + partialDur));
-        const etaEl = bar.querySelector('[data-pipeline-eta]');
-        if (etaEl) etaEl.innerHTML = _fmtElapsedHtml(remaining * 1000);
+        // Per-step elapsed / ETA (above the bar) and total elapsed / ETA
+        // (below the bar). Step ETA = current stage's historical avg;
+        // total ETA = sum of all stage avgs (totalSec already computed
+        // outside the loop).
+        const stepEl = bar.querySelector('[data-pipeline-step-elapsed]');
+        const stepEt = bar.querySelector('[data-pipeline-step-eta]');
+        const totEl  = bar.querySelector('[data-pipeline-total-elapsed]');
+        const totEt  = bar.querySelector('[data-pipeline-total-eta]');
+        if (stepEl && _stageStartTs) stepEl.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
+        if (stepEt) stepEt.innerHTML = _fmtElapsedHtml(stageAvg * 1000);
+        if (totEl && _jobStartTs) totEl.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
+        if (totEt && totalSec > 0) totEt.innerHTML = _fmtElapsedHtml(totalSec * 1000);
     });
 }, 1000);
 
@@ -2059,6 +2065,16 @@ function connect() {
                     </div>`;
                 }).join('');
                 const hasOutput = !!(completedLines || activeBridgesHtml);
+                // Per-step + total timers. Header row above the bar shows
+                // the current stage's elapsed and avg/expected (was a single
+                // countdown in PR #98 — restoring the elapsed/ETA pairing
+                // requested by the user). Footer row below the bar shows
+                // total elapsed since job start and the sum-of-stage-avgs ETA.
+                const stageNowHTML = _fmtElapsedHtml(stageElapsedSec * 1000);
+                const stageEtaHTML = _fmtElapsedHtml(curStageAvg * 1000);
+                const jobElapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
+                const totalElapsedHTML = _fmtElapsedHtml(jobElapsedMs);
+                const totalEtaHTML = _fmtElapsedHtml(totalSec * 1000);
                 return `
                     ${hasOutput ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}` : ''}
                     <div class="pipeline-bar-wrap mt-2"
@@ -2068,10 +2084,22 @@ function connect() {
                             <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
                                 <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
                             </span>
-                            <span class="pipeline-eta font-mono flex-none" data-pipeline-eta>${_fmtElapsedHtml(remainingSec * 1000)}</span>
+                            <span class="pipeline-eta font-mono flex-none flex items-center gap-1">
+                                <span data-pipeline-step-elapsed>${stageNowHTML}</span>
+                                <span class="opacity-50">/</span>
+                                <span class="opacity-70">ETA</span>
+                                <span data-pipeline-step-eta>${stageEtaHTML}</span>
+                            </span>
                         </div>
                         <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
                             <div class="flex h-7" data-pipeline-segments>${segments}</div>
+                        </div>
+                        <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
+                            <span class="opacity-70">Total</span>
+                            <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
+                            <span class="opacity-50">/</span>
+                            <span class="opacity-70">ETA</span>
+                            <span data-pipeline-total-eta>${totalEtaHTML}</span>
                         </div>
                     </div>
                 `;
