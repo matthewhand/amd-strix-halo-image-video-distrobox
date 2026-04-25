@@ -1,3 +1,45 @@
+# Tests — CI Rule: No Real AI Calls
+
+This project's CI runs on free-tier GitHub runners with no GPU and no
+model weights. **Every AI surface MUST be mocked when tested.** Real model
+inference is forbidden in CI, even via `workflow_dispatch`.
+
+| Surface | Mock |
+|---|---|
+| Qwen-Image worker (`/api/generate`) | `tests/mock_qwen_server.py` |
+| LLM provider (LM Studio / Ollama / OpenAI-compat `/v1/chat/completions`) | `tests/mock_llm_server.py` |
+| TTS worker (`/tts`) | `tests/mock_tts_server.py` |
+| ComfyUI (`/free`, image gen) | not yet — add when needed |
+
+## Adding a new test that touches an AI surface
+
+1. If a mock for that surface doesn't exist yet, add
+   `tests/mock_<surface>_server.py` following the stdlib `http.server`
+   pattern of the existing mocks (no extra pip deps).
+2. Spawn the mock via `subprocess.Popen` from your test, point the
+   relevant env var (or seeded `config.json`) at it, and tear down on
+   exit (`atexit` + `try/finally`).
+3. The lightweight CI job
+   (`.github/workflows/e2e-qwen-web-test.yml::e2e-qwen-web-light`) MUST
+   run your test.
+4. **NEVER call a real model in CI** — even via `workflow_dispatch`. The
+   heavy `e2e-qwen-web` job is already locked to a self-hosted runner
+   that doesn't exist; keep it that way.
+
+## Integration test
+
+`tests/test_ai_mock_integration.py` spawns all three mocks plus a real
+`uvicorn slopfinity.server:app` and exercises `/enhance`,
+`/enhance?distribute`, `/subjects/suggest`, and `/tts`. Run via:
+
+```bash
+python -m pytest tests/test_ai_mock_integration.py -v
+# or directly:
+python tests/test_ai_mock_integration.py
+```
+
+---
+
 # E2E Testing for AMD Strix Halo Image & Video Toolbox
 
 ## Overview
