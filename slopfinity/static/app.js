@@ -110,7 +110,7 @@ function _renderStageEtas() {
             hint.className = 'stage-eta ml-1 opacity-50 text-[9px] font-mono';
             li.appendChild(hint);
         }
-        hint.textContent = '≈' + _fmtElapsed(avg * 1000);
+        hint.innerHTML = '≈' + _fmtElapsedHtml(avg * 1000);
     });
     // Total ETA badge near the timers — sum of all stages' rolling averages.
     const total = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge']
@@ -118,7 +118,7 @@ function _renderStageEtas() {
         .filter(x => x != null)
         .reduce((a, b) => a + b, 0);
     const eta = document.getElementById('h-c-eta');
-    if (eta) eta.textContent = total > 0 ? 'ETA ' + _fmtElapsed(total * 1000) : '';
+    if (eta) eta.innerHTML = total > 0 ? 'ETA ' + _fmtElapsedHtml(total * 1000) : '';
 }
 
 function _fmtElapsed(ms) {
@@ -131,6 +131,13 @@ function _fmtElapsed(ms) {
     const m = Math.floor(elapsed / 60);
     const s = elapsed % 60;
     return m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+
+// Same shape as _fmtElapsed but returns HTML with letter-units wrapped in
+// <span class="time-unit"> so CSS can dim them. Safe to insert via innerHTML
+// (no user input — output is fully derived from a numeric ms argument).
+function _fmtElapsedHtml(ms) {
+    return _fmtElapsed(ms).replace(/([hms]+)/g, '<span class="time-unit">$1</span>');
 }
 
 // ----- Done queue items: thumbnail / mini-player / asset link expanded card.
@@ -188,7 +195,7 @@ function _renderDoneAssetRow(filename) {
 }
 
 function _renderDoneItem(q) {
-    const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
+    const dur = q.duration_s ? _fmtElapsedHtml(q.duration_s * 1000) : '';
     const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
     const sym = q.succeeded === false ? '✗' : '✓';
     const promptEsc = _htmlEscape(q.prompt || '');
@@ -382,10 +389,10 @@ setInterval(() => {
     // Live update the active queue item's badges. Format must match the
     // renderItem template exactly or the badges flicker between the two.
     document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
-        if (_stageStartTs) el.textContent = _fmtElapsed(Date.now() - _stageStartTs);
+        if (_stageStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
     });
     document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
-        if (_jobStartTs) el.textContent = _fmtElapsed(Date.now() - _jobStartTs);
+        if (_jobStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
     });
     // Total ETA from rolling stage averages.
     const totalEta = _STAGE_ORDER
@@ -394,7 +401,7 @@ setInterval(() => {
         .reduce((a, b) => a + b, 0);
     if (totalEta > 0) {
         document.querySelectorAll('[data-q-status="active"] [data-q-job-eta]').forEach(el => {
-            el.textContent = 'ETA ' + _fmtElapsed(totalEta * 1000);
+            el.innerHTML = 'ETA ' + _fmtElapsedHtml(totalEta * 1000);
         });
     }
 }, 1000);
@@ -1322,9 +1329,9 @@ function connect() {
             _stageStartTs = stageTs ? stageTs * 1000 : Date.now();
             _jobStartTs = jobTs ? jobTs * 1000 : Date.now();
             const stageEl = $('h-c');
-            if (stageEl && _stageStartTs) stageEl.innerText = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
+            if (stageEl && _stageStartTs) stageEl.innerHTML = '⏱ ' + _fmtElapsedHtml(Date.now() - _stageStartTs);
             const totalEl = $('h-c-total');
-            if (totalEl && _jobStartTs) totalEl.innerText = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
+            if (totalEl && _jobStartTs) totalEl.innerHTML = 'Σ ' + _fmtElapsedHtml(Date.now() - _jobStartTs);
             // Progress bar tracks subject-through-list as a rough lifetime indicator.
             $('h-p').value = d.state.total_videos
                 ? (d.state.video_index / Math.max(1, d.state.total_videos)) * 100
@@ -1381,12 +1388,12 @@ function connect() {
                 // Match the 1Hz interval handler exactly (no '⏱ '/'Σ ' prefix
                 // — the labels next to the badges already convey what they
                 // mean) so live updates don't flicker.
-                const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
+                const stageNow = _stageStartTs ? _fmtElapsedHtml(Date.now() - _stageStartTs) : _fmtElapsedHtml(0);
                 const stageAvg = _stageAvgSeconds(curStep);
-                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
-                const jobNow2 = _jobStartTs ? _fmtElapsed(Date.now() - _jobStartTs) : '0s';
+                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsedHtml(stageAvg * 1000) : '';
+                const jobNow2 = _jobStartTs ? _fmtElapsedHtml(Date.now() - _jobStartTs) : _fmtElapsedHtml(0);
                 const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
-                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
+                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsedHtml(totalEtaSec2 * 1000) : '';
                 // Each completed stage of THIS job becomes a single line:
                 //   [asset-link badge]  ⏱ actual / ETA was-eta
                 // Stage's clickable badge replaces the spinner+text it had
@@ -1419,7 +1426,7 @@ function connect() {
                         }
                         const a = actuals[s];
                         const timing = a
-                            ? `<span class="font-mono text-[9px]">${_fmtElapsed(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}</span>`
+                            ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
                             : '';
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
