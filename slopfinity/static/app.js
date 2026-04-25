@@ -1131,6 +1131,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (_isSuggestionsHidden()) return;
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
+            // Settings toggle — bail immediately when disabled.
+            // Manual 🎲 button stays available regardless.
+            if (_autoSuggestDisabled()) {
+                console.info('skipping auto-suggest: suggest_auto_disabled');
+                return;
+            }
             // Preferred gate: GPU has been at <=5% for >=3 consecutive
             // seconds. This catches ad-hoc GPU users (manual ComfyUI
             // runs, transient spikes) that the old queue/fleet check
@@ -1251,29 +1257,43 @@ const _GPU_HISTORY_MAX = 30; // keep ~30 s of samples (WS ticks ~1 Hz)
 const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 
 // ---------------------------------------------------------------------------
-// GPU-idle gate audit — every auto-fetch surface that talks to the LLM
+// Auto-fetch gating audit — every auto-fetch surface that talks to the LLM
 // (or anything else that competes with running pipelines) MUST consult
-// _isGpuIdleEnough() first. Manual user-driven actions (button clicks,
-// keyboard shortcuts) are intentionally NOT gated — explicit intent wins.
+// BOTH gates before firing:
 //
-// Gated callers (auto-fetch surfaces):
-//   - tryAutoSuggest (page-load auto-suggest, ~line 1092):
-//       gated; retries every 1 s while GPU busy.
-//   - _wireSuggestCarousel right-overlay click → fresh-fetch fallback
-//       (when prefetch FIFO is empty): gated; shows brief "is-loading"
-//       hint and bails out.
-//   - _maybePrefetch (pointerenter / scroll / idle triggers):
-//       gated; silent no-op when busy.
+//   1. _autoSuggestDisabled() — Settings → LLM → Generation toggle. When
+//      ON, every auto path bails immediately. The 🎲 button is NOT gated.
+//   2. _isGpuIdleEnough() — GPU has been at <=5% for >=3 consecutive
+//      seconds. Catches ad-hoc GPU work the older queue/fleet check
+//      missed. The 🎲 button is also NOT gated by this.
+//
+// Gated callers (auto-fetch surfaces) AFTER the marquee rewrite:
+//   - tryAutoSuggest (page-load auto-suggest):
+//       gated by _autoSuggestDisabled(); then by _isGpuIdleEnough()
+//       (retries every 1 s while GPU busy).
+//   - _maybePrefetch (pointerenter / idle triggers):
+//       gated by _autoSuggestDisabled() then _isGpuIdleEnough();
+//       silent no-op when either fails.
+//   - _resetPrefetchIdleTimer's drain → _appendSuggestBatchRow: pulls
+//       a previously-buffered batch into a new marquee row. No fetch
+//       happens, so this path is unaffected by both gates BUT the
+//       top-up _maybePrefetch() it then triggers IS gated.
 //
 // NOT gated (explicit user intent):
-//   - regenSuggestions() — the 🎲 Suggest button. Manual click always wins.
-//   - _wireSuggestCarousel right-overlay → _consumePrefetchedBatch path:
-//       no fetch, just dequeues a previously-prefetched batch. The
-//       opportunistic top-up _maybePrefetch() it kicks IS gated.
-//
-// Definition: GPU has been at <=5% for >=3 consecutive seconds. Catches
-// ad-hoc GPU work the older queue/fleet check missed.
+//   - regenSuggestions() — the 🎲 Suggest button. Always fetches fresh.
 // ---------------------------------------------------------------------------
+
+// Returns true when the user has flipped the Settings → LLM → Generation
+// "Disable automatic suggestion fetches" toggle ON. Falls back to false
+// (auto-suggest enabled) until the first WS tick lands.
+function _autoSuggestDisabled() {
+    try {
+        return !!(_lastTick && _lastTick.config && _lastTick.config.suggest_auto_disabled);
+    } catch (_) {
+        return false;
+    }
+}
+
 function _isGpuIdleEnough() {
     const now = Date.now();
     const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
@@ -2479,6 +2499,8 @@ async function openSettings() {
         }
         const sugCustom = $('set-suggest-custom-prompt');
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
+        const sugAutoDis = $('set-suggest-auto-disabled');
+        if (sugAutoDis) sugAutoDis.checked = !!sr.suggest_auto_disabled;
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -2663,6 +2685,8 @@ async function saveSettings() {
     if (sugUseSub) body.suggest_use_subjects = !!sugUseSub.checked;
     const sugCustom = $('set-suggest-custom-prompt');
     if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
+    const sugAutoDis = $('set-suggest-auto-disabled');
+    if (sugAutoDis) body.suggest_auto_disabled = !!sugAutoDis.checked;
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2831,7 +2855,10 @@ function _refreshChipHighlights() {
     const ta = document.getElementById('p-core');
     if (!ta) return;
     const lines = new Set(ta.value.split(/\r?\n/).map(s => s.trim().toLowerCase()).filter(Boolean));
-    document.querySelectorAll('#subject-chips button[data-suggest]').forEach(btn => {
+    // Walks every marquee row in the stack — chips appear duplicated in
+    // each row's track for the seamless loop, so the same data-suggest may
+    // map to multiple buttons; toggling them all keeps the visual in sync.
+    document.querySelectorAll('#subject-chips-stack button[data-suggest]').forEach(btn => {
         const here = lines.has((btn.dataset.suggest || '').toLowerCase());
         btn.classList.toggle('btn-primary', !here);
         btn.classList.toggle('btn-outline', here);
@@ -2845,17 +2872,17 @@ function _refreshChipHighlights() {
 // 🎲 Suggest button still fetches fresh and overwrites the cache.
 const _SUGGEST_CACHE_KEY = 'slopfinity_suggestions_v1';
 
-// Build a single suggestion chip <button>. Pass repeat=true to mark the
-// chip as filler from a wrap-around batch — the click handler still works
-// identically; the data-attribute lets _refillSuggestChips drop fillers
-// before re-measuring on resize.
-function _buildSuggestChip(s, repeat) {
+// Build a single suggestion chip <button>. Same click semantics as before
+// the marquee rewrite: bare click appends, Shift+click replaces, present
+// chips are no-ops. data-suggest carries the raw string so the highlight
+// pass can match against the textarea content.
+function _buildSuggestChip(s) {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'btn btn-outline btn-primary btn-xs normal-case';
     b.textContent = s;
     b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
     b.dataset.suggest = s;
-    if (repeat) b.dataset.suggestionRepeat = 'true';
     b.addEventListener('click', (e) => {
         const ta = document.getElementById('p-core');
         if (!ta) return;
@@ -2870,89 +2897,69 @@ function _buildSuggestChip(s, repeat) {
     return b;
 }
 
-// Most recently rendered base batch — used by _refillSuggestChips on
-// resize so we can re-fill from the same source list without re-fetching.
-let _lastSuggestBatch = [];
+// Hard cap on rows in the marquee stack — oldest row evicted (FIFO).
+const _SUGGEST_MAX_ROWS = 4;
 
-// Pixel threshold under which we consider the gap "filled" — also the
-// minimum gap we'll leave at the bottom so chips don't touch the next
-// element.
-const _SUGGEST_FILL_THRESHOLD = 32;
-const _SUGGEST_FILL_MAX_REPEATS = 4;
+// Append a fresh marquee row to #subject-chips-stack. Items are duplicated
+// (items + items) so the keyframes' translateX(-50%) yields a seamless
+// loop. After insertion, measure the duplicated track width: if it fits
+// inside the row, mark `.no-overflow` and skip the animation; otherwise
+// scale the duration so a single chip travels at ~60 px/s, clamped to
+// 40..180 s for the full track. Hover/focus-within pauses via CSS.
+function _appendSuggestBatchRow(items) {
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack || !items || !items.length) return;
+    // First batch — drop the placeholder span if present.
+    const placeholder = document.getElementById('subject-chips-empty');
+    if (placeholder) placeholder.remove();
 
-// Measure the vertical gap between the bottom of the chips container and
-// the top of the next sibling (the Start button row). The user wants the
-// chip area to visually fill this whitespace so there's no awkward gap
-// between the last chip row and the bottom-anchored Start button.
-function _suggestGapPx(box) {
-    const anchor = box && box.nextElementSibling;
-    if (!anchor) return 0;
-    const boxRect = box.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    return Math.max(0, anchorRect.top - boxRect.bottom);
-}
+    const row = document.createElement('div');
+    row.className = 'suggest-marquee-row';
+    const track = document.createElement('div');
+    track.className = 'suggest-marquee-track';
+    const all = [...items, ...items]; // duplicate for seamless wraparound
+    all.forEach(s => track.appendChild(_buildSuggestChip(s)));
+    row.appendChild(track);
+    stack.appendChild(row);
 
-// Append repeats of the base batch until the gap below the chips is
-// smaller than the threshold or we hit the hard repeat cap. Filler chips
-// are tagged with data-suggestion-repeat="true" so we can strip them on
-// resize before re-measuring.
-function _refillSuggestChips() {
-    const box = document.getElementById('subject-chips');
-    if (!box || !_lastSuggestBatch.length) return;
-    // Strip previous fillers — keep only the original batch.
-    box.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
-    let repeats = 0;
-    while (repeats < _SUGGEST_FILL_MAX_REPEATS) {
-        const gap = _suggestGapPx(box);
-        if (gap < _SUGGEST_FILL_THRESHOLD) break;
-        _lastSuggestBatch.forEach(s => box.appendChild(_buildSuggestChip(s, true)));
-        repeats += 1;
+    requestAnimationFrame(() => {
+        const tw = track.scrollWidth;
+        const rw = row.clientWidth;
+        if (tw / 2 <= rw) {
+            row.classList.add('no-overflow');
+        } else {
+            const px = tw / 2; // single-copy width
+            // Speed math: aim for ~60 px/s on average. Clamp to 40..180 s
+            // so very short overflows don't sprint and very long ones
+            // don't crawl. seconds = clamp(px / 60, 40, 180).
+            const seconds = Math.min(180, Math.max(40, px / 60));
+            track.style.setProperty('--marquee-duration', seconds + 's');
+        }
+        _refreshChipHighlights();
+    });
+
+    // FIFO eviction — drop oldest rows past the cap.
+    while (stack.children.length > _SUGGEST_MAX_ROWS) {
+        stack.removeChild(stack.firstElementChild);
     }
-    _refreshChipHighlights();
 }
 
+// Wholesale replace the stack with a single fresh row (cache hydrate,
+// 🎲 click). Additive use cases (auto-suggest top-up, prefetch consume)
+// call _appendSuggestBatchRow directly.
 function _renderSuggestChips(arr) {
-    const box = document.getElementById('subject-chips');
-    if (!box) return;
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    stack.innerHTML = '';
     if (!arr.length) {
-        box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
-        _lastSuggestBatch = [];
+        const span = document.createElement('span');
+        span.className = 'text-[10px] italic text-warning';
+        span.textContent = 'no suggestions';
+        stack.appendChild(span);
         return;
     }
-    box.innerHTML = '';
-    _lastSuggestBatch = arr.slice();
-    arr.forEach(s => box.appendChild(_buildSuggestChip(s, false)));
-    // Defer the fill measurement until layout settles — the chips have
-    // just been inserted and getBoundingClientRect on a freshly attached
-    // node is fine, but a rAF gives the browser a clean frame.
-    requestAnimationFrame(() => _refillSuggestChips());
-    _refreshChipHighlights();
+    _appendSuggestBatchRow(arr);
 }
-
-// Watch for viewport / card-size changes so the fill recalculates when
-// the user drags the split-row divider or resizes the window. Set up
-// once — multiple calls are no-ops.
-let _suggestResizeWired = false;
-function _wireSuggestResize() {
-    if (_suggestResizeWired) return;
-    const box = document.getElementById('subject-chips');
-    if (!box) return;
-    _suggestResizeWired = true;
-    let pending = false;
-    const schedule = () => {
-        if (pending) return;
-        pending = true;
-        requestAnimationFrame(() => { pending = false; _refillSuggestChips(); });
-    };
-    window.addEventListener('resize', schedule);
-    if (typeof ResizeObserver !== 'undefined') {
-        const ro = new ResizeObserver(schedule);
-        // Observe the card-body so divider drags / textarea growth retrigger.
-        const card = box.closest('.card-body') || box.parentElement;
-        if (card) ro.observe(card);
-    }
-}
-document.addEventListener('DOMContentLoaded', _wireSuggestResize);
 
 // Render cached suggestions from localStorage if any exist. Returns true
 // if it rendered, false if cache was empty.
@@ -2971,7 +2978,9 @@ function _renderCachedSuggestions() {
 // _isGpuIdleEnough() — manual user click always wins. See the audit
 // block above _isGpuIdleEnough for the full inventory.
 async function regenSuggestions(n = 6) {
-  const box = document.getElementById('subject-chips');
+  // The 🎲 button: ALWAYS fires — never gated by GPU idle, never gated by
+  // the suggest_auto_disabled toggle. Manual user intent always wins.
+  const box = document.getElementById('subject-chips-stack');
   if (!box) return;
   box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
   try {
@@ -2985,230 +2994,36 @@ async function regenSuggestions(n = 6) {
     const arr = data.suggestions || [];
     if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-    // Manual 🎲 click: render fresh AND seed the carousel ring so paging
-    // back through the batch history works. _renderSuggestChips clears the
-    // strip first; the seed call below records the same batch as a fresh
-    // ring entry so the carousel doesn't think the strip is empty.
+    // Manual 🎲 click: replace the stack with a fresh single row.
     _renderSuggestChips(arr);
-    if (typeof _seedSuggestBatchFromRender === 'function') {
-        _seedSuggestBatchFromRender(arr);
-    }
   } catch (e) {
     box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
   }
 }
 
 // ---------------------------------------------------------------------------
-// Subjects suggestion carousel — hover-overlay paging (restoring PR #56).
+// Multi-row marquee chip area — replaces the single-row carousel from #76.
 //
-// The strip (#subject-chips) is wrapped in a frame (#subject-chips-frame)
-// with two 32 px gradient overlays that fade in on parent-hover. Click the
-// right overlay to page right one client-width; if already at the right
-// edge, fetch a new batch and append it (with a divider). Click the left
-// overlay to page left.
+// Each batch arrives as a new <div class="suggest-marquee-row"> appended
+// to #subject-chips-stack. Inside the row, a <div class="suggest-marquee-track">
+// holds the chips duplicated (items + items) so the CSS @keyframes
+// translateX(-50%) loop is visually seamless. Speed scales with track
+// length (60 px/s target, clamped 40..180 s) and pauses on hover/focus.
+// FIFO cap of _SUGGEST_MAX_ROWS = 4 evicts oldest rows.
 //
-// Composition with the surviving fill scaffold (_refillSuggestChips):
-// _renderSuggestChips replaces the strip wholesale on cache-load and on
-// 🎲 fetch, then runs the fill repeats. The carousel ring buffer
-// (_suggestBatches) records each appended batch separately so paging back
-// through earlier batches restores them; the cap of 10 prevents unbounded
-// DOM growth. Filler "repeat" chips are not stored in the ring — they are
-// regenerated by _refillSuggestChips on resize.
-//
-// Gating: the right-overlay fetch path consults _isGpuIdleEnough() before
-// hitting /subjects/suggest. The 🎲 button path is intentionally NOT gated
-// (manual user intent always wins).
+// Composition with #76's prefetch state machine: _maybePrefetch still
+// fills _prefetchedBatches; the consumer is now an idle-time top-up that
+// appends a new row when buffered batches are present. Manual 🎲 still
+// renders fresh and bypasses the prefetch buffer.
 // ---------------------------------------------------------------------------
 
-const _SUGGEST_BATCH_CAP = 10;
-// Each entry: { id: number, items: string[], domStart: number }
-// where domStart is the index of the first chip of this batch in the strip
-// (used to slice the strip down when the cap is exceeded).
-let _suggestBatches = [];
-
-// Called by _renderSuggestChips' callers (cache hydrate, 🎲 fetch) to
-// reset the ring after a wholesale strip rebuild — the strip now contains
-// exactly one batch.
-function _seedSuggestBatchFromRender(items) {
-    _suggestBatches = [{ id: Date.now(), items: items.slice(), domStart: 0 }];
-}
-
-function _suggestFrame() { return document.getElementById('subject-chips-frame'); }
-function _suggestStrip() { return document.getElementById('subject-chips'); }
-
-// Append a new batch to the strip — inserts a divider between previous
-// chips and new ones, scrolls the first new chip into view, and prunes
-// oldest batches when the ring exceeds _SUGGEST_BATCH_CAP.
-function _appendSuggestBatch(batch) {
-    const strip = _suggestStrip();
-    if (!strip || !batch || !Array.isArray(batch.items) || !batch.items.length) return;
-    // Strip "click 🎲" placeholder if present.
-    const placeholder = strip.querySelector('span.italic');
-    if (placeholder && !strip.querySelector('button[data-suggest]')) {
-        strip.innerHTML = '';
-        _suggestBatches = [];
-    }
-    // Drop any filler-repeat chips before appending — _refillSuggestChips
-    // will regenerate them after the new batch is in.
-    strip.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
-
-    const domStart = strip.children.length;
-    if (_suggestBatches.length > 0) {
-        const div = document.createElement('span');
-        div.className = 'suggest-batch-divider';
-        div.setAttribute('aria-hidden', 'true');
-        strip.appendChild(div);
-    }
-    const firstChip = _buildSuggestChip(batch.items[0], false);
-    strip.appendChild(firstChip);
-    for (let i = 1; i < batch.items.length; i++) {
-        strip.appendChild(_buildSuggestChip(batch.items[i], false));
-    }
-    _suggestBatches.push({ id: batch.id || Date.now(), items: batch.items.slice(), domStart });
-
-    // Prune oldest batches past the cap by removing their DOM nodes.
-    while (_suggestBatches.length > _SUGGEST_BATCH_CAP) {
-        const dropped = _suggestBatches.shift();
-        const next = _suggestBatches[0];
-        const cutEnd = next ? next.domStart : strip.children.length;
-        // Remove children [0, cutEnd) — but cutEnd indices are pre-prune;
-        // since the dropped batch is the first, indices 0..(cutEnd-1) are
-        // exactly its chips + the trailing divider.
-        for (let i = 0; i < cutEnd && strip.firstElementChild; i++) {
-            strip.removeChild(strip.firstElementChild);
-        }
-        // Re-base remaining batches' domStart.
-        _suggestBatches.forEach(b => { b.domStart = Math.max(0, b.domStart - cutEnd); });
-    }
-
-    // _lastSuggestBatch drives _refillSuggestChips' repeat fill — keep it
-    // pointed at the most recently appended batch so resizes still fill.
-    _lastSuggestBatch = batch.items.slice();
-
-    // Scroll the new batch's first chip into view (right edge).
-    requestAnimationFrame(() => {
-        try { firstChip.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }); } catch {}
-        _refreshChipHighlights();
-    });
-    // Newly-appended chips can extend the scrollWidth past clientWidth
-    // (revealing the right arrow) or, after pruning, contract it (hiding
-    // both arrows). Refresh the .can-scroll classes now and again on the
-    // next frame, after the smooth-scroll above has updated scrollLeft.
-    _updateOverlayVisibility();
-    requestAnimationFrame(_updateOverlayVisibility);
-}
-
-// Toggle the .can-scroll class on each overlay based on whether the strip
-// actually has content to scroll to in that direction. CSS gates the
-// hover-reveal on .can-scroll, so an overlay without it stays invisible
-// even on hover. The 4-pixel slack on each edge avoids flicker at the
-// exact start/end of the scroll range (sub-pixel rounding, smooth-scroll
-// landings, and the scroll-snap padding can leave scrollLeft a hair off
-// of zero or scrollWidth-clientWidth even at "true" edge).
-function _updateOverlayVisibility() {
-    const frame = document.getElementById('subject-chips-frame');
-    const left = document.getElementById('subject-chips-overlay-left');
-    const right = document.getElementById('subject-chips-overlay-right');
-    const strip = document.getElementById('subject-chips');
-    if (!frame || !left || !right || !strip) return;
-    const canLeft = strip.scrollLeft > 4;
-    const canRight = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 4;
-    left.classList.toggle('can-scroll', canLeft);
-    right.classList.toggle('can-scroll', canRight);
-}
-
-// Are we within ~8 px of the right edge of the strip's scroll range?
-function _atRightEdge() {
-    const strip = _suggestStrip();
-    if (!strip) return false;
-    return strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 8;
-}
-
-// Wire the overlay click / keyboard handlers. Idempotent — safe to call
-// multiple times.
-let _suggestCarouselWired = false;
-function _wireSuggestCarousel() {
-    if (_suggestCarouselWired) return;
-    const left = document.getElementById('subject-chips-overlay-left');
-    const right = document.getElementById('subject-chips-overlay-right');
-    const strip = _suggestStrip();
-    if (!left || !right || !strip) return;
-    _suggestCarouselWired = true;
-
-    const pageLeft = () => {
-        strip.scrollBy({ left: -strip.clientWidth, behavior: 'smooth' });
-    };
-    const pageRight = () => {
-        if (_isSuggestionsHidden()) return;
-        if (!_atRightEdge()) {
-            strip.scrollBy({ left: strip.clientWidth, behavior: 'smooth' });
-            return;
-        }
-        // Right-edge: prefer prefetched batch, fall back to fresh fetch.
-        if (typeof _consumePrefetchedBatch === 'function') {
-            const pre = _consumePrefetchedBatch();
-            if (pre) {
-                _appendSuggestBatch({ id: Date.now(), items: pre });
-                if (typeof _maybePrefetch === 'function') _maybePrefetch();
-                return;
-            }
-        }
-        // No prefetch ready — gate fresh fetch on GPU idle. Manual 🎲 stays ungated.
-        if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
-            console.info('skipping right-overlay fetch: GPU busy');
-            right.classList.add('is-loading');
-            setTimeout(() => right.classList.remove('is-loading'), 600);
-            return;
-        }
-        right.classList.add('is-loading');
-        const subjects = (($('p-core') && $('p-core').value) || '').trim();
-        const qs = '?n=6' + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '');
-        fetch('/subjects/suggest' + qs)
-            .then(r => r.json())
-            .then(d => {
-                if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
-                    _appendSuggestBatch({ id: Date.now(), items: d.suggestions });
-                }
-            })
-            .catch(() => {})
-            .finally(() => { right.classList.remove('is-loading'); });
-    };
-
-    const keyHandler = (fn) => (e) => {
-        if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            fn();
-        }
-    };
-    left.addEventListener('click', keyHandler(pageLeft));
-    left.addEventListener('keydown', keyHandler(pageLeft));
-    right.addEventListener('click', keyHandler(pageRight));
-    right.addEventListener('keydown', keyHandler(pageRight));
-
-    // Drive overlay visibility from actual scroll state — the CSS only
-    // reveals overlays that have .can-scroll, so without these listeners
-    // the arrows would never appear. rAF-coalesce the scroll listener so
-    // we don't thrash classList during smooth-scroll.
-    let _ovRaf = 0;
-    strip.addEventListener('scroll', () => {
-        if (_ovRaf) return;
-        _ovRaf = requestAnimationFrame(() => {
-            _ovRaf = 0;
-            _updateOverlayVisibility();
-        });
-    }, { passive: true });
-    window.addEventListener('resize', _updateOverlayVisibility);
-    _updateOverlayVisibility();
-}
-document.addEventListener('DOMContentLoaded', _wireSuggestCarousel);
-
 // ---------------------------------------------------------------------------
-// Subjects suggestion prefetch — preemptive cache for carousel paging
-// (restoring PR #57). Driven entirely by hover/scroll/idle signals on the
-// Subjects card; consumed by the carousel right-overlay click handler above
-// (_consumePrefetchedBatch). Every fetch path here is gated by
-// _isGpuIdleEnough() so we don't compete with running pipelines / ad-hoc
-// GPU users (manual ComfyUI runs, etc.).
+// Subjects suggestion prefetch — preemptive cache from #76, repurposed
+// to feed the multi-row marquee. Driven by hover/idle signals on the
+// Subjects card; consumed by an idle-time top-up that calls
+// _appendSuggestBatchRow when a buffered batch is ready. Every fetch path
+// here is gated by _isGpuIdleEnough() AND by _autoSuggestDisabled() (the
+// new Settings toggle). Manual 🎲 stays exempt from both.
 //
 // Invariants:
 // - At most one inflight request (_prefetchInflight bool).
@@ -3235,6 +3050,8 @@ function _consumePrefetchedBatch() {
 function _maybePrefetch() {
     if (_isSuggestionsHidden()) return;
     _prefetchStats.triggered += 1;
+    // Settings toggle — no auto-fetches when disabled. Manual 🎲 unaffected.
+    if (_autoSuggestDisabled()) return;
     if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
         _prefetchStats.skippedGpu += 1;
         return;
@@ -3268,27 +3085,30 @@ function _maybePrefetch() {
 function _resetPrefetchIdleTimer() {
     if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
     if (document.hidden) return;
-    _prefetchIdleTimer = setTimeout(() => { _maybePrefetch(); }, _PREFETCH_IDLE_TRIGGER_MS);
+    _prefetchIdleTimer = setTimeout(() => {
+        // First try to drain a buffered batch into a new marquee row.
+        // Only when the buffer is empty do we kick another prefetch.
+        const pre = _consumePrefetchedBatch();
+        if (pre) {
+            _appendSuggestBatchRow(pre);
+            _maybePrefetch(); // top-up (gated)
+        } else {
+            _maybePrefetch();
+        }
+    }, _PREFETCH_IDLE_TRIGGER_MS);
 }
 
 let _suggestPrefetchWired = false;
 function _wireSuggestPrefetch() {
     if (_suggestPrefetchWired) return;
-    const frame = document.getElementById('subject-chips-frame');
-    const strip = document.getElementById('subject-chips');
-    const right = document.getElementById('subject-chips-overlay-right');
+    const stack = document.getElementById('subject-chips-stack');
     const ta = document.getElementById('p-core');
-    if (!frame || !strip) return;
+    if (!stack) return;
     _suggestPrefetchWired = true;
 
-    frame.addEventListener('pointerenter', () => _maybePrefetch());
-    if (right) right.addEventListener('pointerenter', () => _maybePrefetch());
-
-    // Scroll-near-right-edge trigger (within 1.5 viewports of the right).
-    strip.addEventListener('scroll', () => {
-        const remaining = strip.scrollWidth - (strip.scrollLeft + strip.clientWidth);
-        if (remaining < strip.clientWidth * 1.5) _maybePrefetch();
-    });
+    // Hover the stack → top up the buffer (gated). Drain happens via the
+    // idle timer below so the marquee doesn't grow rows under the cursor.
+    stack.addEventListener('pointerenter', () => _maybePrefetch());
 
     if (ta) {
         ta.addEventListener('input', _resetPrefetchIdleTimer);
@@ -3316,24 +3136,6 @@ window._dumpSuggestPrefetchStats = function () {
         stats: { ..._prefetchStats },
     };
 };
-
-// Hide the entire carousel frame (not just the strip) when the surviving
-// fill scaffold says there's no vertical room. We piggyback on the
-// existing _refillSuggestChips path: when called, sync frame visibility
-// to the strip's computed display.
-const _origRefillSuggestChips = typeof _refillSuggestChips === 'function' ? _refillSuggestChips : null;
-if (_origRefillSuggestChips) {
-    _refillSuggestChips = function () {
-        _origRefillSuggestChips();
-        const frame = _suggestFrame();
-        const strip = _suggestStrip();
-        if (frame && strip) {
-            // If the strip is hidden by other layout logic, hide the frame too.
-            const hidden = strip.style.display === 'none';
-            frame.style.display = hidden ? 'none' : '';
-        }
-    };
-}
 
 function updateStageSteps(state) {
   if (!state) return;

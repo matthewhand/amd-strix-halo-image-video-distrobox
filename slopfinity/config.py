@@ -24,6 +24,10 @@ DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
 # overrides the built-in suggestion system prompt entirely (empty = default).
 DEFAULT_SUGGEST_USE_SUBJECTS = True
 DEFAULT_SUGGEST_CUSTOM_PROMPT = ""
+# When True, every automatic /subjects/suggest fetch path on the dashboard
+# (page-load tryAutoSuggest, hover/scroll/idle prefetch) bails early. The
+# manual 🎲 Suggest button stays exempt — explicit user intent always wins.
+DEFAULT_SUGGEST_AUTO_DISABLED = False
 
 # Auto-suspend list — see docs/auto-suspend-design.md. Each entry pairs a
 # co-resident service with one of four suspension methods. The scheduler
@@ -61,6 +65,7 @@ DEFAULT_CONFIG = {
     "philosophical_prompt": None,
     "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
+    "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
 }
 
