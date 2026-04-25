@@ -460,11 +460,33 @@
            (lives below). The IDs are still rendered (in the Settings tab) so the
            existing app.js handlers keep working unchanged. #}
 
-        {# AI Magic is now per-tab (lives inline in the Image / Video / Music / Voice tabs) and only rewrites that single stage. The full fan-out preview infra below remains hidden for back-compat with existing handlers. #}
+        {# AI Magic is per-tab (lives inline in the Image / Video / Music / Voice tabs) and only rewrites that single stage. The fan-out preview below shows ALL stages at once when /enhance/distribute fires — 4 stacked boxes on narrow viewports, 2x2 grid on wide. #}
         <textarea id="p-in" class="hidden"></textarea>
-        <div id="fanout-preview" class="hidden"></div>
+        <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
+            <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out preview</div>
+            <div id="fanout-warn" class="text-[10px] italic text-warning hidden"></div>
+
+            {# Four side-by-side boxes — stacked on narrow, 2x2 grid on wide. Each box shows the LLM-suggested prompt for that stage, with a 🔒/🔓 marker reflecting the lock state of the corresponding p-<stage> textarea. #}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                {% for stage in ['image', 'video', 'music', 'tts'] %}
+                <div class="card card-compact bg-base-200 p-2">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-[10px] uppercase tracking-widest opacity-60">{{ stage }}</span>
+                        <span id="fanout-{{ stage }}-lock" class="badge badge-xs badge-ghost font-mono" title="Unlocked — will be overwritten on Accept">🔓</span>
+                    </div>
+                    <div id="fanout-{{ stage }}" class="text-xs whitespace-pre-wrap font-mono leading-snug bg-base-100 rounded p-2 min-h-[3rem]"></div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="join w-full mt-2">
+                <button id="fanout-accept" class="btn btn-xs btn-primary join-item flex-1" onclick="acceptFanout()">Accept all</button>
+                <button id="fanout-retry"  class="btn btn-xs btn-ghost  join-item flex-1" onclick="enhance()">Retry</button>
+                <button id="fanout-edit"   class="btn btn-xs btn-secondary join-item flex-1" onclick="editFanout()">Edit</button>
+            </div>
+        </div>
+        {# Legacy IDs — kept hidden so any stray reference in app.js doesn't choke. The 4 stacked boxes above replace the tabs UI. #}
         <div id="fanout-body" class="hidden"></div>
-        <div id="fanout-warn" class="hidden"></div>
         <div role="tablist" id="fanout-tabs" class="hidden"></div>
         <div id="ai-box" class="hidden"><div id="ai-s"></div></div>
 
@@ -643,6 +665,18 @@
                         <span class="label-text text-xs">Timeout (seconds)</span>
                         <input id="set-timeout" type="number" min="1" value="60" class="input input-bordered input-sm" />
                     </label>
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label cursor-pointer py-1">
+                            <span class="label-text text-xs">Auto-suspend LLM during GPU inference</span>
+                            <input id="set-llm-auto-suspend" type="checkbox" class="toggle toggle-primary toggle-sm" onchange="saveAutoSuspend()" />
+                        </label>
+                        <div class="label-text-alt opacity-60 leading-snug">
+                            Sends SIGSTOP to LM Studio / Ollama before each heavy GPU stage
+                            and SIGCONT after, freeing ~8 GB of unified RAM. Process state
+                            is preserved — no model reload.
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-3 mt-4">

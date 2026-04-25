@@ -26,6 +26,7 @@ const NETWORK_ONLY_PREFIXES = [
   '/inject',
   '/config',
   '/tts',
+  '/llm/',
   '/ram_estimate',
   '/storage',
   '/manifest.webmanifest', // prefer live/dynamic branded manifest

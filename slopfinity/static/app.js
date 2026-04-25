@@ -122,6 +122,103 @@ function _fmtElapsed(ms) {
     return m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
 }
 
+// ----- Done queue items: thumbnail / mini-player / asset link expanded card.
+// The summary row stays compact (badge · prompt · duration · asset count).
+// Expanding the <details> reveals a join-vertical list of asset previews:
+//   image  → 96x54 <img>
+//   video  → <video preload=metadata> with poster auto-grabbed by browser
+//   audio  → <audio controls>
+//   other  → just the link
+// Each asset row also gets [Open] / [Download] links and a truncated filename.
+function _truncMiddle(s, max) {
+    if (!s || s.length <= max) return s || '';
+    const head = Math.ceil((max - 1) / 2);
+    const tail = Math.floor((max - 1) / 2);
+    return s.slice(0, head) + '…' + s.slice(-tail);
+}
+
+function _doneAssetKind(name) {
+    const n = (name || '').toLowerCase();
+    if (n.endsWith('.mp4') || n.endsWith('.webm') || n.endsWith('.mov')) return 'video';
+    if (n.endsWith('.wav') || n.endsWith('.mp3') || n.endsWith('.ogg') || n.endsWith('.flac')) return 'audio';
+    if (n.endsWith('.png') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.webp') || n.endsWith('.gif')) return 'image';
+    return 'other';
+}
+
+function _renderDoneAssetRow(filename) {
+    const url = `/files/${encodeURIComponent(filename)}`;
+    const kind = _doneAssetKind(filename);
+    const safe = _htmlEscape(filename);
+    const trunc = _htmlEscape(_truncMiddle(filename, 40));
+    let preview = '';
+    if (kind === 'image') {
+        preview = `<a href="${url}" target="_blank" rel="noopener" class="block flex-none"><img src="${url}" alt="" class="rounded bg-black object-cover" style="width:96px;height:54px;" loading="lazy"></a>`;
+    } else if (kind === 'video') {
+        // preload=metadata coaxes the browser to grab the first frame as a poster.
+        preview = `<a href="${url}" target="_blank" rel="noopener" class="block flex-none relative" style="width:96px;height:54px;"><video src="${url}" preload="metadata" muted playsinline class="rounded bg-black w-full h-full object-cover"></video><span class="absolute inset-0 flex items-center justify-center pointer-events-none text-white text-lg drop-shadow">▶</span></a>`;
+    } else if (kind === 'audio') {
+        preview = `<div class="flex-none" style="width:96px;"><audio controls preload="none" class="w-full h-8"><source src="${url}"></audio></div>`;
+    } else {
+        preview = `<div class="flex-none flex items-center justify-center bg-base-300 rounded font-mono text-[10px] text-base-content/60" style="width:96px;height:54px;">file</div>`;
+    }
+    const onClickInfo = `onclick='openAssetInfo(${JSON.stringify(filename)})'`;
+    return `<div class="join-item card card-compact bg-base-200 p-2">
+        <div class="flex items-start gap-2">
+            ${preview}
+            <div class="flex flex-col gap-1 min-w-0 flex-1">
+                <span class="font-mono text-[10px] truncate cursor-pointer" title="${safe}" ${onClickInfo}>${trunc}</span>
+                <div class="flex items-center gap-1 flex-wrap">
+                    <a href="${url}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs px-1 h-5 min-h-0">Open</a>
+                    <a href="${url}" download class="btn btn-ghost btn-xs px-1 h-5 min-h-0">Download</a>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function _renderDoneItem(q) {
+    const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
+    const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
+    const sym = q.succeeded === false ? '✗' : '✓';
+    const promptEsc = _htmlEscape(q.prompt || '');
+    // Backwards-compat: pre-asset-tracking done records only have v_idx /
+    // image_only. Synthesize a best-guess single-asset list from that so old
+    // history items still render a thumbnail.
+    let assets = Array.isArray(q.assets) ? q.assets.filter(Boolean) : [];
+    if (!assets.length) {
+        const v = q.v_idx || 0;
+        if (v) {
+            if (q.image_only) assets = [`v${v}_base.png`];
+            else assets = [`FINAL_${v}.mp4`, `v${v}_base.png`];
+        }
+    }
+    const tsHuman = q.completed_ts
+        ? new Date(q.completed_ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+    const headFile = assets[0] ? _htmlEscape(_truncMiddle(assets[0], 40)) : '';
+    const assetCountBadge = assets.length > 1
+        ? `<span class="badge badge-xs badge-ghost">${assets.length}</span>`
+        : '';
+    const previewList = assets.length
+        ? `<div class="join join-vertical w-full mt-2">${assets.map(_renderDoneAssetRow).join('')}</div>`
+        : `<div class="text-[10px] text-base-content/50 italic mt-2">no asset recorded</div>`;
+    return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
+        <details>
+            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
+                <span class="badge badge-xs ${cls}">${sym} done</span>
+                <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
+                ${assetCountBadge}
+                ${tsHuman ? `<span class="text-[9px] font-mono text-base-content/60">${tsHuman}</span>` : ''}
+                ${dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : ''}
+                ${headFile ? `<span class="text-[9px] font-mono opacity-70 hidden sm:inline">${headFile}</span>` : ''}
+            </summary>
+            <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
+                ${previewList}
+            </div>
+        </details>
+    </li>`;
+}
+
 // Stage order for "is this stage already done?" lookups in the pipeline strip.
 const _STAGE_ORDER = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
 function _stageDoneBefore(curStage, candidate) {
@@ -1139,22 +1236,7 @@ function connect() {
                     const doneOnly = visibleQueue.filter(q => q.status === 'done')
                         .slice().sort((a, b) => (b.completed_ts || 0) - (a.completed_ts || 0));
                     doneOnly.slice(0, 6).forEach(q => {
-                        const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
-                        const v = q.v_idx || 0;
-                        const finalAsset = v && !q.image_only ? `FINAL_${v}.mp4` : null;
-                        const baseAsset = v ? `v${v}_base.png` : null;
-                        const asset = finalAsset || baseAsset;
-                        const onClick = asset ? `onclick='openAssetInfo(${JSON.stringify(asset)})'` : '';
-                        const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
-                        const sym = q.succeeded === false ? '✗' : '✓';
-                        items.push(`<li class="bg-base-200/40 rounded-md p-2 opacity-60 hover:opacity-100 cursor-pointer" ${onClick}>
-                            <div class="flex items-center gap-2 text-xs flex-wrap">
-                                <span class="badge badge-xs ${cls}">${sym} done</span>
-                                <span class="font-semibold truncate flex-1" title="${_htmlEscape(q.prompt || '')}">${_htmlEscape(q.prompt || '')}</span>
-                                ${dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : ''}
-                                ${asset ? `<span class="text-[9px] font-mono opacity-70">${asset}</span>` : ''}
-                            </div>
-                        </li>`);
+                        items.push(_renderDoneItem(q));
                     });
                     qList.innerHTML = items.join('');
                 }
@@ -1339,38 +1421,27 @@ function _htmlEscape(s) {
     }[c]));
 }
 
+// Render the fan-out as 4 stacked / 2x2 boxes — every stage prompt visible
+// at once. Replaces the older tab-switcher UI; the user wanted to see all
+// suggestions side-by-side rather than clicking through tabs.
 function _renderFanoutPreview(stages) {
-    const tabs = $('fanout-tabs');
-    const body = $('fanout-body');
-    if (!tabs || !body) return;
-    tabs.innerHTML = STAGE_NAMES.map((n, i) =>
-        `<a role="tab" class="tab ${i === 0 ? 'tab-active' : ''}" data-stage="${n}" onclick="_switchFanoutTab('${n}')">${n}</a>`
-    ).join('');
-    body.dataset.stages = JSON.stringify(stages);
-    _switchFanoutTab('image');
-}
-
-function _switchFanoutTab(stage) {
-    const tabs = $('fanout-tabs');
-    const body = $('fanout-body');
-    if (!tabs || !body) return;
-    tabs.querySelectorAll('.tab').forEach(el => {
-        el.classList.toggle('tab-active', el.dataset.stage === stage);
+    STAGE_NAMES.forEach(n => {
+        const box = $('fanout-' + n);
+        if (box) box.textContent = (stages && stages[n]) || '';
+        // Mirror the lock state from the corresponding p-<stage> textarea so
+        // the user can see at a glance which boxes will be skipped on Accept.
+        const lockBadge = $('fanout-' + n + '-lock');
+        const srcLock = $('lock-' + n);
+        if (lockBadge && srcLock) {
+            const locked = srcLock.dataset.locked === '1';
+            lockBadge.textContent = locked ? '🔒' : '🔓';
+            lockBadge.title = locked
+                ? 'Locked — your existing text will be preserved'
+                : 'Unlocked — will be overwritten on Accept';
+            lockBadge.classList.toggle('badge-warning', locked);
+            lockBadge.classList.toggle('badge-ghost', !locked);
+        }
     });
-    const stages = JSON.parse(body.dataset.stages || '{}');
-    const before = _stageVal(stage);
-    const after = stages[stage] || '';
-    body.innerHTML = `
-        <div class="grid grid-cols-1 gap-2">
-            <div>
-                <div class="text-[10px] uppercase opacity-60">Before</div>
-                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap">${_htmlEscape(before) || '<em class="opacity-40">(empty)</em>'}</div>
-            </div>
-            <div>
-                <div class="text-[10px] uppercase opacity-60">After</div>
-                <div class="bg-base-100 p-2 rounded text-xs whitespace-pre-wrap border-l-2 border-primary">${_htmlEscape(after) || '<em class="opacity-40">(empty)</em>'}</div>
-            </div>
-        </div>`;
 }
 
 // Single-tab enhancer — rewrite ONE stage's prompt, leaving the others alone.
@@ -1421,8 +1492,12 @@ async function enhance() {
     if (preview) preview.classList.remove('hidden');
     const warn = $('fanout-warn');
     if (warn) { warn.classList.add('hidden'); warn.innerText = ''; }
-    const body = $('fanout-body');
-    if (body) body.innerHTML = '<em class="opacity-60">Conjuring brilliance...</em>';
+    // Loading placeholder — drop a "thinking" hint into each of the 4 boxes
+    // so the preview reflects active work even before the LLM responds.
+    STAGE_NAMES.forEach(n => {
+        const box = $('fanout-' + n);
+        if (box) box.textContent = '✨ thinking...';
+    });
     try {
         const res = await fetch('/enhance/distribute', {
             method: 'POST',
@@ -1437,11 +1512,17 @@ async function enhance() {
                 warn.classList.remove('hidden');
                 warn.innerText = 'Restored dropped tokens: ' + (r.preserved_dropped || []).join(', ');
             }
-        } else if (body) {
-            body.innerText = '(no response)';
+        } else {
+            STAGE_NAMES.forEach(n => {
+                const box = $('fanout-' + n);
+                if (box) box.textContent = '(no response)';
+            });
         }
     } catch (e) {
-        if (body) body.innerText = 'Error: ' + e;
+        STAGE_NAMES.forEach(n => {
+            const box = $('fanout-' + n);
+            if (box) box.textContent = 'Error: ' + e;
+        });
     }
 }
 
@@ -1804,6 +1885,8 @@ async function openSettings() {
         $('set-temp-val').innerText = $('set-temp').value;
         $('set-retries').value = llm.max_retries ?? 2;
         $('set-timeout').value = llm.timeout_s ?? 60;
+        const autoSus = $('set-llm-auto-suspend');
+        if (autoSus) autoSus.checked = !!llm.auto_suspend;
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -1847,6 +1930,23 @@ async function openSettings() {
     }
 }
 
+async function saveAutoSuspend() {
+    // Inline-save the LLM auto-suspend toggle without closing the Settings
+    // modal. Lets the user flip the switch and immediately see its effect on
+    // the next stage start, without re-opening Settings to hit Save.
+    const el = $('set-llm-auto-suspend');
+    if (!el) return;
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ llm: { auto_suspend: !!el.checked } }),
+        });
+    } catch (e) {
+        console.error('saveAutoSuspend failed', e);
+    }
+}
+
 async function saveSettings() {
     const sel = $('set-model');
     let model_id = sel.value;
@@ -1860,6 +1960,7 @@ async function saveSettings() {
             temperature: parseFloat($('set-temp').value),
             max_retries: parseInt($('set-retries').value, 10),
             timeout_s: parseInt($('set-timeout').value, 10),
+            auto_suspend: !!($('set-llm-auto-suspend') && $('set-llm-auto-suspend').checked),
         },
     };
     await fetch('/settings', {
@@ -1933,8 +2034,11 @@ function _updateStartBtn() {
   const inf = document.getElementById('inf-on');
   const now = document.getElementById('now-on');
   const term = document.getElementById('term-on');
-  if (term && term.checked) { b.textContent = 'Terminate & Queue'; return; }
-  if (inf && inf.checked) {
+  const termOn = !!(term && term.checked);
+  const infOn = !!(inf && inf.checked);
+  if (termOn && infOn) { b.textContent = 'Terminate and Queue Infinite Slop'; return; }
+  if (termOn) { b.textContent = 'Terminate & Queue'; return; }
+  if (infOn) {
     b.textContent = (now && now.checked) ? 'Queue Infinite Slop (now)' : 'Queue Infinite Slop';
     return;
   }
