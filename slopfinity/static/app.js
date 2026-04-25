@@ -2659,3 +2659,74 @@ if (typeof window._onAudioChanged !== 'function') {
 
 connect();
 _wireLockListeners();
+
+// ===========================================================================
+// Draggable horizontal splitter between the Subjects/Queue (upper) and the
+// Slop output (lower). Persists upper-section height as a 0..1 fraction of
+// the splitter container in localStorage. Double-click resets to 50/50
+// (cleared key → both panes use natural flex). Touch / pen / mouse all work
+// via Pointer Events; Pointer Capture keeps drag tracking even when the
+// cursor leaves the handle.
+// ===========================================================================
+(function wireUiSplit() {
+    const init = () => {
+        const handle = document.getElementById('ui-split-handle');
+        const upper  = document.getElementById('ui-split-upper');
+        const lower  = document.getElementById('ui-split-lower');
+        if (!handle || !upper || !lower) return;
+        const KEY = 'slopfinity_ui_split_upper_pct';
+        // Restore stored fraction (sanity-bounded so a corrupt value can't
+        // collapse a pane to invisibility).
+        const stored = parseFloat(localStorage.getItem(KEY));
+        if (!Number.isNaN(stored) && stored > 0.05 && stored < 0.95) {
+            upper.style.flex = `0 0 ${stored * 100}%`;
+            lower.style.flex = '1 1 auto';
+        }
+        let dragging = false;
+        let startY = 0;
+        let startUpperPx = 0;
+        let containerPx = 0;
+        handle.addEventListener('pointerdown', (e) => {
+            // Skip on viewports where the media query made the handle inert.
+            if (window.matchMedia('(max-width: 768px)').matches) return;
+            dragging = true;
+            startY = e.clientY;
+            startUpperPx = upper.getBoundingClientRect().height;
+            containerPx = handle.parentElement.getBoundingClientRect().height;
+            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+            handle.classList.add('dragging');
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        handle.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            // Reserve 120 px min for each pane + 8 px for the handle itself.
+            const newUpper = Math.max(120, Math.min(containerPx - 120 - 8, startUpperPx + (e.clientY - startY)));
+            const pct = newUpper / containerPx;
+            upper.style.flex = `0 0 ${pct * 100}%`;
+            lower.style.flex = '1 1 auto';
+        });
+        const stop = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+            handle.classList.remove('dragging');
+            document.body.style.userSelect = '';
+            const pct = upper.getBoundingClientRect().height / handle.parentElement.getBoundingClientRect().height;
+            if (pct > 0.05 && pct < 0.95) localStorage.setItem(KEY, String(pct));
+        };
+        handle.addEventListener('pointerup', stop);
+        handle.addEventListener('pointercancel', stop);
+        // Double-click resets to 50/50 (= clear the override + remove storage).
+        handle.addEventListener('dblclick', () => {
+            upper.style.flex = '1 1 auto';
+            lower.style.flex = '1 1 auto';
+            localStorage.removeItem(KEY);
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();

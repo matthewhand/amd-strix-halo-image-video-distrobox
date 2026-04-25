@@ -98,6 +98,14 @@
     {# Idle chip removed — the Start Infinity button already communicates state. #}
     <div id="hero-idle" class="hidden"></div>
 
+    {# Horizontal draggable splitter — wraps Subjects/Queue (upper) and Slop output (lower)
+       so the user can re-balance vertical room. Hidden behavior on narrow viewports
+       (handle still rendered, but flex stacks naturally). The wrapper is purely
+       structural — every existing #id underneath keeps its identity so WS-driven
+       re-renders that target #q-list, #preview-grid, #out-finals, etc. still hit. #}
+    <div id="ui-split" class="flex flex-col" style="height: calc(100vh - 120px)">
+    <div id="ui-split-upper" class="overflow-auto custom-scrollbar" style="flex: 1 1 auto; min-height: 200px;">
+
     <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
     <div id="split-row" class="flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
     <section id="split-left" class="card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
@@ -225,6 +233,10 @@
     </section>
     </div> {# /split-row #}
 
+    </div> {# /ui-split-upper #}
+    <div id="ui-split-handle" class="flex-none cursor-row-resize select-none" title="Drag to resize · double-click to reset"></div>
+    <div id="ui-split-lower" class="overflow-auto custom-scrollbar" style="flex: 1 1 auto; min-height: 200px;">
+
     {# Scheduler strip — hidden when no events; JS shows it if events appear. #}
     <div id="sched-strip" class="flex items-center gap-2 mb-6 flex-wrap" style="display:none">
         <span class="text-[11px] uppercase tracking-widest text-base-content/60">Scheduler</span>
@@ -324,6 +336,9 @@
             <p class="text-base-content/50 italic">Nothing generated yet — your clips will appear here.</p>
         </div>
     </div>
+
+    </div> {# /ui-split-lower #}
+    </div> {# /ui-split #}
 
     <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
         {{ branding.footer.tagline }}
