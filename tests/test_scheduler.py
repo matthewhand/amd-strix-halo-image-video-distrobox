@@ -64,21 +64,24 @@ def test_check_budget_respects_safety_override(monkeypatch):
     assert ok_strict is False
 
 
-def test_acquire_gpu_serializes_two_coroutines(monkeypatch):
-    """Two stages should run strictly one-after-the-other under the lock."""
-    # Force budget check to always pass so we isolate the lock behavior.
-    monkeypatch.setattr(sched, "check_budget", lambda s, m, safety_gb=10: (True, 200.0, 10.0))
-    # No-op free_between so the critical section exits fast.
+def test_acquire_gpu_concurrent_when_budget_fits(monkeypatch):
+    """Phase 5 — two stages may run concurrently if their reservations fit.
+
+    With 200 GB available and two qwen reservations (34 GB each = 68 GB)
+    well under the 190 GB headroom, both stages should overlap.
+    """
+    # Plenty of host RAM; safety_gb=10 -> 190 GB headroom.
+    m = mock.mock_open(read_data=_mk_meminfo(200 * 1024 * 1024))
+    monkeypatch.setattr("builtins.open", m)
     async def _noop(*a, **k):
         return {"ok": True, "before_gb": 100.0, "after_gb": 100.0, "freed_gb": 0.0}
     monkeypatch.setattr(sched, "free_between", _noop)
-    # Drain the event queue from prior tests.
     while not sched.SchedulerEvents.empty():
         sched.SchedulerEvents.get_nowait()
 
     async def main():
-        # Rebind lock/event to this loop so prior asyncio state doesn't leak.
-        sched.gpu_lock = asyncio.Lock()
+        sched.GPU = sched.GPUReservation()
+        sched.gpu_lock = sched.GPU.cond
         sched.paused = asyncio.Event()
         sched.paused.set()
 
@@ -94,13 +97,47 @@ def test_acquire_gpu_serializes_two_coroutines(monkeypatch):
         return order
 
     order = asyncio.run(main())
-    # Strict serialization: start_a, end_a, start_b, end_b (or b before a).
     assert len(order) == 4
-    # Whichever started first must also end before the other starts.
+    # Concurrent: both starts happen before either end.
+    starts = [o for o in order if o[0] == "start"]
+    ends = [o for o in order if o[0] == "end"]
+    assert max(s[2] for s in starts) <= min(e[2] for e in ends) + 1e-3
+
+
+def test_acquire_gpu_serializes_when_budget_tight(monkeypatch):
+    """Two oversized stages should still serialize when both can't fit."""
+    # 70 GB available — fits ONE qwen (34) but not two (68 > 70-10 safety = 60).
+    m = mock.mock_open(read_data=_mk_meminfo(70 * 1024 * 1024))
+    monkeypatch.setattr("builtins.open", m)
+    async def _noop(*a, **k):
+        return {"ok": True, "before_gb": 70.0, "after_gb": 70.0, "freed_gb": 0.0}
+    monkeypatch.setattr(sched, "free_between", _noop)
+    while not sched.SchedulerEvents.empty():
+        sched.SchedulerEvents.get_nowait()
+
+    async def main():
+        sched.GPU = sched.GPUReservation()
+        sched.gpu_lock = sched.GPU.cond
+        sched.paused = asyncio.Event()
+        sched.paused.set()
+
+        order = []
+
+        async def worker(name: str):
+            async with sched.acquire_gpu("image", "qwen"):
+                order.append(("start", name, time.time()))
+                await asyncio.sleep(0.05)
+                order.append(("end", name, time.time()))
+
+        await asyncio.gather(worker("a"), worker("b"))
+        return order
+
+    order = asyncio.run(main())
+    assert len(order) == 4
     first_name = order[0][1]
+    # Strict serialization — first stage must end before second starts.
     assert order[1] == ("end", first_name, order[1][2])
-    second_name = order[2][1]
-    assert second_name != first_name
+    assert order[2][1] != first_name
 
 
 def test_free_between_posts_to_comfy(monkeypatch):
