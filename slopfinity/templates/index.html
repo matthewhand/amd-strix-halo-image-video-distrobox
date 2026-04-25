@@ -134,8 +134,17 @@
                 <span class="text-[10px] text-base-content/50">Need ideas?</span>
                 <button class="btn btn-ghost btn-xs" onclick="regenSuggestions()" title="Regenerate">🎲 Suggest</button>
             </div>
-            <div id="subject-chips" class="flex flex-wrap gap-1 min-h-[28px]">
-                <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
+            {# Carousel frame wraps the chips strip so the left/right hover-overlays
+               can page through earlier / newer suggestion batches without competing
+               with the existing chip render path. The strip itself keeps id
+               #subject-chips so all existing JS (autogrow / fill / highlight /
+               cache-render / regenSuggestions) continues to work unchanged. #}
+            <div id="subject-chips-frame" class="suggest-frame relative">
+                <button id="subject-chips-overlay-left" type="button" class="suggest-overlay suggest-overlay-left" aria-label="earlier suggestions" tabindex="0">‹</button>
+                <button id="subject-chips-overlay-right" type="button" class="suggest-overlay suggest-overlay-right" aria-label="more suggestions" tabindex="0">›</button>
+                <div id="subject-chips" class="suggest-strip flex flex-wrap gap-1 min-h-[28px]">
+                    <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
+                </div>
             </div>
             <div class="w-full mt-auto">
                 <button class="btn btn-primary btn-lg w-full" id="btn-start-stop" onclick="toggleInfinity()">

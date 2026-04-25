@@ -263,3 +263,84 @@ textarea.subjects-autogrow {
 .time-unit {
     opacity: 0.55;
 }
+
+/* ===========================================================================
+   Subjects suggestion carousel — hover-overlay paging (PR restoring #56).
+   Wraps #subject-chips in a relative frame with left/right gradient overlays
+   that fade in on parent-hover and page the strip horizontally one
+   client-width on click. The strip itself keeps flex-wrap on so the existing
+   _refillSuggestChips fill behaviour still works in the static layout; on
+   carousel-paged batches we lean on overflow-x scroll-snap. Theme-aware via
+   DaisyUI vars. Hidden when autogrow / fill measurer says there's no room. */
+.suggest-frame {
+    position: relative;
+    overflow: hidden;
+}
+.suggest-strip {
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+}
+.suggest-strip::-webkit-scrollbar { display: none; }
+.suggest-strip > .suggest-batch-divider {
+    flex: 0 0 1px;
+    align-self: stretch;
+    margin: 0 .25rem;
+    background: hsl(var(--bc) / 0.18);
+    scroll-snap-align: start;
+}
+.suggest-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: hsl(var(--bc));
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+    z-index: 5;
+    font-size: 1.25rem;
+    line-height: 1;
+    background: transparent;
+}
+.suggest-overlay-left {
+    left: 0;
+    background: linear-gradient(to right, hsl(var(--b1) / 0.95), transparent);
+}
+.suggest-overlay-right {
+    right: 0;
+    background: linear-gradient(to left, hsl(var(--b1) / 0.95), transparent);
+}
+.suggest-frame:hover .suggest-overlay,
+.suggest-frame:focus-within .suggest-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+.suggest-overlay:hover { color: hsl(var(--p)); }
+.suggest-overlay:focus-visible {
+    outline: 2px solid hsl(var(--p));
+    outline-offset: -2px;
+}
+/* Subtle "fetching" pulse on the right overlay while a prefetch /
+   on-demand fetch is inflight — mirrors loading-dots without taking
+   layout space. */
+.suggest-overlay.is-loading::after {
+    content: "";
+    position: absolute;
+    inset: auto 4px 4px 4px;
+    height: 2px;
+    background: hsl(var(--p));
+    animation: suggest-overlay-pulse 0.9s ease-in-out infinite;
+}
+@keyframes suggest-overlay-pulse {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+}
