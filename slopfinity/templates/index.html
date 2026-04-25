@@ -100,15 +100,21 @@
                 </span>
                 <span class="font-mono text-[9px] text-base-content/50 leading-none" id="r-v">0 / 0 GB</span>
             </span>
-            <span class="flex items-baseline gap-1">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
-                <span class="font-mono font-black text-primary" id="g-v">0%</span>
-                <span class="ticker-bar ml-1" id="g-t" data-tone="primary"></span>
+            <span class="flex flex-col items-start gap-0">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
+                    <span class="font-mono font-black text-primary" id="g-v">0%</span>
+                    <span class="ticker-bar ml-1" id="g-t" data-tone="primary"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem]" id="g-name" title="">—</span>
             </span>
-            <span class="flex items-baseline gap-1" title="Load average — system-wide pressure (1m / 5m / 15m).">
-                <span class="text-[10px] uppercase tracking-widest text-base-content/50">Load</span>
-                <span class="font-mono font-black text-info" id="l-v">0%</span>
-                <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
+            <span class="flex flex-col items-start gap-0" title="Load average — system-wide pressure (1m / 5m / 15m).">
+                <span class="flex items-baseline gap-1">
+                    <span class="text-[10px] uppercase tracking-widest text-base-content/50">Load</span>
+                    <span class="font-mono font-black text-info" id="l-v">0%</span>
+                    <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
+                </span>
+                <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem]" id="l-name" title="">—</span>
             </span>
         </div>
         <div class="flex items-center gap-2 flex-none">
@@ -572,7 +578,11 @@
                     {% set _fallback = {'video': ('🎬 video', 'badge-primary'), 'image': ('🖼 image', 'badge-secondary'), 'audio': ('🔊 audio', 'badge-warning')}[kind] %}
                     {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}
                 {% endif %}
-                {% set border_color = 'border-primary' %}
+                {# Card border tracks the matching filter chip:
+                   - final products → border-primary (matches video/image/music/speech kind chips)
+                   - intermediate assets → border-accent (matches the 'assets' meta-chip)
+                   So at a glance, a card's outline tells you which filter group it lives in. #}
+                {% set border_color = 'border-primary' if is_final else 'border-accent' %}
                 <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}">
                     <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                     {% if is_mp4 %}

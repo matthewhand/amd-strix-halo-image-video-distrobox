@@ -4,8 +4,71 @@ import subprocess
 from pathlib import Path
 
 
+def _detect_gpu_name():
+    """Read the AMD GPU's marketing name once. Cached at module level so we
+    don't fork rocm-smi every WS tick. Returns "" on failure — the navbar
+    just hides the slot in that case."""
+    try:
+        res = subprocess.run(["rocm-smi", "--showproductname"],
+                             capture_output=True, text=True, timeout=5)
+        for ln in res.stdout.split('\n'):
+            for key in ("Card SKU", "Card Series", "Card series",
+                        "Card model", "Card Model"):
+                if key in ln:
+                    val = ln.split(':', 2)[-1].strip()
+                    if val:
+                        return val
+    except Exception:
+        pass
+    # Fallback: lspci's first 3D/VGA controller line.
+    try:
+        res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=2)
+        for ln in res.stdout.split('\n'):
+            if 'VGA compatible' in ln or '3D controller' in ln:
+                # "XX:XX.X VGA compatible controller: AMD/ATI [...]"
+                tail = ln.split(':', 2)[-1].strip()
+                # Drop the "(rev XX)" suffix if present.
+                tail = tail.split('(rev ')[0].strip()
+                return tail
+    except Exception:
+        pass
+    return ""
+
+
+def _detect_cpu_name():
+    """Read the CPU's marketing name from /proc/cpuinfo's first 'model name'
+    line. Strix Halo lists it as e.g. 'AMD RYZEN AI MAX+ 395 w/ Radeon 8060S'
+    — strip the trailing 'w/ <iGPU>' since that GPU is surfaced separately
+    under the GPU label. Returns "" on failure."""
+    try:
+        with open('/proc/cpuinfo', 'r') as f:
+            for line in f:
+                if line.startswith('model name'):
+                    name = line.split(':', 1)[-1].strip()
+                    # Drop the iGPU suffix to avoid duplication with the
+                    # GPU subtitle row above.
+                    for sep in (' w/ ', ' with '):
+                        if sep in name:
+                            name = name.split(sep, 1)[0].strip()
+                    return name
+    except Exception:
+        pass
+    return ""
+
+
+_GPU_NAME = None
+_CPU_NAME = None
+
+
 def get_sys_stats():
-    s = {"gpu": 0, "vram": 0, "ram_u": 0, "ram_t": 0, "load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0, "load_pct": 0}
+    global _GPU_NAME, _CPU_NAME
+    if _GPU_NAME is None:
+        _GPU_NAME = _detect_gpu_name() or ""
+    if _CPU_NAME is None:
+        _CPU_NAME = _detect_cpu_name() or ""
+    s = {"gpu": 0, "vram": 0, "ram_u": 0, "ram_t": 0,
+         "load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0, "load_pct": 0,
+         "gpu_name": _GPU_NAME, "cpu_name": _CPU_NAME}
     try:
         res = subprocess.run(["rocm-smi", "--showuse", "--showmemuse"], capture_output=True, text=True)
         for l in res.stdout.split('\n'):
