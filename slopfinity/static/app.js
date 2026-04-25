@@ -396,27 +396,58 @@ const _PROMPTS_ROLE_TO_KEY = {
     tts:   'tts_prompt',
 };
 
-function _buildPromptRow(stage, role, value, { locked, status }) {
+function _buildPromptRow(stage, role, value, { locked, status, currentPrompt }) {
     const lockTitle = status === 'done'
         ? 'Stage complete — edits will not apply'
         : 'Stage in progress — edits will not apply';
     const lockNote = locked
         ? `<span class="badge badge-xs badge-neutral ml-2" title="${lockTitle}">locked: ${status}</span>`
         : `<span class="badge badge-xs badge-success ml-2" title="Stage has not run yet — edits will apply">live</span>`;
+    // Empty values render as a placeholder hint that surfaces what the
+    // runner will fall back to (the active job's `current_prompt`, if
+    // any). Non-empty values render as the textarea's actual `value` —
+    // the placeholder is only visible when the field is empty.
+    const cur = currentPrompt || '';
+    const placeholder = cur
+        ? `Default: ${cur.slice(0, 80)}${cur.length > 80 ? '…' : ''} — type here to override`
+        : `(use built-in default for ${role})`;
+    const pullBtn = (!locked && cur)
+        ? `<button type="button" class="btn btn-ghost btn-xs ml-2" onclick="_pullFromConcept(this)" title="Copy the active Concept into this textarea so you can edit it">↧ Pull from Concept</button>`
+        : '';
     return `
         <div class="form-control" data-prompt-stage="${stage}" data-prompt-role="${role}">
             <label class="label py-0.5">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-70">
                     ${stage} (${role})
                 </span>
-                ${lockNote}
+                <span class="flex items-center">
+                    ${lockNote}
+                    ${pullBtn}
+                </span>
             </label>
             <textarea class="textarea textarea-bordered textarea-sm font-mono text-[11px]"
                       ${locked ? 'disabled' : ''}
                       rows="2"
-                      placeholder="(use default for ${role})">${_htmlEscape(value || '')}</textarea>
+                      placeholder="${_htmlEscape(placeholder)}">${_htmlEscape(value || '')}</textarea>
         </div>
     `;
+}
+
+// Wired up via inline onclick from `_buildPromptRow`. Reads the active
+// Concept from the modal's `data-current-prompt` attribute (set in
+// `openPromptsEdit`) so it stays in sync with the snapshot the modal
+// was opened from, even if a later WS tick mutates `_lastTick`.
+function _pullFromConcept(btn) {
+    const modal = document.getElementById('prompts-edit-modal');
+    if (!modal) return;
+    const cur = modal.dataset.currentPrompt || '';
+    if (!cur) return;
+    const row = btn.closest('[data-prompt-stage]');
+    if (!row) return;
+    const ta = row.querySelector('textarea');
+    if (!ta || ta.disabled) return;
+    ta.value = cur;
+    ta.focus();
 }
 
 function openPromptsEdit(focusStage = null) {
@@ -427,7 +458,29 @@ function openPromptsEdit(focusStage = null) {
     const state = (_lastTick && _lastTick.state) || {};
     const curStage = state.step || '';
     const curIdx = _STAGE_ORDER.indexOf(curStage);
+    // The "Concept" prompt is the LLM's per-video rewrite — the runner
+    // sets it on `state.current_prompt` at the top of each iteration.
+    // Snapshot it onto the modal element so `_pullFromConcept` and the
+    // placeholder text both refer to the same value even if a later WS
+    // tick changes `_lastTick.state.current_prompt` while the modal is
+    // open.
+    const currentPrompt = (state && state.current_prompt) || '';
+    modal.dataset.currentPrompt = currentPrompt;
     const rows = [];
+    if (currentPrompt) {
+        rows.push(`
+            <div class="form-control" data-prompt-stage="Concept" data-prompt-role="concept">
+                <label class="label py-0.5">
+                    <span class="label-text text-[10px] uppercase tracking-widest opacity-70">
+                        Concept (LLM-generated, this video)
+                    </span>
+                    <span class="badge badge-xs badge-info ml-2">read-only</span>
+                </label>
+                <textarea class="textarea textarea-bordered textarea-sm font-mono text-[11px] opacity-80"
+                          disabled rows="2">${_htmlEscape(currentPrompt)}</textarea>
+            </div>
+        `);
+    }
     for (const [stage, role, cfgKey] of _PROMPTS_STAGE_MAP) {
         const i = _STAGE_ORDER.indexOf(stage);
         // When the fleet is idle (curIdx === -1) treat every stage as
@@ -439,7 +492,7 @@ function openPromptsEdit(focusStage = null) {
         else if (i === curIdx) status = 'running';
         else status = 'pending';
         const locked = status !== 'pending';
-        rows.push(_buildPromptRow(stage, role, config[cfgKey] || '', { locked, status }));
+        rows.push(_buildPromptRow(stage, role, config[cfgKey] || '', { locked, status, currentPrompt }));
     }
     rowsEl.innerHTML = rows.join('');
     if (focusStage) {
