@@ -90,14 +90,111 @@ function openGalleryFabDialog(which) {
 }
 window.openGalleryFabDialog = openGalleryFabDialog;
 
+// `selectLayoutView` is the click target for the new navbar View dropdown.
+// It syncs the hidden Settings → Layout radio (single source of truth) and
+// dispatches a `change` event so the existing layout-view handler runs —
+// no duplicate handler logic, just a relocated trigger.
+function selectLayoutView(v) {
+  const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
+  if (r) {
+    r.checked = true;
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    _applyLayoutView(v);
+  }
+  _refreshLayoutViewIndicator(v);
+}
+window.selectLayoutView = selectLayoutView;
+
+function _refreshLayoutViewIndicator(v) {
+  document.querySelectorAll('[data-view-check]').forEach(el => {
+    el.classList.toggle('hidden', el.getAttribute('data-view-check') !== v);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const v = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
   _applyLayoutView(v);
   const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
   if (r) r.checked = true;
   document.querySelectorAll('input[name="layout-view"]').forEach(el => {
-    el.addEventListener('change', e => { _applyLayoutView(e.target.value); });
+    el.addEventListener('change', e => {
+      _applyLayoutView(e.target.value);
+      _refreshLayoutViewIndicator(e.target.value);
+      if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
+    });
   });
+  _refreshLayoutViewIndicator(v);
+});
+
+// ---------------------------------------------------------------------------
+// Card close/restore — Subjects (#split-left), Queue (#split-right), and
+// Slop output (#output-section) each get a (×) close button that hides the
+// card and persists the choice in localStorage. When ALL THREE are hidden
+// we surface a placeholder with three "restore" buttons. The placeholder
+// is gallery-mode aware: `body[data-layout="gallery"]` already CSS-hides
+// Subjects + Queue, but the user can still reach them via FABs — so the
+// placeholder only flips on when the Slop card is closed too.
+// ---------------------------------------------------------------------------
+const _CARD_KEYS = {
+  subjects: { dom: 'split-left',     storage: 'slopfinity_card_subjects_hidden' },
+  queue:    { dom: 'split-right',    storage: 'slopfinity_card_queue_hidden' },
+  slop:     { dom: 'output-section', storage: 'slopfinity_card_slop_hidden' },
+};
+
+function _isCardHidden(which) {
+  try { return localStorage.getItem(_CARD_KEYS[which].storage) === '1'; }
+  catch (_) { return false; }
+}
+
+function _setCardHidden(which, hidden) {
+  try { localStorage.setItem(_CARD_KEYS[which].storage, hidden ? '1' : '0'); }
+  catch (_) {}
+  const el = document.getElementById(_CARD_KEYS[which].dom);
+  if (el) {
+    if (hidden) {
+      el.style.display = 'none';
+    } else {
+      // The Slop output-section ships with an inline `display:block|none`
+      // baked in by the server template (visibility depends on whether
+      // there are assets). Force `block` here so a manual restore wins
+      // — otherwise `removeProperty` could fall back to `display:none`
+      // from the inline style and the user's click would appear to do
+      // nothing. The card body will still render its own empty state.
+      el.style.display = (which === 'slop') ? 'block' : '';
+      if (which !== 'slop') el.style.removeProperty('display');
+    }
+  }
+  _refreshCardVisibility();
+}
+
+function closeCard(which) { _setCardHidden(which, true); }
+function restoreCard(which) { _setCardHidden(which, false); }
+window.closeCard = closeCard;
+window.restoreCard = restoreCard;
+
+function _refreshCardVisibility() {
+  const ph = document.getElementById('cards-all-hidden-placeholder');
+  if (!ph) return;
+  const subjectsHidden = _isCardHidden('subjects');
+  const queueHidden    = _isCardHidden('queue');
+  const slopHidden     = _isCardHidden('slop');
+  const galleryMode    = document.body.dataset.layout === 'gallery';
+  // In gallery mode, Subjects + Queue are still reachable via FABs, so the
+  // placeholder is only meaningful when Slop is also closed.
+  const allGone = galleryMode ? slopHidden : (subjectsHidden && queueHidden && slopHidden);
+  ph.classList.toggle('hidden', !allGone);
+}
+window._refreshCardVisibility = _refreshCardVisibility;
+
+document.addEventListener('DOMContentLoaded', () => {
+  Object.keys(_CARD_KEYS).forEach(which => {
+    if (_isCardHidden(which)) {
+      const el = document.getElementById(_CARD_KEYS[which].dom);
+      if (el) el.style.display = 'none';
+    }
+  });
+  _refreshCardVisibility();
 });
 
 // ---------------------------------------------------------------------------
@@ -405,6 +502,10 @@ function _renderDoneAssetRow(filename) {
 function _renderDoneItem(q) {
     const dur = q.duration_s ? _fmtElapsedHtml(q.duration_s * 1000) : '';
     const failed = q.succeeded === false;
+    // Failed verdict uses badge-error (DaisyUI --er token) — same colour
+    // contract as the ticker's maxed-out columns (.ticker-col.bg-error) and
+    // the active progress bar's failed state (.slop-progress-failed,
+    // hsl(var(--er))). One token = one "this is bad" signal across the UI.
     const cls = failed ? 'badge-error' : 'badge-success';
     const sym = failed ? '✗' : '✓';
     const verdict = failed ? 'failed' : 'done';
@@ -2148,10 +2249,17 @@ function connect() {
             // Tone the percentage colour with the latest ticker column —
             // text-error above 80 %, otherwise the per-pill tone class. Keeps
             // the number visually in sync with the bar colour.
-            const _toneClass = (pct, baseTone) => 'font-mono font-black ' + (pct > 80 ? 'text-error' : 'text-' + baseTone);
+            // GPU is INVERTED (low = idle = bad); RAM/Disk/Load are normal
+            // pressure metrics (high = bad). See _tickerHTML below for the
+            // matching ticker-column logic and rationale.
+            const _toneClass = (pct, baseTone, opts) => {
+                const invert = !!(opts && opts.invert);
+                const isAlarming = invert ? (pct < 20) : (pct > 80);
+                return 'font-mono font-black ' + (isAlarming ? 'text-error' : 'text-' + baseTone);
+            };
             const gpuPct = d.stats.gpu;
             const gpuEl = $('g-v');
-            if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary'); }
+            if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary', { invert: true }); }
             // Strix Halo has unified memory — rocm-smi's VRAM% always reads 0,
             // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
             const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
@@ -2163,13 +2271,24 @@ function connect() {
             if (gH.length > 15) gH.shift();
             if (vH.length > 15) vH.shift();
             // Use DaisyUI bg-* utility classes so the ticker tints match the
-            // active theme (and switch when the user changes themes). >80% gets
-            // bg-error to flag pressure regardless of base tone.
-            const _tickerHTML = (vals, tone) => vals.map(v => {
-                const cls = v > 80 ? 'bg-error' : ('bg-' + tone);
-                return `<div class="ticker-col ${cls}" style="height:${Math.max(5, (v / 100) * 30)}px"></div>`;
-            }).join('');
-            $('g-t').innerHTML = _tickerHTML(gH, 'primary');
+            // active theme (and switch when the user changes themes). For
+            // PRESSURE metrics (RAM, Disk, Load) high% = bad → >80% flips to
+            // bg-error to flag pressure regardless of base tone. GPU is
+            // INVERTED — high GPU% means "the fleet is doing useful work",
+            // which is the desired state for this app — so a *low* GPU% is
+            // the alarming case (idle / starved). Pass `invert: true` to flip
+            // the threshold so 0–20% renders bg-error instead of 80–100%.
+            // (Disk / RAM / Load keep the default "high = bad" semantics
+            // because they genuinely indicate resource pressure.)
+            const _tickerHTML = (vals, tone, opts) => {
+                const invert = !!(opts && opts.invert);
+                return vals.map(v => {
+                    const isAlarming = invert ? (v < 20) : (v > 80);
+                    const cls = isAlarming ? 'bg-error' : ('bg-' + tone);
+                    return `<div class="ticker-col ${cls}" style="height:${Math.max(5, (v / 100) * 30)}px"></div>`;
+                }).join('');
+            };
+            $('g-t').innerHTML = _tickerHTML(gH, 'primary', { invert: true });
             $('v-t').innerHTML = _tickerHTML(vH, 'secondary');
 
             // Load average (1m) — same tone-flip pattern as GPU/RAM: text-info
@@ -2278,6 +2397,72 @@ function connect() {
             // top-of-card bar (_buildActiveJobProgressBar) can read the same
             // table. See the const definition near _STAGE_ORDER.
             const STAGES = _STAGES_META;
+            // Build the unified Video Chains collapsible. Summary line
+            // displays "video parts · <count> · <slug>" + a video preview of
+            // chain 1; expanded body interleaves chain mp4 rows and bridge
+            // png rows for parts 1..c, all using the same 48×27 thumbnail
+            // style (video uses preload="metadata" so the browser shows the
+            // first frame as a poster). Text is whitespace-nowrap so
+            // narrow viewports don't break "extract last frame N →" across
+            // two lines.
+            const _buildVideoChainCollapsible = (v, c, q, modelLabel, timingHtml) => {
+                const cached = _assetsByVidx.get(v) || {};
+                const bridges = cached.bridges || {};
+                const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
+                // Best-effort slug recovery from the running prompt, so the
+                // summary reads "v3_<slug> · 4 parts" instead of just "v3".
+                const _slug = cached.slug || '';
+                const stem = _slug ? `v${v}_${_slug}` : `v${v}`;
+                const c1Name = `${stem}_c1.mp4`;
+                const c1Href = `/files/${encodeURIComponent(c1Name)}`;
+                const thumbCls = "rounded bg-black object-cover flex-none";
+                const thumbStyle = "width:48px;height:27px;";
+                const partRows = [];
+                for (let i = 1; i <= c; i++) {
+                    const chainName = `${stem}_c${i}.mp4`;
+                    const chainHref = `/files/${encodeURIComponent(chainName)}`;
+                    partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-80 pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-chain-row="${v}:${i}">
+                        <span class="badge badge-xs badge-success">part ${i}</span>
+                        <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0">
+                            <video src="${chainHref}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
+                            <span class="hidden sm:inline truncate">${_htmlEscape(chainName)}</span>
+                        </a>
+                    </div>`);
+                    if (i < c) {
+                        const bridgeName = bridges[i] || `${stem}_f${i}.png`;
+                        const bridgeHref = `/files/${encodeURIComponent(bridgeName)}`;
+                        partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-ffmpeg-bridge="${v}:${i}">
+                            <span class="badge badge-xs badge-ghost">ffmpeg</span>
+                            <span class="opacity-70">extract last frame ${i} →</span>
+                            <a href="${bridgeHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0">
+                                <img src="${bridgeHref}" class="${thumbCls}" style="${thumbStyle}" loading="lazy" onerror="this.style.display='none'">
+                                <span class="hidden sm:inline truncate">${_htmlEscape(bridgeName)}</span>
+                            </a>
+                        </div>`);
+                    }
+                }
+                // Summary uses the runner's video model id (e.g. "LTX-2.3 Video")
+                // rather than the generic word "chain", because the user already
+                // knows it's a chain — the model identity is what's actually
+                // useful at a glance. Timing/ETA renders on the right so the
+                // chain step shows progress inline even when it's the active
+                // (in-flight) stage and there's no completed-row counterpart.
+                const _label = modelLabel || 'Video';
+                const _timing = timingHtml || '';
+                return `<details class="mt-1 ml-1 pl-2 border-l border-base-300/50" data-video-chain="${v}">
+                    <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono opacity-90 whitespace-nowrap">
+                        <span class="opacity-50 select-none">▸</span>
+                        <span class="badge badge-xs badge-success">${_htmlEscape(_label)} · ${c} part${c === 1 ? '' : 's'}</span>
+                        ${_timing}
+                        <a href="${c1Href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0" onclick="event.stopPropagation()">
+                            <video src="${c1Href}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
+                            <span class="hidden sm:inline truncate">${_htmlEscape(c1Name)}</span>
+                        </a>
+                    </summary>
+                    ${partRows.join('')}
+                </details>`;
+            };
+
             const renderPipelineStrip = (q, opts) => {
                 const isActive = !!(opts && opts.running);
                 const curStep = isActive ? (opts.step || '') : null;
@@ -2348,9 +2533,16 @@ function connect() {
                             assetBadge = [promptBadge, fileBadge].filter(Boolean).join(' ');
                         }
                         const a = actuals[s];
+                        // Timing chip is wrapped in a flex-none, fixed-width
+                        // right-aligned container so the elapsed/ETA columns
+                        // line up vertically across every per-stage row in the
+                        // expanded queue item — each row reads as
+                        //   "✓ Image    v3_base.png    [   3m22s / ETA 9m  ]"
+                        // with the bracketed part forming a clean column.
                         const timing = a
                             ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
                             : '';
+                        const timingCol = `<span class="flex-none w-32 text-right font-mono">${timing}</span>`;
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
                         // "✓ Image                        v3_base.png  3m22s / ETA 9m"
@@ -2393,58 +2585,34 @@ function connect() {
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
-                            <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
+                            <span class="ml-auto flex items-center gap-2 min-w-0">${assetBadge}</span>
+                            ${timingCol}
                         </div>`;
-                        // After the Video Chains row, inline the ffmpeg
-                        // last-frame extracts as their own sub-rows. Bridge
-                        // i (v{V}_f{i}.png) sits between chain i and chain
-                        // i+1, so we surface bridges 1..c (one per finished
-                        // chain) — the runner emits the bridge immediately
-                        // after each chain mp4 lands. Failing thumbnails
-                        // hide via onerror so the row degrades gracefully
-                        // when the file isn't on disk yet.
+                        // Video Chains stage emits a single collapsible whose
+                        // SUMMARY shows "<N> parts · <slug>" with the first
+                        // chain's preview, and whose body interleaves chain
+                        // mp4 rows + bridge png rows for parts 1..c. The
+                        // overarching collapsible title represents the entire
+                        // video-generation chain for this iter.
                         if (s === 'Video Chains' && v && c > 0) {
-                            const cached = _assetsByVidx.get(v) || {};
-                            const bridges = cached.bridges || {};
-                            const subRows = [];
-                            for (let i = 1; i < c; i++) { // bridges live BETWEEN chains, not after the final chain
-                                const bridgeName = bridges[i] || `v${v}_f${i}.png`;
-                                const href = `/files/${encodeURIComponent(bridgeName)}`;
-                                subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
-                                    <span class="badge badge-xs badge-ghost">ffmpeg</span>
-                                    <span class="opacity-70">extract last frame ${i} →</span>
-                                    <a href="${href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto">
-                                        <img src="${href}" class="rounded bg-black object-cover" style="width:32px;height:18px;" loading="lazy" onerror="this.style.display='none'">
-                                        <span class="hidden sm:inline">${_htmlEscape(bridgeName)}</span>
-                                    </a>
-                                </div>`);
-                            }
-                            row += subRows.join('');
+                            row += _buildVideoChainCollapsible(v, c, q, modelLabel, timing);
                         }
                         return row;
                     }).join('');
-                // While Video Chains is the *current* stage (not yet in
-                // completedLines), still surface bridges 1..c so the user
-                // sees each chain's last-frame extract land between chains.
-                // Emits a small in-progress block under the Output header.
+                // Active Video Chains: same collapsible component, mid-flight.
+                // Resolve modelLabel + a live timing chip so the user can see
+                // chain progress without an expanded reveal.
                 let activeBridgesHtml = '';
                 if (curStep === 'Video Chains' && v && c > 0) {
-                    const cached = _assetsByVidx.get(v) || {};
-                    const bridges = cached.bridges || {};
-                    const subRows = [];
-                    for (let i = 1; i < c; i++) { // bridges live BETWEEN chains, not after the final chain
-                        const bridgeName = bridges[i] || `v${v}_f${i}.png`;
-                        const href = `/files/${encodeURIComponent(bridgeName)}`;
-                        subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
-                            <span class="badge badge-xs badge-ghost">ffmpeg</span>
-                            <span class="opacity-70">extract last frame ${i} →</span>
-                            <a href="${href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto">
-                                <img src="${href}" class="rounded bg-black object-cover" style="width:32px;height:18px;" loading="lazy" onerror="this.style.display='none'">
-                                <span class="hidden sm:inline">${_htmlEscape(bridgeName)}</span>
-                            </a>
-                        </div>`);
-                    }
-                    activeBridgesHtml = subRows.join('');
+                    const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
+                    const _vid = cfgSnap.video_model;
+                    const _activeLabel = (_vid && _vid !== 'none' && typeof _modelDisplayName === 'function')
+                        ? (_modelDisplayName(_vid, 'video') || _vid)
+                        : 'Video';
+                    const _stageElapsed = _stageStartTs ? (Date.now() - _stageStartTs) : 0;
+                    const _stageEta = _stageAvgSeconds('Video Chains') || 0;
+                    const _activeTiming = `<span class="font-mono text-[9px]">${_fmtElapsedHtml(_stageElapsed)}</span>${_stageEta ? `<span class="opacity-50 text-[9px]"> / ETA ${_fmtElapsedHtml(_stageEta * 1000)}</span>` : ''}`;
+                    activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming);
                 }
                 // Strip the .stage-just-completed class after the animation
                 // finishes (600 ms total budget) so the next WS re-render
@@ -2474,11 +2642,21 @@ function connect() {
                 const promptEsc = _htmlEscape(q.prompt || '');
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
+                // ♾ / polymorphic: transparent (icon-only) — they're decorative
+                // status hints, not call-to-action chips.
                 const infBadge = q.infinity
-                    ? `<span class="badge badge-xs badge-primary text-base font-bold" title="Infinity — re-queues itself after every completion">♾</span>`
+                    ? `<span class="text-base font-bold leading-none flex-none" title="Infinity — re-queues itself after every completion">♾</span>`
                     : '';
                 const polyBadge = q.chaos
-                    ? `<span class="badge badge-xs badge-secondary text-base font-bold" title="Polymorphic — randomized model selections per cycle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M16 3h5v5"/><path d="M4 20l16-16"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>`
+                    ? `<span class="text-secondary flex-none" title="Polymorphic — randomized model selections per cycle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M16 3h5v5"/><path d="M4 20l16-16"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>`
+                    : '';
+                // Hoist the *active* model badge (the one with the loading
+                // spinner) into the summary so collapsing the <details> still
+                // reveals what's currently working. Completed stages show
+                // their model in the Output block, so the full reveal row of
+                // badges is now redundant and dropped below.
+                const activeBadge = isActive
+                    ? (badges.find(b => b.includes('loading-spinner')) || '')
                     : '';
                 // Cancelled items keep their badge (so the strikethrough has a
                 // label). Active gets nothing (ring+timers signal it). Pending
@@ -2523,15 +2701,12 @@ function connect() {
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${isActive ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
-                            ${statusChip}${infBadge}${polyBadge}
+                            ${statusChip}${activeBadge}${infBadge}${polyBadge}
                             <span class="font-semibold truncate flex-1${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
+                            <span class="text-base-content/50 font-mono text-[10px] flex-none hidden sm:inline" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
                             ${menuHTML}
                         </summary>
                         <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
-                            <div class="${isActive ? 'flex flex-col items-start gap-1' : 'flex items-center gap-1 flex-wrap'} text-[10px] mt-1">
-                                ${badges.join('')}
-                                <span class="text-base-content/50 font-mono ${isActive ? '' : 'ml-auto'}">${meta}</span>
-                            </div>
                             ${stripHTML}
                         </div>
                     </details>
@@ -3464,6 +3639,21 @@ async function openSettings() {
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
         const sugAutoDis = $('set-suggest-auto-disabled');
         if (sugAutoDis) sugAutoDis.checked = !!sr.suggest_auto_disabled;
+        // Prompts tab — pre-fill each textarea with the stored override
+        // (empty when the user hasn't customised it). Placeholder shows the
+        // built-in default so users know what they'd be overriding.
+        _hydratePromptField('set-prompts-enhancer',
+            sr.enhancer_prompt, sr.enhancer_prompt_default);
+        _hydratePromptField('set-prompts-fanout',
+            sr.fanout_system_prompt, sr.fanout_system_prompt_default);
+        _hydratePromptField('set-prompts-fleet-user',
+            sr.fleet_user_prompt_template, sr.fleet_user_prompt_template_default);
+        _hydratePromptField('set-prompts-infinity',
+            sr.infinity_user_prompt_template, sr.infinity_user_prompt_template_default);
+        _hydratePromptField('set-prompts-chaos',
+            sr.chaos_suggest_system_prompt, sr.chaos_suggest_system_prompt_default);
+        _hydratePromptField('set-prompts-void',
+            sr.void_fallback_template, sr.void_fallback_template_default);
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -3653,6 +3843,14 @@ async function saveSettings() {
     if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
     const sugAutoDis = $('set-suggest-auto-disabled');
     if (sugAutoDis) body.suggest_auto_disabled = !!sugAutoDis.checked;
+    // Prompts tab — collect every textarea verbatim. Empty string is
+    // meaningful (server interprets it as "use built-in default").
+    _collectPromptField(body, 'set-prompts-enhancer', 'enhancer_prompt');
+    _collectPromptField(body, 'set-prompts-fanout', 'fanout_system_prompt');
+    _collectPromptField(body, 'set-prompts-fleet-user', 'fleet_user_prompt_template');
+    _collectPromptField(body, 'set-prompts-infinity', 'infinity_user_prompt_template');
+    _collectPromptField(body, 'set-prompts-chaos', 'chaos_suggest_system_prompt');
+    _collectPromptField(body, 'set-prompts-void', 'void_fallback_template');
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3685,6 +3883,44 @@ async function resetFleetPrompt() {
         });
     } catch (e) {
         console.error('resetFleetPrompt failed', e);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Prompts tab helpers — hydrate / collect / reset for the textareas added in
+// the Settings → Prompts panel. The server treats empty string as "use the
+// built-in default" so reset is just `el.value = ''` + a POST.
+// ---------------------------------------------------------------------------
+
+function _hydratePromptField(elId, override, dflt) {
+    const el = $(elId);
+    if (!el) return;
+    el.value = override || '';
+    // Show the built-in default as a placeholder so the user can see what
+    // they'd be replacing without first having to clear their override.
+    if (typeof dflt === 'string' && dflt) {
+        el.placeholder = dflt;
+    }
+}
+
+function _collectPromptField(body, elId, key) {
+    const el = $(elId);
+    if (el) body[key] = el.value;
+}
+
+async function resetPromptField(elId, key) {
+    const el = $(elId);
+    if (el) el.value = '';
+    try {
+        const payload = {};
+        payload[key] = '';
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch (e) {
+        console.error('resetPromptField failed', e);
     }
 }
 

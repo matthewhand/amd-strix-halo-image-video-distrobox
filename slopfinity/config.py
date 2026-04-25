@@ -20,6 +20,60 @@ QUEUE_FILE = os.path.join(_STATE_DIR, "queue.json")
 # Must remain byte-identical to the runner's hardcoded fallback.
 DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
 
+# ---------------------------------------------------------------------------
+# Defaults for every other hardcoded prompt the pipeline ships with. Surfacing
+# these via Settings → Prompts lets users tune output style without editing
+# source. A blank/None override means "use built-in default", so the runtime
+# loaders can always call the get_*() helper without branching on emptiness.
+#
+# IMPORTANT: when changing a default below, also update the matching hardcoded
+# string in the call site (kept duplicated for byte-identity / hot-path use).
+# ---------------------------------------------------------------------------
+
+# `enhancer_prompt` was already a config key (concept-stage rewriter — used by
+# slopfinity/workers/concept.py). The new Prompts tab points to the same key
+# so Settings can edit it next to the others.
+
+# Multi-stage fan-out system prompt — slopfinity/fanout.py + /enhance distribute.
+DEFAULT_FANOUT_SYSTEM_PROMPT = (
+    "You are a master multi-stage cinematic director. Produce STRICT JSON "
+    "with keys image, video, music, tts. If a stage's seed text is "
+    "non-empty, you MUST extend it — keep every subject, name, and "
+    "quoted token intact; only add sensory detail, lighting, motion, mood, "
+    "or delivery. Under 40 words per stage. Return ONLY JSON."
+)
+
+# Fleet rewriter user-message template — run_fleet.py queue branch.
+# `{seed}` is interpolated with the queued prompt.
+DEFAULT_FLEET_USER_PROMPT_TEMPLATE = (
+    "Rewrite as a detailed, visually evocative scene description for an AI "
+    "image generator. Subject: {seed}. Under 40 words. Include a short quote "
+    "written somewhere in the scene. Return ONLY the description, no preamble."
+)
+
+# Infinity-mode user-message template — run_fleet.py infinity branch.
+# `{theme}` is interpolated with the rotating theme.
+DEFAULT_INFINITY_USER_PROMPT_TEMPLATE = (
+    "Describe a detailed, visually evocative cynical philosophical scene "
+    "about: {theme}. Under 40 words. Short quote written in the scene."
+)
+
+# Chaos-mode tangential-suggest system prompt — slopfinity/server.py chaos
+# background loop. `{subjects_csv}` is interpolated with the current subjects
+# (comma-joined, trimmed to 8).
+DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT = (
+    "You are a concept artist for an AI video fleet. The user is currently "
+    "working with these subjects: [{subjects_csv}]. Generate 8 NEW visual "
+    "subject ideas that are TANGENTIALLY related to those — riff on the "
+    "themes, motifs, mood, or vibe, but introduce fresh angles. 3-8 words "
+    "each. Cynical, philosophical, surreal, visually rich. Output ONLY a "
+    "JSON array of strings, no prose."
+)
+
+# VOID-style fallback when no LLM is reachable — run_fleet.py.
+# `{style}` is interpolated with a random art-style pick.
+DEFAULT_VOID_FALLBACK_TEMPLATE = "A cynical {style} scene. Text: 'VOID'."
+
 # Defaults for the auto-suggest LLM call (the 🎲 Suggest button on Subjects).
 # `suggest_use_subjects` controls whether we feed the LLM the user's current
 # Subjects textarea content as style/theme context. `suggest_custom_prompt`
@@ -74,6 +128,12 @@ DEFAULT_CONFIG = {
     "chaos_interval_s": 180,
     "when_idle": False,
     "philosophical_prompt": None,
+    # Prompts tab overrides (None = use built-in default). See get_*() below.
+    "fanout_system_prompt": None,
+    "fleet_user_prompt_template": None,
+    "infinity_user_prompt_template": None,
+    "chaos_suggest_system_prompt": None,
+    "void_fallback_template": None,
     "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
     "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
@@ -93,6 +153,39 @@ def get_philosophical_prompt(config=None):
     if val is None or val == "":
         return DEFAULT_PHILOSOPHICAL_PROMPT
     return val
+
+
+def _resolve_prompt(config, key, default):
+    """Generic resolver: stored config[key] override, falling back to default.
+
+    Empty string and None both mean "use built-in default" so callers can
+    always blindly call get_xxx() without an emptiness check.
+    """
+    c = config if isinstance(config, dict) else load_config()
+    val = c.get(key)
+    if val is None or (isinstance(val, str) and val.strip() == ""):
+        return default
+    return val
+
+
+def get_fanout_system_prompt(config=None):
+    return _resolve_prompt(config, "fanout_system_prompt", DEFAULT_FANOUT_SYSTEM_PROMPT)
+
+
+def get_fleet_user_prompt_template(config=None):
+    return _resolve_prompt(config, "fleet_user_prompt_template", DEFAULT_FLEET_USER_PROMPT_TEMPLATE)
+
+
+def get_infinity_user_prompt_template(config=None):
+    return _resolve_prompt(config, "infinity_user_prompt_template", DEFAULT_INFINITY_USER_PROMPT_TEMPLATE)
+
+
+def get_chaos_suggest_system_prompt(config=None):
+    return _resolve_prompt(config, "chaos_suggest_system_prompt", DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT)
+
+
+def get_void_fallback_template(config=None):
+    return _resolve_prompt(config, "void_fallback_template", DEFAULT_VOID_FALLBACK_TEMPLATE)
 
 def _merge_auto_suspend(stored):
     """Merge canonical DEFAULT_AUTO_SUSPEND entries by id into `stored`.

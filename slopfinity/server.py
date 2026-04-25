@@ -1255,6 +1255,22 @@ async def settings_get():
         },
         "philosophical_prompt": c.get("philosophical_prompt") or "",
         "philosophical_prompt_default": cfg.DEFAULT_PHILOSOPHICAL_PROMPT,
+        # Prompts tab — overrides + their built-in defaults (so the UI can
+        # pre-fill placeholders and offer "Reset to default" without a second
+        # round-trip). Empty string = "use default" semantics, same as the
+        # philosophical_prompt pattern above.
+        "enhancer_prompt": c.get("enhancer_prompt") or "",
+        "enhancer_prompt_default": cfg.DEFAULT_CONFIG["enhancer_prompt"],
+        "fanout_system_prompt": c.get("fanout_system_prompt") or "",
+        "fanout_system_prompt_default": cfg.DEFAULT_FANOUT_SYSTEM_PROMPT,
+        "fleet_user_prompt_template": c.get("fleet_user_prompt_template") or "",
+        "fleet_user_prompt_template_default": cfg.DEFAULT_FLEET_USER_PROMPT_TEMPLATE,
+        "infinity_user_prompt_template": c.get("infinity_user_prompt_template") or "",
+        "infinity_user_prompt_template_default": cfg.DEFAULT_INFINITY_USER_PROMPT_TEMPLATE,
+        "chaos_suggest_system_prompt": c.get("chaos_suggest_system_prompt") or "",
+        "chaos_suggest_system_prompt_default": cfg.DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT,
+        "void_fallback_template": c.get("void_fallback_template") or "",
+        "void_fallback_template_default": cfg.DEFAULT_VOID_FALLBACK_TEMPLATE,
         "suggest_use_subjects": bool(c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)),
         "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
         "suggest_auto_disabled": bool(c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)),
@@ -1311,6 +1327,31 @@ async def settings_post(data: dict = Body(...)):
             c["philosophical_prompt"] = None
         elif isinstance(v, str):
             c["philosophical_prompt"] = v
+    # Prompts tab — every other surfaced override. Same null-on-blank pattern
+    # as philosophical_prompt: empty string => None => falls back to default.
+    # `enhancer_prompt` is special: concept.py errors on empty, so reset-to-
+    # default writes the canonical default rather than None to keep that
+    # codepath honest.
+    _PROMPT_OVERRIDE_KEYS = (
+        "fanout_system_prompt",
+        "fleet_user_prompt_template",
+        "infinity_user_prompt_template",
+        "chaos_suggest_system_prompt",
+        "void_fallback_template",
+    )
+    for key in _PROMPT_OVERRIDE_KEYS:
+        if key in data:
+            v = data.get(key)
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                c[key] = None
+            elif isinstance(v, str):
+                c[key] = v
+    if "enhancer_prompt" in data:
+        v = data.get("enhancer_prompt")
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            c["enhancer_prompt"] = cfg.DEFAULT_CONFIG["enhancer_prompt"]
+        elif isinstance(v, str):
+            c["enhancer_prompt"] = v
     # Auto-suggest LLM controls (Settings → LLM → Generation).
     if "suggest_use_subjects" in data:
         c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
@@ -1712,14 +1753,13 @@ async def chaos_rotator():
             last_seen_index = cur_idx
             current_subjects = config.get("infinity_themes") or []
             sample = ", ".join(current_subjects[:8])
-            sys_p = (
-                "You are a concept artist for an AI video fleet. The user is currently "
-                "working with these subjects: [" + sample + "]. Generate 8 NEW visual "
-                "subject ideas that are TANGENTIALLY related to those — riff on the "
-                "themes, motifs, mood, or vibe, but introduce fresh angles. 3-8 words "
-                "each. Cynical, philosophical, surreal, visually rich. Output ONLY a "
-                "JSON array of strings, no prose."
-            )
+            # Honour the Settings → Prompts override (`chaos_suggest_system_prompt`).
+            # Template uses {subjects_csv} so users can rearrange the prose.
+            tmpl = cfg.get_chaos_suggest_system_prompt(config)
+            try:
+                sys_p = tmpl.format(subjects_csv=sample)
+            except Exception:
+                sys_p = tmpl  # malformed user template — fall back to raw
             raw = await asyncio.to_thread(lmstudio_call, sys_p, "Give me 8 tangentially-related subject ideas.")
             arr = []
             try:

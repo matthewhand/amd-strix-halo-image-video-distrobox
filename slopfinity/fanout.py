@@ -119,13 +119,21 @@ def _try_parse_json(raw: str):
 
 
 def build_system_prompt() -> str:
-    return (
-        "You are a master multi-stage cinematic director. Produce STRICT JSON "
-        "with keys image, video, music, tts. If a stage's seed text is "
-        "non-empty, you MUST extend it \u2014 keep every subject, name, and "
-        "quoted token intact; only add sensory detail, lighting, motion, mood, "
-        "or delivery. Under 40 words per stage. Return ONLY JSON."
-    )
+    # Honour the user's Settings \u2192 Prompts override; falls back to the
+    # built-in default (see slopfinity.config.DEFAULT_FANOUT_SYSTEM_PROMPT).
+    # Imported lazily so this module stays importable in test contexts that
+    # don't construct a real config.
+    try:
+        from slopfinity import config as _config
+        return _config.get_fanout_system_prompt()
+    except Exception:
+        return (
+            "You are a master multi-stage cinematic director. Produce STRICT JSON "
+            "with keys image, video, music, tts. If a stage's seed text is "
+            "non-empty, you MUST extend it \u2014 keep every subject, name, and "
+            "quoted token intact; only add sensory detail, lighting, motion, mood, "
+            "or delivery. Under 40 words per stage. Return ONLY JSON."
+        )
 
 
 def build_user_payload(core: str, stages: dict, preserve_tokens: list[str]) -> str:
