@@ -565,7 +565,11 @@ async def inject(
     pending = [x for x in q if x.get("status") in (None, "pending")]
     done = [x for x in q if x.get("status") == "done"]
     cancelled = [x for x in q if x.get("status") == "cancelled"]
-    if priority == "now":
+    # `now` and `next` both front-insert so the task runs immediately after
+    # the currently-active job. Terminate is a separate flag (handled above)
+    # which cancels the active job; pairing terminate + next/now means
+    # "kill what's running and start this in its place".
+    if priority in ("now", "next"):
         pending.insert(0, task)
     else:
         pending.append(task)
