@@ -648,12 +648,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
     if (typeof _updateGenModePill === 'function') _updateGenModePill();
     if (typeof _renderStageEtas === 'function') _renderStageEtas();
-    // Auto-fetch subject suggestions on page load — but ONLY if the queue
-    // is idle (no pending items, fleet not rendering). Otherwise the user
-    // already has work in flight; no need to push more ideas + steal LLM
-    // cycles from the prompt rewriter mid-iter.
-    if (typeof regenSuggestions === 'function') {
-        // Defer: wait for the first WS state tick so we can read queue + mode.
+    // Suggestions on page load:
+    //   1. Render cached chips immediately (no LLM call) so the row isn't
+    //      empty during the first second.
+    //   2. If no cache AND queue is idle, fire one fetch to populate cache.
+    //   3. The 🎲 Suggest button always fetches fresh + overwrites cache.
+    const hadCache = _renderCachedSuggestions();
+    if (!hadCache && typeof regenSuggestions === 'function') {
         const tryAutoSuggest = () => {
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
@@ -1031,7 +1032,7 @@ function connect() {
                         </div>`;
                     }).join('');
                 return `
-                    ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Slops</div>${completedLines}` : ''}
+                    ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
                         <span class="loading loading-spinner loading-xs text-primary"></span>
                         <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
@@ -2016,6 +2017,54 @@ function _refreshChipHighlights() {
     });
 }
 
+// Cache key for the most-recent suggestion batch. Used to avoid hitting
+// the LLM on every page load — auto-suggest renders from cache; the
+// 🎲 Suggest button still fetches fresh and overwrites the cache.
+const _SUGGEST_CACHE_KEY = 'slopfinity_suggestions_v1';
+
+function _renderSuggestChips(arr) {
+    const box = document.getElementById('subject-chips');
+    if (!box) return;
+    if (!arr.length) {
+        box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
+        return;
+    }
+    box.innerHTML = '';
+    arr.forEach(s => {
+        const b = document.createElement('button');
+        b.className = 'btn btn-outline btn-primary btn-xs normal-case';
+        b.textContent = s;
+        b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
+        b.dataset.suggest = s;
+        b.addEventListener('click', (e) => {
+            const ta = document.getElementById('p-core');
+            if (!ta) return;
+            const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
+            if (e.shiftKey) ta.value = s;
+            else if (present) return;
+            else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            updatePipeline();
+            _refreshChipHighlights();
+        });
+        box.appendChild(b);
+    });
+    _refreshChipHighlights();
+}
+
+// Render cached suggestions from localStorage if any exist. Returns true
+// if it rendered, false if cache was empty.
+function _renderCachedSuggestions() {
+    try {
+        const raw = localStorage.getItem(_SUGGEST_CACHE_KEY);
+        if (!raw) return false;
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr) || !arr.length) return false;
+        _renderSuggestChips(arr);
+        return true;
+    } catch { return false; }
+}
+
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
   if (!box) return;
@@ -2025,32 +2074,8 @@ async function regenSuggestions(n = 6) {
     const data = await r.json();
     const arr = data.suggestions || [];
     if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
-    box.innerHTML = '';
-    arr.forEach(s => {
-      const b = document.createElement('button');
-      b.className = 'btn btn-outline btn-primary btn-xs normal-case';
-      b.textContent = s;
-      b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
-      b.dataset.suggest = s;
-      b.addEventListener('click', (e) => {
-        const ta = document.getElementById('p-core');
-        if (!ta) return;
-        const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
-        if (e.shiftKey) {
-          ta.value = s;
-        } else if (present) {
-          // Already in the textarea — no-op (chip stays highlighted).
-          return;
-        } else {
-          ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
-        }
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        updatePipeline();
-        _refreshChipHighlights();
-      });
-      box.appendChild(b);
-    });
-    _refreshChipHighlights();
+    try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
+    _renderSuggestChips(arr);
   } catch (e) {
     box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
   }
