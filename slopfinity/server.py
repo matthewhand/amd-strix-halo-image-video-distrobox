@@ -204,27 +204,52 @@ async def enhance_distribute(data: dict = Body(...)):
     }
 
 
-@app.get("/subjects/suggest")
-async def subjects_suggest(n: int = 6):
-    """Generate N short visual subject ideas via the configured local LLM.
-
-    Results are cached for 30 seconds keyed on N to avoid hammering the LLM
-    if the UI chip-refresh is spammed.
-    """
-    import time
-    cache = getattr(subjects_suggest, "_cache", None)
-    now = time.time()
-    if cache and now - cache[0] < 30 and cache[1] == n:
-        return {"suggestions": cache[2], "cached": True}
-    sys_p = (
+def _default_suggest_system_prompt(n: int) -> str:
+    return (
         "You are a concept artist for an AI video fleet. "
         f"Output ONLY a JSON array of exactly {n} short visual subject ideas "
         "(3-8 words each). Cynical, philosophical, visually rich. Just the array."
     )
+
+
+@app.get("/subjects/suggest")
+async def subjects_suggest(n: int = 6, subjects: str = ""):
+    """Generate N short visual subject ideas via the configured local LLM.
+
+    Cache key includes both N and (subjects, settings flags) so toggling the
+    "derive from subjects" switch or editing Subjects invalidates the cache.
+
+    Settings honoured:
+      * `suggest_use_subjects` (default True): when True, the user message
+        seeds the LLM with the current Subjects textarea content for
+        style/theme matching. The `subjects` query parameter carries that
+        content from the client.
+      * `suggest_custom_prompt` (default ""): when non-empty, replaces the
+        built-in suggestion system prompt verbatim.
+    """
+    import time
+    config = cfg.load_config()
+    use_subjects = bool(config.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS))
+    custom_prompt = (config.get("suggest_custom_prompt") or "").strip()
+    subjects_in = (subjects or "").strip() if use_subjects else ""
+    cache_key = (n, use_subjects, custom_prompt, subjects_in)
+    cache = getattr(subjects_suggest, "_cache", None)
+    now = time.time()
+    if cache and now - cache[0] < 30 and cache[1] == cache_key:
+        return {"suggestions": cache[2], "cached": True}
+    sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
+    if use_subjects and subjects_in:
+        user_msg = (
+            "Match the style/theme of these existing subjects:\n"
+            f"{subjects_in}\n\n"
+            f"Now generate {n} more in the same vein."
+        )
+    else:
+        user_msg = f"Give me {n} subject ideas."
     # Run the (blocking, network-bound) LLM call in a thread so it doesn't
     # stall FastAPI's event loop — without this, the WS state broadcast and
     # other endpoints (Settings open, etc.) freeze for the duration.
-    raw = await asyncio.to_thread(lmstudio_call, sys_p, f"Give me {n} subject ideas.")
+    raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
     suggestions = []
     try:
         s = json.loads(raw)
@@ -239,7 +264,7 @@ async def subjects_suggest(n: int = 6):
                 pass
     suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
     if suggestions:
-        subjects_suggest._cache = (now, n, suggestions)
+        subjects_suggest._cache = (now, cache_key, suggestions)
     return {"suggestions": suggestions, "cached": False}
 
 
@@ -869,6 +894,8 @@ async def settings_get():
         },
         "philosophical_prompt": c.get("philosophical_prompt") or "",
         "philosophical_prompt_default": cfg.DEFAULT_PHILOSOPHICAL_PROMPT,
+        "suggest_use_subjects": bool(c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)),
+        "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
     }
 
 
@@ -921,6 +948,12 @@ async def settings_post(data: dict = Body(...)):
             c["philosophical_prompt"] = None
         elif isinstance(v, str):
             c["philosophical_prompt"] = v
+    # Auto-suggest LLM controls (Settings → LLM → Generation).
+    if "suggest_use_subjects" in data:
+        c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
+    if "suggest_custom_prompt" in data:
+        v = data.get("suggest_custom_prompt")
+        c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
     cfg.save_config(c)
     return {"ok": True}
 
