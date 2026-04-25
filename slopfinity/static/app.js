@@ -244,8 +244,25 @@ function _renderDoneItem(q) {
     if (!assets.length) {
         const v = q.v_idx || 0;
         if (v) {
-            if (q.image_only) assets = [`v${v}_base.png`];
-            else assets = [`FINAL_${v}.mp4`, `v${v}_base.png`];
+            // Prefer real on-disk filenames from the resolver cache; fall
+            // back to the legacy synthesized names so the row still renders
+            // a thumbnail even when the cache is cold (e.g. immediately
+            // after page load before the WS / SSR ingestion populates).
+            const cached = _assetsByVidx.get(v) || {};
+            if (q.image_only) {
+                assets = [cached.base || `v${v}_base.png`];
+            } else {
+                assets = [
+                    cached.final || `FINAL_${v}.mp4`,
+                    cached.base || `v${v}_base.png`,
+                ];
+            }
+            // Trigger an async resolve so the next WS re-render (~1Hz)
+            // picks up the real names if either slot was a synthesised
+            // fallback.
+            if (!cached.base || (!q.image_only && !cached.final)) {
+                _resolveVidxAssets(v);
+            }
         }
     }
     const tsHuman = q.completed_ts
@@ -922,11 +939,117 @@ const _STAGE_ROLE = {
     'Post Process':  'upscale',
     'Final Merge':   'video',
 };
+// ---- Asset filename resolution --------------------------------------------
+// The fleet runner now writes slug-based filenames (e.g.
+//   v1_sterile_chrome_corridors_algorithms_shep_base.png
+// ) rather than the legacy `v{N}_base.png` shape this client used to
+// synthesize. We maintain a module-level v_idx -> {base, video, final, ...}
+// map populated from three sources:
+//   1. WS `new_file` events (push the real filename as it lands)
+//   2. SSR initial DOM (parse filenames out of the seeded preview-grid cards)
+//   3. /assets infinite-scroll pages (parse each item.file as it streams in)
+// When a synthesis-time lookup misses, `_resolveVidxAssets` fires a one-shot
+// fetch to /assets/by-vidx as a fallback so subsequent re-renders pick up
+// the real name. We always fall back to the synthesized name on a true miss
+// so the link/thumbnail never breaks outright — at worst it 404s the same
+// way the pre-fix code did.
+const _assetsByVidx = new Map();   // v_idx -> {base?, video?, final?, audio?, tts?}
+const _vidxResolveInflight = new Set();  // dedupe concurrent /assets/by-vidx calls
+
+function _ingestAssetFilename(filename) {
+    if (!filename || typeof filename !== 'string') return;
+    // Base image: v{N}_<anything>_base.png (also matches the legacy
+    // v{N}_base.png since "_base.png" is a valid match for the `(.+)_base.png`
+    // tail when <anything> is empty — see the explicit base regex below).
+    let m = filename.match(/^v(\d+)(?:_.+)?_base\.png$/);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        const rec = _assetsByVidx.get(v) || {};
+        rec.base = filename;
+        _assetsByVidx.set(v, rec);
+        return;
+    }
+    // Final merge: FINAL_{N}.mp4 (with optional suffix like FINAL_{N}_x.mp4).
+    m = filename.match(/^FINAL_(\d+)(?:[._].*)?\.mp4$/);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        const rec = _assetsByVidx.get(v) || {};
+        rec.final = filename;
+        _assetsByVidx.set(v, rec);
+        return;
+    }
+    // Video chain segment: v{N}_c{M}.mp4 or v{N}_<slug>_c{M}.mp4.
+    m = filename.match(/^v(\d+)(?:_.+)?_c(\d+)\.mp4$/);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        const rec = _assetsByVidx.get(v) || {};
+        // Keep the highest c_idx as the representative video (that's the
+        // latest chain segment for this v_idx).
+        const cIdx = parseInt(m[2], 10);
+        const prevC = rec._video_c_idx || 0;
+        if (cIdx >= prevC) {
+            rec.video = filename;
+            rec._video_c_idx = cIdx;
+            _assetsByVidx.set(v, rec);
+        }
+        return;
+    }
+    // Bare v{N}.mp4 or v{N}.wav — generic per-vidx artefact.
+    m = filename.match(/^v(\d+)\.(mp4|wav)$/);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        const rec = _assetsByVidx.get(v) || {};
+        if (m[2] === 'mp4') rec.video = rec.video || filename;
+        else rec.audio = rec.audio || filename;
+        _assetsByVidx.set(v, rec);
+    }
+}
+
+async function _resolveVidxAssets(v_idx) {
+    if (!v_idx) return;
+    if (_vidxResolveInflight.has(v_idx)) return;
+    const cached = _assetsByVidx.get(v_idx);
+    // If we already have base + final, no need to refetch — those are the
+    // two slots the dashboard actually links to today.
+    if (cached && cached.base && cached.final) return;
+    _vidxResolveInflight.add(v_idx);
+    try {
+        const r = await fetch(`/assets/by-vidx?v_idx=${v_idx}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j && j.assets && typeof j.assets === 'object') {
+            const rec = _assetsByVidx.get(v_idx) || {};
+            Object.assign(rec, j.assets);
+            _assetsByVidx.set(v_idx, rec);
+        }
+    } catch (_) {
+        // Best-effort; the synthesized fallback still renders.
+    } finally {
+        _vidxResolveInflight.delete(v_idx);
+    }
+}
+
 const _STAGE_ASSET = (stage, v_idx, c_idx) => {
     if (!v_idx) return null;
-    if (stage === 'Base Image') return `v${v_idx}_base.png`;
-    if (stage === 'Video Chains' && c_idx > 0) return `v${v_idx}_c${c_idx}.mp4`;
-    if (stage === 'Final Merge') return `FINAL_${v_idx}.mp4`;
+    const cached = _assetsByVidx.get(v_idx);
+    if (stage === 'Base Image') {
+        if (cached && cached.base) return cached.base;
+        // Fire-and-forget resolve so the next re-render picks up the real
+        // name. Returning the synthesized fallback now keeps the link
+        // present (and matching the legacy behaviour) on the first paint.
+        _resolveVidxAssets(v_idx);
+        return `v${v_idx}_base.png`;
+    }
+    if (stage === 'Video Chains' && c_idx > 0) {
+        // Per-chain assets are still numerically named by the runner; no
+        // slug variant on the c{M} segments. Keep the synth.
+        return `v${v_idx}_c${c_idx}.mp4`;
+    }
+    if (stage === 'Final Merge') {
+        if (cached && cached.final) return cached.final;
+        _resolveVidxAssets(v_idx);
+        return `FINAL_${v_idx}.mp4`;
+    }
     return null;
 };
 const _STAGE_TEXT = {
@@ -1770,6 +1893,10 @@ function connect() {
         }
         if (d.type === 'new_file') {
             const file = d.file;
+            // Seed the v_idx -> filename cache before any rendering uses
+            // it; downstream pipeline-strip / done-list re-renders will
+            // then resolve real names instead of synthesized ones.
+            _ingestAssetFilename(file);
             const g = $('preview-grid');
             if (!g) return;
             const outSec = $('output-section');
@@ -3502,6 +3629,18 @@ function _buildSlopCard(file, opts = {}) {
         const grid = document.getElementById('preview-grid');
         const lower = document.getElementById('ui-split-lower');
         if (!sentinel || !grid) return;
+        // Seed the v_idx resolver cache from the SSR-rendered cards on
+        // the page. Each card has its filename in the trailing
+        // `<span title="..."` attribute (see _buildSlopCard above) — we
+        // walk those once at init time so the very first pipeline-strip
+        // / done-list paint can use real names instead of synthesizing
+        // v{N}_base.png.
+        try {
+            grid.querySelectorAll('[data-slop-kind] span[title]').forEach(span => {
+                const f = span.getAttribute('title');
+                if (f) _ingestAssetFilename(f);
+            });
+        } catch (_) { /* ignore */ }
 
         let loading = false;
         let exhausted = false;
@@ -3523,6 +3662,9 @@ function _buildSlopCard(file, opts = {}) {
                 // Append before the sentinel so it stays at the bottom of
                 // the grid container.
                 items.forEach(item => {
+                    // Seed the resolver cache so older paginated content
+                    // also feeds v_idx -> real-filename lookups.
+                    _ingestAssetFilename(item.file);
                     const card = _buildSlopCard(item.file);
                     if (card) grid.appendChild(card);
                 });
