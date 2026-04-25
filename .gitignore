@@ -67,4 +67,9 @@ test_ltx23.py
 test_ltx23_video.py
 run_philosophical_experiments.py
 workflow_api.json
--.obin/
+
+# Tailwind build artifacts (see Makefile / README "Tailwind bundle").
+# bin/ holds the downloaded standalone CLI; tailwind.css is the
+# generated bundle — both are reproducible from src/tailwind.css.
+bin/
+slopfinity/static/tailwind.css
