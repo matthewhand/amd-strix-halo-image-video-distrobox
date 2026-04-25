@@ -461,7 +461,8 @@
                    handled in _applySlopFilters() in app.js. #}
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="music" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">music <span class="ml-1 font-mono opacity-70" data-chip-count="music">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="speech" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">speech <span class="ml-1 font-mono opacity-70" data-chip-count="speech">0</span></span></label>
                 {# Vertical separator between the kind chips (video / image /
                    audio — what TYPE of asset) and the meta chip (assets —
                    whether to show partial intermediates at all). The visual
@@ -481,11 +482,17 @@
             {% for f in all_assets[:64] %}
                 {% set is_mp4 = f.endswith('.mp4') %}
                 {% set is_wav = f.endswith('.wav') %}
+                {# Speech vs music heuristic for the new split filter chips:
+                   TTS files live under a `tts/` subdir or end in `_tts.wav`;
+                   music files come from heartmula and start `_tmp_music_`
+                   (or sit in OUTPUT_DIR root with no special prefix). #}
+                {% set is_speech = is_wav and ('_tts' in f or f.startswith('tts/')) %}
+                {% set is_music  = is_wav and not is_speech %}
                 {% set is_final = is_mp4 and f.startswith('FINAL_') %}
                 {# kind drives filter-chip visibility (video / image / audio).
                    PNG = image regardless of provenance (qwen base, LTX bridge,
                    etc); MP4 = video; WAV = audio. Filename intuition wins. #}
-                {% set kind = 'video' if is_mp4 else ('audio' if is_wav else 'image') %}
+                {% set kind = 'video' if is_mp4 else ('speech' if is_speech else ('music' if is_music else 'image')) %}
                 {% set model_id = '' %}
                 {% set part_n = '' %}
                 {% set final_n = '' %}
