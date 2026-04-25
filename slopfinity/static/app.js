@@ -2772,10 +2772,19 @@ _wireLockListeners();
         const KEY = 'slopfinity_ui_split_upper_pct';
         // Restore stored fraction (sanity-bounded so a corrupt value can't
         // collapse a pane to invisibility).
+        // Helper — broadcast that the panes resized so internal autogrow /
+        // re-layout code (textarea autogrow, suggestion-chip filler, etc.)
+        // can recompute against the new available height.
+        const _emitSplitResize = () => {
+            try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+            if (typeof window._autogrowSubjects === 'function') {
+                try { window._autogrowSubjects(); } catch (_) {}
+            }
+        };
         const stored = parseFloat(localStorage.getItem(KEY));
         if (!Number.isNaN(stored) && stored > 0.05 && stored < 0.95) {
             upper.style.flex = `0 0 ${stored * 100}%`;
-            lower.style.flex = '1 1 auto';
+            lower.style.flex = '1 1 0';
         }
         let dragging = false;
         let startY = 0;
@@ -2799,7 +2808,8 @@ _wireLockListeners();
             const newUpper = Math.max(120, Math.min(containerPx - 120 - 8, startUpperPx + (e.clientY - startY)));
             const pct = newUpper / containerPx;
             upper.style.flex = `0 0 ${pct * 100}%`;
-            lower.style.flex = '1 1 auto';
+            lower.style.flex = '1 1 0';
+            _emitSplitResize();
         });
         const stop = (e) => {
             if (!dragging) return;
@@ -2814,9 +2824,10 @@ _wireLockListeners();
         handle.addEventListener('pointercancel', stop);
         // Double-click resets to 50/50 (= clear the override + remove storage).
         handle.addEventListener('dblclick', () => {
-            upper.style.flex = '1 1 auto';
-            lower.style.flex = '1 1 auto';
+            upper.style.flex = '1 1 0';
+            lower.style.flex = '1 1 0';
             localStorage.removeItem(KEY);
+            _emitSplitResize();
         });
     };
     if (document.readyState === 'loading') {
