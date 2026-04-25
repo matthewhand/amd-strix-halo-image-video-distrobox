@@ -3300,9 +3300,11 @@ _wireLockListeners();
         const upper  = document.getElementById('ui-split-upper');
         const lower  = document.getElementById('ui-split-lower');
         if (!handle || !upper || !lower) return;
-        const KEY = 'slopfinity_ui_split_upper_pct';
-        // Restore stored fraction (sanity-bounded so a corrupt value can't
-        // collapse a pane to invisibility).
+        // Storage key changed from `_pct` (legacy %, container-relative) to
+        // `_px` (absolute pixel height of the upper pane). The container no
+        // longer has a fixed height, so percent math has nothing to multiply
+        // against. Pixel storage is bounded by [200 px, 80 vh] on read.
+        const KEY = 'slopfinity_ui_split_upper_px';
         // Helper — broadcast that the panes resized so internal autogrow /
         // re-layout code (textarea autogrow, suggestion-chip filler, etc.)
         // can recompute against the new available height.
@@ -3312,22 +3314,24 @@ _wireLockListeners();
                 try { window._autogrowSubjects(); } catch (_) {}
             }
         };
+        const _bounds = () => ({
+            min: 200,
+            max: Math.max(220, Math.floor(window.innerHeight * 0.8)),
+        });
         const stored = parseFloat(localStorage.getItem(KEY));
-        if (!Number.isNaN(stored) && stored > 0.05 && stored < 0.95) {
-            upper.style.flex = `0 0 ${stored * 100}%`;
-            lower.style.flex = '1 1 0';
+        if (!Number.isNaN(stored) && stored >= 100) {
+            const { min, max } = _bounds();
+            upper.style.height = Math.max(min, Math.min(max, stored)) + 'px';
         }
         let dragging = false;
         let startY = 0;
         let startUpperPx = 0;
-        let containerPx = 0;
         handle.addEventListener('pointerdown', (e) => {
             // Skip on viewports where the media query made the handle inert.
             if (window.matchMedia('(max-width: 768px)').matches) return;
             dragging = true;
             startY = e.clientY;
             startUpperPx = upper.getBoundingClientRect().height;
-            containerPx = handle.parentElement.getBoundingClientRect().height;
             try { handle.setPointerCapture(e.pointerId); } catch (_) {}
             handle.classList.add('dragging');
             document.body.style.userSelect = 'none';
@@ -3335,11 +3339,11 @@ _wireLockListeners();
         });
         handle.addEventListener('pointermove', (e) => {
             if (!dragging) return;
-            // Reserve 120 px min for each pane + 8 px for the handle itself.
-            const newUpper = Math.max(120, Math.min(containerPx - 120 - 8, startUpperPx + (e.clientY - startY)));
-            const pct = newUpper / containerPx;
-            upper.style.flex = `0 0 ${pct * 100}%`;
-            lower.style.flex = '1 1 0';
+            const { min, max } = _bounds();
+            const newUpper = Math.max(min, Math.min(max, startUpperPx + (e.clientY - startY)));
+            upper.style.height = newUpper + 'px';
+            // Lower pane is naturally below in the flex column and content-
+            // sized; no math needed for it.
             _emitSplitResize();
         });
         const stop = (e) => {
@@ -3348,15 +3352,14 @@ _wireLockListeners();
             try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
             handle.classList.remove('dragging');
             document.body.style.userSelect = '';
-            const pct = upper.getBoundingClientRect().height / handle.parentElement.getBoundingClientRect().height;
-            if (pct > 0.05 && pct < 0.95) localStorage.setItem(KEY, String(pct));
+            const px = upper.getBoundingClientRect().height;
+            if (px >= 100) localStorage.setItem(KEY, String(Math.round(px)));
         };
         handle.addEventListener('pointerup', stop);
         handle.addEventListener('pointercancel', stop);
-        // Double-click resets to 50/50 (= clear the override + remove storage).
+        // Double-click resets to default (clear the override + remove storage).
         handle.addEventListener('dblclick', () => {
-            upper.style.flex = '1 1 0';
-            lower.style.flex = '1 1 0';
+            upper.style.height = '';
             localStorage.removeItem(KEY);
             _emitSplitResize();
         });
@@ -3423,7 +3426,6 @@ function _buildSlopCard(file, opts = {}) {
     const init = () => {
         const sentinel = document.getElementById('preview-grid-sentinel');
         const grid = document.getElementById('preview-grid');
-        const lower = document.getElementById('ui-split-lower');
         if (!sentinel || !grid) return;
 
         let loading = false;
@@ -3460,15 +3462,15 @@ function _buildSlopCard(file, opts = {}) {
             }
         }
 
-        // The lower pane is the actual scroll container (PR #74's splitter
-        // gives it `overflow-y: auto` via .ui-split-pane). Falling back to
-        // the viewport (`root: null`) keeps the observer sensible if the
-        // splitter element isn't present.
+        // The page body is now the scroll container — the lower pane no
+        // longer has its own overflow cap. `root: null` ties the observer
+        // to the viewport so the sentinel fires as the user scrolls the
+        // page, not an inner pane.
         const observer = new IntersectionObserver((entries) => {
             if (entries.some(e => e.isIntersecting)) loadMore();
         }, {
-            root: lower || null,
-            rootMargin: '200px',
+            root: null,
+            rootMargin: '300px',
             threshold: 0,
         });
         observer.observe(sentinel);
