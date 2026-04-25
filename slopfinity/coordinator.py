@@ -269,3 +269,59 @@ __all__ = [
     "mark_running",
     "COORDINATOR_STATE_FILE",
 ]
+
+
+# ---------------------------------------------------------------------------
+# CLI: `python -m slopfinity.coordinator`
+#
+# Replaces the legacy `run_philosophical_experiments.py` fleet runner for
+# users who want the new architecture. The legacy runner is still shipped
+# (and still works) — see docs/concurrent-mode-design.md for the migration
+# note.
+# ---------------------------------------------------------------------------
+def _build_argparser():
+    import argparse
+    p = argparse.ArgumentParser(
+        prog="python -m slopfinity.coordinator",
+        description=(
+            "Run the Slopfinity Phase-4 Coordinator standalone. "
+            "Spawns one StageWorker per pipeline stage; each worker pulls "
+            "from the per-stage queue concurrently. GPU/budget serialization "
+            "is enforced by scheduler.acquire_gpu."
+        ),
+    )
+    p.add_argument(
+        "--poll-interval",
+        type=float,
+        default=2.0,
+        help="Seconds each StageWorker sleeps between queue polls (default: 2.0).",
+    )
+    p.add_argument(
+        "--log-level",
+        default=os.environ.get("SLOPFINITY_LOG_LEVEL", "INFO"),
+        help="Python logging level (default: INFO; or $SLOPFINITY_LOG_LEVEL).",
+    )
+    return p
+
+
+def _cli_main(argv: Optional[List[str]] = None) -> int:
+    args = _build_argparser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    co = Coordinator(poll_interval_s=args.poll_interval)
+    log.info("Starting coordinator (poll_interval=%.1fs)", args.poll_interval)
+    try:
+        asyncio.run(co.run())
+    except KeyboardInterrupt:
+        log.info("Coordinator interrupted by SIGINT — stopping cleanly")
+        return 130
+    except RuntimeError as e:
+        log.error("Coordinator failed to start: %s", e)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_cli_main())
