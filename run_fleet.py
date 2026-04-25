@@ -418,22 +418,14 @@ def run_image_gen(model, prompt, out_path, tier="high"):
             if hasattr(e, 'read'): print(f"❌ ComfyUI Error Body: {e.read().decode('utf-8')}")
             raise e
 
-def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=600):
-    """
-    Generate a HeartMuLa music track keyed off `prompt`, then mux it onto
-    `video_path` using ffmpeg. Writes the muxed MP4 to `final_out_path`.
-
-    Safe-by-default: the inner launcher requires --real to touch the GPU, so a
-    config error here CANNOT contend with the running video fleet — it will
-    just exit with an unhelpful-but-non-destructive smoke-test code.
-
-    Returns True on success, False otherwise (logged, not raised, so the
-    caller can continue with the silent FINAL_{v_idx}.mp4).
-    """
+def heartmula_wav(prompt, out_wav_host, duration_s, timeout_s=600):
+    """Generate a HeartMuLa music track to `out_wav_host` (host path under
+    OUTPUT_DIR). Returns True on success. Pure WAV producer — no muxing.
+    Used by the new pre-image audio stage (so we know the final track's
+    length before the video chain loop starts) AND by `run_heartmula_gen`
+    when the runner still wants a one-shot generate-then-mux flow."""
     hf_cache = os.path.expanduser("~/.cache/huggingface")
-    music_wav_host = os.path.join(OUTPUT_DIR, f"_tmp_music_{int(time.time())}.wav")
-    music_wav_ctr = f"/workspace/{music_wav_host}"
-
+    out_wav_ctr = f"/workspace/{out_wav_host}"
     print(f"🎵 Heartmula music: duration={duration_s:.1f}s prompt={prompt[:60]!r}")
     cmd = [
         "docker", "run", "--rm",
@@ -447,7 +439,7 @@ def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=
         "python3", "/workspace/scripts/heartmula_launcher.py",
         "--prompt", prompt,
         "--duration", f"{max(1.0, duration_s):.1f}",
-        "--out", music_wav_ctr,
+        "--out", out_wav_ctr,
         "--real",
     ]
     try:
@@ -455,9 +447,19 @@ def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=
     except Exception as e:
         print(f"   ⚠️  Heartmula generation failed: {e}")
         return False
+    if not os.path.exists(out_wav_host):
+        print(f"   ⚠️  Heartmula produced no WAV at {out_wav_host}")
+        return False
+    return True
 
-    if not os.path.exists(music_wav_host):
-        print(f"   ⚠️  Heartmula produced no WAV at {music_wav_host}")
+
+def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=600):
+    """Legacy generate-then-mux entry point. Generates the WAV via
+    `heartmula_wav`, then muxes onto `video_path` to `final_out_path`.
+    The new main-loop path generates the WAV up front (pre-image) and
+    muxes after Final Merge — but this helper stays for back-compat."""
+    music_wav_host = os.path.join(OUTPUT_DIR, f"_tmp_music_{int(time.time())}.wav")
+    if not heartmula_wav(prompt, music_wav_host, duration_s, timeout_s=timeout_s):
         return False
 
     print(f"   🎼 Muxing {music_wav_host} onto {video_path} -> {final_out_path}")
