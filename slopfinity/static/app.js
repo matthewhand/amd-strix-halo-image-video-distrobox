@@ -2116,6 +2116,28 @@ function connect() {
             updateRam(d.ram);
             updateScheduler(d.scheduler);
             updateOutputs(d.outputs);
+            // Populate the collapsible top-section summary line — visible
+            // only when the user has collapsed the top pane. Kept in sync
+            // each WS tick so re-expanding/re-collapsing reflects current
+            // state.
+            try {
+                const sumEl = document.getElementById('top-collapsible-summary');
+                if (sumEl) {
+                    const mode = (d.state && d.state.mode) || 'Idle';
+                    const v = d.state && d.state.video_index;
+                    const tot = d.state && d.state.total_videos;
+                    const pending = (d.queue || []).filter(q => q.status == null || q.status === 'pending').length;
+                    const done = (d.queue || []).filter(q => q.status === 'done' && q.succeeded !== false).length;
+                    const failed = (d.queue || []).filter(q => q.status === 'done' && q.succeeded === false).length;
+                    const parts = [];
+                    parts.push(mode === 'Idle' ? '<span class="opacity-60">Idle</span>' : `<b>${mode}</b>`);
+                    if (v && tot) parts.push(`video ${v}/${tot}`);
+                    if (pending) parts.push(`queue ${pending} pending`);
+                    if (done) parts.push(`<span class="text-success">${done} done</span>`);
+                    if (failed) parts.push(`<span class="text-error">${failed} failed</span>`);
+                    sumEl.innerHTML = parts.join(' · ');
+                }
+            } catch (_) { /* summary is best-effort */ }
             _lastTick = d;
             // Push GPU% sample for the auto-suggest idle gate.
             try {
@@ -3540,6 +3562,31 @@ if (typeof window._onAudioChanged !== 'function') {
 
 connect();
 _wireLockListeners();
+
+// ---------------------------------------------------------------------------
+// Top-section collapsible — persist open/closed in localStorage so the user's
+// preference survives reloads. The <details> element starts `open` in the
+// template so first-load matches existing behaviour; if the user has previously
+// collapsed it, we strip the attribute on init.
+// ---------------------------------------------------------------------------
+(function wireTopCollapsible() {
+    const init = () => {
+        const COLLAPSE_KEY = 'slopfinity_top_collapsed';
+        const top = document.getElementById('top-collapsible');
+        if (!top) return;
+        try {
+            if (localStorage.getItem(COLLAPSE_KEY) === '1') top.removeAttribute('open');
+        } catch (_) {}
+        top.addEventListener('toggle', () => {
+            try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) {}
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
 
 // ===========================================================================
 // Draggable horizontal splitter between the Subjects/Queue (upper) and the

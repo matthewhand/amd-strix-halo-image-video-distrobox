@@ -263,6 +263,34 @@ textarea.subjects-autogrow {
     display: flex;
     flex-direction: column;
 }
+
+/* Top-section collapsible wrapper. When OPEN we hide the <summary> entirely
+   so the existing Subjects+Queue layout shows unchanged (no extra chrome).
+   When CLOSED we render only the one-line summary and the splitter handle
+   becomes irrelevant — hide it so the slop gallery flows directly under the
+   summary line and fills the viewport. */
+#top-collapsible {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+#top-collapsible[open] {
+    flex: 0 0 auto;
+}
+#top-collapsible[open] > summary {
+    display: none;
+}
+#top-collapsible:not([open]) > summary {
+    padding: 6px 8px;
+    font-size: 11px;
+}
+#top-collapsible:not([open]) ~ #ui-split-handle {
+    display: none;
+}
+/* Default <details> marker is redundant — we render our own ▾ glyph that
+   should also rotate when expanded. */
+#top-collapsible > summary::-webkit-details-marker { display: none; }
+#top-collapsible > summary { list-style: none; }
 /* Upper pane: splitter sets an explicit pixel height in JS. Cap to a sane
    range so a corrupt stored value can't collapse or eat the viewport.
    overflow:hidden preserves PR #74's content-squash so Subjects + Queue

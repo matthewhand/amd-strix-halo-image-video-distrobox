@@ -104,6 +104,15 @@
        structural — every existing #id underneath keeps its identity so WS-driven
        re-renders that target #q-list, #preview-grid, #out-finals, etc. still hit. #}
     <div id="ui-split" class="flex flex-col">
+    {# Collapsible wrapper — when collapsed, only a one-line summary is
+       visible and the slop gallery (lower pane) takes the full viewport.
+       Default `open` keeps current behaviour on first load; user
+       preference persists in localStorage (`slopfinity_top_collapsed`). #}
+    <details id="top-collapsible" open>
+      <summary class="cursor-pointer p-2 bg-base-200/40 rounded flex items-center gap-3 text-xs select-none">
+        <span class="opacity-60">▾</span>
+        <span id="top-collapsible-summary" class="flex-1">Slopping <span class="opacity-60">loading…</span></span>
+      </summary>
     <div id="ui-split-upper" class="ui-split-pane custom-scrollbar">
 
     <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
@@ -262,6 +271,7 @@
     </div> {# /split-row #}
 
     </div> {# /ui-split-upper #}
+    </details> {# /top-collapsible #}
     <div id="ui-split-handle" class="flex-none cursor-row-resize select-none" title="Drag to resize · double-click to reset"></div>
     <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
 
