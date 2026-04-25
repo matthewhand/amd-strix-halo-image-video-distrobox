@@ -898,6 +898,7 @@ async def settings_get():
         "philosophical_prompt_default": cfg.DEFAULT_PHILOSOPHICAL_PROMPT,
         "suggest_use_subjects": bool(c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)),
         "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
+        "auto_suspend": c.get("auto_suspend") or list(cfg.DEFAULT_AUTO_SUSPEND),
     }
 
 
@@ -956,6 +957,32 @@ async def settings_post(data: dict = Body(...)):
     if "suggest_custom_prompt" in data:
         v = data.get("suggest_custom_prompt")
         c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
+    # Auto-suspend list (Settings → LLM → Auto-suspend during GPU inference).
+    # Stored as a top-level list of {id, label, enabled, method, ...} entries.
+    # Each entry's method-specific fields are preserved verbatim.
+    if "auto_suspend" in data:
+        v = data.get("auto_suspend")
+        if isinstance(v, list):
+            cleaned: list[dict] = []
+            for e in v:
+                if not isinstance(e, dict):
+                    continue
+                ce = {
+                    "id": str(e.get("id") or "").strip() or None,
+                    "label": str(e.get("label") or "").strip() or None,
+                    "enabled": bool(e.get("enabled")),
+                    "method": str(e.get("method") or "sigstop"),
+                }
+                # Pass through whitelisted method-specific fields.
+                for f in ("process_name", "endpoint", "container", "body"):
+                    if f in e and e[f] is not None:
+                        ce[f] = e[f]
+                if ce["id"]:
+                    # Drop None label so the canonical merge can fill it back in.
+                    if not ce["label"]:
+                        ce.pop("label")
+                    cleaned.append(ce)
+            c["auto_suspend"] = cleaned
     cfg.save_config(c)
     return {"ok": True}
 
@@ -1041,14 +1068,14 @@ async def llm_suspend_endpoint():
     Independent of the `llm.auto_suspend` toggle — gives the user a one-shot
     pause for ad-hoc memory triage. Resume via POST /llm/resume.
     """
-    result = await asyncio.to_thread(sched.suspend_llm)
+    result = await sched.suspend_llm_async()
     return {"ok": True, **result}
 
 
 @app.post("/llm/resume")
 async def llm_resume_endpoint():
     """Manually SIGCONT any suspended local LLM process."""
-    result = await asyncio.to_thread(sched.resume_llm)
+    result = await sched.resume_llm_async()
     return {"ok": True, **result}
 
 

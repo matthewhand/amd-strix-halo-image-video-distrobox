@@ -757,15 +757,14 @@
                     </label>
 
                     <div class="form-control md:col-span-2">
-                        <label class="label cursor-pointer py-1">
-                            <span class="label-text text-xs">Auto-suspend LLM during GPU inference</span>
-                            <input id="set-llm-auto-suspend" type="checkbox" class="toggle toggle-primary toggle-sm" onchange="saveAutoSuspend()" />
-                        </label>
-                        <div class="label-text-alt opacity-60 leading-snug">
-                            Sends SIGSTOP to LM Studio / Ollama before each heavy GPU stage
-                            and SIGCONT after, freeing ~8 GB of unified RAM. Process state
-                            is preserved — no model reload.
+                        <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 my-1">Auto-suspend during GPU inference</div>
+                        <div class="label-text-alt opacity-60 leading-snug mb-2">
+                            Pauses or unloads co-resident services before each heavy GPU
+                            stage and restores them after. See docs/auto-suspend-design.md
+                            for method semantics.
                         </div>
+                        <div id="auto-suspend-list" class="flex flex-col gap-1"></div>
+                        <button class="btn btn-ghost btn-xs mt-2 self-start" type="button" onclick="addAutoSuspendEntry()">+ Add service</button>
                     </div>
 
                     <div class="form-control md:col-span-2">
