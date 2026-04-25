@@ -1086,7 +1086,10 @@ function connect() {
                         const age = nowSec - (q.cancelled_ts || 0);
                         return age < 5;
                     });
-                    items.push(...visibleQueue.slice(0, 11).map(q => renderItem(q, {})));
+                    // Cap the inline queue at 6 items so the card stays
+                    // glanceable; the "View all →" button opens the drawer
+                    // which shows the entire queue.
+                    items.push(...visibleQueue.slice(0, 6).map(q => renderItem(q, {})));
                     qList.innerHTML = items.join('');
                 }
             }

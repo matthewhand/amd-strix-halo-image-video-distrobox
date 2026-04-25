@@ -154,7 +154,7 @@
                 <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
             <ul id="q-list" class="flex flex-col gap-2">
-                {% for q in (queue or [])[:12] %}
+                {% for q in (queue or [])[:6] %}
                     {% set is_active = (state.mode != 'Idle' and loop.index0 == 0 and q.status != 'cancelled') %}
                     {% set snap = q.config_snapshot or config %}
                     <li class="bg-base-200 rounded-md{% if q.status == 'cancelled' %} opacity-50{% endif %}{% if is_active %} ring-2 ring-primary{% endif %}" data-q-ts="{{ q.ts }}" data-q-status="{{ 'active' if is_active else (q.status or 'pending') }}">
