@@ -159,8 +159,8 @@
     z-index: 1;
 }
 .pipeline-seg-current .pipeline-seg-label { opacity: 0.9; }
-.pipeline-activity { color: hsl(var(--bc)); z-index: 2; }
-.pipeline-eta      { color: hsl(var(--bc)); z-index: 2; }
+.pipeline-activity { color: hsl(var(--bc)); font-weight: 500; }
+.pipeline-eta      { color: hsl(var(--bc)); }
 .pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {
     background: hsl(var(--wa) / 0.8);
     animation: slopfinity-progress-pulse var(--pulse-period, 1s) ease-in-out infinite;
