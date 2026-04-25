@@ -2061,15 +2061,17 @@ function connect() {
                 const hasOutput = !!(completedLines || activeBridgesHtml);
                 return `
                     ${hasOutput ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}` : ''}
-                    <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300 mt-2"
+                    <div class="pipeline-bar-wrap mt-2"
                          data-pipeline-bar
                          data-cur-stage="${curStep || ''}">
-                        <div class="flex h-7" data-pipeline-segments>${segments}</div>
-                        <div class="absolute inset-0 flex items-center justify-between px-2 pointer-events-none gap-2">
-                            <span class="pipeline-activity text-[10px] font-medium drop-shadow truncate flex-1" data-pipeline-activity>
-                                <span class="loading loading-spinner loading-xs mr-1 align-middle"></span><span data-pipeline-activity-text>${activityText}</span>
+                        <div class="flex items-center justify-between gap-2 px-1 mb-1 text-[10px]">
+                            <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
+                                <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
                             </span>
-                            <span class="pipeline-eta text-[10px] font-mono drop-shadow flex-none" data-pipeline-eta>${_fmtElapsedHtml(remainingSec * 1000)}</span>
+                            <span class="pipeline-eta font-mono flex-none" data-pipeline-eta>${_fmtElapsedHtml(remainingSec * 1000)}</span>
+                        </div>
+                        <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
+                            <div class="flex h-7" data-pipeline-segments>${segments}</div>
                         </div>
                     </div>
                 `;
