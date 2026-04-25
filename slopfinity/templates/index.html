@@ -161,7 +161,7 @@
                    visually so they look like one control with two halves. #}
                 <div class="join">
                     <button id="gen-mode-pill" class="btn btn-ghost btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
-                    <button id="pipeline-config-button" class="btn btn-ghost btn-xs join-item text-base text-primary" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
+                    <button id="pipeline-config-button" class="btn btn-outline btn-primary btn-xs join-item text-base" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
                             <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
@@ -179,29 +179,29 @@
                     {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
                 </button>
             </div>
-            <div id="subjects-need-ideas-row" class="flex items-center justify-between gap-1">
-                <div class="flex items-center gap-1">
-                    <a id="subjects-suggestion-prompt-link"
-                       href="#"
-                       class="text-[10px] text-base-content/50 hover:link cursor-pointer"
-                       title="Edit the system prompt used for auto-suggestions"
-                       onclick="openSettingsToSuggestionPrompt(); return false;">Suggestion Prompt?</a>
-                    <a id="subjects-suggestions-toggle"
-                       href="#"
-                       class="text-[10px] text-base-content/50 hover:link cursor-pointer"
-                       onclick="toggleSuggestionsHidden(false); return false;">Need ideas?</a>
-                    <button id="subjects-suggestions-close"
+            <div id="subjects-need-ideas-row" class="flex items-center justify-between gap-1 flex-wrap">
+                <div class="flex items-center gap-1 flex-wrap">
+                    <button id="subjects-suggestions-toggle"
                        type="button"
-                       class="btn btn-circle btn-ghost btn-xs h-5 w-5 min-h-0"
-                       title="Hide suggestions and disable auto-fetch"
-                       onclick="toggleSuggestionsHidden(true)">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="w-3 h-3">
-                            <circle cx="8" cy="8" r="6.5" stroke-width="1.4"/>
-                            <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke-linecap="round"/>
-                        </svg>
-                    </button>
+                       class="btn btn-outline btn-primary btn-xs"
+                       title="Toggle suggestion controls"
+                       onclick="toggleSuggestionsHidden(_isSuggestionsHidden() ? false : true)">Need Suggestions?</button>
+                    <button id="subjects-suggest-btn"
+                       type="button"
+                       class="btn btn-outline btn-primary btn-xs"
+                       onclick="regenSuggestions()"
+                       title="Regenerate suggestions">🎲 Regenerate</button>
+                    <button id="subjects-suggestion-prompt-link"
+                       type="button"
+                       class="btn btn-outline btn-primary btn-xs"
+                       title="Edit the system prompt used for auto-suggestions"
+                       onclick="openSettingsToSuggestionPrompt()">Suggestion Prompt?</button>
                 </div>
-                <button class="btn btn-ghost btn-xs" id="subjects-suggest-btn" onclick="regenSuggestions()" title="Regenerate suggestions">🎲 Regenerate</button>
+                <label id="subjects-endless-story" class="btn btn-outline btn-secondary btn-xs cursor-pointer gap-1.5" title="Endless Story — keep generating with rotating subjects">
+                    <input type="checkbox" id="endless-story-toggle" class="hidden peer" onchange="(() => { const inf = document.getElementById('inf-on'); if (inf) { inf.checked = this.checked; inf.dispatchEvent(new Event('change', {bubbles:true})); } document.getElementById('subjects-endless-story').setAttribute('aria-pressed', this.checked); })()">
+                    <span class="inline-flex w-3 h-3 rounded-full border border-current peer-checked:bg-current"></span>
+                    <span>Endless Story</span>
+                </label>
             </div>
             {# Multi-row marquee stack — each row auto-scrolls horizontally
                at a slow constant speed when its content overflows the row
@@ -345,9 +345,10 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
+                {# Filter chip colors aligned to PR #58 token map: video=primary, image=info, audio=secondary #}
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-info peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -1199,6 +1200,15 @@
                         Scheduler reads this at acquire_gpu time (writes config.json → scheduler.memory_safety_gb).
                     </span>
                 </label>
+
+                <label class="label cursor-pointer py-1 mb-2">
+                    <span class="label-text text-xs">Dynamic load plan (Belady-MIN)</span>
+                    <input id="sched-use-planner" type="checkbox" class="toggle toggle-primary toggle-sm"
+                           onchange="saveSchedUsePlanner(this.checked)" />
+                </label>
+                <span class="label-text-alt text-[10px] text-base-content/50 italic mb-3">
+                    OFF (default) = load one model at a time, unload before next. ON = the planner consults model usage across upcoming queue items and keeps models resident across stages when budget allows. See docs/memory-stage-planner-design.md.
+                </span>
 
                 <div>
                     <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-1">Recent events</div>
