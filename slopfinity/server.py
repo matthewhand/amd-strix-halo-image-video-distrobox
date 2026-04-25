@@ -156,6 +156,65 @@ async def assets(offset: int = 0, limit: int = 48):
     }
 
 
+@app.get("/assets/by-vidx")
+async def assets_by_vidx(v_idx: int):
+    """Resolve actual on-disk filenames for a given video index.
+
+    The fleet runner now uses slug-based filenames
+    (e.g. ``v1_sterile_chrome_corridors_algorithms_shep_base.png``)
+    rather than the legacy ``v{N}_base.png`` shape that the dashboard
+    used to synthesize. This endpoint maps a v_idx to whatever real
+    filenames currently exist on disk so the client can build correct
+    `/files/<name>` links instead of guessing — the previous synthesis
+    would 404 against fresh slugged outputs, or worse, match a stale
+    file from a previous run that happens to still be on disk under
+    the old un-slugged name.
+    """
+    try:
+        files = os.listdir(EXP_DIR)
+    except OSError:
+        files = []
+    result: dict[str, str] = {}
+    prefix = f"v{v_idx}_"
+    # Track newest mtime per role so we prefer the most recent file when
+    # the directory contains multiple matches (e.g. several video chains
+    # for the same v_idx — keep the latest one for the `video` slot).
+    best_mtime: dict[str, float] = {}
+
+    def _consider(role: str, name: str) -> None:
+        try:
+            mt = os.path.getmtime(os.path.join(EXP_DIR, name))
+        except OSError:
+            return
+        if role not in best_mtime or mt > best_mtime[role]:
+            best_mtime[role] = mt
+            result[role] = name
+
+    for f in files:
+        if f.startswith(prefix):
+            if f.endswith("_base.png"):
+                _consider("base", f)
+            elif f.endswith(".mp4"):
+                # Chain segments: v{N}_c{M}.mp4 (also covers slugged
+                # variants like v{N}_<slug>_c{M}.mp4 if they appear).
+                _consider("video", f)
+            elif f.endswith(".wav"):
+                # Heuristic: TTS lines often live alongside chain audio.
+                if "tts" in f.lower():
+                    _consider("tts", f)
+                else:
+                    _consider("audio", f)
+        # Final merge has its own naming convention (FINAL_{N}*.mp4)
+        # and isn't prefixed with v{N}_.
+        if f == f"FINAL_{v_idx}.mp4":
+            _consider("final", f)
+        elif f.startswith(f"FINAL_{v_idx}.") and f.endswith(".mp4"):
+            _consider("final", f)
+        elif f.startswith(f"FINAL_{v_idx}_") and f.endswith(".mp4"):
+            _consider("final", f)
+    return {"v_idx": v_idx, "assets": result}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     finals, live, imgs = _list_outputs()
