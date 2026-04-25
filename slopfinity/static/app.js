@@ -2799,14 +2799,16 @@ function connect() {
                             : (s === 'Concept'
                                 ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
                                 : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
-                        // Three-column row: stage badge LEFT (flex-none),
-                        // prompt + file-asset links CENTER (flex-1 + justify-center
-                        // so they sit in the middle of whatever horizontal space
-                        // the row gets), timing column RIGHT (flex-none, fixed
-                        // width so the right edge aligns down the column).
+                        // Three-column row: filename/prompt LEFT (flex-1, fades
+                        // into the middle column on overflow), model badge
+                        // CENTER (flex-none — pushed right by the asset's
+                        // flex-1 grow but pulled in front of the timing column
+                        // so model identity is the second-most-prominent
+                        // anchor after the file name), timing RIGHT (flex-none,
+                        // fixed width so the right edge aligns).
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
+                            <span class="flex-1 flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
                             ${stageLabelHtml}
-                            <span class="flex-1 flex items-center justify-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
                             ${timingCol}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
@@ -4504,29 +4506,59 @@ function _renderCachedSuggestions() {
 // _isGpuIdleEnough() — manual user click always wins. See the audit
 // block above _isGpuIdleEnough for the full inventory.
 async function regenSuggestions(n = 6) {
-  // The 🎲 button: ALWAYS fires — never gated by GPU idle, never gated by
-  // the suggest_auto_disabled toggle. Manual user intent always wins.
-  // RAM-tight guard is a separate, soft check (modal asks the user; cancel
-  // aborts with no side effects).
+  // The 🎲 button: ALWAYS fires for the FIRST row. Subsequent rows top
+  // up the marquee stack one at a time, gated by system pressure — we
+  // wait between calls and skip when GPU/RAM/Load look stressed so we
+  // don't fight the active fleet for the LLM's GPU time.
+  // RAM-tight guard is a separate, soft check (modal asks the user;
+  // cancel aborts with no side effects).
   if (!(await _ramGuardCheck())) return;
   const box = document.getElementById('subject-chips-stack');
   if (!box) return;
   box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
-  try {
-    // Forward the current Subjects textarea so the server can match
-    // style/theme when `suggest_use_subjects` is enabled. The server ignores
-    // it when the toggle is off, so it's safe to always send.
-    const subjects = (($('p-core') && $('p-core').value) || '').trim();
-    const qs = '?n=' + n + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '');
+  const subjects = (($('p-core') && $('p-core').value) || '').trim();
+  const fetchOne = async (forceFresh) => {
+    // Add a small randomized seed param so the server cache key changes
+    // when we want a fresh batch (otherwise the cache-no-TTL change in
+    // server.py would return the same row over and over).
+    const qs = '?n=' + n
+             + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+             + (forceFresh ? '&_t=' + Date.now() : '');
     const r = await fetch('/subjects/suggest' + qs);
     const data = await r.json();
-    const arr = data.suggestions || [];
-    if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
-    try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-    // Manual 🎲 click: replace the stack with a fresh single row.
-    _renderSuggestChips(arr);
+    return data.suggestions || [];
+  };
+  // Row 1 — wholesale-replace the stack so the user sees a fresh batch.
+  let arr;
+  try {
+    arr = await fetchOne(false);
   } catch (e) {
     box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+    return;
+  }
+  if (!arr.length) {
+    box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
+    return;
+  }
+  try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
+  _renderSuggestChips(arr);
+  // Rows 2..N — drip-feed additional batches until the marquee stack has
+  // 4 rows (its display cap) OR pressure climbs. Each iteration: 1 s pause,
+  // pressure check, fetch, append. The pressure floor mirrors the existing
+  // ticker thresholds (>=80 % on any of GPU/RAM/Load is "stressed").
+  const TARGET_ROWS = 4;
+  const stack = document.getElementById('subject-chips-stack');
+  for (let i = 1; i < TARGET_ROWS; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
+    const ramT = t.ram_t || 0;
+    const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
+    const stressed = (t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80;
+    if (stressed) break;
+    try {
+      const more = await fetchOne(true);
+      if (more && more.length && stack) _appendSuggestBatchRow(more);
+    } catch { break; }
   }
 }
 
