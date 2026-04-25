@@ -13,6 +13,16 @@
    doesn't make the dialog jump in size. Video is the tallest stage today. */
 #pipeline-modal .tab-content { min-height: 360px; }
 
+/* Fade-edge horizontal scroll affordance — used for the Pipeline toggle row
+   on narrow viewports so the row scrolls instead of wrapping/clipping, and
+   the rightmost toggle dissolves into the card border to hint at scroll. */
+.fade-edges {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+          mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+.fade-edges::-webkit-scrollbar { display: none; }
+.fade-edges { scrollbar-width: none; }
+
 /* Pipeline strip step labels — `.stage-full` shows the word ("Image"),
    `.stage-short` shows the acronym ("I"). Default to full; the .pipeline-compact
    modifier swaps to acronyms when the container is too narrow to fit words.
