@@ -1803,6 +1803,8 @@ async function openSettings() {
         $('set-temp-val').innerText = $('set-temp').value;
         $('set-retries').value = llm.max_retries ?? 2;
         $('set-timeout').value = llm.timeout_s ?? 60;
+        const autoSus = $('set-llm-auto-suspend');
+        if (autoSus) autoSus.checked = !!llm.auto_suspend;
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -1846,6 +1848,23 @@ async function openSettings() {
     }
 }
 
+async function saveAutoSuspend() {
+    // Inline-save the LLM auto-suspend toggle without closing the Settings
+    // modal. Lets the user flip the switch and immediately see its effect on
+    // the next stage start, without re-opening Settings to hit Save.
+    const el = $('set-llm-auto-suspend');
+    if (!el) return;
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ llm: { auto_suspend: !!el.checked } }),
+        });
+    } catch (e) {
+        console.error('saveAutoSuspend failed', e);
+    }
+}
+
 async function saveSettings() {
     const sel = $('set-model');
     let model_id = sel.value;
@@ -1859,6 +1878,7 @@ async function saveSettings() {
             temperature: parseFloat($('set-temp').value),
             max_retries: parseInt($('set-retries').value, 10),
             timeout_s: parseInt($('set-timeout').value, 10),
+            auto_suspend: !!($('set-llm-auto-suspend') && $('set-llm-auto-suspend').checked),
         },
     };
     await fetch('/settings', {

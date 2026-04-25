@@ -20,6 +20,10 @@ DEFAULT_LLM_CONFIG = {
     "max_retries": 2,
     "timeout_s": 60,
     "extra_headers": {},
+    # When true, the scheduler SIGSTOPs local LLM processes before each
+    # heavy GPU stage and SIGCONTs after, freeing ~8 GB of unified RAM.
+    # Default off — opt-in via Settings → LLM → Generation.
+    "auto_suspend": False,
 }
 
 

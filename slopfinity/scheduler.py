@@ -9,11 +9,15 @@ import asyncio
 import contextlib
 import gc
 import json
+import os
+import signal
 import subprocess
 import time
 import urllib.request
 import urllib.error
 from typing import Optional, Tuple
+
+from . import config as _config
 
 # Rough per-stage peak memory budgets (GB). Values are intentionally
 # a bit conservative — they are the amount we expect a stage to peak at
@@ -198,6 +202,25 @@ async def acquire_gpu(stage: str, model: str, safety_gb: int = SAFETY_GB):
             "ts": _now(),
         })
 
+        # Optional: SIGSTOP local LLM processes before the heavy GPU work
+        # starts. The model stays resident in unified RAM but the OS won't
+        # schedule it, freeing CPU + reducing memory pressure during inference.
+        auto_suspend = _auto_suspend_enabled()
+        suspended_pids: list[int] = []
+        if auto_suspend:
+            try:
+                suspended_pids = suspend_llm().get("suspended") or []
+                if suspended_pids:
+                    await _emit({
+                        "type": "llm_suspended",
+                        "stage": stage,
+                        "model": model,
+                        "pids": suspended_pids,
+                        "ts": _now(),
+                    })
+            except Exception:
+                suspended_pids = []
+
         peak_before = _mem_available_gb()
         start = _now()
         try:
@@ -209,6 +232,19 @@ async def acquire_gpu(stage: str, model: str, safety_gb: int = SAFETY_GB):
                 await free_between()
             except Exception:
                 pass
+            if auto_suspend:
+                try:
+                    resumed = resume_llm().get("resumed") or []
+                    if resumed:
+                        await _emit({
+                            "type": "llm_resumed",
+                            "stage": stage,
+                            "model": model,
+                            "pids": resumed,
+                            "ts": _now(),
+                        })
+                except Exception:
+                    pass
             await _emit({
                 "type": "stage_end",
                 "stage": stage,
@@ -229,3 +265,74 @@ async def resume() -> None:
 
 def is_paused() -> bool:
     return not paused.is_set()
+
+
+# ---------------------------------------------------------------------------
+# LLM auto-suspend — SIGSTOP local LM Studio / Ollama processes during heavy
+# GPU stages so unified RAM is freed for inference. Reversible via SIGCONT.
+# Default OFF; opt-in via `config.llm.auto_suspend` toggle in Settings.
+# ---------------------------------------------------------------------------
+LLM_PROCESS_HINTS = ["LM Studio", "lm-studio", "ollama serve"]
+
+
+def _find_llm_pids() -> list[int]:
+    """Find PIDs of any local LLM process by host process name.
+
+    Uses `pgrep -af` so the regex matches against the full command line.
+    Returns an empty list if pgrep is unavailable or nothing matches.
+    """
+    try:
+        out = subprocess.run(
+            ["pgrep", "-af", "|".join(LLM_PROCESS_HINTS)],
+            capture_output=True,
+            text=True,
+        ).stdout
+    except Exception:
+        return []
+    pids: list[int] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            pids.append(int(line.split()[0]))
+        except (ValueError, IndexError):
+            continue
+    return pids
+
+
+def suspend_llm() -> dict:
+    """Send SIGSTOP to every running local LLM process.
+
+    Returns {suspended: [pid, ...]}. Permission/lookup errors are swallowed
+    silently so a partial-success run still returns a useful list.
+    """
+    pids = _find_llm_pids()
+    suspended: list[int] = []
+    for p in pids:
+        try:
+            os.kill(p, signal.SIGSTOP)
+            suspended.append(p)
+        except (PermissionError, ProcessLookupError):
+            pass
+    return {"suspended": suspended}
+
+
+def resume_llm() -> dict:
+    """Send SIGCONT to every running (suspended) local LLM process."""
+    pids = _find_llm_pids()
+    resumed: list[int] = []
+    for p in pids:
+        try:
+            os.kill(p, signal.SIGCONT)
+            resumed.append(p)
+        except (PermissionError, ProcessLookupError):
+            pass
+    return {"resumed": resumed}
+
+
+def _auto_suspend_enabled() -> bool:
+    try:
+        return bool((_config.load_config().get("llm") or {}).get("auto_suspend", False))
+    except Exception:
+        return False
