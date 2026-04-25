@@ -571,7 +571,10 @@ function _configModelBadges(snap, llmModelId, activeRole) {
         : '';
     const out = [];
     if (llmModelId) {
-        const short = llmModelId.replace(/^.*[\/:]/, '').replace(/\.gguf$/i, '');
+        // Strip leading path (huggingface-style "owner/repo/...") but KEEP
+        // the colon-separated name:tag — `qwen3:4b` should display as
+        // `qwen3:4b`, not just `4b`.
+        const short = llmModelId.replace(/^.*\//, '').replace(/\.gguf$/i, '');
         out.push(`<span class="badge badge-xs badge-accent gap-1" title="prompt LLM: ${_htmlEscape(llmModelId)}">${spin('llm')}${_htmlEscape(short)}</span>`);
     }
     if (snap.base_model) out.push(`<span class="badge badge-xs badge-info gap-1" title="image model">${spin('base')}${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
