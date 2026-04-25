@@ -180,6 +180,21 @@
 .suggest-overlay:hover { color: hsl(var(--p)); }
 .suggest-chevron { font-weight: 700; line-height: 1; }
 
+/* Subjects textarea autogrow:
+   - PRIMARY layout claim: grows vertically to fill the Subjects card up to
+     a JS-managed max-height (card height minus Suggest button + chip row).
+   - min-height holds ~3 lines so the box never collapses to nothing.
+   - resize:none disables the manual drag-handle (autogrow takes over).
+   - Suggestion chips render only in any leftover space below the textarea
+     (>= 96 px); otherwise #subject-chips is hidden. See app.js: _autogrowSubjects /
+     _scheduleSuggestVisibilityCheck. */
+textarea.subjects-autogrow {
+    min-height: calc(3 * 1.4em + 1.25rem);
+    resize: none;
+    overflow-y: auto;
+    transition: height 0.08s ease-out;
+}
+
 /* Slop card video controls — fade out the native control overlay until hover
    so the thumbnail isn't visually noisy in a dense grid. */
 #preview-grid video::-webkit-media-controls-panel,

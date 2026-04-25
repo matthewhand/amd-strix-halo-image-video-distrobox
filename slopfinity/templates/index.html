@@ -169,7 +169,6 @@
                 <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
                     <span id="conn-pill-text">Connecting</span>
                 </span>
-                <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="document.getElementById('queue-drawer-toggle').checked = true">View all →</button>
             </div>
             <ul id="q-list" class="flex flex-col gap-2">
@@ -198,11 +197,10 @@
                             </summary>
                             <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
                                 <div class="flex items-center gap-1 flex-wrap text-[10px] mt-1">
-                                    {# Role-coloring: image=info, video=primary, music=secondary, upscale=neutral. Voice (warning) is wired up in app.js. #}
                                     {% if snap.base_model %}<span class="badge badge-xs badge-info">{{ snap.base_model }}</span>{% endif %}
-                                    {% if snap.video_model %}<span class="badge badge-xs badge-primary">{{ snap.video_model }}</span>{% endif %}
+                                    {% if snap.video_model %}<span class="badge badge-xs badge-success">{{ snap.video_model }}</span>{% endif %}
                                     {% if snap.audio_model and snap.audio_model != 'none' %}<span class="badge badge-xs badge-secondary">{{ snap.audio_model }}</span>{% endif %}
-                                    {% if snap.upscale_model and snap.upscale_model != 'none' %}<span class="badge badge-xs badge-neutral">{{ snap.upscale_model }}</span>{% endif %}
+                                    {% if snap.upscale_model and snap.upscale_model != 'none' %}<span class="badge badge-xs badge-warning">{{ snap.upscale_model }}</span>{% endif %}
                                     <span class="text-base-content/50 font-mono ml-auto">{{ snap.size or '1:1' }}·{{ snap.frames or 17 }}f</span>
                                 </div>
                                 {% if is_active %}
@@ -242,11 +240,9 @@
                 <span class="loading loading-ring loading-sm text-accent" id="live-ring" style="display:none"></span>
             </h2>
             <div class="flex flex-wrap gap-1" id="slop-filters">
-                {# Filter chips share the role tokens used by per-asset badges:
-                   video = primary, image = info, audio = secondary. #}
                 <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-info peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-warning peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
             </div>
         </div>
         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
@@ -276,16 +272,13 @@
                     {% if _m | length > 1 %}{% set part_n = _m[1].split('.')[0] %}{% endif %}
                 {% elif f.endswith('.png') and f.startswith('v') and '_base.' in f %}{% set model_id = 'qwen' %}
                 {% elif f.endswith('.png') and f.startswith('v') and '_f' in f %}{% set model_id = 'ltx-bridge' %}{% endif %}
-                {# Per-model badge color is driven by output KIND, not the model
-                   vendor — keeps colors theme-coherent (image=info, video=primary,
-                   music=secondary, voice=warning). Mirror of app.js _slopBadgeMeta. #}
                 {% set _model_map = {
                     'qwen': ('Qwen Image', 'badge-info'),
-                    'ernie': ('Ernie Image', 'badge-info'),
-                    'ltx-2.3': (('LTX-2.3 Video' if is_mp4 else 'LTX-2.3 Image'), ('badge-primary' if is_mp4 else 'badge-info')),
-                    'ltx-bridge': ('LTX Bridge', 'badge-primary'),
-                    'wan2.2': ('Wan 2.2 Video', 'badge-primary'),
-                    'wan2.5': ('Wan 2.5 Video', 'badge-primary'),
+                    'ernie': ('Ernie Image', 'badge-error'),
+                    'ltx-2.3': (('LTX-2.3 Video' if is_mp4 else 'LTX-2.3 Image'), 'badge-success'),
+                    'ltx-bridge': ('LTX Bridge', 'badge-success'),
+                    'wan2.2': ('Wan 2.2 Video', 'badge-info'),
+                    'wan2.5': ('Wan 2.5 Video', 'badge-info'),
                     'heartmula': ('Heartmula Music', 'badge-secondary'),
                     'qwen-tts': ('Qwen TTS', 'badge-warning'),
                     'kokoro': ('Kokoro TTS', 'badge-warning'),
@@ -294,9 +287,9 @@
                     {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}{% set border_color = 'border-accent' %}
                 {% elif model_id and model_id in _model_map %}
                     {% set primary_label = _model_map[model_id][0] %}{% set primary_color = _model_map[model_id][1] %}
-                    {% set border_color = {'video':'border-primary','image':'border-info','audio':'border-secondary'}[kind] %}
+                    {% set border_color = {'video':'border-primary','image':'border-secondary','audio':'border-warning'}[kind] %}
                 {% else %}
-                    {% set _fallback = {'video': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-info', 'border-info'), 'audio': ('🔊 audio', 'badge-secondary', 'border-secondary')}[kind] %}
+                    {% set _fallback = {'video': ('🎬 video', 'badge-primary', 'border-primary'), 'image': ('🖼 image', 'badge-secondary', 'border-secondary'), 'audio': ('🔊 audio', 'badge-warning', 'border-warning')}[kind] %}
                     {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}{% set border_color = _fallback[2] %}
                 {% endif %}
                 <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
@@ -504,6 +497,20 @@
                     <div class="ram-breakdown text-[10px] font-mono leading-tight mt-1 opacity-80"></div>
                     <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
                 </div>
+                <!-- ============ Load plan (Belady-MIN advisory) ============ -->
+                {# Lazy-rendered when the user expands the <details>. Calls
+                   /pipeline/plan with the active job + queued items, then
+                   walks the decision list and prints a compact breakdown.
+                   See docs/memory-stage-planner-design.md. #}
+                <details id="load-plan-details" class="mt-1 border-t border-base-300 pt-2"
+                         ontoggle="if(this.open){loadPlanRender()}">
+                    <summary class="text-[10px] uppercase tracking-widest opacity-60 cursor-pointer select-none">
+                        Load plan <span class="opacity-50 normal-case tracking-normal">(advisory — model cold-load avoidance)</span>
+                    </summary>
+                    <div id="load-plan-body" class="text-[10px] font-mono leading-tight mt-1 opacity-80">
+                        <span class="opacity-50">loading…</span>
+                    </div>
+                </details>
             </div>
         </div>
 

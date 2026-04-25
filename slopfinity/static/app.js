@@ -49,15 +49,6 @@ const _displayedDoneStages = new Set();
 // user's open <details>. Single string = single-open enforcement: opening
 // item B implicitly collapses item A.
 let _openDoneItem = null;
-// Per-job progress-bar state machine. Drives the elapsed-vs-ETA bar in the
-// pipeline strip. Values: 'filling' | 'overrun' | 'success' | 'failed' |
-// 'cancelled'. Set from the WS handler when we observe a video_index
-// transition (= previous job finished) and from the 1 Hz tick (= elapsed
-// crossed ETA → overrun). Bare object so v_idx can be a numeric key.
-let _progressBarState = {};
-// Timestamp (ms) the most recent job finished, so the celebrate/alert
-// flourish animation has a clean 1.5 s lifetime before settling to static.
-let _progressBarFinishTs = {};
 
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
@@ -119,7 +110,7 @@ function _renderStageEtas() {
             hint.className = 'stage-eta ml-1 opacity-50 text-[9px] font-mono';
             li.appendChild(hint);
         }
-        hint.innerHTML = '≈' + _fmtElapsedHtml(avg * 1000);
+        hint.textContent = '≈' + _fmtElapsed(avg * 1000);
     });
     // Total ETA badge near the timers — sum of all stages' rolling averages.
     const total = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge']
@@ -127,7 +118,7 @@ function _renderStageEtas() {
         .filter(x => x != null)
         .reduce((a, b) => a + b, 0);
     const eta = document.getElementById('h-c-eta');
-    if (eta) eta.innerHTML = total > 0 ? 'ETA ' + _fmtElapsedHtml(total * 1000) : '';
+    if (eta) eta.textContent = total > 0 ? 'ETA ' + _fmtElapsed(total * 1000) : '';
 }
 
 function _fmtElapsed(ms) {
@@ -140,13 +131,6 @@ function _fmtElapsed(ms) {
     const m = Math.floor(elapsed / 60);
     const s = elapsed % 60;
     return m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
-}
-
-// Same shape as _fmtElapsed but returns HTML with letter-units wrapped in
-// <span class="time-unit"> so CSS can dim them. Safe to insert via innerHTML
-// (no user input — output is fully derived from a numeric ms argument).
-function _fmtElapsedHtml(ms) {
-    return _fmtElapsed(ms).replace(/([hms]+)/g, '<span class="time-unit">$1</span>');
 }
 
 // ----- Done queue items: thumbnail / mini-player / asset link expanded card.
@@ -204,11 +188,9 @@ function _renderDoneAssetRow(filename) {
 }
 
 function _renderDoneItem(q) {
-    const dur = q.duration_s ? _fmtElapsedHtml(q.duration_s * 1000) : '';
-    const failed = q.succeeded === false;
-    const cls = failed ? 'badge-error' : 'badge-success';
-    const sym = failed ? '✗' : '✓';
-    const verdict = failed ? 'failed' : 'done';
+    const dur = q.duration_s ? _fmtElapsed(q.duration_s * 1000) : '';
+    const cls = q.succeeded === false ? 'badge-error' : 'badge-success';
+    const sym = q.succeeded === false ? '✗' : '✓';
     const promptEsc = _htmlEscape(q.prompt || '');
     // Backwards-compat: pre-asset-tracking done records only have v_idx /
     // image_only. Synthesize a best-guess single-asset list from that so old
@@ -245,29 +227,15 @@ function _renderDoneItem(q) {
     // (must NOT rely on the previous DOM since it's already gone).
     const qid = String(q.ts || q.completed_ts || 0);
     const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
-    // Static 100% progress bar — same visual as the live one so the row
-    // doesn't shrink on completion. Color matches the done badge: green
-    // success, red error. (Cancelled items don't reach _renderDoneItem;
-    // they're filtered out by the visibleQueue logic.) If this job was
-    // marked finished within the last 1.5 s, layer on a one-shot
-    // celebrate/alert flourish (3 quick pulses) for the visual hand-off
-    // from "active row finished" → "done row appeared".
-    const doneFillCls = q.succeeded === false ? 'slop-progress-error' : 'slop-progress-success';
-    const finishTs = q.v_idx ? _progressBarFinishTs[q.v_idx] : 0;
-    const flourishCls = (finishTs && (Date.now() - finishTs) < 1500)
-        ? (q.succeeded === false ? ' slop-progress-alert' : ' slop-progress-celebrate')
-        : '';
-    const progressHTML = `<div class="slop-progress mt-1"><div class="slop-progress-fill ${doneFillCls}${flourishCls}" style="width:100%;"></div></div>`;
     return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
         <details data-q-id="${qid}"${openAttr}>
             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
-                <span class="badge badge-xs ${cls}">${sym} ${verdict}</span>
+                <span class="badge badge-xs ${cls}">${sym} done</span>
                 <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
                 ${assetCountBadge}
                 ${metaGroup}
             </summary>
             <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
-                ${progressHTML}
                 ${previewList}
             </div>
         </details>
@@ -408,60 +376,16 @@ async function requeueItem(ts) {
     } catch (e) { console.warn('requeue failed', e); }
 }
 
-// Compute the exponentially-slowing pulse period (in seconds) used while
-// a job is overrunning its ETA. Starts at ~1 s when ETA is just hit, grows
-// with sqrt(overrun_seconds), and asymptotes near 8 s so a long-overrunning
-// job becomes a slow heartbeat rather than a frantic strobe.
-function _overrunPulsePeriod(overrunSec) {
-    const o = Math.max(0, overrunSec);
-    return Math.min(8, 1 + 0.5 * Math.sqrt(o));
-}
-
-// Update the active job's progress bar each tick. Reads elapsed/ETA from
-// the same module globals the badge text uses, so the bar and badges
-// never disagree.
-function _updateActiveProgressBar() {
-    const bar = document.querySelector('[data-q-status="active"] [data-progress-bar]');
-    if (!bar) return;
-    const fill = bar.querySelector('.slop-progress-fill');
-    if (!fill) return;
-    const totalEtaSec = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
-    const elapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
-    const etaMs = totalEtaSec * 1000;
-    const vIdx = bar.dataset.vIdx;
-    if (etaMs <= 0) {
-        // No ETA yet — show an empty bar in primary; nothing to celebrate.
-        fill.style.width = '0%';
-        return;
-    }
-    if (elapsedMs >= etaMs) {
-        // Overrun — bar pinned at 100% with a slowing warning pulse.
-        const overrunSec = (elapsedMs - etaMs) / 1000;
-        const period = _overrunPulsePeriod(overrunSec);
-        fill.style.width = '100%';
-        fill.style.setProperty('--pulse-period', period.toFixed(2) + 's');
-        fill.classList.remove('slop-progress-success', 'slop-progress-error', 'slop-progress-neutral', 'slop-progress-celebrate', 'slop-progress-alert');
-        fill.classList.add('slop-progress-warning', 'slop-progress-overrun');
-        if (vIdx) _progressBarState[vIdx] = 'overrun';
-    } else {
-        // Filling — linear width, primary color, no animation.
-        const pct = Math.max(0, Math.min(100, (elapsedMs / etaMs) * 100));
-        fill.style.width = pct.toFixed(2) + '%';
-        fill.classList.remove('slop-progress-warning', 'slop-progress-overrun', 'slop-progress-success', 'slop-progress-error', 'slop-progress-neutral', 'slop-progress-celebrate', 'slop-progress-alert');
-        if (vIdx) _progressBarState[vIdx] = 'filling';
-    }
-}
-
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
 setInterval(() => {
     if (!_isRendering) return;
     // Live update the active queue item's badges. Format must match the
     // renderItem template exactly or the badges flicker between the two.
     document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
-        if (_stageStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
+        if (_stageStartTs) el.textContent = _fmtElapsed(Date.now() - _stageStartTs);
     });
     document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
-        if (_jobStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
+        if (_jobStartTs) el.textContent = _fmtElapsed(Date.now() - _jobStartTs);
     });
     // Total ETA from rolling stage averages.
     const totalEta = _STAGE_ORDER
@@ -470,10 +394,9 @@ setInterval(() => {
         .reduce((a, b) => a + b, 0);
     if (totalEta > 0) {
         document.querySelectorAll('[data-q-status="active"] [data-q-job-eta]').forEach(el => {
-            el.innerHTML = 'ETA ' + _fmtElapsedHtml(totalEta * 1000);
+            el.textContent = 'ETA ' + _fmtElapsed(totalEta * 1000);
         });
     }
-    _updateActiveProgressBar();
 }, 1000);
 
 const $ = (id) => document.getElementById(id);
@@ -596,6 +519,72 @@ function updateRam(ram) {
     }
     el.className = 'alert p-2 ' + (ram.status === 'danger' ? 'alert-error' : ram.status === 'warn' ? 'alert-warning' : 'alert-success');
     el.id = 'ram-est';
+}
+
+// Render the Belady-MIN load plan inside the Pipeline popup. Lazy: only
+// fetched when the user expands <details id="load-plan-details">. The plan
+// is advisory — surfaced so the user can see which model boundaries the
+// scheduler *could* skip cold-loads at if Phase 2 wires it in. See
+// docs/memory-stage-planner-design.md.
+async function loadPlanRender() {
+    const body = $('load-plan-body');
+    if (!body) return;
+    body.innerHTML = '<span class="opacity-50">loading…</span>';
+    let plan;
+    try {
+        const r = await fetch('/pipeline/plan');
+        plan = await r.json();
+    } catch (e) {
+        body.innerHTML = '<span class="text-error">failed to fetch /pipeline/plan</span>';
+        return;
+    }
+    if (!plan || !Array.isArray(plan.decisions)) {
+        body.innerHTML = '<span class="text-error">empty plan</span>';
+        return;
+    }
+    const rows = [];
+    // Header: budget + projected savings.
+    const sv = plan.savings || {};
+    const savedSec = sv.est_saved_seconds || 0;
+    const savedMin = Math.floor(savedSec / 60);
+    const savedTail = savedSec % 60;
+    rows.push(
+        `<div class="opacity-70">budget ${plan.budget_gb} GB · ` +
+        `${plan.queued_jobs_planned} queued + active · ` +
+        `<b>${sv.naive_loads || 0} → ${sv.planned_loads || 0} loads</b> ` +
+        `(saved ${sv.saved_loads || 0} ≈ ${savedMin}m${savedTail}s)</div>`
+    );
+    rows.push('<div class="opacity-50">────────────────────────────</div>');
+    // Per-step decision rows.
+    for (let i = 0; i < plan.decisions.length; i++) {
+        const d = plan.decisions[i];
+        const tag = d.load && d.load.length ? 'LOAD ' : 'HIT  ';
+        const cls = d.load && d.load.length ? '' : 'text-success';
+        const stage = (d.step.stage || '').padEnd(11);
+        const model = (d.step.model || '').padEnd(12);
+        const gb = (Math.round((d.step.gb || 0) * 10) / 10).toFixed(1);
+        rows.push(
+            `<div class="${cls}">` +
+            `<span class="opacity-60">${(i + 1).toString().padStart(2, ' ')}.</span> ` +
+            `${_htmlEscape(tag)} ${_htmlEscape(stage)} ${_htmlEscape(model)} ` +
+            `<span class="opacity-50">${gb} GB</span>` +
+            `</div>`
+        );
+        if (d.evict && d.evict.length) {
+            rows.push(
+                `<div class="text-warning pl-6">` +
+                `↳ evict ${_htmlEscape(d.evict.join(', '))}` +
+                `</div>`
+            );
+        }
+    }
+    rows.push('<div class="opacity-50">────────────────────────────</div>');
+    rows.push(
+        `<div class="opacity-60 italic">` +
+        `Advisory only — scheduler still cold-loads on every stage. ` +
+        `Phase 2: wire into acquire_gpu.</div>`
+    );
+    body.innerHTML = rows.join('');
 }
 
 // Show/hide the slopped sub-select for a given role and populate it on demand.
@@ -776,29 +765,25 @@ function _slopBadgeMeta(file) {
         // Generic mp4 fallback — assume LTX-2.3 since that's the only video model wired in.
         model = 'ltx-2.3';
     }
-    // Role-based color discipline: every badge is colored by what KIND of
-    // asset it produced, never by the model's vendor. This keeps colors
-    // theme-coherent across DaisyUI themes — image is always `info`, video
-    // always `primary`, music always `secondary`, voice always `warning`.
     const map = {
         'qwen': { label: 'Qwen Image', color: 'badge-info' },
-        'ernie': { label: 'Ernie Image', color: 'badge-info' },
-        'ltx-2.3': { label: isMp4 ? 'LTX-2.3 Video' : 'LTX-2.3 Image', color: isMp4 ? 'badge-primary' : 'badge-info' },
-        'ltx-bridge': { label: 'LTX Bridge', color: 'badge-primary' },
-        'wan2.2': { label: 'Wan 2.2 Video', color: 'badge-primary' },
-        'wan2.5': { label: 'Wan 2.5 Video', color: 'badge-primary' },
+        'ernie': { label: 'Ernie Image', color: 'badge-error' },
+        'ltx-2.3': { label: isMp4 ? 'LTX-2.3 Video' : 'LTX-2.3 Image', color: 'badge-success' },
+        'ltx-bridge': { label: 'LTX Bridge', color: 'badge-success' },
+        'wan2.2': { label: 'Wan 2.2 Video', color: 'badge-info' },
+        'wan2.5': { label: 'Wan 2.5 Video', color: 'badge-info' },
         'heartmula': { label: 'Heartmula Music', color: 'badge-secondary' },
         'qwen-tts': { label: 'Qwen TTS', color: 'badge-warning' },
         'kokoro': { label: 'Kokoro TTS', color: 'badge-warning' },
     };
-    const borderByKind = { 'video': 'border-primary', 'image': 'border-info', 'audio': 'border-secondary' };
+    const borderByKind = { 'video': 'border-primary', 'image': 'border-secondary', 'audio': 'border-warning' };
     if (model && map[model]) {
         return { label: map[model].label, color: map[model].color, border: borderByKind[kind], part, kind };
     }
     const fallback = {
         'video': { label: '🎬 video', color: 'badge-primary' },
-        'image': { label: '🖼 image', color: 'badge-info' },
-        'audio': { label: '🔊 audio', color: 'badge-secondary' },
+        'image': { label: '🖼 image', color: 'badge-secondary' },
+        'audio': { label: '🔊 audio', color: 'badge-warning' },
     }[kind];
     return { label: fallback.label, color: fallback.color, border: borderByKind[kind], part, kind };
 }
@@ -879,16 +864,11 @@ function _configModelBadges(snap, llmModelId, activeRole, qTs) {
         const short = llmModelId.replace(/^.*\//, '').replace(/\.gguf$/i, '');
         out.push(mk('llm', 'badge-accent', `prompt LLM: ${llmModelId}`, _htmlEscape(short)));
     }
-    // Role → semantic-token mapping — keep in sync with templates/index.html
-    // queue/SSR badges. Each role owns ONE token across every theme so
-    // switching theme never flips the meaning of a color.
-    //   LLM      → accent      Image    → info      Video    → primary
-    //   Music    → secondary   Voice    → warning   Upscale  → neutral
     if (snap.base_model) out.push(mk('base', 'badge-info', 'image model', _htmlEscape(_modelDisplayName(snap.base_model, 'image'))));
-    if (snap.video_model) out.push(mk('video', 'badge-primary', 'video model', _htmlEscape(_modelDisplayName(snap.video_model, 'video'))));
+    if (snap.video_model) out.push(mk('video', 'badge-success', 'video model', _htmlEscape(_modelDisplayName(snap.video_model, 'video'))));
     if (snap.audio_model && snap.audio_model !== 'none') out.push(mk('audio', 'badge-secondary', 'music model', _htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))));
     if (snap.tts_model && snap.tts_model !== 'none') out.push(mk('tts', 'badge-warning', 'voice model', _htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))));
-    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(mk('upscale', 'badge-neutral', 'upscaler', _htmlEscape(snap.upscale_model)));
+    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(mk('upscale', 'badge-warning', 'upscaler', _htmlEscape(snap.upscale_model)));
     return out;
 }
 
@@ -1283,21 +1263,6 @@ function connect() {
                 _lastStage = d.state.step;
             }
             if (d.state.video_index !== _lastJobIndex) {
-                // Previous job (if any) just finished — flip its progress
-                // bar into success / failed / cancelled so the strip can
-                // celebrate before the row is replaced. We infer outcome
-                // by scanning the queue's done entries for a matching v_idx.
-                if (_lastJobIndex) {
-                    const prev = _lastJobIndex;
-                    const doneRec = (d.queue || []).find(q => q.status === 'done' && q.v_idx === prev);
-                    if (doneRec) {
-                        _progressBarState[prev] = doneRec.succeeded === false ? 'failed' : 'success';
-                    } else {
-                        // No done record means it was cancelled or vanished.
-                        _progressBarState[prev] = 'cancelled';
-                    }
-                    _progressBarFinishTs[prev] = Date.now();
-                }
                 _lastJobIndex = d.state.video_index;
             }
             // Hydrate _jobActuals from backend so refresh doesn't lose the
@@ -1320,9 +1285,9 @@ function connect() {
             _stageStartTs = stageTs ? stageTs * 1000 : Date.now();
             _jobStartTs = jobTs ? jobTs * 1000 : Date.now();
             const stageEl = $('h-c');
-            if (stageEl && _stageStartTs) stageEl.innerHTML = '⏱ ' + _fmtElapsedHtml(Date.now() - _stageStartTs);
+            if (stageEl && _stageStartTs) stageEl.innerText = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
             const totalEl = $('h-c-total');
-            if (totalEl && _jobStartTs) totalEl.innerHTML = 'Σ ' + _fmtElapsedHtml(Date.now() - _jobStartTs);
+            if (totalEl && _jobStartTs) totalEl.innerText = 'Σ ' + _fmtElapsed(Date.now() - _jobStartTs);
             // Progress bar tracks subject-through-list as a rough lifetime indicator.
             $('h-p').value = d.state.total_videos
                 ? (d.state.video_index / Math.max(1, d.state.total_videos)) * 100
@@ -1349,7 +1314,6 @@ function connect() {
             _updateConnPill(isRunning, d.state && d.state.mode, d.state && d.state.step);
             const qLen = d.queue.length + (isRunning ? 1 : 0);
             $('q-count').innerText = qLen;
-            _refreshClearFailedVisibility(d.queue);
             const qList = $('q-list');
             const cfg = d.config || {};
             const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
@@ -1380,12 +1344,12 @@ function connect() {
                 // Match the 1Hz interval handler exactly (no '⏱ '/'Σ ' prefix
                 // — the labels next to the badges already convey what they
                 // mean) so live updates don't flicker.
-                const stageNow = _stageStartTs ? _fmtElapsedHtml(Date.now() - _stageStartTs) : _fmtElapsedHtml(0);
+                const stageNow = _stageStartTs ? _fmtElapsed(Date.now() - _stageStartTs) : '0s';
                 const stageAvg = _stageAvgSeconds(curStep);
-                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsedHtml(stageAvg * 1000) : '';
-                const jobNow2 = _jobStartTs ? _fmtElapsedHtml(Date.now() - _jobStartTs) : _fmtElapsedHtml(0);
+                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsed(stageAvg * 1000) : '';
+                const jobNow2 = _jobStartTs ? _fmtElapsed(Date.now() - _jobStartTs) : '0s';
                 const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
-                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsedHtml(totalEtaSec2 * 1000) : '';
+                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
                 // Each completed stage of THIS job becomes a single line:
                 //   [asset-link badge]  ⏱ actual / ETA was-eta
                 // Stage's clickable badge replaces the spinner+text it had
@@ -1418,7 +1382,7 @@ function connect() {
                         }
                         const a = actuals[s];
                         const timing = a
-                            ? `<span class="font-mono text-[9px]">${_fmtElapsedHtml(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsedHtml(a.eta_s * 1000) : ''}</span>`
+                            ? `<span class="font-mono text-[9px]">${_fmtElapsed(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}</span>`
                             : '';
                         // Stage label on the LEFT, asset link + duration on
                         // the RIGHT (push with ml-auto). Reads as a list:
@@ -1441,15 +1405,6 @@ function connect() {
                         });
                     }, 600);
                 }
-                // Initial progress-bar geometry. The 1 Hz tick takes over
-                // immediately after render; this just avoids a one-frame
-                // flash at 0%.
-                const initElapsed = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
-                const initEta = totalEtaSec2 * 1000;
-                const initOver = initEta > 0 && initElapsed >= initEta;
-                const initPct = initEta > 0 ? Math.max(0, Math.min(100, (initElapsed / initEta) * 100)) : 0;
-                const initFillCls = initOver ? 'slop-progress-warning slop-progress-overrun' : '';
-                const initPeriod = initOver ? _overrunPulsePeriod((initElapsed - initEta) / 1000).toFixed(2) + 's' : '1s';
                 return `
                     ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
@@ -1457,9 +1412,6 @@ function connect() {
                         <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
                         <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
                         ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
-                    </div>
-                    <div class="slop-progress" data-progress-bar data-v-idx="${v}">
-                        <div class="slop-progress-fill ${initFillCls}" style="width:${initPct.toFixed(2)}%; --pulse-period:${initPeriod};"></div>
                     </div>
                     <div class="flex items-center justify-end gap-1 mt-1 text-[9px]">
                         <span class="text-base-content/50">Total</span>
@@ -2014,27 +1966,6 @@ function openQueueDrawer() {
     if (t) t.checked = true;
 }
 
-async function clearFailedQueue() {
-    const btn = document.getElementById('btn-clear-failed');
-    if (btn) btn.disabled = true;
-    try {
-        const r = await fetch('/queue/clear-failed', { method: 'POST' });
-        const j = await r.json();
-        if (!j.ok) console.warn('clear-failed:', j);
-    } catch (e) {
-        console.warn('clear-failed fetch:', e);
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
-
-function _refreshClearFailedVisibility(queue) {
-    const btn = document.getElementById('btn-clear-failed');
-    if (!btn) return;
-    const anyFailed = (queue || []).some(q => q.status === 'done' && q.succeeded === false);
-    btn.style.display = anyFailed ? '' : 'none';
-}
-
 async function generateTts() {
     const text = $('tts-in') ? $('tts-in').value.trim() : '';
     const voice = $('tts-voice') ? $('tts-voice').value : 'ryan';
@@ -2496,20 +2427,17 @@ function _refreshChipHighlights() {
 // 🎲 Suggest button still fetches fresh and overwrites the cache.
 const _SUGGEST_CACHE_KEY = 'slopfinity_suggestions_v1';
 
-// In-memory ring buffer of suggestion batches. Each fresh fetch appends a
-// new batch on the right; old batches roll off when we exceed the cap.
-// The strip DOM mirrors the ring — chips for batch[i] are wrapped in a
-// <span data-batch-id="i"> with a 1 px divider between successive batches.
-const _SUGGEST_RING_CAP = 10;
-let _suggestBatches = [];   // array of arrays of strings
-let _suggestBatchSeq = 0;   // monotonic id so we can prune by id, not index
-
-function _makeChipButton(s) {
+// Build a single suggestion chip <button>. Pass repeat=true to mark the
+// chip as filler from a wrap-around batch — the click handler still works
+// identically; the data-attribute lets _refillSuggestChips drop fillers
+// before re-measuring on resize.
+function _buildSuggestChip(s, repeat) {
     const b = document.createElement('button');
     b.className = 'btn btn-outline btn-primary btn-xs normal-case';
     b.textContent = s;
     b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
     b.dataset.suggest = s;
+    if (repeat) b.dataset.suggestionRepeat = 'true';
     b.addEventListener('click', (e) => {
         const ta = document.getElementById('p-core');
         if (!ta) return;
@@ -2524,123 +2452,89 @@ function _makeChipButton(s) {
     return b;
 }
 
-// Replace the entire strip with a single batch (used on first paint / cache
-// hydrate / no-suggestions placeholders). Resets the ring buffer.
+// Most recently rendered base batch — used by _refillSuggestChips on
+// resize so we can re-fill from the same source list without re-fetching.
+let _lastSuggestBatch = [];
+
+// Pixel threshold under which we consider the gap "filled" — also the
+// minimum gap we'll leave at the bottom so chips don't touch the next
+// element.
+const _SUGGEST_FILL_THRESHOLD = 32;
+const _SUGGEST_FILL_MAX_REPEATS = 4;
+
+// Measure the vertical gap between the bottom of the chips container and
+// the top of the next sibling (the Start button row). The user wants the
+// chip area to visually fill this whitespace so there's no awkward gap
+// between the last chip row and the bottom-anchored Start button.
+function _suggestGapPx(box) {
+    const anchor = box && box.nextElementSibling;
+    if (!anchor) return 0;
+    const boxRect = box.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    return Math.max(0, anchorRect.top - boxRect.bottom);
+}
+
+// Append repeats of the base batch until the gap below the chips is
+// smaller than the threshold or we hit the hard repeat cap. Filler chips
+// are tagged with data-suggestion-repeat="true" so we can strip them on
+// resize before re-measuring.
+function _refillSuggestChips() {
+    const box = document.getElementById('subject-chips');
+    if (!box || !_lastSuggestBatch.length) return;
+    // Strip previous fillers — keep only the original batch.
+    box.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
+    let repeats = 0;
+    while (repeats < _SUGGEST_FILL_MAX_REPEATS) {
+        const gap = _suggestGapPx(box);
+        if (gap < _SUGGEST_FILL_THRESHOLD) break;
+        _lastSuggestBatch.forEach(s => box.appendChild(_buildSuggestChip(s, true)));
+        repeats += 1;
+    }
+    _refreshChipHighlights();
+}
+
 function _renderSuggestChips(arr) {
     const box = document.getElementById('subject-chips');
     if (!box) return;
-    box.innerHTML = '';
-    _suggestBatches = [];
-    _suggestBatchSeq = 0;
     if (!arr.length) {
         box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
+        _lastSuggestBatch = [];
         return;
     }
-    _appendSuggestBatch(arr, { scrollIntoView: false });
-}
-
-// Append a fresh batch onto the strip (right side) and bookkeep the ring.
-// Drops the oldest batch DOM + entry once we exceed _SUGGEST_RING_CAP.
-function _appendSuggestBatch(arr, { scrollIntoView = true } = {}) {
-    const box = document.getElementById('subject-chips');
-    if (!box || !arr || !arr.length) return;
-    // First-ever batch: clear placeholder text node.
-    if (!_suggestBatches.length) box.innerHTML = '';
-    const id = ++_suggestBatchSeq;
-    if (_suggestBatches.length) {
-        const div = document.createElement('span');
-        div.className = 'suggest-batch-divider';
-        div.dataset.batchDivider = String(id);
-        box.appendChild(div);
-    }
-    const wrap = document.createElement('span');
-    wrap.className = 'contents';   // no layout box; chips lay out with the strip
-    wrap.dataset.batchId = String(id);
-    arr.forEach(s => wrap.appendChild(_makeChipButton(s)));
-    box.appendChild(wrap);
-    _suggestBatches.push({ id, items: arr });
-    // Evict oldest if we exceed cap.
-    while (_suggestBatches.length > _SUGGEST_RING_CAP) {
-        const old = _suggestBatches.shift();
-        box.querySelectorAll(`[data-batch-id="${old.id}"], [data-batch-divider="${old.id + 1}"]`)
-            .forEach(n => n.remove());
-    }
+    box.innerHTML = '';
+    _lastSuggestBatch = arr.slice();
+    arr.forEach(s => box.appendChild(_buildSuggestChip(s, false)));
+    // Defer the fill measurement until layout settles — the chips have
+    // just been inserted and getBoundingClientRect on a freshly attached
+    // node is fine, but a rAF gives the browser a clean frame.
+    requestAnimationFrame(() => _refillSuggestChips());
     _refreshChipHighlights();
-    if (scrollIntoView) {
-        // Defer one frame so layout settles, then scroll the new batch into view.
-        requestAnimationFrame(() => {
-            const first = wrap.querySelector('button');
-            if (first && first.scrollIntoView) {
-                first.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
-            } else {
-                box.scrollTo({ left: box.scrollWidth, behavior: 'smooth' });
-            }
-        });
+}
+
+// Watch for viewport / card-size changes so the fill recalculates when
+// the user drags the split-row divider or resizes the window. Set up
+// once — multiple calls are no-ops.
+let _suggestResizeWired = false;
+function _wireSuggestResize() {
+    if (_suggestResizeWired) return;
+    const box = document.getElementById('subject-chips');
+    if (!box) return;
+    _suggestResizeWired = true;
+    let pending = false;
+    const schedule = () => {
+        if (pending) return;
+        pending = true;
+        requestAnimationFrame(() => { pending = false; _refillSuggestChips(); });
+    };
+    window.addEventListener('resize', schedule);
+    if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(schedule);
+        // Observe the card-body so divider drags / textarea growth retrigger.
+        const card = box.closest('.card-body') || box.parentElement;
+        if (card) ro.observe(card);
     }
 }
-
-// Wire the left/right hover overlays — page on scroll, fetch fresh on
-// right-edge overflow, and grow the frame on first interaction. Idempotent;
-// safe to call again on hot reload.
-let _suggestCollapseTimer = null;
-function _wireSuggestCarousel() {
-    const frame = document.getElementById('subject-chips-frame');
-    const strip = document.getElementById('subject-chips');
-    const left  = document.getElementById('subject-chips-overlay-left');
-    const right = document.getElementById('subject-chips-overlay-right');
-    if (!frame || !strip || !left || !right || frame.dataset.wired === '1') return;
-    frame.dataset.wired = '1';
-
-    const expand = () => {
-        frame.dataset.expanded = 'true';
-        if (_suggestCollapseTimer) { clearTimeout(_suggestCollapseTimer); _suggestCollapseTimer = null; }
-    };
-    const scheduleCollapse = () => {
-        if (_suggestCollapseTimer) clearTimeout(_suggestCollapseTimer);
-        _suggestCollapseTimer = setTimeout(() => { frame.dataset.expanded = 'false'; }, 2000);
-    };
-    frame.addEventListener('mouseenter', expand);
-    frame.addEventListener('mouseleave', scheduleCollapse);
-
-    const atRightEdge = () => (strip.scrollLeft + strip.clientWidth) >= (strip.scrollWidth - 4);
-    const atLeftEdge  = () => strip.scrollLeft <= 4;
-
-    const pageRight = async () => {
-        expand();
-        if (atRightEdge()) {
-            // Already at far right — fetch fresh batch and append.
-            try {
-                const r = await fetch('/subjects/suggest?n=6');
-                const data = await r.json();
-                const arr = data.suggestions || [];
-                if (arr.length) _appendSuggestBatch(arr, { scrollIntoView: true });
-            } catch { /* swallow — overlay is best-effort */ }
-        } else {
-            strip.scrollBy({ left: strip.clientWidth, behavior: 'smooth' });
-        }
-    };
-    const pageLeft = () => {
-        expand();
-        if (!atLeftEdge()) {
-            strip.scrollBy({ left: -strip.clientWidth, behavior: 'smooth' });
-        }
-        // At left edge: nothing to do — older batches already evicted from ring.
-    };
-
-    left.addEventListener('click', pageLeft);
-    right.addEventListener('click', pageRight);
-    const keyHandler = (fn) => (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
-    };
-    left.addEventListener('keydown', keyHandler(pageLeft));
-    right.addEventListener('keydown', keyHandler(pageRight));
-}
-// Run wiring once the DOM is ready (script is at end of body, so it is).
-_wireSuggestCarousel();
-
-// (Vertical fill on resize was replaced by the carousel — no-op kept so
-// any stale call sites don't crash.)
-function _wireSuggestResize() { /* no-op */ }
+document.addEventListener('DOMContentLoaded', _wireSuggestResize);
 
 // Render cached suggestions from localStorage if any exist. Returns true
 // if it rendered, false if cache was empty.
@@ -2658,168 +2552,18 @@ function _renderCachedSuggestions() {
 async function regenSuggestions(n = 6) {
   const box = document.getElementById('subject-chips');
   if (!box) return;
-  // First-ever fetch: clear the placeholder. Subsequent fetches append to
-  // the ring instead so the user can scroll back through earlier batches.
-  const isFirst = !_suggestBatches.length;
-  if (isFirst) box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+  box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
   try {
     const r = await fetch('/subjects/suggest?n=' + n);
     const data = await r.json();
     const arr = data.suggestions || [];
-    if (!arr.length) {
-      if (isFirst) box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
-      return;
-    }
+    if (!arr.length) { box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>'; return; }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-    if (isFirst) _renderSuggestChips(arr);
-    else _appendSuggestBatch(arr, { scrollIntoView: true });
+    _renderSuggestChips(arr);
   } catch (e) {
-    if (isFirst) box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+    box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
   }
 }
-
-// ---------------------------------------------------------------------------
-// Carousel prefetch (paired with feat/suggest-hover-paging).
-//
-// The hover-paging branch adds a horizontally-scrolling Subjects carousel with
-// a right-edge overlay that fetches the next batch via GET /subjects/suggest.
-// This module layers a small ahead-of-time cache so that click-to-page is
-// instant rather than blocking on the LLM round-trip.
-//
-// Defensive guards: every wiring point checks `typeof _suggestBatches` so that
-// when the carousel branch is NOT yet on main this code is a complete no-op.
-// ---------------------------------------------------------------------------
-let _prefetchInflight = false;
-let _prefetchedBatches = [];
-const _PREFETCH_CAP = 3;
-let _prefetchN = 6;
-let _prefetchBackoffUntil = 0;
-let _prefetchTotalFetched = 0;
-let _prefetchTotalConsumed = 0;
-let _prefetchIdleTimer = null;
-
-function _suggestPrefetchActive() {
-    // Carousel branch wires up _suggestBatches as an array (FIFO of past+current
-    // batches). Until that lands, prefetch wiring is inert.
-    return typeof _suggestBatches !== 'undefined';
-}
-
-async function _maybePrefetch() {
-    if (document.visibilityState === 'hidden') return;
-    if (!_suggestPrefetchActive()) return;
-    if (_prefetchInflight) return;
-    if (_prefetchedBatches.length >= _PREFETCH_CAP) return;
-    if (Date.now() < _prefetchBackoffUntil) return;
-    _prefetchInflight = true;
-    try {
-        const r = await fetch('/subjects/suggest?n=' + _prefetchN);
-        const data = await r.json();
-        const arr = (data && data.suggestions) || [];
-        if (!arr.length) {
-            // Empty response — back off 30 s to avoid hammering a misconfigured LLM.
-            _prefetchBackoffUntil = Date.now() + 30_000;
-        } else {
-            _prefetchedBatches.push(arr);
-            _prefetchTotalFetched += 1;
-        }
-    } catch {
-        _prefetchBackoffUntil = Date.now() + 30_000;
-    } finally {
-        _prefetchInflight = false;
-    }
-}
-
-// Consumer hook used by the carousel right-overlay click handler. Returns a
-// cached batch synchronously if available, or null. Always tops the buffer off.
-function _consumePrefetchedBatch() {
-    if (!_suggestPrefetchActive()) return null;
-    const batch = _prefetchedBatches.length ? _prefetchedBatches.shift() : null;
-    if (batch) _prefetchTotalConsumed += 1;
-    // Fire-and-forget top-off.
-    _maybePrefetch();
-    return batch;
-}
-
-// Async wait for the inflight prefetch (used when buffer is empty but a fetch
-// is in-flight). Returns the batch when it lands, or null if it errored.
-async function _awaitPrefetchedBatch(timeoutMs = 8000) {
-    if (!_suggestPrefetchActive()) return null;
-    const start = Date.now();
-    while (_prefetchInflight && Date.now() - start < timeoutMs) {
-        await new Promise(res => setTimeout(res, 80));
-    }
-    return _consumePrefetchedBatch();
-}
-
-function _resetIdlePrefetchTimer() {
-    if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
-    _prefetchIdleTimer = setTimeout(() => { _maybePrefetch(); }, 8000);
-}
-
-function _wireCarouselPrefetch() {
-    // No-op if the carousel module variables aren't present yet.
-    if (!_suggestPrefetchActive()) {
-        console.info('[prefetch] carousel branch not present — prefetch inert');
-        return;
-    }
-
-    const frame = document.getElementById('subject-chips')
-        || document.querySelector('.suggestion-frame')
-        || document.querySelector('[data-suggest-frame]');
-    if (!frame) return;
-
-    const parent = frame.parentElement || frame;
-    parent.addEventListener('pointerenter', () => { _maybePrefetch(); });
-
-    const scroller = frame.scrollWidth > frame.clientWidth ? frame : parent;
-    scroller.addEventListener('scroll', () => {
-        const remaining = scroller.scrollWidth - (scroller.scrollLeft + scroller.clientWidth);
-        if (remaining <= 1.5 * scroller.clientWidth) _maybePrefetch();
-    }, { passive: true });
-
-    // Right overlay hover (entering hovers should already start fetching).
-    const rightOverlay = document.querySelector('[data-suggest-overlay="right"]')
-        || document.querySelector('.suggest-right-overlay');
-    if (rightOverlay) {
-        rightOverlay.addEventListener('pointerenter', () => { _maybePrefetch(); });
-    }
-
-    // Idle prefetch: 8 s of no Subjects-textarea input + no chip click.
-    const ta = document.getElementById('p-core');
-    if (ta) ta.addEventListener('input', _resetIdlePrefetchTimer);
-    parent.addEventListener('click', _resetIdlePrefetchTimer);
-    _resetIdlePrefetchTimer();
-
-    // Pause prefetch when the page is hidden — cancel idle timer, no new triggers.
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-            if (_prefetchIdleTimer) { clearTimeout(_prefetchIdleTimer); _prefetchIdleTimer = null; }
-        } else {
-            _resetIdlePrefetchTimer();
-        }
-    });
-}
-
-// Diagnostic helper — call from devtools console to inspect prefetch state.
-function _dumpSuggestPrefetchStats() {
-    const stats = {
-        active: _suggestPrefetchActive(),
-        inflight: _prefetchInflight,
-        cached: _prefetchedBatches.length,
-        cap: _PREFETCH_CAP,
-        total_fetched: _prefetchTotalFetched,
-        total_consumed: _prefetchTotalConsumed,
-        backoff_remaining_ms: Math.max(0, _prefetchBackoffUntil - Date.now()),
-    };
-    console.log('[prefetch]', stats);
-    return stats;
-}
-window._dumpSuggestPrefetchStats = _dumpSuggestPrefetchStats;
-window._consumePrefetchedBatch = _consumePrefetchedBatch;
-window._awaitPrefetchedBatch = _awaitPrefetchedBatch;
-window._maybePrefetch = _maybePrefetch;
-
-document.addEventListener('DOMContentLoaded', _wireCarouselPrefetch);
 
 function updateStageSteps(state) {
   if (!state) return;
