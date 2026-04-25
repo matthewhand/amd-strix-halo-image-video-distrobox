@@ -70,6 +70,12 @@ class GPUReservation:
         self.cond: asyncio.Condition = asyncio.Condition()
         # job_id -> {"stage", "model", "gb", "started_ts"}
         self.in_flight: dict[str, dict] = {}
+        # Phase 5 — planner-managed cache of models the scheduler believes
+        # are still GPU-resident from prior stages. `acquire_gpu` consults
+        # this when `scheduler.use_planner` is True: a hit means we can
+        # skip the reservation entirely (the model is already loaded).
+        # Maps model name -> last_used_ts (for LRU-ish eviction).
+        self.resident_models: dict[str, float] = {}
 
     def snapshot(self) -> dict:
         """Diagnostic snapshot — never raises, never blocks."""
@@ -78,6 +84,7 @@ class GPUReservation:
             "in_flight": [
                 {"job_id": k, **v} for k, v in self.in_flight.items()
             ],
+            "resident_models": list(self.resident_models.keys()),
         }
 
 
@@ -248,10 +255,36 @@ async def acquire_gpu(
     _ensure_loop_bound()
     await paused.wait()
 
-    need = stage_budget_gb(stage, model)
+    base_need = stage_budget_gb(stage, model)
     rid = job_id or f"r{next(_RESERVATION_ID)}"
     wait_start = _now()
     blocks = 0
+
+    # Phase 5 — consult the memory_planner BEFORE the budget loop. If the
+    # operator opted in (`scheduler.use_planner == True`) AND the required
+    # model is already resident from a prior stage, the planner skips the
+    # cold-load: we treat the reservation as overhead-only (the model
+    # weights are already counted under another stage's reservation).
+    planner_hit = False
+    if (
+        _memory_planner is not None
+        and model
+        and _planner_enabled()
+        and model in GPU.resident_models
+    ):
+        planner_hit = True
+        # Only the OVERHEAD_GB safety pad is "fresh"; the model weights are
+        # already accounted for in resident_gb.
+        need = float(OVERHEAD_GB)
+        await _emit({
+            "type": "planner_hit",
+            "stage": stage,
+            "model": model,
+            "saved_gb": round(base_need - need, 2),
+            "ts": _now(),
+        })
+    else:
+        need = base_need
 
     # ---- Reservation acquisition ------------------------------------------------
     async with GPU.cond:
@@ -311,7 +344,13 @@ async def acquire_gpu(
             "model": model,
             "gb": need,
             "started_ts": _now(),
+            "planner_hit": planner_hit,
         }
+        # Track this model in the resident-models set so a later stage's
+        # planner consultation finds it. Used only when use_planner=True
+        # (the dict is harmless to maintain unconditionally).
+        if model:
+            GPU.resident_models[model] = _now()
 
     wait_seconds = round(_now() - wait_start, 2)
     await _emit({
@@ -357,9 +396,18 @@ async def acquire_gpu(
             entry = GPU.in_flight.pop(rid, None)
             released = entry["gb"] if entry else need
             GPU.resident_gb = max(0.0, GPU.resident_gb - released)
+            # Planner-managed cache: keep `model` resident if the operator
+            # opted in. Otherwise drop it — free_between() below will tell
+            # ComfyUI to unload, so the cache must reflect that.
+            if not _planner_enabled():
+                GPU.resident_models.pop(model, None)
             GPU.cond.notify_all()
         try:
-            await free_between()
+            # Only call /free if the planner doesn't want to keep this
+            # model resident. When use_planner=True the whole point is to
+            # avoid unloading between stages.
+            if not _planner_enabled():
+                await free_between()
         except Exception:
             pass
         try:
@@ -402,6 +450,27 @@ def is_paused() -> bool:
 # methods (sigstop / rest_unload / docker_stop / sigterm) and
 # docs/auto-suspend-design.md for the design rationale.
 # ---------------------------------------------------------------------------
+
+def _load_scheduler_config() -> dict:
+    """Read the `scheduler` block from config.json. Defaults on any error."""
+    try:
+        c = _config.load_config()
+        v = c.get("scheduler") if isinstance(c, dict) else None
+        if isinstance(v, dict):
+            return v
+    except Exception:
+        pass
+    return {"use_planner": False, "memory_safety_gb": SAFETY_GB}
+
+
+def _planner_enabled() -> bool:
+    """Phase 5 toggle — defaults False so behavior is unchanged for users
+    who haven't opted in."""
+    try:
+        return bool(_load_scheduler_config().get("use_planner", False))
+    except Exception:
+        return False
+
 
 def _load_auto_suspend_entries() -> list[dict]:
     """Read the `auto_suspend` list from config.json. Empty list on any error."""

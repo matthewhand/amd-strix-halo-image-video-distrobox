@@ -35,6 +35,15 @@ DEFAULT_SUGGEST_AUTO_DISABLED = False
 # co-resident service with one of four suspension methods. The scheduler
 # fires `auto_suspend.suspend_all(...)` on every GPU stage entry and
 # `resume_all(...)` on exit.
+# Phase 5 — scheduler tuning. `use_planner` flips memory_planner from
+# advisory (dashboard-only) to active: acquire_gpu consults the planner's
+# resident-set hint before reserving budget so cached models don't reload.
+DEFAULT_SCHEDULER = {
+    "use_planner": False,
+    "memory_safety_gb": 10,
+}
+
+
 DEFAULT_AUTO_SUSPEND = [
     {"id": "lmstudio", "label": "LLM (LM Studio)", "enabled": True,
      "method": "sigstop", "process_name": "LM Studio"},
@@ -69,6 +78,7 @@ DEFAULT_CONFIG = {
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
     "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
+    "scheduler": DEFAULT_SCHEDULER,
 }
 
 
@@ -116,9 +126,16 @@ def load_config():
                 for k, v in DEFAULT_CONFIG.items():
                     if k not in c: c[k] = v
                 c["auto_suspend"] = _merge_auto_suspend(c.get("auto_suspend"))
+                # Merge scheduler defaults so older configs gain new keys.
+                stored_sched = c.get("scheduler") if isinstance(c.get("scheduler"), dict) else {}
+                c["scheduler"] = {**DEFAULT_SCHEDULER, **stored_sched}
                 return c
         except: pass
-    return dict(DEFAULT_CONFIG, auto_suspend=list(DEFAULT_AUTO_SUSPEND))
+    return dict(
+        DEFAULT_CONFIG,
+        auto_suspend=list(DEFAULT_AUTO_SUSPEND),
+        scheduler=dict(DEFAULT_SCHEDULER),
+    )
 
 SENSITIVE_KEYS = {"api_key"}
 

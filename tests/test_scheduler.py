@@ -140,6 +140,41 @@ def test_acquire_gpu_serializes_when_budget_tight(monkeypatch):
     assert order[2][1] != first_name
 
 
+def test_planner_hit_skips_cold_load(monkeypatch):
+    """Phase 5 — when use_planner=True and the model is resident from a
+    previous stage, the second acquire_gpu reserves only OVERHEAD_GB."""
+    m = mock.mock_open(read_data=_mk_meminfo(200 * 1024 * 1024))
+    monkeypatch.setattr("builtins.open", m)
+    async def _noop(*a, **k):
+        return {"ok": True, "before_gb": 100.0, "after_gb": 100.0, "freed_gb": 0.0}
+    monkeypatch.setattr(sched, "free_between", _noop)
+    monkeypatch.setattr(sched, "_planner_enabled", lambda: True)
+    while not sched.SchedulerEvents.empty():
+        sched.SchedulerEvents.get_nowait()
+
+    async def main():
+        sched.GPU = sched.GPUReservation()
+        sched.gpu_lock = sched.GPU.cond
+        sched.paused = asyncio.Event()
+        sched.paused.set()
+        # First stage: cold load qwen.
+        async with sched.acquire_gpu("image", "qwen"):
+            pass
+        # qwen should still be marked resident with use_planner=True.
+        assert "qwen" in sched.GPU.resident_models
+        # Second stage on same model: planner hit.
+        async with sched.acquire_gpu("image", "qwen") as info:
+            pass
+        return True
+
+    assert asyncio.run(main()) is True
+    # Check that a planner_hit event was emitted.
+    events = []
+    while not sched.SchedulerEvents.empty():
+        events.append(sched.SchedulerEvents.get_nowait())
+    assert any(e["type"] == "planner_hit" for e in events), events
+
+
 def test_free_between_posts_to_comfy(monkeypatch):
     """free_between should POST /free and return freed_gb."""
     calls = []
