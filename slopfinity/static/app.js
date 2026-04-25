@@ -3654,10 +3654,17 @@ function _buildSuggestChip(s) {
             f.append('prompt', s);
             f.append('priority', 'next');
             await fetch('/inject', { method: 'POST', body: f });
-            // Brief visual feedback on the clicked chip
-            b.classList.add('btn-success');
-            b.classList.remove('btn-primary');
-            setTimeout(() => { b.classList.remove('btn-success'); b.classList.add('btn-primary'); }, 800);
+            // Animate the clicked chip (and its duplicate mirror in the
+            // marquee track) so it shrinks + fades out, then remove from DOM.
+            // The trailing chips re-flow leftward filling the gap; the
+            // marquee animation continues uninterrupted because the track is
+            // still flex-row and translateX(-50%) still loops the remaining
+            // content.
+            const matches = document.querySelectorAll(`#subject-chips-stack button[data-suggest="${CSS.escape(s)}"]`);
+            matches.forEach(el => el.classList.add('chip-disappear'));
+            setTimeout(() => {
+                matches.forEach(el => el.remove());
+            }, 320);
         } catch (err) {
             console.warn('chip inject failed', err);
         }
