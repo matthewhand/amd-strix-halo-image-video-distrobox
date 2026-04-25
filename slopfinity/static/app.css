@@ -152,26 +152,32 @@
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    opacity: 0.75;
-    color: hsl(var(--bc));
+    opacity: 0.95;
+    /* Text inversion via mix-blend-mode: difference. White text + difference
+       blending produces the complementary color of whatever sits behind —
+       so as the colored fill sweeps across the segment, the label stays
+       legible without per-theme tuning. */
+    color: white;
+    mix-blend-mode: difference;
     white-space: nowrap;
     pointer-events: none;
     z-index: 1;
 }
-.pipeline-seg-current .pipeline-seg-label { opacity: 0.95; font-weight: 600; }
+.pipeline-seg-current .pipeline-seg-label { opacity: 1; font-weight: 600; }
 /* Inline per-segment timing — also left-aligned, sits below the stage label */
 .pipeline-seg-timing {
     position: absolute;
     left: 6px; bottom: 4px;
     font-size: 8px;
     font-family: monospace;
-    opacity: 0.65;
+    opacity: 0.85;
     white-space: nowrap;
     pointer-events: none;
-    color: hsl(var(--bc));
+    color: white;
+    mix-blend-mode: difference;
     z-index: 1;
 }
-.pipeline-seg-current .pipeline-seg-timing { opacity: 0.9; }
+.pipeline-seg-current .pipeline-seg-timing { opacity: 1; }
 .pipeline-activity { color: hsl(var(--bc)); font-weight: 500; }
 .pipeline-eta      { color: hsl(var(--bc)); }
 .pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {
