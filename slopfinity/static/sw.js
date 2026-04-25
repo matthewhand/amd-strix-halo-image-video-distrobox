@@ -3,7 +3,7 @@
 // Bump whenever shell assets (app.js, app.css, templates/index.html) change
 // in a way that must invalidate users' caches. Browsers delete any cache
 // whose name differs on next activate.
-const CACHE = 'slopfinity-shell-v127';
+const CACHE = 'slopfinity-shell-v128';
 const SHELL = [
   '/',
   '/static/app.css',
@@ -43,9 +43,20 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
+     .then(() => self.clients.matchAll({ type: 'window' }))
+     .then((clients) => {
+        // After the new SW activates, every controlled tab is still painting
+        // the OLD shell because the OLD SW served the current page load.
+        // Force a single reload of each tab so the new cache (already
+        // pre-populated by the install handler's addAll(SHELL)) is what
+        // paints next. This converts the typical "two-reload" SW upgrade
+        // dance into a single reload from the user's perspective.
+        clients.forEach((c) => {
+          try { c.navigate(c.url); } catch (_) {}
+        });
+     })
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {

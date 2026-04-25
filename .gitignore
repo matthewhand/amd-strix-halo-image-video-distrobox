@@ -67,4 +67,4 @@ test_ltx23.py
 test_ltx23_video.py
 run_philosophical_experiments.py
 workflow_api.json
--.o
+-.obin/
