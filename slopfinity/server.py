@@ -655,6 +655,63 @@ async def queue_requeue(data: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/queue/clear-failed")
+async def queue_clear_failed():
+    """Drop all done-but-failed items from the queue history.
+
+    Keeps pending, running, succeeded-done, and cancelled items intact.
+    """
+    q = cfg.get_queue()
+    before = len(q)
+    kept = [
+        item for item in q
+        if not (item.get("status") == "done" and item.get("succeeded") is False)
+    ]
+    removed = before - len(kept)
+    if removed:
+        cfg.save_queue(kept)
+    return {"ok": True, "removed": removed}
+
+
+@app.post("/queue/requeue-failed")
+async def queue_requeue_failed():
+    """Re-add every done-but-failed item as a fresh pending entry; drop the
+    failed records.
+
+    The fresh entry preserves prompt + the per-item toggles + config_snapshot,
+    and resets status/ts so the scheduler picks it up on the next sweep.
+    """
+    q = cfg.get_queue()
+    requeued = 0
+    new_q = []
+    base_ts = time.time()
+    for item in q:
+        if item.get("status") == "done" and item.get("succeeded") is False:
+            fresh = {
+                "prompt": item.get("prompt", ""),
+                "priority": item.get("priority", "next"),
+                "status": "pending",
+                # Disambiguate ts within the same second so multiple
+                # requeued items don't collide on the (ts) primary key.
+                "ts": base_ts + (requeued * 1e-6),
+                "concurrent": item.get("concurrent", False),
+                "infinity": item.get("infinity", False),
+                "when_idle": item.get("when_idle", False),
+                "chaos": item.get("chaos", False),
+                "image_only": item.get("image_only", False),
+                "config_snapshot": item.get("config_snapshot"),
+                "requeued_from_ts": item.get("ts"),
+            }
+            new_q.append(fresh)
+            requeued += 1
+            # original failed entry is dropped (not appended to new_q)
+        else:
+            new_q.append(item)
+    if requeued:
+        cfg.save_queue(new_q)
+    return {"ok": True, "requeued": requeued}
+
+
 def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
     """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
 

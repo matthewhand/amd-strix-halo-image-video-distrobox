@@ -200,6 +200,8 @@
                 <span id="conn-pill" class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono mx-auto" style="display:none">
                     <span id="conn-pill-text">Connecting</span>
                 </span>
+                <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
+                <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
             </div>
             <ul id="q-list" class="flex flex-col gap-2 ui-split-scrollarea">
