@@ -2951,6 +2951,31 @@ function _appendSuggestBatch(batch) {
         try { firstChip.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }); } catch {}
         _refreshChipHighlights();
     });
+    // Newly-appended chips can extend the scrollWidth past clientWidth
+    // (revealing the right arrow) or, after pruning, contract it (hiding
+    // both arrows). Refresh the .can-scroll classes now and again on the
+    // next frame, after the smooth-scroll above has updated scrollLeft.
+    _updateOverlayVisibility();
+    requestAnimationFrame(_updateOverlayVisibility);
+}
+
+// Toggle the .can-scroll class on each overlay based on whether the strip
+// actually has content to scroll to in that direction. CSS gates the
+// hover-reveal on .can-scroll, so an overlay without it stays invisible
+// even on hover. The 4-pixel slack on each edge avoids flicker at the
+// exact start/end of the scroll range (sub-pixel rounding, smooth-scroll
+// landings, and the scroll-snap padding can leave scrollLeft a hair off
+// of zero or scrollWidth-clientWidth even at "true" edge).
+function _updateOverlayVisibility() {
+    const frame = document.getElementById('subject-chips-frame');
+    const left = document.getElementById('subject-chips-overlay-left');
+    const right = document.getElementById('subject-chips-overlay-right');
+    const strip = document.getElementById('subject-chips');
+    if (!frame || !left || !right || !strip) return;
+    const canLeft = strip.scrollLeft > 4;
+    const canRight = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 4;
+    left.classList.toggle('can-scroll', canLeft);
+    right.classList.toggle('can-scroll', canRight);
 }
 
 // Are we within ~8 px of the right edge of the strip's scroll range?
@@ -3019,6 +3044,21 @@ function _wireSuggestCarousel() {
     left.addEventListener('keydown', keyHandler(pageLeft));
     right.addEventListener('click', keyHandler(pageRight));
     right.addEventListener('keydown', keyHandler(pageRight));
+
+    // Drive overlay visibility from actual scroll state — the CSS only
+    // reveals overlays that have .can-scroll, so without these listeners
+    // the arrows would never appear. rAF-coalesce the scroll listener so
+    // we don't thrash classList during smooth-scroll.
+    let _ovRaf = 0;
+    strip.addEventListener('scroll', () => {
+        if (_ovRaf) return;
+        _ovRaf = requestAnimationFrame(() => {
+            _ovRaf = 0;
+            _updateOverlayVisibility();
+        });
+    }, { passive: true });
+    window.addEventListener('resize', _updateOverlayVisibility);
+    _updateOverlayVisibility();
 }
 document.addEventListener('DOMContentLoaded', _wireSuggestCarousel);
 
