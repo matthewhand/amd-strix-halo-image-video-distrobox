@@ -18,6 +18,7 @@ import random
 import argparse
 import re
 import glob
+import math
 import fleet_config as cfg
 
 # Default Configuration
@@ -694,6 +695,51 @@ def main():
             # the dashboard's "Slop" branding while still carrying the
             # iteration index for chronological grouping + uniqueness.
             _stem = f"slop_{v_idx}_{_slug}"
+
+            # ─── Audio (Heartmula) — runs BEFORE Base Image ──────────────
+            # Honors config.audio_model (no longer matrix-mode-gated). When
+            # audio_driven_chains is enabled, the resulting WAV's duration
+            # determines how many video chains we generate so the final cut
+            # matches audio length.
+            audio_wav = None
+            audio_duration_s = 0.0
+            _audio_model = (_config_snapshot or config or {}).get("audio_model", "none") or "none"
+            if (_audio_model and _audio_model != "none"
+                    and not _task_opts.get("image_only")
+                    and not _task_opts.get("skip_video")):
+                update_state(mode="Composing", step="Audio", video=v_idx, total=1000, prompt=p)
+                target_dur = float((_config_snapshot or config or {}).get("audio_duration_s", 30.0))
+                if _audio_model == "heartmula":
+                    audio_wav = f"{OUTPUT_DIR}/{_stem}_music.wav"
+                    try:
+                        ok = heartmula_wav(p, audio_wav, duration_s=target_dur)
+                        if ok and os.path.exists(audio_wav):
+                            audio_duration_s = target_dur
+                            _write_sidecar(audio_wav, prompt=p, model="heartmula", kind="music",
+                                           duration_s=target_dur)
+                            _iter_assets.append(os.path.basename(audio_wav))
+                        else:
+                            audio_wav = None
+                    except Exception as e:
+                        print(f"[FLEET] ⚠️  Audio (heartmula) failed: {e!r}", flush=True)
+                        audio_wav = None
+                # else: other audio models (none today) — silently skip.
+
+            # ─── TTS (Qwen-TTS / Kokoro) — placeholder: NOT YET IMPLEMENTED ─
+            # The dashboard exposes tts_model but run_fleet.py doesn't have
+            # a TTS code path yet (the slopfinity/workers/tts.py worker is
+            # part of the unwired StageWorker pattern). Skip silently for
+            # now; the heartbeat still flips through TTS so the UI shows
+            # the stage as visited but no asset is produced.
+            _tts_model = (_config_snapshot or config or {}).get("tts_model", "none") or "none"
+            tts_wav = None
+            if (_tts_model and _tts_model != "none"
+                    and not _task_opts.get("image_only")
+                    and not _task_opts.get("skip_video")):
+                update_state(mode="Voicing", step="TTS", video=v_idx, total=1000, prompt=p)
+                # TODO: wire scripts/qwen_tts_serve.py / kokoro path here.
+                print(f"[FLEET] ⚠️  TTS stage requested (model={_tts_model}) but not yet implemented in run_fleet.py", flush=True)
+
             in_img = f"comfy-input/{_stem}_base.png"
             update_state(mode="Rendering", step="Base Image", video=v_idx, total=1000, prompt=p)
             tier = pick_tier(v_idx)
@@ -718,14 +764,27 @@ def main():
                 v_idx += 1
                 continue
 
+            # Chain count: when audio_driven_chains is enabled AND we have an
+            # audio duration, size the loop so total video duration ≥ audio
+            # duration. Otherwise honor config.chains (legacy default 10).
+            _frames_per_chain = int((_config_snapshot or config or {}).get("frames", 49))
+            _audio_driven = bool((_config_snapshot or config or {}).get("audio_driven_chains"))
+            if _audio_driven and audio_duration_s > 0 and _frames_per_chain > 0:
+                _chain_seconds = _frames_per_chain / 24.0
+                _n_chains = max(1, int(math.ceil(audio_duration_s / _chain_seconds)))
+                _n_chains = min(_n_chains, 30)  # safety cap so a long track can't run away
+                print(f"[FLEET] audio_driven_chains: audio={audio_duration_s:.1f}s · chain={_chain_seconds:.2f}s → {_n_chains} chains", flush=True)
+            else:
+                _n_chains = int((_config_snapshot or config or {}).get("chains", 10) or 10)
+
             chain_vids = []
-            for c_idx in range(1, 11):
-                update_state(mode="Rendering", step="Video Chains", video=v_idx, total=1000, chain=c_idx, total_chains=10, prompt=p)
+            for c_idx in range(1, _n_chains + 1):
+                update_state(mode="Rendering", step="Video Chains", video=v_idx, total=1000, chain=c_idx, total_chains=_n_chains, prompt=p)
                 seg = f"{OUTPUT_DIR}/{_stem}_c{c_idx}.mp4"
                 generate_video_ltx(os.path.basename(in_img), p, seg, config["size"], config["frames"])
-                _write_sidecar(seg, prompt=p, model="ltx-2.3", kind="video", part=c_idx, of=10)
+                _write_sidecar(seg, prompt=p, model="ltx-2.3", kind="video", part=c_idx, of=_n_chains)
                 chain_vids.append(seg)
-                if c_idx < 10:
+                if c_idx < _n_chains:
                     next_in = f"comfy-input/{_stem}_f{c_idx}.png"
                     _ffmpeg_run(["-y", "-sseof", "-1", "-i", seg, "-update", "1", "-q:v", "1", next_in], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     in_img = next_in
@@ -747,19 +806,29 @@ def main():
             _iter_assets.append(os.path.basename(final_silent))
             os.remove(concat_path)
 
-            # Matrix phase 3: add a Heartmula music track + mux.
-            if matrix_mode and a_mod_forced == "heartmula":
-                # duration_s ≈ (chains × frames_per_chain) / fps, capped to
-                # something Heartmula can reasonably produce in one shot.
-                try:
-                    frames_per_chain = int(config.get("frames", 49))
-                except Exception:
-                    frames_per_chain = 49
-                duration_s = max(1.0, (len(chain_vids) * frames_per_chain) / 24.0)
-                update_state(mode="Audio", step="Music", video=v_idx, total=1000, prompt=p)
+            # Mux: if Audio ran successfully up front, lay the WAV onto the
+            # silent FINAL_*.mp4 and emit FINAL_*_audio.mp4 alongside.
+            # Replaces the old matrix-mode-only heartmula path; now any
+            # iteration with audio_model != "none" gets a muxed final.
+            if audio_wav and os.path.exists(audio_wav):
                 final_audio = f"{OUTPUT_DIR}/FINAL_{v_idx}_{_slug}_audio.mp4"
-                run_heartmula_gen(p, final_silent, final_audio, duration_s=duration_s)
-                _iter_assets.append(os.path.basename(final_audio))
+                mux_args = [
+                    "-y", "-loglevel", "error",
+                    "-i", final_silent,
+                    "-i", audio_wav,
+                    "-map", "0:v", "-map", "1:a",
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
+                    final_audio,
+                ]
+                try:
+                    _ffmpeg_run(mux_args, check=True)
+                    _write_sidecar(final_audio, prompt=p, model="heartmula", kind="final-with-audio",
+                                   parts=len(chain_vids), audio_duration_s=audio_duration_s)
+                    _iter_assets.append(os.path.basename(final_audio))
+                except Exception as e:
+                    print(f"[FLEET] ⚠️  ffmpeg mux failed: {e!r}", flush=True)
         except Exception as e:
             iter_failed = True
             import traceback
