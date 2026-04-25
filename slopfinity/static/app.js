@@ -98,12 +98,44 @@ function _applySuggestionsHiddenState() {
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
 
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
+// Also detect when a new SW takes control (cache version bumped) and surface
+// a toast inviting the user to reload — they don't have to, but the UI may be
+// stale until they do.
+let _newVersionShown = false;
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker
             .register('/sw.js', { scope: '/' })
+            .then((reg) => {
+                // Fires when an updated SW finishes installing AND is activating
+                // (sw.js calls skipWaiting() so it claims control immediately).
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (_newVersionShown) return;
+                    _newVersionShown = true;
+                    _showNewVersionToast();
+                });
+            })
             .catch((err) => console.warn('SW registration failed:', err));
     });
+}
+
+function _showNewVersionToast() {
+    if (document.getElementById('new-version-toast')) return;
+    const t = document.createElement('div');
+    t.id = 'new-version-toast';
+    t.className = 'toast toast-end z-50';
+    t.innerHTML = `
+        <div class="alert alert-info shadow-lg flex items-center gap-3 max-w-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="flex-1">
+                <div class="font-semibold text-sm">New version available</div>
+                <div class="text-[11px] opacity-80">Refresh to load the latest dashboard.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary flex-none" onclick="location.reload()">Refresh</button>
+            <button type="button" class="btn btn-sm btn-ghost btn-circle flex-none" aria-label="Dismiss" onclick="this.closest('#new-version-toast').remove()">✕</button>
+        </div>
+    `;
+    document.body.appendChild(t);
 }
 
 let ws;
