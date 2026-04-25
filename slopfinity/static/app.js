@@ -1008,11 +1008,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const tryAutoSuggest = () => {
             const t = _lastTick;
             if (!t) return setTimeout(tryAutoSuggest, 250);
-            const queueBusy = (t.queue || []).some(x => x.status == null || x.status === 'pending');
-            const fleetBusy = t.state && t.state.mode && t.state.mode !== 'Idle';
-            if (queueBusy || fleetBusy) {
-                console.info('skipping auto-suggest: queue active');
-                return;
+            // Preferred gate: GPU has been at <=5% for >=3 consecutive
+            // seconds. This catches ad-hoc GPU users (manual ComfyUI
+            // runs, transient spikes) that the old queue/fleet check
+            // missed, and avoids firing during brief fleet-stage gaps.
+            if (_gpuPctHistory.length > 0) {
+                if (!_isGpuIdleEnough()) {
+                    console.info('skipping auto-suggest: GPU busy');
+                    return setTimeout(tryAutoSuggest, 1000);
+                }
+            } else {
+                // Fallback for the very first ticks before any GPU
+                // history accumulates — keep the old heuristic so we
+                // don't block forever if WS stats are unavailable.
+                const queueBusy = (t.queue || []).some(x => x.status == null || x.status === 'pending');
+                const fleetBusy = t.state && t.state.mode && t.state.mode !== 'Idle';
+                if (queueBusy || fleetBusy) {
+                    console.info('skipping auto-suggest: queue active');
+                    return;
+                }
             }
             regenSuggestions().catch(() => {});
         };
@@ -1103,6 +1117,29 @@ function updateScheduler(sc) {
 
 // Cache last WS tick for diagnostics-copy / manual refresh.
 let _lastTick = null;
+
+// Rolling GPU utilization history. Used to gate automatic LLM suggestion
+// fetches on a sustained-idle GPU, instead of the older queue/fleet-mode
+// heuristic which missed ad-hoc GPU work (manual ComfyUI runs, etc.) and
+// fired spuriously during fleet-stage transitions.
+const _GPU_IDLE_THRESHOLD_PCT = 5;
+const _GPU_IDLE_REQUIRED_SECONDS = 3;
+const _GPU_HISTORY_MAX = 30; // keep ~30 s of samples (WS ticks ~1 Hz)
+const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
+
+function _isGpuIdleEnough() {
+    const now = Date.now();
+    const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
+    // Keep samples covering the window plus the most recent one preceding
+    // it (so a 2 s tick rate still produces evidence spanning >=3 s).
+    const recent = _gpuPctHistory.filter(e => now - e.ts <= windowMs + 2500);
+    // Need >=2 samples AND the oldest one must be at least REQUIRED_SECONDS
+    // old, otherwise we don't yet have evidence covering the full window.
+    if (recent.length < 2) return false;
+    const oldest = recent[0];
+    if (now - oldest.ts < windowMs) return false;
+    return recent.every(e => e.pct <= _GPU_IDLE_THRESHOLD_PCT);
+}
 
 async function schedPost(path) {
     try {
@@ -1578,6 +1615,12 @@ function connect() {
             updateScheduler(d.scheduler);
             updateOutputs(d.outputs);
             _lastTick = d;
+            // Push GPU% sample for the auto-suggest idle gate.
+            try {
+                const gpuPct = Number((d.stats && (d.stats.gpu ?? d.stats.gpu_pct ?? d.stats.gpu_util)) || 0);
+                _gpuPctHistory.push({ ts: Date.now(), pct: gpuPct });
+                if (_gpuPctHistory.length > _GPU_HISTORY_MAX) _gpuPctHistory.shift();
+            } catch (_) { /* ignore */ }
             _renderSubjectsModels();
             updateDiagnostics(d);
         }
