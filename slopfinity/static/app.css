@@ -119,6 +119,60 @@
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
 }
 
+/* Segmented per-stage progress bar — one element replaces the previous
+   activity-line + thin progress + totals row. Each .pipeline-seg is one
+   stage; segment widths are flex-weighted by the stage's rolling-average
+   duration. The .pipeline-seg-fill inside the *current* segment slides
+   0→100% over the stage's expected runtime; past segments are pinned at
+   100% solid; future segments stay dim. The activity text + remaining-time
+   are absolutely positioned overlays so the bar reads as a single unit. */
+.pipeline-bar { user-select: none; }
+.pipeline-seg {
+    position: relative;
+    overflow: hidden;
+    border-right: 1px solid hsl(var(--bc) / 0.10);
+    min-width: 0;
+}
+.pipeline-seg:last-child { border-right: none; }
+.pipeline-seg-future  { background: hsl(var(--b1) / 0.6); }
+.pipeline-seg-past    { background: hsl(var(--p) / 0.7); }
+.pipeline-seg-current { background: hsl(var(--p) / 0.15); }
+.pipeline-seg-fill {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    opacity: 0.85;
+    transition: width 0.5s linear, background-color 0.3s ease;
+}
+.pipeline-seg-label {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    color: hsl(var(--bc));
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1;
+}
+.pipeline-seg-current .pipeline-seg-label { opacity: 0.9; }
+.pipeline-activity { color: hsl(var(--bc)); z-index: 2; }
+.pipeline-eta      { color: hsl(var(--bc)); z-index: 2; }
+.pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {
+    background: hsl(var(--wa) / 0.8);
+    animation: slopfinity-progress-pulse var(--pulse-period, 1s) ease-in-out infinite;
+}
+.pipeline-seg.pipeline-seg-success .pipeline-seg-fill {
+    background: hsl(var(--p));
+    animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
+}
+.pipeline-seg.pipeline-seg-failed .pipeline-seg-fill {
+    background: hsl(var(--er));
+    animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
+}
+
 /* Subjects "🎲 Suggest" chip area — multi-row marquee stack. Each row
    auto-scrolls horizontally at a slow constant speed when its chip track
    overflows the row width. Rows are duplicated in JS (items + items) so
