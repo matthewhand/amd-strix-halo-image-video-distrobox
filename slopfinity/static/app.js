@@ -1734,43 +1734,27 @@ function connect() {
         }
         if (d.type === 'new_file') {
             const file = d.file;
-            const isV = file.endsWith('.mp4');
-            const isWav = file.endsWith('.wav');
-            const isFinal = isV && /^FINAL_/i.test(file);
-            const kind = isV ? 'video' : isWav ? 'audio' : 'image';
             const g = $('preview-grid');
             if (!g) return;
             const outSec = $('output-section');
             const outEmpty = $('output-empty');
             if (outSec) outSec.style.display = 'block';
             if (outEmpty) outEmpty.style.display = 'none';
-            const meta = _slopBadgeMeta(file);
-            const c = document.createElement('div');
-            c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden animate-pulse`;
-            c.dataset.slopKind = kind;
-            const partBadge = meta.part
-                ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
-                : '';
-            let media;
-            if (isV) media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls autoplay muted loop class="w-full h-full object-contain"><source src="/files/${file}"></video></figure>`;
-            else if (isWav) media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source src="/files/${file}"></audio></figure>`;
-            else media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
-            c.innerHTML = `${media}
-                <div class="card-body !p-2 bg-base-200/60 gap-1">
-                    <div class="flex flex-wrap items-center gap-1">
-                        <span class="badge badge-xs ${meta.color}">${meta.label}</span>
-                        ${partBadge}
-                    </div>
-                    <span class="text-[10px] font-mono text-base-content/60 truncate" title="${file}">${file}</span>
-                </div>`;
+            // Build via the shared card factory so SSR / WS-push / infinite
+            // scroll all produce identical markup. `pulse=true` flashes the
+            // newcomer; autoplay=true so a fresh video starts playing.
+            const c = _buildSlopCard(file, { pulse: true, autoplay: true });
+            if (!c) return;
             g.prepend(c);
             const ring = $('live-ring');
             if (ring) ring.style.display = 'inline-block';
             setTimeout(() => c.classList.remove('animate-pulse'), 3000);
             // Apply current filter state to the new card
             _applySlopFilters();
-            // Cap feed to most recent 64 cards
-            if (g.children.length > 64) g.removeChild(g.lastChild);
+            // Note: no longer capping to 64 cards — infinite scroll loads
+            // older content into the same grid, so a hard cap would defeat
+            // it. WS-pushed files prepend; the bottom of the grid grows as
+            // the user scrolls.
         }
     };
     ws.onclose = () => {
@@ -3257,6 +3241,119 @@ _wireLockListeners();
             _emitSplitResize();
         });
     };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
+// ===========================================================================
+// Slop card factory + infinite scroll (PR: feat/infinite-scroll-slop-view)
+// ---------------------------------------------------------------------------
+// `_buildSlopCard` is the single source of truth for how a slop-feed card
+// renders. Originally inlined in the WS `new_file` handler; now also called
+// by the IntersectionObserver-driven infinite-scroll loader so that initial
+// SSR cards, live WS pushes, and lazily-fetched older cards all produce
+// identical DOM (filter chips, delete handlers, count chips all key off
+// `data-slop-kind` and the .card.card-compact selector).
+//
+// Pagination shape (server: GET /assets):
+//   { items: [{file, mtime, kind}], offset, limit, total, has_more }
+//
+// SSR renders the first 64 cards (see index.html `all_assets[:64]`); the
+// observer takes over from offset=64 on. WS new_file events prepend new
+// cards (they don't shift the offset — the offset tracks how far down
+// historical mtime we've fetched, not the number of children in the grid).
+// ===========================================================================
+function _buildSlopCard(file, opts = {}) {
+    if (!file) return null;
+    const isV = file.endsWith('.mp4');
+    const isWav = file.endsWith('.wav');
+    const kind = isV ? 'video' : isWav ? 'audio' : 'image';
+    const meta = _slopBadgeMeta(file);
+    const c = document.createElement('div');
+    const pulseClass = opts.pulse ? ' animate-pulse' : '';
+    c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden${pulseClass}`;
+    c.dataset.slopKind = meta.kind || kind;
+    const partBadge = meta.part
+        ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
+        : '';
+    const autoplayAttr = opts.autoplay ? 'autoplay' : '';
+    let media;
+    if (isV) {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls ${autoplayAttr} muted loop preload="metadata" class="w-full h-full object-contain"><source src="/files/${file}"></video></figure>`;
+    } else if (isWav) {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source src="/files/${file}"></audio></figure>`;
+    } else {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
+    }
+    c.innerHTML = `${media}
+        <div class="card-body !p-2 bg-base-200/60 gap-1">
+            <div class="flex flex-wrap items-center gap-1">
+                <span class="badge badge-xs ${meta.color}">${meta.label}</span>
+                ${partBadge}
+            </div>
+            <span class="text-[10px] font-mono text-base-content/60 truncate" title="${file}">${file}</span>
+        </div>`;
+    return c;
+}
+
+(function wireInfiniteScroll() {
+    const init = () => {
+        const sentinel = document.getElementById('preview-grid-sentinel');
+        const grid = document.getElementById('preview-grid');
+        const lower = document.getElementById('ui-split-lower');
+        if (!sentinel || !grid) return;
+
+        let loading = false;
+        let exhausted = false;
+        // SSR seeds the first 64 cards; older content starts at offset=64.
+        // WS-pushed files prepend without bumping offset (offset tracks
+        // historical mtime depth, not DOM child count).
+        let nextOffset = 64;
+        const PAGE = 48;
+
+        async function loadMore() {
+            if (loading || exhausted) return;
+            loading = true;
+            try {
+                const r = await fetch(`/assets?offset=${nextOffset}&limit=${PAGE}`);
+                if (!r.ok) { exhausted = true; return; }
+                const j = await r.json();
+                const items = (j && j.items) || [];
+                if (!items.length) { exhausted = true; return; }
+                // Append before the sentinel so it stays at the bottom of
+                // the grid container.
+                items.forEach(item => {
+                    const card = _buildSlopCard(item.file);
+                    if (card) grid.appendChild(card);
+                });
+                nextOffset += items.length;
+                if (!j.has_more) exhausted = true;
+                // Keep current filter chip state applied to freshly inserted cards.
+                try { _applySlopFilters(); } catch (_) { /* ignore */ }
+            } catch (e) {
+                console.warn('infinite-scroll fetch failed:', e);
+            } finally {
+                loading = false;
+            }
+        }
+
+        // The lower pane is the actual scroll container (PR #74's splitter
+        // gives it `overflow-y: auto` via .ui-split-pane). Falling back to
+        // the viewport (`root: null`) keeps the observer sensible if the
+        // splitter element isn't present.
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) loadMore();
+        }, {
+            root: lower || null,
+            rootMargin: '200px',
+            threshold: 0,
+        });
+        observer.observe(sentinel);
+    };
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

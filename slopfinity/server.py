@@ -78,6 +78,19 @@ _recent_events: List[dict] = []
 _RECENT_EVENTS_MAX = 20
 
 
+_ASSET_EXTS = ('.mp4', '.png', '.wav', '.webm', '.mov', '.mp3', '.ogg', '.flac')
+
+
+def _kind_of(f: str) -> str:
+    """Classify an asset filename into 'video', 'audio', or 'image'."""
+    fl = f.lower()
+    if fl.endswith(('.mp4', '.webm', '.mov')):
+        return 'video'
+    if fl.endswith(('.wav', '.mp3', '.ogg', '.flac')):
+        return 'audio'
+    return 'image'
+
+
 def _list_outputs():
     """Return three lists sorted newest-first:
         finals  — FINAL_*.mp4 (curated keepers → Completed Gallery)
@@ -98,6 +111,49 @@ def _list_outputs():
     live = [f for f, _ in entries if not (f.endswith('.mp4') and f.startswith('FINAL_'))]
     legacy_pngs = [f for f, _ in entries if f.endswith('.png')]
     return finals, live, legacy_pngs
+
+
+@app.get("/assets")
+async def assets(offset: int = 0, limit: int = 48):
+    """Return assets ordered by mtime desc, paginated.
+
+    Used by the client-side infinite-scroll loader on the slop view to fetch
+    older content as the user scrolls toward the bottom of the lower pane.
+    The initial 64 cards are server-side rendered by `index()`; this endpoint
+    serves offset >= 64 typically.
+
+    EXP_DIR may mutate mid-request (the fleet writes new files every few
+    minutes); we tolerate that by guarding os.listdir / getmtime with
+    try/except so a vanished file at stat-time doesn't 500 the page.
+    """
+    try:
+        names = [
+            f for f in os.listdir(EXP_DIR)
+            if f.lower().endswith(_ASSET_EXTS)
+        ]
+    except OSError:
+        names = []
+    pairs = []
+    for f in names:
+        try:
+            pairs.append((f, os.path.getmtime(os.path.join(EXP_DIR, f))))
+        except OSError:
+            # File vanished between listdir and stat; skip it.
+            continue
+    pairs.sort(key=lambda x: x[1], reverse=True)
+    offset = max(0, int(offset))
+    limit = max(1, min(int(limit), 256))
+    page = pairs[offset:offset + limit]
+    return {
+        "items": [
+            {"file": f, "mtime": ts, "kind": _kind_of(f)}
+            for f, ts in page
+        ],
+        "offset": offset,
+        "limit": limit,
+        "total": len(pairs),
+        "has_more": offset + limit < len(pairs),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -124,7 +180,7 @@ async def index(request: Request):
             "state": state,
             "queue": queue,
             "vids": vids[:16],       # Completed Gallery (FINAL_*.mp4)
-            "live": live[:48],        # Live Gallery (chain mp4s + pngs, newest first)
+            "live": live[:64],        # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
             "imgs": imgs[:10],        # back-compat (hidden i-grid)
             "storage": storage,
             "outputs_disk": outputs_disk,
