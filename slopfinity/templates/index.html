@@ -461,7 +461,7 @@
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
             <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Lifecycle</span>
             <label class="flex items-center gap-2">
-                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
             </label>
             <label class="flex items-center gap-2">
@@ -473,7 +473,7 @@
 
             <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Trigger</span>
             <label id="when-idle-row" class="flex items-center gap-2">
-                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
             </label>
             <label class="flex items-center gap-2">
@@ -485,7 +485,7 @@
 
             <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Behavior</span>
             <label id="chaos-row" class="flex items-center gap-2">
-                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label inline-flex items-center gap-1" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic" title="Chaos / shuffle mode — pipeline pulls from random suggestions">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 flex-none" aria-hidden="true">
                         <path d="M16 3h5v5"/><path d="M4 20l16-16"/>
