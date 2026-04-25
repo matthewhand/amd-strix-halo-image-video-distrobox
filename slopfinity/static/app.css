@@ -51,6 +51,26 @@
     overflow: hidden;
 }
 
+/* Pipeline stage completion — when a stage flips from in-progress to done,
+   the new "✓ <label>" badge scales up + fades in (cubic-bezier ease-out, 400 ms)
+   while the prior spinner row fades out 200 ms before, producing a cross-fade
+   that reads as "spinner became a tick". Total budget < 600 ms; class is
+   removed by JS via setTimeout so re-renders don't restart the animation on
+   stages that have already settled. */
+@keyframes slop-stage-pop {
+    0%   { opacity: 0; transform: scale(0.8) translateY(-4px); }
+    60%  { opacity: 1; }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.stage-just-completed {
+    animation: slop-stage-pop 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: left center;
+}
+.stage-just-completed .badge {
+    animation: slop-stage-pop 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: left center;
+}
+
 /* Slop card video controls — fade out the native control overlay until hover
    so the thumbnail isn't visually noisy in a dense grid. */
 #preview-grid video::-webkit-media-controls-panel,
