@@ -406,36 +406,45 @@
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
         <!-- ============ Toggles row ============ -->
-        {# Single horizontal row of toggles. Wrapped in fade-edges so on narrow
-           viewports (<640px) it scrolls horizontally and the rightmost toggle
-           dissolves into the card border instead of clipping or wrapping. #}
-        <div class="overflow-x-auto fade-edges -mx-2 px-2 mb-3">
-            <div class="flex items-center gap-4 whitespace-nowrap py-1 min-w-max">
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
-                    <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Single">Single</span>
-                </label>
-                <label id="when-idle-row" class="flex items-center gap-2">
-                    <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
-                    <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
-                </label>
-                <label id="chaos-row" class="flex items-center gap-2">
-                    <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
-                    <span class="text-xs single-label" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">Polymorphic</span>
-                </label>
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                    <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Now" data-off-label="Generate Now">Generate Now</span>
-                </label>
-                <label class="flex items-center gap-2">
-                    <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
-                    <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
-                </label>
-                <label class="flex items-center gap-2 opacity-50 cursor-not-allowed" title="Concurrent mode is currently unsafe — see docs/concurrent-mode-design.md. The scheduler still serializes all GPU work via a binary lock and there is no budget accumulator yet, so enabling this would either no-op or risk OOM. Locked until the budget-semaphore lands.">
-                    <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" disabled aria-disabled="true" onchange="_updateSingleLabels(); _updateGenModePill()" />
-                    <span class="text-xs single-label flex items-center gap-1" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent <span class="badge badge-xs badge-warning ml-1">experimental · locked</span></span>
-                </label>
-            </div>
+        {# Toggles arranged into three logical groups (Lifecycle / Trigger /
+           Behavior). Single flex-wrap container — at narrow viewports the
+           groups reflow onto multiple rows, with each group's tiny uppercase
+           label acting as an inline header. Faint vertical dividers appear
+           only at lg+ viewports where everything fits on one line. #}
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
+            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Lifecycle</span>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
+                <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Single">Single</span>
+            </label>
+
+            <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
+
+            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Trigger</span>
+            <label id="when-idle-row" class="flex items-center gap-2">
+                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
+            </label>
+            <label class="flex items-center gap-2">
+                <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Now" data-off-label="Generate Now">Generate Now</span>
+            </label>
+
+            <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
+
+            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Behavior</span>
+            <label id="chaos-row" class="flex items-center gap-2">
+                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                <span class="text-xs single-label" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">Polymorphic</span>
+            </label>
+            <label class="flex items-center gap-2 opacity-50 cursor-not-allowed" title="Concurrent mode is currently unsafe — see docs/concurrent-mode-design.md. The scheduler still serializes all GPU work via a binary lock and there is no budget accumulator yet, so enabling this would either no-op or risk OOM. Locked until the budget-semaphore lands.">
+                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" disabled aria-disabled="true" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                <span class="text-xs single-label flex items-center gap-1" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent <span class="badge badge-xs badge-warning ml-1">experimental · locked</span></span>
+            </label>
         </div>
 
         <!-- ============ Four model selects (image / video / audio / upscale) ============ -->
