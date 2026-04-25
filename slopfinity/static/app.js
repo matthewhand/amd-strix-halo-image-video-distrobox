@@ -2355,35 +2355,114 @@ function _refreshChipHighlights() {
 // 🎲 Suggest button still fetches fresh and overwrites the cache.
 const _SUGGEST_CACHE_KEY = 'slopfinity_suggestions_v1';
 
+// Build a single suggestion chip <button>. Pass repeat=true to mark the
+// chip as filler from a wrap-around batch — the click handler still works
+// identically; the data-attribute lets _refillSuggestChips drop fillers
+// before re-measuring on resize.
+function _buildSuggestChip(s, repeat) {
+    const b = document.createElement('button');
+    b.className = 'btn btn-outline btn-primary btn-xs normal-case';
+    b.textContent = s;
+    b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
+    b.dataset.suggest = s;
+    if (repeat) b.dataset.suggestionRepeat = 'true';
+    b.addEventListener('click', (e) => {
+        const ta = document.getElementById('p-core');
+        if (!ta) return;
+        const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
+        if (e.shiftKey) ta.value = s;
+        else if (present) return;
+        else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        updatePipeline();
+        _refreshChipHighlights();
+    });
+    return b;
+}
+
+// Most recently rendered base batch — used by _refillSuggestChips on
+// resize so we can re-fill from the same source list without re-fetching.
+let _lastSuggestBatch = [];
+
+// Pixel threshold under which we consider the gap "filled" — also the
+// minimum gap we'll leave at the bottom so chips don't touch the next
+// element.
+const _SUGGEST_FILL_THRESHOLD = 32;
+const _SUGGEST_FILL_MAX_REPEATS = 4;
+
+// Measure the vertical gap between the bottom of the chips container and
+// the top of the next sibling (the Start button row). The user wants the
+// chip area to visually fill this whitespace so there's no awkward gap
+// between the last chip row and the bottom-anchored Start button.
+function _suggestGapPx(box) {
+    const anchor = box && box.nextElementSibling;
+    if (!anchor) return 0;
+    const boxRect = box.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    return Math.max(0, anchorRect.top - boxRect.bottom);
+}
+
+// Append repeats of the base batch until the gap below the chips is
+// smaller than the threshold or we hit the hard repeat cap. Filler chips
+// are tagged with data-suggestion-repeat="true" so we can strip them on
+// resize before re-measuring.
+function _refillSuggestChips() {
+    const box = document.getElementById('subject-chips');
+    if (!box || !_lastSuggestBatch.length) return;
+    // Strip previous fillers — keep only the original batch.
+    box.querySelectorAll('button[data-suggestion-repeat="true"]').forEach(el => el.remove());
+    let repeats = 0;
+    while (repeats < _SUGGEST_FILL_MAX_REPEATS) {
+        const gap = _suggestGapPx(box);
+        if (gap < _SUGGEST_FILL_THRESHOLD) break;
+        _lastSuggestBatch.forEach(s => box.appendChild(_buildSuggestChip(s, true)));
+        repeats += 1;
+    }
+    _refreshChipHighlights();
+}
+
 function _renderSuggestChips(arr) {
     const box = document.getElementById('subject-chips');
     if (!box) return;
     if (!arr.length) {
         box.innerHTML = '<span class="text-[10px] italic text-warning">no suggestions</span>';
+        _lastSuggestBatch = [];
         return;
     }
     box.innerHTML = '';
-    arr.forEach(s => {
-        const b = document.createElement('button');
-        b.className = 'btn btn-outline btn-primary btn-xs normal-case';
-        b.textContent = s;
-        b.title = 'Click: append · Shift+click: replace · ✓ = already in your subjects';
-        b.dataset.suggest = s;
-        b.addEventListener('click', (e) => {
-            const ta = document.getElementById('p-core');
-            if (!ta) return;
-            const present = ta.value.split(/\r?\n/).map(x => x.trim().toLowerCase()).includes(s.toLowerCase());
-            if (e.shiftKey) ta.value = s;
-            else if (present) return;
-            else ta.value = (ta.value.trim() ? ta.value.trimEnd() + '\n' : '') + s;
-            ta.dispatchEvent(new Event('input', { bubbles: true }));
-            updatePipeline();
-            _refreshChipHighlights();
-        });
-        box.appendChild(b);
-    });
+    _lastSuggestBatch = arr.slice();
+    arr.forEach(s => box.appendChild(_buildSuggestChip(s, false)));
+    // Defer the fill measurement until layout settles — the chips have
+    // just been inserted and getBoundingClientRect on a freshly attached
+    // node is fine, but a rAF gives the browser a clean frame.
+    requestAnimationFrame(() => _refillSuggestChips());
     _refreshChipHighlights();
 }
+
+// Watch for viewport / card-size changes so the fill recalculates when
+// the user drags the split-row divider or resizes the window. Set up
+// once — multiple calls are no-ops.
+let _suggestResizeWired = false;
+function _wireSuggestResize() {
+    if (_suggestResizeWired) return;
+    const box = document.getElementById('subject-chips');
+    if (!box) return;
+    _suggestResizeWired = true;
+    let pending = false;
+    const schedule = () => {
+        if (pending) return;
+        pending = true;
+        requestAnimationFrame(() => { pending = false; _refillSuggestChips(); });
+    };
+    window.addEventListener('resize', schedule);
+    if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(schedule);
+        // Observe the card-body so divider drags / textarea growth retrigger.
+        const card = box.closest('.card-body') || box.parentElement;
+        if (card) ro.observe(card);
+    }
+}
+document.addEventListener('DOMContentLoaded', _wireSuggestResize);
 
 // Render cached suggestions from localStorage if any exist. Returns true
 // if it rendered, false if cache was empty.
