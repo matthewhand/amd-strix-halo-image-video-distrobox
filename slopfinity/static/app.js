@@ -279,8 +279,13 @@ function _applySuggestionsHiddenState() {
   if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
   if (endlessBtn) endlessBtn.style.display = hidden ? 'none' : '';
   if (toggleBtn) {
-    toggleBtn.classList.toggle('btn-primary', !hidden);
-    toggleBtn.classList.toggle('btn-outline', true);
+    // Hidden state ⇒ solid btn-primary (matches the big Queue button — strong
+    // invitation to reveal). Revealed state ⇒ btn-outline btn-secondary
+    // (subdued "hide me" affordance, distinct from the now-primary
+    // Regenerate / Suggestion Prompt / Endless Story trio).
+    toggleBtn.classList.toggle('btn-primary', hidden);
+    toggleBtn.classList.toggle('btn-outline', !hidden);
+    toggleBtn.classList.toggle('btn-secondary', !hidden);
     toggleBtn.title = hidden ? 'Reveal suggestion controls' : 'Hide suggestion controls';
     toggleBtn.setAttribute('aria-pressed', !hidden);
   }
@@ -1915,8 +1920,17 @@ function _applySlopFilters() {
     document.querySelectorAll('[data-slop-filter]').forEach(cb => {
         enabled[cb.dataset.slopFilter] = cb.checked;
     });
+    // The 'assets' chip is a meta-filter: when OFF (default), the gallery
+    // shows only final products (FINAL_*.mp4 — `data-slop-final="1"` on the
+    // card). When ON, intermediate assets (chain mp4s, base pngs, bridge
+    // frames) become visible too. The kind chips (video/image/audio) still
+    // gate by media type independently.
+    const showAssets = enabled.assets !== false; // default false = only finals
     document.querySelectorAll('#preview-grid > [data-slop-kind]').forEach(card => {
-        card.style.display = enabled[card.dataset.slopKind] === false ? 'none' : '';
+        const kindOk = enabled[card.dataset.slopKind] !== false;
+        const isFinal = card.dataset.slopFinal === '1';
+        const passesAssets = showAssets || isFinal;
+        card.style.display = (kindOk && passesAssets) ? '' : 'none';
     });
 }
 document.addEventListener('change', e => {
@@ -2518,14 +2532,14 @@ function connect() {
                         // A delegated click handler (wired once at startup)
                         // reads the data-prompt-text on click.
                         const promptBadge = promptForStage
-                            ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}">📝 prompt →</button>`
+                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}">📝 prompt →</button>`
                             : '';
                         if (s === 'Concept') {
                             assetBadge = promptBadge;
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
                             const fileBadge = asset
-                                ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
+                                ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
                                 : '';
                             // Stage shows BOTH the prompt badge (if a per-stage
                             // prompt exists from /enhance/distribute) AND the
@@ -3197,6 +3211,7 @@ async function updatePipeline() {
                 ($('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49),
     };
     if ($('cfg-chains')) body.chains = parseInt($('cfg-chains').value, 10);
+    if ($('cfg-size')) body.size = $('cfg-size').value;
     if ($('cfg-tier')) body.tier = $('cfg-tier').value;
     if ($('cfg-consolidation')) body.consolidation = $('cfg-consolidation').value;
     if ($('cfg-music-gain-db')) body.music_gain_db = parseInt($('cfg-music-gain-db').value, 10);

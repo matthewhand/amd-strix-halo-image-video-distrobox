@@ -418,7 +418,12 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     cache_key = (n, use_subjects, custom_prompt, subjects_in)
     cache = getattr(subjects_suggest, "_cache", None)
     now = time.time()
-    if cache and now - cache[0] < 30 and cache[1] == cache_key:
+    # Cache persists indefinitely while the cache_key is unchanged — page
+    # reloads and re-renders should NEVER re-fire the LLM unless the user
+    # actually changed something (Subjects text, custom prompt, n, the
+    # use_subjects toggle). The previous 30-second TTL caused every reload
+    # past ~30 s to burn an unnecessary LLM call.
+    if cache and cache[1] == cache_key:
         return {"suggestions": cache[2], "cached": True}
     sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
     if use_subjects and subjects_in:
@@ -1685,16 +1690,19 @@ async def broadcast():
             # the label hides itself client-side.
             try:
                 if state.get('mode') != 'Idle' and state.get('step'):
+                    # No trailing "…" — the per-character assembly-line animation
+                    # in the queue header is its own activity indicator; an
+                    # ellipsis on top of bouncing letters reads as redundant.
                     _step_text_map = {
-                        'Concept': 'rewriting prompt…',
-                        'Base Image': 'rendering image…',
-                        'Video Chains': 'rendering video part…',
-                        'Audio': 'composing music…',
-                        'TTS': 'recording voiceover…',
-                        'Post Process': 'upscaling…',
-                        'Final Merge': 'merging final…',
+                        'Concept': 'rewriting prompt',
+                        'Base Image': 'rendering image',
+                        'Video Chains': 'rendering video part',
+                        'Audio': 'composing music',
+                        'TTS': 'recording voiceover',
+                        'Post Process': 'upscaling',
+                        'Final Merge': 'merging final',
                     }
-                    _hb_text = _step_text_map.get(state['step'], 'working…')
+                    _hb_text = _step_text_map.get(state['step'], 'working')
                     _hb_msg = {
                         "type": "render_heartbeat",
                         "text": _hb_text,

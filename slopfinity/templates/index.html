@@ -225,7 +225,7 @@
                    visually so they look like one control with two halves. #}
                 <div class="flex items-center gap-1">
                     <div class="join">
-                        <button id="gen-mode-pill" class="btn btn-ghost btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
+                        <button id="gen-mode-pill" class="btn btn-outline btn-primary btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
                         <button id="pipeline-config-button" class="btn btn-outline btn-primary btn-xs join-item text-base" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
@@ -249,23 +249,27 @@
             </div>
             <div id="subjects-need-ideas-row" class="flex items-center justify-between gap-1 flex-wrap">
                 <div class="flex items-center gap-1 flex-wrap">
+                    {# Need Suggestions class set is owned by _applySuggestionsHiddenState
+                       (DOMContentLoaded). Initial classes match the *hidden* default
+                       (solid btn-primary, like the Queue button) so first paint doesn't
+                       flicker. JS swaps to btn-outline btn-secondary on reveal. #}
                     <button id="subjects-suggestions-toggle"
                        type="button"
-                       class="btn btn-outline btn-primary btn-xs"
+                       class="btn btn-primary btn-xs"
                        title="Toggle suggestion controls"
                        onclick="toggleSuggestionsHidden(_isSuggestionsHidden() ? false : true)">Need Suggestions?</button>
                     <button id="subjects-suggest-btn"
                        type="button"
-                       class="btn btn-outline btn-secondary btn-xs gap-1.5"
+                       class="btn btn-primary btn-xs gap-1.5"
                        onclick="regenSuggestions()"
                        title="Regenerate suggestions"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg><span>Regenerate</span></button>
                     <button id="subjects-suggestion-prompt-link"
                        type="button"
-                       class="btn btn-outline btn-secondary btn-xs gap-1.5"
+                       class="btn btn-primary btn-xs gap-1.5"
                        title="Edit the system prompt used for auto-suggestions"
                        onclick="openSettingsToSuggestionPrompt()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Suggestion Prompt?</span></button>
                 </div>
-                <label id="subjects-endless-story" class="btn btn-outline btn-secondary btn-xs cursor-pointer gap-1.5" title="Endless Story — keep generating with rotating subjects">
+                <label id="subjects-endless-story" class="btn btn-primary btn-xs cursor-pointer gap-1.5" title="Endless Story — keep generating with rotating subjects">
                     <input type="checkbox" id="endless-story-toggle" class="hidden peer" onchange="(() => { const inf = document.getElementById('inf-on'); if (inf) { inf.checked = this.checked; inf.dispatchEvent(new Event('change', {bubbles:true})); } document.getElementById('subjects-endless-story').setAttribute('aria-pressed', this.checked); })()">
                     <span class="inline-flex w-3 h-3 rounded-full border border-current peer-checked:bg-current"></span>
                     <span>Endless Story</span>
@@ -423,9 +427,17 @@
             </h2>
             <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
                 {# Filter chip colors aligned to PR #58 token map: video=primary, image=info, audio=secondary #}
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-info peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
-                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-secondary peer-[:not(:checked)]:opacity-40 peer-[:not(:checked)]:badge-outline">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                {# Chip on/off colors mirror the Need Suggestions toggle:
+                   ON = solid badge-primary (Queue button color);
+                   OFF = badge-outline + badge-secondary at 40% opacity.
+                   The 'assets' chip toggles whether non-final intermediate
+                   assets (chain mp4s, base pngs, bridge frames) are shown.
+                   Default OFF = only FINAL_*.mp4 visible. Filtering is
+                   handled in _applySlopFilters() in app.js. #}
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="video" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="image" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span></span></label>
+                <label class="cursor-pointer"><input type="checkbox" class="peer hidden" data-slop-filter="audio" checked><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{ branding.labels.slop_audio or 'audio' }} <span class="ml-1 font-mono opacity-70" data-chip-count="audio">0</span></span></label>
+                <label class="cursor-pointer" title="Show intermediate assets (chain mp4s, base pngs, bridge frames). Off = only final products."><input type="checkbox" class="peer hidden" data-slop-filter="assets"><span class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">assets <span class="ml-1 font-mono opacity-70" data-chip-count="assets">0</span></span></label>
                 {# Close (×) — hides the Slop output card; persisted in localStorage. #}
                 <button class="btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100 ml-1 card-close-btn" title="Hide Slop card" aria-label="Hide Slop card" onclick="closeCard('slop')">×</button>
             </div>
@@ -481,7 +493,7 @@
                     {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}
                 {% endif %}
                 {% set border_color = 'border-primary' %}
-                <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}">
+                <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden" data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}">
                     <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                     {% if is_mp4 %}
                         <video controls muted loop preload="metadata" class="w-full h-full object-contain"><source src="/files/{{ f }}"></video>
@@ -603,7 +615,9 @@
      Heavier per-stage advanced (prompt overrides, LLM provider, Post, Quality
      ramp, autonomous mode setup) lives in Settings → Pipeline Advanced. -->
 <dialog id="pipeline-modal" class="modal">
-    <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
+    {# overflow-x-hidden + min-w-0 prevents the inner toggle row from forcing the
+       modal wider than the viewport on narrow screens — toggles wrap cleanly. #}
+    <div class="modal-box bg-base-200 border border-base-100 max-w-2xl overflow-x-hidden min-w-0">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
         <!-- ============ Toggles row ============ -->
@@ -651,6 +665,33 @@
             </label>
             {# Concurrent toggle moved to Settings → Diagnostics — it's an
                operational/global behavior, not a per-pipeline-popup choice. #}
+        </div>
+
+        <!-- ============ Output dims: aspect ratio + frames per part ============ -->
+        {# Both fields exist in Settings → Pipeline Advanced (Video tuning) too,
+           but having them in the popup keeps the per-iteration knobs together.
+           cfg-size's id is unique here; cfg-frames-popup mirrors to cfg-frames
+           in the settings tab so updatePipeline() picks up either. #}
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Aspect ratio</span>
+                <select id="cfg-size" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="1:1"  {% if (config.size or '1:1') == '1:1'  %}selected{% endif %}>1:1 · 1024×1024</option>
+                    <option value="4:3"  {% if config.size == '4:3'  %}selected{% endif %}>4:3 · 1152×864</option>
+                    <option value="3:4"  {% if config.size == '3:4'  %}selected{% endif %}>3:4 · 864×1152</option>
+                    <option value="16:9" {% if config.size == '16:9' %}selected{% endif %}>16:9 · 1280×720</option>
+                    <option value="9:16" {% if config.size == '9:16' %}selected{% endif %}>9:16 · 720×1280</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames / part</span>
+                <select id="cfg-frames-popup" class="select select-bordered select-sm w-full" onchange="document.getElementById('cfg-frames') && (document.getElementById('cfg-frames').value = this.value); updatePipeline()">
+                    <option value="17" {% if (config.frames or 49) == 17 %}selected{% endif %}>17 · ~0.7 s</option>
+                    <option value="33" {% if config.frames == 33 %}selected{% endif %}>33 · ~1.4 s</option>
+                    <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49 · ~2.0 s</option>
+                    <option value="81" {% if config.frames == 81 %}selected{% endif %}>81 · ~3.4 s</option>
+                </select>
+            </label>
         </div>
 
         <!-- ============ Four model selects (image / video / audio / upscale) ============ -->
