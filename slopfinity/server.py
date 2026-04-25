@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 import os
 import json
 import random
+import re
 import subprocess
 import time
 import asyncio
@@ -174,7 +175,7 @@ async def assets_by_vidx(v_idx: int):
         files = os.listdir(EXP_DIR)
     except OSError:
         files = []
-    result: dict[str, str] = {}
+    result: dict = {}
     prefix = f"v{v_idx}_"
     # Track newest mtime per role so we prefer the most recent file when
     # the directory contains multiple matches (e.g. several video chains
@@ -190,8 +191,35 @@ async def assets_by_vidx(v_idx: int):
             best_mtime[role] = mt
             result[role] = name
 
+    # ffmpeg bridge frames: v{N}_f{M}.png (and v{N}_<slug>_f{M}.png).
+    # Surfaced as a "bridges" {idx: filename} sub-map so the dashboard
+    # can render the per-chain last-frame extracts inline. We match the
+    # same slug-tolerant shape used by _ingestAssetFilename on the JS side.
+    bridge_re = re.compile(rf"^v{v_idx}(?:_.+)?_f(\d+)\.png$")
+
     for f in files:
         if f.startswith(prefix):
+            mb = bridge_re.match(f)
+            if mb:
+                idx = int(mb.group(1))
+                bridges = result.setdefault("bridges", {})
+                # Prefer the slugged form if both forms ever exist (matches
+                # whatever the runner currently writes); otherwise newest mtime.
+                try:
+                    mt = os.path.getmtime(os.path.join(EXP_DIR, f))
+                except OSError:
+                    mt = 0
+                prev = bridges.get(idx)
+                if prev is None:
+                    bridges[idx] = f
+                else:
+                    try:
+                        prev_mt = os.path.getmtime(os.path.join(EXP_DIR, prev))
+                    except OSError:
+                        prev_mt = 0
+                    if mt > prev_mt:
+                        bridges[idx] = f
+                continue
             if f.endswith("_base.png"):
                 _consider("base", f)
             elif f.endswith(".mp4"):
