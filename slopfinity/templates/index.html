@@ -85,10 +85,21 @@
     <div id="split-row" class="flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
     <section id="split-left" class="card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
         <div class="card-body gap-3">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-bold uppercase tracking-wider text-primary">Subjects</span>
-                {# Tiny live-summary of the current Generation tab settings so the user can see what Generate will do without opening the modal. #}
-                <button id="gen-mode-pill" class="btn btn-ghost btn-xs gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline → Generation"></button>
+                {# Right-side cluster: live summary pill + pipeline-config button sit together so the
+                   header reads "Subjects · [gen-mode-pill][pipeline-button]". The join groups them
+                   visually so they look like one control with two halves. #}
+                <div class="join">
+                    <button id="gen-mode-pill" class="btn btn-ghost btn-xs join-item gap-1 normal-case font-mono text-[10px] opacity-80 hover:opacity-100" onclick="openPipeline()" title="Open Pipeline settings"></button>
+                    <button id="pipeline-config-button" class="btn btn-ghost btn-xs join-item text-base text-primary" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
+                            <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="18" x2="16" y2="18"/><circle cx="19" cy="18" r="2.5" fill="currentColor"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <textarea id="p-core" rows="5"
                 class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
@@ -101,21 +112,10 @@
             <div id="subject-chips" class="flex flex-wrap gap-1 min-h-[28px]">
                 <span class="text-[10px] text-base-content/30 italic">click 🎲 for suggestions</span>
             </div>
-            <div class="join w-full mt-auto">
-                <button class="btn btn-primary btn-lg join-item flex-1" id="btn-start-stop" onclick="toggleInfinity()">
+            <div class="w-full mt-auto">
+                <button class="btn btn-primary btn-lg w-full" id="btn-start-stop" onclick="toggleInfinity()">
                     {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
                 </button>
-                <button class="btn btn-primary btn-outline btn-lg join-item text-xl" title="Pipeline settings" aria-label="Pipeline settings" onclick="openPipeline()">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6 stroke-current fill-none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" y1="6" x2="14" y2="6"/><circle cx="17" cy="6" r="2.5" fill="currentColor"/>
-                        <line x1="4" y1="12" x2="10" y2="12"/><circle cx="13" cy="12" r="2.5" fill="currentColor"/><line x1="15.5" y1="12" x2="20" y2="12"/>
-                        <line x1="4" y1="18" x2="16" y2="18"/><circle cx="19" cy="18" r="2.5" fill="currentColor"/>
-                    </svg>
-                </button>
-            </div>
-            {# Selected Models — what the Generate button will spin up. Lives below the button so it reads naturally as a footer. #}
-            <div id="subjects-models" class="flex flex-wrap items-center gap-1 text-[10px] mt-1">
-                <span class="text-base-content/50 uppercase tracking-widest mr-1">Selected Models:</span>
             </div>
         </div>
     </section>
@@ -350,270 +350,117 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- Pipeline Modal (copied verbatim from reference /tmp/ref_workflow_rethink.html 350-543) -->
+<!-- Pipeline Modal — compact, no tabs.
+     Surface = toggles + 4 model selects + WILL-USE summary + RAM estimate.
+     Heavier per-stage advanced (prompt overrides, LLM provider, Post, Quality
+     ramp, autonomous mode setup) lives in Settings → Pipeline Advanced. -->
 <dialog id="pipeline-modal" class="modal">
-    <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
-        <!-- RAM estimator (always visible at top) -->
-        <div id="ram-est" class="card card-compact bg-base-100 mb-3 p-2 border border-base-300 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
-            <div class="flex items-center justify-between gap-2">
-                <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
-                <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+        <!-- ============ Toggles row ============ -->
+        {# Single horizontal row of toggles. Wrapped in fade-edges so on narrow
+           viewports (<640px) it scrolls horizontally and the rightmost toggle
+           dissolves into the card border instead of clipping or wrapping. #}
+        <div class="overflow-x-auto fade-edges -mx-2 px-2 mb-3">
+            <div class="flex items-center gap-4 whitespace-nowrap py-1 min-w-max">
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Single">Single</span>
+                </label>
+                <label id="when-idle-row" class="flex items-center gap-2">
+                    <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
+                </label>
+                <label id="chaos-row" class="flex items-center gap-2">
+                    <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">Polymorphic</span>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Now" data-off-label="Generate Now">Generate Now</span>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
+                </label>
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent</span>
+                </label>
             </div>
-            <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
         </div>
 
-        <!-- Per-stage tabs -->
-        <div role="tablist" class="tabs tabs-lifted">
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="⚡ Generation" checked />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-4 rounded-box">
-                <p class="text-xs text-base-content/70 mb-3">How the next click of <span class="font-bold">Generate</span> dispatches, and how the fleet behaves while looping.</p>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {# Looping group — Infinity is parent, When Idle + Polymorphic tier underneath. #}
-                    <div class="flex flex-col gap-1">
-                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Looping</div>
-                        <div class="flex items-center gap-2">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Single">Single</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="Single: one pass through your subjects, then stop. Infinity: keep looping the same subject list forever until you toggle it off.">ⓘ</span>
-                        </div>
-                        <div id="when-idle-row" class="flex items-center gap-2 ml-3 pl-3 border-l-2 border-base-300">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="With Infinity + When Idle: the loop only fires while no other queued/manual jobs are running. Once the queue clears it picks back up — gives priority to interactive Generate clicks. Requires Infinity.">ⓘ</span>
-                        </div>
-                        <div id="chaos-row" class="flex items-center gap-2 ml-3 pl-3 border-l-2 border-base-300">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">Polymorphic</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="After every completed job the LLM is asked for fresh subjects that are tangentially related to your current list, then the textarea is overwritten — the fleet drifts into adjacent ideas instead of looping the same set. Requires Infinity.">ⓘ</span>
-                        </div>
-                    </div>
-                    {# Dispatch group — three independent flags. #}
-                    <div class="flex flex-col gap-1">
-                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Dispatch</div>
-                        <div class="flex items-center gap-2">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Now" data-off-label="Generate Now">Generate Now</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="Off (default): the new job appends to the end of the queue. On: it jumps to the front so it runs as soon as the current job finishes.">ⓘ</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="When on, clicking Generate also cancels the currently-running job and any pending items in the queue. Cancelled items stay visible (with requeue) and roll out automatically after ~48 hours.">ⓘ</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="flex items-center gap-2 flex-1">
-                                <input type="checkbox" id="concurrent-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateGenModePill()" />
-                                <span class="text-xs single-label" data-toggle="concurrent-on" data-on-label="Concurrent" data-off-label="Concurrent">Concurrent</span>
-                            </label>
-                            <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="When on, this job is allowed to run alongside another job that's busy on a different stage (e.g. fire off an image while the queue is grinding through a video). The scheduler still blocks if both jobs would contend for the same GPU stage.">ⓘ</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="✎ LLM" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <div class="flex items-center justify-between mb-3">
-                    <span class="text-[10px] uppercase tracking-widest opacity-60">Prompt LLM</span>
-                    <span class="tooltip tooltip-left cursor-help text-base-content/40 hover:text-base-content text-xs" data-tip="The LLM rewrites your subjects into per-stage prompts (Image / Video / Music / Voice). Provider + model are configured in Settings → LLM.">ⓘ</span>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                    <div>
-                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Model</div>
-                        <div class="badge badge-ghost font-mono" id="cfg-llm-active">{{ (config.llm.model_id if config.llm and config.llm.model_id else 'auto-pick') }}</div>
-                    </div>
-                    <div>
-                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Provider</div>
-                        <div class="badge badge-ghost font-mono" id="cfg-llm-provider">{{ (config.llm.provider if config.llm and config.llm.provider else 'lmstudio') }}</div>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-sm btn-secondary btn-outline" onclick="$('pipeline-modal').close(); openSettings();">Open Settings → LLM</button>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🖼 Image" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <label class="form-control mb-2">
-                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image model</span>
-                    <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                        <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
-                        <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
-                        <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
-                    </select>
-                </label>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image prompt override</span>
-                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('image')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                    <textarea id="p-image" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
-                </div>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🎬 Video" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
-                    <label class="form-control md:col-span-1">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video model</span>
-                        <select id="cfg-video" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
-                            <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
-                            <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
-                        </select>
-                    </label>
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames / part</span>
-                        <select id="cfg-frames" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="17" {% if config.frames == 17 %}selected{% endif %}>17</option>
-                            <option value="33" {% if config.frames == 33 %}selected{% endif %}>33</option>
-                            <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49</option>
-                            <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
-                        </select>
-                    </label>
-                    <label class="form-control" title="How aggressive to ramp quality.">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
-                            Quality ramp
-                            <span class="tooltip tooltip-left cursor-help" data-tip="auto = cheap first, escalate · low = 8/1:1/17f · med = 20/4:3/33f · high = 50/16:9/49f">
-                                <span class="text-[9px] opacity-60">ⓘ</span>
-                            </span>
-                        </span>
-                        <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto · ramp low→high</option>
-                            <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low · fast preview</option>
-                            <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med · balanced</option>
-                            <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high · max quality</option>
-                        </select>
-                    </label>
-                </div>
-                <label class="form-control mb-2">
-                    <span class="label-text text-xs flex justify-between">
-                        <span>Parts per subject</span>
-                        <span class="font-mono"><span id="cfg-chains-val">{{ config.chains or 10 }}</span></span>
-                    </span>
-                    <input id="cfg-chains" type="range" min="1" max="20" step="1" value="{{ config.chains or 10 }}"
-                           class="range range-sm range-primary"
-                           oninput="$('cfg-chains-val').innerText = this.value"
-                           onchange="updatePipeline()" />
-                </label>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video prompt override</span>
-                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('video')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                    <textarea id="p-video" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
-                </div>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🎵 Music" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music model</span>
-                        <select id="cfg-audio" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onAudioChanged();">
-                            <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Music</option>
-                            <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula</option>
-                        </select>
-                    </label>
-                    <label class="form-control">
-                        <span class="label-text text-xs flex justify-between">
-                            <span>Music gain (dB)</span>
-                            <span class="font-mono"><span id="cfg-music-gain-val">{{ config.music_gain_db or 0 }}</span></span>
-                        </span>
-                        <input id="cfg-music-gain-db" type="range" min="-12" max="6" step="1" value="{{ config.music_gain_db or 0 }}"
-                               class="range range-sm range-primary"
-                               oninput="$('cfg-music-gain-val').innerText = this.value"
-                               onchange="updatePipeline()" />
-                    </label>
-                </div>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music prompt override</span>
-                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('music')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
-                </div>
-                <div class="flex items-center gap-1">
-                    <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                    <textarea id="p-music" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto mood from subject..."></textarea>
-                </div>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🗣 Voice" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice model</span>
-                        <select id="cfg-tts" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
-                            <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
-                            <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
-                        </select>
-                    </label>
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice preset</span>
-                        <select id="tts-voice" class="select select-bordered select-sm w-full">
-                            <option value="ryan">Ryan (EN, m)</option>
-                            <option value="eric">Eric (EN, m)</option>
-                            <option value="vivian">Vivian (EN, f)</option>
-                            <option value="olivia">Olivia (EN, f)</option>
-                            <option value="ethan">Ethan (EN, m)</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover line</span>
-                    <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
-                </div>
-                <div class="flex items-center gap-1 mb-2">
-                    <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                    <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
-                </div>
-                <div class="flex gap-2 items-center">
-                    <textarea id="tts-in" class="textarea textarea-bordered textarea-sm flex-1 h-10 text-xs" placeholder="One-off TTS preview..."></textarea>
-                    <button class="btn btn-xs btn-primary" onclick="generateTts()">Preview</button>
-                    <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
-                </div>
-                <audio id="tts-preview" class="w-full h-8 mt-2" controls preload="none"></audio>
-            </div>
-
-            <input type="radio" name="pipe_tabs" role="tab" class="tab" aria-label="🔧 Post" />
-            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 p-3 rounded-box">
-                <div id="consolidation-wrap" class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Upscale</span>
-                        <select id="cfg-upscale" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
-                            <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
-                        </select>
-                    </label>
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Consolidation</span>
-                        <select id="cfg-consolidation" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
-                            <option value="overlay" {% if (config.consolidation or 'overlay') == 'overlay' %}selected{% endif %}>overlay (default)</option>
-                            <option value="replace" {% if config.consolidation == 'replace' %}selected{% endif %}>replace</option>
-                        </select>
-                    </label>
-                    <label class="form-control">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Fade (s)</span>
-                        <input id="cfg-fade-s" type="number" step="0.1" min="0" max="3" value="{{ config.fade_s or 0.5 }}"
-                               class="input input-bordered input-sm w-full" onchange="updatePipeline()" />
-                    </label>
-                </div>
-            </div>
-
+        <!-- ============ Four model selects (image / video / audio / upscale) ============ -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image model</span>
+                <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="ernie" {% if config.base_model == 'ernie' %}selected{% endif %}>Ernie-Image</option>
+                    <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
+                    <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video model</span>
+                <select id="cfg-video" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="ltx-2.3" {% if config.video_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 (49f)</option>
+                    <option value="wan2.2" {% if config.video_model == 'wan2.2' %}selected{% endif %}>Wan2.2 (81f)</option>
+                    <option value="wan2.5" {% if config.video_model == 'wan2.5' %}selected{% endif %}>Wan2.5 (81f)</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music model</span>
+                <select id="cfg-audio" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onAudioChanged && _onAudioChanged();">
+                    <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Music</option>
+                    <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula</option>
+                </select>
+            </label>
+            <label class="form-control">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice model</span>
+                <select id="cfg-tts" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="none" {% if (config.tts_model or 'none') == 'none' %}selected{% endif %}>No Voice</option>
+                    <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
+                    <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
+                </select>
+            </label>
+            <label class="form-control sm:col-span-2">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Upscale</span>
+                <select id="cfg-upscale" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                    <option value="none" {% if config.upscale_model == 'none' %}selected{% endif %}>No Upscale</option>
+                    <option value="ltx-spatial" {% if config.upscale_model == 'ltx-spatial' %}selected{% endif %}>LTX Spatial x2</option>
+                </select>
+            </label>
         </div>
 
-        {# AI Magic is now per-tab (lives inline in the Image / Video / Music / Voice tabs) and only rewrites that single stage. The fan-out preview below shows ALL stages at once when /enhance/distribute fires (e.g. via enhance()) — 4 stacked boxes on narrow viewports, 2x2 grid on wide. #}
+        <!-- ============ WILL-USE summary (relocated from Subjects card) ============ -->
+        {# Live model badges + RAM estimate side-by-side. The badge content is
+           rendered by _renderSubjectsModels() in app.js — same element ID is
+           preserved so existing JS hookups still work. #}
+        <div class="card card-compact bg-base-100 mb-3 border border-base-300">
+            <div class="card-body !p-3 gap-2">
+                <div id="subjects-models" class="flex flex-wrap items-center gap-1 text-[10px]">
+                    <span class="text-base-content/50 uppercase tracking-widest mr-1">Will use:</span>
+                </div>
+                <!-- RAM estimator (kept inside Pipeline popup per spec) -->
+                <div id="ram-est" class="border-t border-base-300 pt-2 mt-1 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="text-[10px] uppercase tracking-widest opacity-60">RAM estimate</div>
+                        <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
+                    </div>
+                    <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-[11px] text-base-content/60 italic mb-2">Per-stage prompt overrides, LLM provider, frames, quality ramp, post-processing — moved to <button type="button" class="link link-primary" onclick="$('pipeline-modal').close(); openSettings();">Settings → Pipeline Advanced</button>.</p>
+
+        {# Per-stage prompt overrides + LLM provider/Frames/Quality/Music gain/
+           Voice preset/Post-processing — relocated to Settings → Pipeline Advanced
+           (lives below). The IDs are still rendered (in the Settings tab) so the
+           existing app.js handlers keep working unchanged. #}
+
+        {# AI Magic is per-tab (lives inline in the Image / Video / Music / Voice tabs) and only rewrites that single stage. The fan-out preview below shows ALL stages at once when /enhance/distribute fires — 4 stacked boxes on narrow viewports, 2x2 grid on wide. #}
         <textarea id="p-in" class="hidden"></textarea>
         <div id="fanout-preview" class="hidden alert alert-info bg-base-300 border border-primary p-3 rounded-lg flex-col items-stretch gap-2 mt-2">
             <div class="text-xs font-bold uppercase tracking-widest text-primary">Fan-out preview</div>
@@ -855,6 +702,157 @@
                     </label>
                 </div>
             </div><!-- /LLM tabpanel -->
+
+            {# Pipeline Advanced — relocated from the old per-stage Pipeline-modal tabs.
+               Keeps every existing input ID so app.js handlers (updatePipeline, enhanceStage,
+               etc.) keep working without changes. #}
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Pipeline Advanced" />
+            <div role="tabpanel" class="tab-content pt-4">
+
+                <!-- LLM provider summary (read-only — full editor is the LLM tab) -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Prompt LLM</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Model</div>
+                        <div class="badge badge-ghost font-mono" id="cfg-llm-active">{{ (config.llm.model_id if config.llm and config.llm.model_id else 'auto-pick') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-1">Provider</div>
+                        <div class="badge badge-ghost font-mono" id="cfg-llm-provider">{{ (config.llm.provider if config.llm and config.llm.provider else 'lmstudio') }}</div>
+                    </div>
+                </div>
+
+                <!-- Video tuning -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Video tuning</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Frames / part</span>
+                        <select id="cfg-frames" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="17" {% if config.frames == 17 %}selected{% endif %}>17</option>
+                            <option value="33" {% if config.frames == 33 %}selected{% endif %}>33</option>
+                            <option value="49" {% if (config.frames or 49) == 49 %}selected{% endif %}>49</option>
+                            <option value="81" {% if config.frames == 81 %}selected{% endif %}>81</option>
+                        </select>
+                    </label>
+                    <label class="form-control" title="How aggressive to ramp quality.">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
+                            Quality ramp
+                            <span class="tooltip tooltip-left cursor-help" data-tip="auto = cheap first, escalate · low = 8/1:1/17f · med = 20/4:3/33f · high = 50/16:9/49f">
+                                <span class="text-[9px] opacity-60">ⓘ</span>
+                            </span>
+                        </span>
+                        <select id="cfg-tier" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="auto" {% if (config.tier or 'auto') == 'auto' %}selected{% endif %}>auto · ramp low→high</option>
+                            <option value="low" {% if config.tier == 'low' %}selected{% endif %}>low · fast preview</option>
+                            <option value="med" {% if config.tier == 'med' %}selected{% endif %}>med · balanced</option>
+                            <option value="high" {% if config.tier == 'high' %}selected{% endif %}>high · max quality</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-xs flex justify-between">
+                            <span>Parts / subject</span>
+                            <span class="font-mono"><span id="cfg-chains-val">{{ config.chains or 10 }}</span></span>
+                        </span>
+                        <input id="cfg-chains" type="range" min="1" max="20" step="1" value="{{ config.chains or 10 }}"
+                               class="range range-sm range-primary"
+                               oninput="$('cfg-chains-val').innerText = this.value"
+                               onchange="updatePipeline()" />
+                    </label>
+                </div>
+
+                <!-- Music + Voice extras -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Audio tuning</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <label class="form-control">
+                        <span class="label-text text-xs flex justify-between">
+                            <span>Music gain (dB)</span>
+                            <span class="font-mono"><span id="cfg-music-gain-val">{{ config.music_gain_db or 0 }}</span></span>
+                        </span>
+                        <input id="cfg-music-gain-db" type="range" min="-12" max="6" step="1" value="{{ config.music_gain_db or 0 }}"
+                               class="range range-sm range-primary"
+                               oninput="$('cfg-music-gain-val').innerText = this.value"
+                               onchange="updatePipeline()" />
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice preset</span>
+                        <select id="tts-voice" class="select select-bordered select-sm w-full">
+                            <option value="ryan">Ryan (EN, m)</option>
+                            <option value="eric">Eric (EN, m)</option>
+                            <option value="vivian">Vivian (EN, f)</option>
+                            <option value="olivia">Olivia (EN, f)</option>
+                            <option value="ethan">Ethan (EN, m)</option>
+                        </select>
+                    </label>
+                </div>
+
+                <!-- Per-stage prompt overrides -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Per-stage prompts</div>
+                <div class="space-y-3 mb-3">
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image prompt override</span>
+                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('image')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-image" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video prompt override</span>
+                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('video')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-video" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music prompt override</span>
+                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('music')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-music" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto mood from subject..."></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover line</span>
+                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                        </div>
+                        <div class="flex items-center gap-1 mb-2">
+                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <textarea id="tts-in" class="textarea textarea-bordered textarea-sm flex-1 h-10 text-xs" placeholder="One-off TTS preview..."></textarea>
+                            <button class="btn btn-xs btn-primary" onclick="generateTts()">Preview</button>
+                            <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+                        </div>
+                        <audio id="tts-preview" class="w-full h-8 mt-2" controls preload="none"></audio>
+                    </div>
+                </div>
+
+                <!-- Post-processing -->
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Post-processing</div>
+                <div id="consolidation-wrap" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Consolidation</span>
+                        <select id="cfg-consolidation" class="select select-bordered select-sm w-full" onchange="updatePipeline()">
+                            <option value="overlay" {% if (config.consolidation or 'overlay') == 'overlay' %}selected{% endif %}>overlay (default)</option>
+                            <option value="replace" {% if config.consolidation == 'replace' %}selected{% endif %}>replace</option>
+                        </select>
+                    </label>
+                    <label class="form-control">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Fade (s)</span>
+                        <input id="cfg-fade-s" type="number" step="0.1" min="0" max="3" value="{{ config.fade_s or 0.5 }}"
+                               class="input input-bordered input-sm w-full" onchange="updatePipeline()" />
+                    </label>
+                </div>
+            </div><!-- /Pipeline Advanced tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
             <div role="tabpanel" class="tab-content pt-4">
