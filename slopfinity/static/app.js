@@ -2100,18 +2100,37 @@ function connect() {
                             _displayedDoneStages.add(key);
                         }
                         let assetBadge;
+                        // Per-stage prompt badges — one per stage that has a
+                        // generated prompt, styled the same as file-asset badges.
+                        // Click → showPromptPeek modal with the full text.
+                        const _PROMPT_FIELD_BY_STAGE = {
+                            'Concept': null, // uses state.current_prompt below
+                            'Base Image': 'image_prompt',
+                            'Video Chains': 'video_prompt',
+                            'Audio': 'music_prompt',
+                            'TTS': 'tts_prompt',
+                        };
+                        const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
+                        let promptForStage = '';
                         if (s === 'Concept') {
-                            // Concept stage: the Text tick badge itself is now
-                            // the prompts-editor shortcut (see stageLabelHtml
-                            // below). Drop the separate `prompts →` button so
-                            // there's a single click target instead of two
-                            // adjacent ones doing the same thing.
-                            assetBadge = '';
+                            promptForStage = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '';
+                        } else if (_PROMPT_FIELD_BY_STAGE[s]) {
+                            promptForStage = cfgSnap[_PROMPT_FIELD_BY_STAGE[s]] || '';
+                        }
+                        const promptBadge = promptForStage
+                            ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} prompt — click to view" onclick='event.stopPropagation(); showPromptPeek(${JSON.stringify(promptForStage)})'>📝 prompt →</button>`
+                            : '';
+                        if (s === 'Concept') {
+                            assetBadge = promptBadge;
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
-                            assetBadge = asset
+                            const fileBadge = asset
                                 ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
                                 : '';
+                            // Stage shows BOTH the prompt badge (if a per-stage
+                            // prompt exists from /enhance/distribute) AND the
+                            // file asset badge.
+                            assetBadge = [promptBadge, fileBadge].filter(Boolean).join(' ');
                         }
                         const a = actuals[s];
                         const timing = a
@@ -2284,8 +2303,24 @@ function connect() {
                 } else {
                     const items = [];
                     if (isRunning) {
+                        // While the LLM is still rewriting the concept (state.current_prompt
+                        // empty), surface the source subject the runner picked instead
+                        // of an opaque "(running)". For infinity mode that's the indexed
+                        // theme; otherwise the first /n line of #p-core.
+                        let displayPrompt = d.state.current_prompt;
+                        if (!displayPrompt) {
+                            const themes = (cfg && cfg.infinity_themes) || [];
+                            const idx = (cfg && cfg.infinity_index) || 0;
+                            if (themes.length) {
+                                displayPrompt = themes[idx % themes.length];
+                            } else {
+                                const ta = document.getElementById('p-core');
+                                const first = (ta && ta.value || '').split(/\r?\n/).find(l => l.trim());
+                                displayPrompt = first || '(starting…)';
+                            }
+                        }
                         const runItem = {
-                            prompt: d.state.current_prompt || '(running)',
+                            prompt: displayPrompt,
                             config_snapshot: cfg,
                             ts: 0,
                         };
