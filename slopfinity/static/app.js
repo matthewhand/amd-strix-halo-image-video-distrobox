@@ -1163,19 +1163,26 @@ function connect() {
                 // Hamburger dropdown — Cancel today, room to grow tomorrow.
                 const infToggleLabel = q.infinity ? '▶ Make Single' : '♾ Make Infinite';
                 const promptForJs = JSON.stringify(q.prompt || '');
+                // The dropdown lives inside <summary>, so any click inside it
+                // would bubble up and toggle the <details> — and the focus
+                // shift would close the dropdown before the <a> click fired,
+                // making selections appear to "pass through". Stop propagation
+                // on the wrapper (and the action <a>s) so clicks land on the
+                // intended action instead of the summary toggle.
+                const stop = `event.stopPropagation()`;
                 const menuHTML = isCancelled
-                    ? `<div class="dropdown dropdown-end">
-                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions">⋯</label>
+                    ? `<div class="dropdown dropdown-end" onclick="${stop}">
+                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions" onclick="${stop}">⋯</label>
                         <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
-                            <li><a onclick="requeueItem(${q.ts || 0})">↻ Re-queue</a></li>
+                            <li><a onclick="event.stopPropagation();requeueItem(${q.ts || 0})">↻ Re-queue</a></li>
                         </ul>
                        </div>`
-                    : `<div class="dropdown dropdown-end">
-                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions">⋯</label>
+                    : `<div class="dropdown dropdown-end" onclick="${stop}">
+                        <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions" onclick="${stop}">⋯</label>
                         <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
-                            <li><a onclick='editItem(${q.ts || 0}, ${promptForJs})'>✎ Edit prompt</a></li>
-                            <li><a onclick="toggleItemInfinity(${q.ts || 0})">${infToggleLabel}</a></li>
-                            <li><a onclick="cancelItem(${q.ts || 0})" class="text-error">✕ Cancel</a></li>
+                            <li><a onclick='event.stopPropagation();editItem(${q.ts || 0}, ${promptForJs})'>✎ Edit prompt</a></li>
+                            <li><a onclick="event.stopPropagation();toggleItemInfinity(${q.ts || 0})">${infToggleLabel}</a></li>
+                            <li><a onclick="event.stopPropagation();cancelItem(${q.ts || 0})" class="text-error">✕ Cancel</a></li>
                         </ul>
                        </div>`;
                 const cls = `bg-base-200 rounded-md${isCancelled ? ' opacity-50 slop-cancelled-fade' : ''}${isActive ? ' ring-2 ring-primary' : ''}`;
