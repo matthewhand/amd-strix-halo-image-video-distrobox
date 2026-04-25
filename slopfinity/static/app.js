@@ -164,16 +164,28 @@ function showPromptPeek(text) {
     const dlg = document.createElement('dialog');
     dlg.id = 'prompt-peek-modal';
     dlg.className = 'modal';
+    // Store the raw prompt on the button; let the click handler read it back.
+    // Avoids HTML-attribute-quoting hell (JSON.stringify of a prompt with
+    // any double-quote or backtick will corrupt the inline onclick).
     dlg.innerHTML = `<div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-2">LLM-rewritten prompt</h3>
         <div class="text-xs whitespace-pre-wrap font-mono bg-base-300/50 p-3 rounded">${_htmlEscape(text || '(empty)')}</div>
         <div class="modal-action">
-            <button class="btn btn-sm btn-secondary btn-outline" onclick="navigator.clipboard.writeText(${JSON.stringify(text || '')}).catch(()=>{}); this.textContent='✓ Copied'; setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
+            <button id="prompt-peek-copy" class="btn btn-sm btn-secondary btn-outline">Copy</button>
             <form method="dialog"><button class="btn btn-sm btn-primary">Close</button></form>
         </div>
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>`;
     document.body.appendChild(dlg);
+    const copyBtn = dlg.querySelector('#prompt-peek-copy');
+    if (copyBtn) {
+        copyBtn._prompt = text || '';
+        copyBtn.addEventListener('click', (e) => {
+            navigator.clipboard.writeText(copyBtn._prompt || '').catch(() => {});
+            copyBtn.textContent = '✓ Copied';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+        });
+    }
     dlg.showModal();
 }
 
