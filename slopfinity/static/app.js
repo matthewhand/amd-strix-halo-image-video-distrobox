@@ -2187,6 +2187,8 @@ async function openSettings() {
         $('set-timeout').value = llm.timeout_s ?? 60;
         const autoSus = $('set-llm-auto-suspend');
         if (autoSus) autoSus.checked = !!llm.auto_suspend;
+        const fleetPrompt = $('set-fleet-prompt');
+        if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const modelSel = $('set-model');
         modelSel.dataset.selected = llm.model_id || '';
         modelSel.innerHTML = '';
@@ -2263,6 +2265,11 @@ async function saveSettings() {
             auto_suspend: !!($('set-llm-auto-suspend') && $('set-llm-auto-suspend').checked),
         },
     };
+    const fleetPrompt = $('set-fleet-prompt');
+    if (fleetPrompt) {
+        // Empty string is meaningful here (server interprets it as "use built-in default").
+        body.philosophical_prompt = fleetPrompt.value;
+    }
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2278,6 +2285,24 @@ async function saveSettings() {
     }
     const modal = $('settings-modal');
     if (modal && modal.close) modal.close();
+}
+
+async function resetFleetPrompt() {
+    // Clearing the textarea is sufficient — server treats empty string as
+    // "use built-in default" and the next openSettings hydrate will leave
+    // it blank too. Persist immediately so the user doesn't need to also
+    // hit Save to commit the reset.
+    const el = $('set-fleet-prompt');
+    if (el) el.value = '';
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ philosophical_prompt: '' }),
+        });
+    } catch (e) {
+        console.error('resetFleetPrompt failed', e);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
