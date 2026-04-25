@@ -357,12 +357,15 @@ textarea.subjects-autogrow {
     .ui-split-card {
         min-height: 0;
         max-height: 100%;
-        overflow: hidden;
+        /* overflow visible (was hidden) so per-item action dropdowns
+           in the queue can render outside the card border. The internal
+           scrolling concern is handled by #q-list's own overflow-y: auto. */
+        overflow: visible;
     }
     .ui-split-cardbody {
         min-height: 0;
         flex: 1 1 0;
-        overflow: hidden;
+        overflow: visible;
     }
     /* Subjects textarea (#p-core) — let it shrink with its parent card; its
        row count gives the natural size, but min-height:0 means it gives up
@@ -434,3 +437,10 @@ textarea.subjects-autogrow {
 }
 
 /* (Marquee rules live in the upper Subjects-suggest block.) */
+
+/* Per-queue-item action dropdown — escape #q-list's internal scroll
+   (overflow-y: auto) and any other clipping ancestor. The dropdown itself
+   gets a high z so it sits above everything else in the card. */
+#q-list .dropdown-content {
+    z-index: 60;
+}
