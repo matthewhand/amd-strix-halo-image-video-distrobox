@@ -1228,6 +1228,19 @@ function _ingestAssetFilename(filename) {
         if (m[2] === 'mp4') rec.video = rec.video || filename;
         else rec.audio = rec.audio || filename;
         _assetsByVidx.set(v, rec);
+        return;
+    }
+    // ffmpeg last-frame bridge between video chains: v{N}_f{M}.png
+    // (and v{N}_<slug>_f{M}.png if a slug variant ever lands).
+    m = filename.match(/^v(\d+)(?:_.+)?_f(\d+)\.png$/);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        const i = parseInt(m[2], 10);
+        const rec = _assetsByVidx.get(v) || {};
+        rec.bridges = rec.bridges || {};
+        rec.bridges[i] = filename;
+        _assetsByVidx.set(v, rec);
+        return;
     }
 }
 
@@ -1959,11 +1972,61 @@ function connect() {
                         const stageLabelHtml = stageRoleEntry
                             ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Edit prompts (this stage already ran — opens locked)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${label}</button>`
                             : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
-                        return `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
+                        let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
                         </div>`;
+                        // After the Video Chains row, inline the ffmpeg
+                        // last-frame extracts as their own sub-rows. Bridge
+                        // i (v{V}_f{i}.png) sits between chain i and chain
+                        // i+1, so we surface bridges 1..c (one per finished
+                        // chain) — the runner emits the bridge immediately
+                        // after each chain mp4 lands. Failing thumbnails
+                        // hide via onerror so the row degrades gracefully
+                        // when the file isn't on disk yet.
+                        if (s === 'Video Chains' && v && c > 0) {
+                            const cached = _assetsByVidx.get(v) || {};
+                            const bridges = cached.bridges || {};
+                            const subRows = [];
+                            for (let i = 1; i <= c; i++) {
+                                const bridgeName = bridges[i] || `v${v}_f${i}.png`;
+                                const href = `/files/${encodeURIComponent(bridgeName)}`;
+                                subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
+                                    <span class="badge badge-xs badge-ghost">ffmpeg</span>
+                                    <span class="opacity-70">extract last frame ${i} →</span>
+                                    <a href="${href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto">
+                                        <img src="${href}" class="rounded bg-black object-cover" style="width:32px;height:18px;" loading="lazy" onerror="this.style.display='none'">
+                                        <span class="hidden sm:inline">${_htmlEscape(bridgeName)}</span>
+                                    </a>
+                                </div>`);
+                            }
+                            row += subRows.join('');
+                        }
+                        return row;
                     }).join('');
+                // While Video Chains is the *current* stage (not yet in
+                // completedLines), still surface bridges 1..c so the user
+                // sees each chain's last-frame extract land between chains.
+                // Emits a small in-progress block under the Output header.
+                let activeBridgesHtml = '';
+                if (curStep === 'Video Chains' && v && c > 0) {
+                    const cached = _assetsByVidx.get(v) || {};
+                    const bridges = cached.bridges || {};
+                    const subRows = [];
+                    for (let i = 1; i <= c; i++) {
+                        const bridgeName = bridges[i] || `v${v}_f${i}.png`;
+                        const href = `/files/${encodeURIComponent(bridgeName)}`;
+                        subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
+                            <span class="badge badge-xs badge-ghost">ffmpeg</span>
+                            <span class="opacity-70">extract last frame ${i} →</span>
+                            <a href="${href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto">
+                                <img src="${href}" class="rounded bg-black object-cover" style="width:32px;height:18px;" loading="lazy" onerror="this.style.display='none'">
+                                <span class="hidden sm:inline">${_htmlEscape(bridgeName)}</span>
+                            </a>
+                        </div>`);
+                    }
+                    activeBridgesHtml = subRows.join('');
+                }
                 // Strip the .stage-just-completed class after the animation
                 // finishes (600 ms total budget) so the next WS re-render
                 // doesn't accidentally restart it via DOM diffing quirks.
@@ -1995,8 +2058,9 @@ function connect() {
                         <span class="pipeline-seg-label">${shortLabel}</span>
                     </div>`;
                 }).join('');
+                const hasOutput = !!(completedLines || activeBridgesHtml);
                 return `
-                    ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
+                    ${hasOutput ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}` : ''}
                     <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300 mt-2"
                          data-pipeline-bar
                          data-cur-stage="${curStep || ''}">
