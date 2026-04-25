@@ -993,18 +993,24 @@ function connect() {
                         let assetBadge;
                         if (s === 'Concept') {
                             const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
-                            assetBadge = `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>✓ ${label} →</button>`;
+                            assetBadge = `<button type="button" class="badge badge-xs badge-outline cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>prompt →</button>`;
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
                             assetBadge = asset
-                                ? `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>✓ ${label} →</button>`
-                                : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
+                                ? `<button type="button" class="badge badge-xs badge-outline cursor-pointer font-mono text-[9px]" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${asset} →</button>`
+                                : '';
                         }
                         const a = actuals[s];
                         const timing = a
                             ? `<span class="font-mono text-[9px]">${_fmtElapsed(a.duration_s * 1000)}</span><span class="opacity-50 text-[9px]">${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}</span>`
                             : '';
-                        return `<div class="flex items-center gap-2 mt-1">${assetBadge}${timing}</div>`;
+                        // Stage label on the LEFT, asset link + duration on
+                        // the RIGHT (push with ml-auto). Reads as a list:
+                        // "✓ Image                        v3_base.png  3m22s / ETA 9m"
+                        return `<div class="flex items-center gap-2 mt-1">
+                            <span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>
+                            <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
+                        </div>`;
                     }).join('');
                 return `
                     ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Slops</div>${completedLines}` : ''}
