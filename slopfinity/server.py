@@ -771,6 +771,8 @@ async def settings_get():
             "active": branding_cfg.get("active") or "slopfinity",
             "profiles": _branding.list_profiles(),
         },
+        "philosophical_prompt": c.get("philosophical_prompt") or "",
+        "philosophical_prompt_default": cfg.DEFAULT_PHILOSOPHICAL_PROMPT,
     }
 
 
@@ -815,6 +817,14 @@ async def settings_post(data: dict = Body(...)):
             existing = c.get(bucket) or {}
             existing.update(data[bucket])
             c[bucket] = existing
+    # Fleet system prompt override. Empty string -> None ("use built-in default")
+    # so the runner's loader can fall back without a sentinel check.
+    if "philosophical_prompt" in data:
+        v = data.get("philosophical_prompt")
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            c["philosophical_prompt"] = None
+        elif isinstance(v, str):
+            c["philosophical_prompt"] = v
     cfg.save_config(c)
     return {"ok": True}
 
