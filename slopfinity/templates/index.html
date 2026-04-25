@@ -333,6 +333,11 @@
                 </div>
             {% endfor %}
         </div>
+        {# Sentinel observed by the IntersectionObserver in app.js to drive
+           infinite-scroll fetches against /assets?offset=N. The h-8 spacer is
+           enough vertical area for the observer's rootMargin (200 px) to fire
+           well before the user actually reaches the very bottom. #}
+        <div id="preview-grid-sentinel" class="h-8" aria-hidden="true"></div>
         {# Hidden grids kept so legacy ID references (WS handler back-compat) don't break. #}
         <div id="v-grid" class="hidden"></div>
         <div id="i-grid" class="hidden"></div>
