@@ -38,7 +38,10 @@ let _wsConnected = false;
 // Rolling history of recent stage durations (per stage name) persisted in
 // localStorage so ETAs survive page reloads. Format:
 //   { "Concept": [12.4, 9.8, 11.2], "Base Image": [...], ... }
-const _STAGE_HISTORY_KEY = 'slopfinity_stage_durations_v1';
+// v2 bumps the key so cold defaults (below) take effect for everyone — v1
+// had stale ~5s samples from failed iters that polluted the rolling avg
+// and made image-gen ETAs read 44s for a 4-minute job.
+const _STAGE_HISTORY_KEY = 'slopfinity_stage_durations_v2';
 const _STAGE_HISTORY_KEEP = 5;
 function _loadStageHistory() {
     try { return JSON.parse(localStorage.getItem(_STAGE_HISTORY_KEY) || '{}') || {}; }
@@ -53,26 +56,33 @@ function _saveStageDuration(stage, seconds) {
     hist[stage] = arr;
     try { localStorage.setItem(_STAGE_HISTORY_KEY, JSON.stringify(hist)); } catch {}
 }
-// Sensible defaults from observed Strix Halo timings on the low/med tier —
-// used as the rolling-average until enough real samples accumulate. Without
-// these, ETAs are wildly low (only one stage's history shipped → misleading
-// "1m" estimate for a job that actually takes 15-20m).
+// Conservative defaults — tripled from the original observed-warm-run
+// numbers because real cold starts on Strix Halo (model load + 8 denoise
+// steps + VAE) routinely hit the upper end. ETAs should over-estimate
+// until we accumulate enough samples to trust them.
 const _STAGE_DEFAULT_SECONDS = {
-    'Concept':       8,
-    'Base Image':   180,
-    'Video Chains': 600,
-    'Audio':         60,
-    'TTS':           20,
-    'Post Process':  60,
-    'Final Merge':   20,
+    'Concept':        24,
+    'Base Image':    540,
+    'Video Chains': 1800,
+    'Audio':         180,
+    'TTS':            60,
+    'Post Process':  180,
+    'Final Merge':    60,
 };
+// Until the rolling history has at least this many samples, lean on the
+// default — small samples shouldn't yank the displayed ETA around. Once
+// we have ≥3 real measurements the rolling average takes over.
+const _STAGE_TRUST_AT = 3;
 function _stageAvgSeconds(stage) {
     const arr = _loadStageHistory()[stage];
-    if (arr && arr.length) {
-        return arr.reduce((a, b) => a + b, 0) / arr.length;
+    const dflt = _STAGE_DEFAULT_SECONDS[stage] ?? null;
+    if (!arr || arr.length === 0) return dflt;
+    if (arr.length < _STAGE_TRUST_AT && dflt != null) {
+        // Blend: weight the default by (TRUST_AT - n) and the samples by n.
+        const sampleAvg = arr.reduce((a, b) => a + b, 0) / arr.length;
+        return ((dflt * (_STAGE_TRUST_AT - arr.length)) + (sampleAvg * arr.length)) / _STAGE_TRUST_AT;
     }
-    // Fall back to a sensible default; null only if we have no idea at all.
-    return _STAGE_DEFAULT_SECONDS[stage] ?? null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 // Update the small ≈Ns hint next to each pipeline step + the total ETA badge.
 function _renderStageEtas() {
@@ -792,20 +802,27 @@ function connect() {
 
             $('h-m').innerText = d.state.mode;
             $('h-pr').innerText = '"' + d.state.current_prompt + '"';
-            // Stage timer resets whenever state.step changes; job/total timer
-            // resets whenever state.video_index advances (new subject = new job).
+            // Stage / job start timestamps come from the BACKEND now —
+            // server-side broadcast loop tracks step + video_index transitions
+            // and stamps `state.stage_started_ts` / `state.job_started_ts`.
+            // That way the timers don't reset when the user reloads the page.
+            // We still record stage durations on transitions for the rolling
+            // ETA history.
             if (d.state.step !== _lastStage) {
                 if (_lastStage && _stageStartTs) {
                     _saveStageDuration(_lastStage, (Date.now() - _stageStartTs) / 1000);
                     _renderStageEtas();
                 }
                 _lastStage = d.state.step;
-                _stageStartTs = Date.now();
             }
             if (d.state.video_index !== _lastJobIndex) {
                 _lastJobIndex = d.state.video_index;
-                _jobStartTs = Date.now();
             }
+            // Convert backend ts (seconds since epoch) to JS Date.now() base.
+            const stageTs = d.state.stage_started_ts;
+            const jobTs = d.state.job_started_ts;
+            _stageStartTs = stageTs ? stageTs * 1000 : Date.now();
+            _jobStartTs = jobTs ? jobTs * 1000 : Date.now();
             const stageEl = $('h-c');
             if (stageEl && _stageStartTs) stageEl.innerText = '⏱ ' + _fmtElapsed(Date.now() - _stageStartTs);
             const totalEl = $('h-c-total');

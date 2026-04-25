@@ -850,9 +850,27 @@ async def broadcast():
         known = set(os.listdir(EXP_DIR))
     except Exception:
         known = set()
+    # Stage/job timers — persisted across slopfinity restarts so refreshing
+    # the dashboard doesn't reset the user's view of how long the active
+    # job has been running. Keyed on (step, video_index) transitions.
+    _stage_track = {"step": None, "since": time.time()}
+    _job_track = {"video_index": None, "since": time.time()}
     while True:
         try:
             state = cfg.get_state()
+            # Stamp stage_started_ts / job_started_ts on the fly so the
+            # frontend can derive elapsed without losing it on refresh.
+            now_ts = time.time()
+            cur_step = state.get("step")
+            cur_v = state.get("video_index")
+            if cur_step != _stage_track["step"]:
+                _stage_track["step"] = cur_step
+                _stage_track["since"] = now_ts
+            if cur_v != _job_track["video_index"]:
+                _job_track["video_index"] = cur_v
+                _job_track["since"] = now_ts
+            state["stage_started_ts"] = _stage_track["since"]
+            state["job_started_ts"] = _job_track["since"]
             stats = get_sys_stats()
             queue = cfg.get_queue()
             # Auto-rotate: cancelled items older than 48 h drop out of the
