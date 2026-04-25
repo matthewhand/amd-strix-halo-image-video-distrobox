@@ -1497,8 +1497,20 @@ async function openAssetInfo(filename) {
     if (!d) return;
     const body = document.getElementById('asset-info-body');
     const media = document.getElementById('asset-info-media');
-    if (body) body.innerHTML = '<span class="loading loading-dots loading-sm"></span>';
-    if (media) media.innerHTML = '';
+    // daisyUI skeleton placeholders read better than a single loader for
+    // a structured panel — show a media-shaped block + a column of
+    // text-line skeletons while the /asset/<file> fetch is in flight.
+    if (media) media.innerHTML = '<div class="skeleton w-full aspect-video"></div>';
+    if (body) body.innerHTML = `
+        <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-2 text-xs">
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-3/4"></div>
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-1/3"></div>
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-2/3"></div>
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-1/4"></div>
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-2/3"></div>
+            <div class="skeleton h-3 w-12"></div><div class="skeleton h-3 w-full"></div>
+        </div>
+    `;
     if (d.showModal) d.showModal();
     try {
         const r = await fetch('/asset/' + encodeURIComponent(filename));
