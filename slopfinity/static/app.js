@@ -1106,6 +1106,31 @@ function connect() {
                     // glanceable; the "View all →" button opens the drawer
                     // which shows the entire queue.
                     items.push(...visibleQueue.slice(0, 6).map(q => renderItem(q, {})));
+                    // Keep the most-recently-completed job visible at the
+                    // bottom (greyed, no pipeline strip) until the next job
+                    // completes and replaces it. Backend tracks this via
+                    // state.last_completed to survive page refresh.
+                    const last = d.state && d.state.last_completed;
+                    if (last && last.prompt) {
+                        const dur = (last.completed_ts && last.started_ts)
+                            ? _fmtElapsed((last.completed_ts - last.started_ts) * 1000)
+                            : '';
+                        const v = last.video_index || 0;
+                        const finalAsset = v ? `FINAL_${v}.mp4` : null;
+                        const baseAsset = v ? `v${v}_base.png` : null;
+                        const linkAttrs = finalAsset
+                            ? `cursor-pointer" onclick='openAssetInfo(${JSON.stringify(finalAsset)})'`
+                            : baseAsset
+                                ? `cursor-pointer" onclick='openAssetInfo(${JSON.stringify(baseAsset)})'`
+                                : `"`;
+                        items.push(`<li class="bg-base-200/50 rounded-md p-2 opacity-60 ${linkAttrs}>
+                            <div class="flex items-center gap-2 text-xs flex-wrap">
+                                <span class="badge badge-xs badge-success">✓ done</span>
+                                <span class="font-semibold truncate flex-1" title="${_htmlEscape(last.prompt)}">${_htmlEscape(last.prompt)}</span>
+                                ${dur ? `<span class="text-[9px] font-mono text-base-content/60">${dur}</span>` : ''}
+                            </div>
+                        </li>`);
+                    }
                     qList.innerHTML = items.join('');
                 }
             }

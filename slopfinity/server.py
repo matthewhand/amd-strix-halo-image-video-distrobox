@@ -857,11 +857,14 @@ async def broadcast():
     # job has been running. Keyed on (step, video_index) transitions.
     _stage_track = {"step": None, "since": time.time()}
     _job_track = {"video_index": None, "since": time.time()}
+    # `_last_completed` holds the most recently finished job so the queue
+    # panel can keep it visible (greyed) until the NEXT job completes —
+    # see UI request: "completed items stay until the next one completes".
+    _last_completed = None
+    _prev_state = None
     while True:
         try:
             state = cfg.get_state()
-            # Stamp stage_started_ts / job_started_ts on the fly so the
-            # frontend can derive elapsed without losing it on refresh.
             now_ts = time.time()
             cur_step = state.get("step")
             cur_v = state.get("video_index")
@@ -869,10 +872,20 @@ async def broadcast():
                 _stage_track["step"] = cur_step
                 _stage_track["since"] = now_ts
             if cur_v != _job_track["video_index"]:
+                # The PREVIOUS job (if any) just completed — snapshot it.
+                if _prev_state and _prev_state.get("video_index"):
+                    _last_completed = {
+                        "video_index": _prev_state.get("video_index"),
+                        "prompt": _prev_state.get("current_prompt"),
+                        "completed_ts": now_ts,
+                        "started_ts": _job_track["since"],
+                    }
                 _job_track["video_index"] = cur_v
                 _job_track["since"] = now_ts
             state["stage_started_ts"] = _stage_track["since"]
             state["job_started_ts"] = _job_track["since"]
+            state["last_completed"] = _last_completed
+            _prev_state = state
             stats = get_sys_stats()
             queue = cfg.get_queue()
             # Auto-rotate: cancelled items older than 48 h drop out of the
