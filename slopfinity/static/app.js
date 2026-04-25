@@ -661,18 +661,23 @@ function _renderDoneItem(q) {
 }
 
 // Stage order for "is this stage already done?" lookups in the pipeline strip.
-const _STAGE_ORDER = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+// Stage execution order: Audio + TTS now run BEFORE Base Image + Video.
+// The audio-driven-chains feature uses the music/voice durations to size
+// the video chain count so the final video matches the audio length —
+// that requires audio to be measured before the video chain loop starts.
+// Music/voice don't depend on the image; only the prompt (Concept).
+const _STAGE_ORDER = ['Concept', 'Audio', 'TTS', 'Base Image', 'Video Chains', 'Post Process', 'Final Merge'];
 // [canonicalStage, shortAcronym, displayLabel, activeVerb, tone].
 // Module-scope so both renderPipelineStrip (per-item completed history) and
 // _buildActiveJobProgressBar (top-of-card active bar) read the same table.
 const _STAGES_META = [
     ['Concept',      'T', 'Text',  'Texting',    'accent'],
-    ['Base Image',   'I', 'Image', 'Imaging',    'info'],
-    ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
     ['Audio',        'M', 'Music', 'Composing',  'secondary'],
     ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
+    ['Base Image',   'I', 'Image', 'Imaging',    'info'],
+    ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
     ['Post Process', 'U', 'Upscale',  'Upscaling',  'warning'],
-    ['Final Merge',  'F', 'Final', 'Merging',    'accent'],
+    ['Final Merge',  'F', 'Merge', 'Merging',    'accent'],
 ];
 function _stageDoneBefore(curStage, candidate) {
     const ci = _STAGE_ORDER.indexOf(curStage);
