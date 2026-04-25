@@ -2062,7 +2062,7 @@ function connect() {
                             const cached = _assetsByVidx.get(v) || {};
                             const bridges = cached.bridges || {};
                             const subRows = [];
-                            for (let i = 1; i <= c; i++) {
+                            for (let i = 1; i < c; i++) { // bridges live BETWEEN chains, not after the final chain
                                 const bridgeName = bridges[i] || `v${v}_f${i}.png`;
                                 const href = `/files/${encodeURIComponent(bridgeName)}`;
                                 subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
@@ -2087,7 +2087,7 @@ function connect() {
                     const cached = _assetsByVidx.get(v) || {};
                     const bridges = cached.bridges || {};
                     const subRows = [];
-                    for (let i = 1; i <= c; i++) {
+                    for (let i = 1; i < c; i++) { // bridges live BETWEEN chains, not after the final chain
                         const bridgeName = bridges[i] || `v${v}_f${i}.png`;
                         const href = `/files/${encodeURIComponent(bridgeName)}`;
                         subRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
