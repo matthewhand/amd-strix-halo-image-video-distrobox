@@ -528,11 +528,11 @@ function _renderDoneItem(q) {
             // after page load before the WS / SSR ingestion populates).
             const cached = _assetsByVidx.get(v) || {};
             if (q.image_only) {
-                assets = [cached.base || `v${v}_base.png`];
+                assets = [cached.base || `slop_${v}_base.png`];
             } else {
                 assets = [
                     cached.final || `FINAL_${v}.mp4`,
-                    cached.base || `v${v}_base.png`,
+                    cached.base || `slop_${v}_base.png`,
                 ];
             }
             // Trigger an async resolve so the next WS re-render (~1Hz)
@@ -1668,15 +1668,16 @@ const _STAGE_ASSET = (stage, v_idx, c_idx) => {
     if (stage === 'Base Image') {
         if (cached && cached.base) return cached.base;
         // Fire-and-forget resolve so the next re-render picks up the real
-        // name. Returning the synthesized fallback now keeps the link
-        // present (and matching the legacy behaviour) on the first paint.
+        // name. Returning the synthesized fallback uses the current
+        // "slop_<idx>_" prefix; the resolver tries both that and the
+        // legacy "v<idx>_" form before settling on a real on-disk match.
         _resolveVidxAssets(v_idx);
-        return `v${v_idx}_base.png`;
+        return `slop_${v_idx}_base.png`;
     }
     if (stage === 'Video Chains' && c_idx > 0) {
-        // Per-chain assets are still numerically named by the runner; no
-        // slug variant on the c{M} segments. Keep the synth.
-        return `v${v_idx}_c${c_idx}.mp4`;
+        // Per-chain assets are numerically suffixed (_c{M}.mp4). Use the
+        // current prefix; resolver picks the real on-disk filename.
+        return `slop_${v_idx}_c${c_idx}.mp4`;
     }
     if (stage === 'Final Merge') {
         if (cached && cached.final) return cached.final;
@@ -2426,7 +2427,7 @@ function connect() {
                 // Best-effort slug recovery from the running prompt, so the
                 // summary reads "v3_<slug> · 4 parts" instead of just "v3".
                 const _slug = cached.slug || '';
-                const stem = _slug ? `v${v}_${_slug}` : `v${v}`;
+                const stem = _slug ? `slop_${v}_${_slug}` : `slop_${v}`;
                 const c1Name = `${stem}_c1.mp4`;
                 const c1Href = `/files/${encodeURIComponent(c1Name)}`;
                 const thumbCls = "rounded bg-black object-cover flex-none";

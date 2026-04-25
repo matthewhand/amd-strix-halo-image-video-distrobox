@@ -305,10 +305,16 @@ def generate_prompt(model_id, v_idx):
             with urllib.request.urlopen(req, timeout=60) as response:
                 content = json.loads(response.read())["choices"][0]["message"]["content"].strip()
                 return content, config.get("base_model", "qwen")
-        except: pass
+        except Exception as e:
+            print(f"[FLEET] infinity LLM failed: {e!r} — using theme as raw prompt", flush=True)
+            # KEEP the theme so the slug carries semantic info instead of
+            # collapsing to a generic VOID-style template.
+            return theme, config.get("base_model", "qwen")
 
-    # No-LLM fallback. The {style} slot is rotated through a small list so
-    # repeated outages don't produce identical imagery.
+    # No-LLM fallback only used when there's no theme to retain (e.g. a
+    # raw queue item with LLM unavailable AND no infinity_themes seed).
+    # The {style} slot is rotated through a small list so repeated outages
+    # don't produce identical imagery.
     styles = ["clay animation", "classic sketchy cartoon", "3d digital cel shaded"]
     style = random.choice(styles)
     void_tmpl = cfg.get_void_fallback_template(config)
@@ -681,7 +687,11 @@ def main():
         iter_failed = False
         try:
             _slug = slugify_prompt(p)
-            _stem = f"v{v_idx}_{_slug}"
+            # Filename stem: "slop_<idx>_<slug>". The slop_ prefix replaces
+            # the older "v<idx>_" form so output names read coherently with
+            # the dashboard's "Slop" branding while still carrying the
+            # iteration index for chronological grouping + uniqueness.
+            _stem = f"slop_{v_idx}_{_slug}"
             in_img = f"comfy-input/{_stem}_base.png"
             update_state(mode="Rendering", step="Base Image", video=v_idx, total=1000, prompt=p)
             tier = pick_tier(v_idx)
