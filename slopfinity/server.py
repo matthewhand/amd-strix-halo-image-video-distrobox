@@ -534,13 +534,16 @@ async def inject(
 ):
     q = cfg.get_queue()
     if terminate:
-        # Mark every pending item cancelled (so the user can see what got
-        # killed) and write a flag the fleet runner watches for.
+        # Mark every pending and in-flight item cancelled (so the user
+        # can see what got killed) and write a flag the fleet runner
+        # watches for. The `working` sentinel is included so the active
+        # item's infinity loop also gets cleared.
         now_ts = time.time()
         for item in q:
-            if item.get("status") in (None, "pending"):
+            if item.get("status") in (None, "pending", "working"):
                 item["status"] = "cancelled"
                 item["cancelled_ts"] = now_ts
+                item["infinity"] = False
         try:
             with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
                 f.write(str(now_ts))
@@ -563,6 +566,7 @@ async def inject(
         except Exception:
             task["stage_prompts_raw"] = stage_prompts
     pending = [x for x in q if x.get("status") in (None, "pending")]
+    working = [x for x in q if x.get("status") == "working"]
     done = [x for x in q if x.get("status") == "done"]
     cancelled = [x for x in q if x.get("status") == "cancelled"]
     # `now` and `next` both front-insert so the task runs immediately after
@@ -573,23 +577,29 @@ async def inject(
         pending.insert(0, task)
     else:
         pending.append(task)
-    # Order on disk: pending (active work) → done (history) → cancelled.
-    # Newly-injected work always sits BEFORE any done records so the fleet's
-    # pop-from-front consumes pending items first.
-    cfg.save_queue(pending + done + cancelled)
+    # Order on disk: working (active job sentinel) → pending (queued work) →
+    # done (history) → cancelled. Newly-injected work always sits BEFORE
+    # done records so the fleet's pop-from-front consumes pending items first.
+    cfg.save_queue(working + pending + done + cancelled)
     return {"status": "ok"}
 
 
 @app.post("/cancel-all")
 async def cancel_all():
-    """Mark every pending queue item as cancelled and signal the fleet runner."""
+    """Mark every pending or in-flight queue item as cancelled and
+    signal the fleet runner.
+
+    Cancelling the in-flight (`working`) sentinel also disables its
+    requeue — the runner re-reads the working record at requeue time.
+    """
     q = cfg.get_queue()
     now_ts = time.time()
     n = 0
     for item in q:
-        if item.get("status") in (None, "pending"):
+        if item.get("status") in (None, "pending", "working"):
             item["status"] = "cancelled"
             item["cancelled_ts"] = now_ts
+            item["infinity"] = False
             n += 1
     try:
         with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
@@ -612,12 +622,16 @@ async def queue_cancel(data: dict = Body(...)):
     found = False
     is_first_pending = True
     for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+        # Match pending OR the in-flight `working` sentinel — cancelling
+        # a working item flips its requeue off via the same
+        # status=cancelled marker the fleet runner checks at requeue time.
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
+            was_working = item.get("status") == "working"
             item["status"] = "cancelled"
             item["cancelled_ts"] = time.time()
             # Strip infinity so it doesn't re-loop after cancellation.
             item["infinity"] = False
-            if is_first_pending:
+            if is_first_pending or was_working:
                 try:
                     with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
                         f.write(str(time.time()))
@@ -635,7 +649,12 @@ async def queue_cancel(data: dict = Body(...)):
 
 @app.post("/queue/edit")
 async def queue_edit(data: dict = Body(...)):
-    """Replace the prompt text of a pending/active queue item by ts."""
+    """Replace the prompt text of a pending or in-flight queue item by ts.
+
+    Editing a `working` item updates the seed_prompt the fleet runner
+    will use for the NEXT cycle (the in-flight cycle uses the prompt
+    captured at pop-time and isn't interrupted).
+    """
     target_ts = data.get("ts")
     new_prompt = (data.get("prompt") or "").strip()
     if target_ts is None:
@@ -645,8 +664,9 @@ async def queue_edit(data: dict = Body(...)):
     q = cfg.get_queue()
     found = False
     for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
             item["prompt"] = new_prompt
+            item["seed_prompt"] = new_prompt
             found = True
             break
     if not found:
@@ -657,14 +677,21 @@ async def queue_edit(data: dict = Body(...)):
 
 @app.post("/queue/toggle-infinity")
 async def queue_toggle_infinity(data: dict = Body(...)):
-    """Flip the `infinity` flag on a queued (or active) item by ts."""
+    """Flip the `infinity` flag on a queued or in-flight item by ts.
+
+    Also matches `working` rows — the fleet runner stamps a working
+    sentinel for the in-flight item, and toggling that sentinel lets the
+    user disable the requeue loop mid-flight (the runner re-reads the
+    record at requeue time and skips re-appending if `infinity` is now
+    False).
+    """
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
     q = cfg.get_queue()
     new_val = None
     for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
             item["infinity"] = not item.get("infinity", False)
             new_val = item["infinity"]
             break
@@ -676,15 +703,21 @@ async def queue_toggle_infinity(data: dict = Body(...)):
 
 @app.post("/queue/toggle-polymorphic")
 async def queue_toggle_polymorphic(data: dict = Body(...)):
-    """Flip the `chaos` (polymorphic) flag on a queued item by ts."""
+    """Flip the `chaos` (polymorphic) flag on a queued or in-flight item by ts.
+
+    Mirrors the new value into both `chaos` and `polymorphic` so the
+    fleet runner — which reads either field — picks up the change
+    consistently at requeue time.
+    """
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
     q = cfg.get_queue()
     new_val = None
     for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending"):
+        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
             item["chaos"] = not item.get("chaos", False)
+            item["polymorphic"] = item["chaos"]
             new_val = item["chaos"]
             break
     if new_val is None:
