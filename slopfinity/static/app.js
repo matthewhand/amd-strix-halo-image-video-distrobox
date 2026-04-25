@@ -990,13 +990,15 @@ function connect() {
                 return `
                     ${completedLines}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
-                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
-                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
                         <span class="loading loading-spinner loading-xs text-primary"></span>
                         <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
-                        <span class="text-[9px] text-base-content/50">Total</span>
-                        <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>${jobNow2}</span>
-                        ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
+                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
+                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
+                    </div>
+                    <div class="flex items-center justify-end gap-1 mt-1 text-[9px]">
+                        <span class="text-base-content/50">Total</span>
+                        <span class="badge badge-xs badge-ghost font-mono" data-q-job-elapsed>${jobNow2}</span>
+                        ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
                     </div>
                 `;
             };
