@@ -353,10 +353,108 @@ function _renderDoneItem(q) {
 
 // Stage order for "is this stage already done?" lookups in the pipeline strip.
 const _STAGE_ORDER = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+// [canonicalStage, shortAcronym, displayLabel, activeVerb, tone].
+// Module-scope so both renderPipelineStrip (per-item completed history) and
+// _buildActiveJobProgressBar (top-of-card active bar) read the same table.
+const _STAGES_META = [
+    ['Concept',      'T', 'Text',  'Texting',    'accent'],
+    ['Base Image',   'I', 'Image', 'Imaging',    'info'],
+    ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
+    ['Audio',        'M', 'Music', 'Composing',  'secondary'],
+    ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
+    ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
+    ['Final Merge',  'F', 'Final', 'Merging',    'accent'],
+];
 function _stageDoneBefore(curStage, candidate) {
     const ci = _STAGE_ORDER.indexOf(curStage);
     const xi = _STAGE_ORDER.indexOf(candidate);
     return ci > -1 && xi > -1 && xi < ci;
+}
+
+// Build the top-of-card segmented progress bar markup. Pulls all timing data
+// from the same _lastTick / _stageStartTs / _jobActuals globals as the
+// per-item renderPipelineStrip did before — but emits ONE bar at the
+// queue-card level, not one per active item. Header above the bar shows just
+// the activity spinner + verb. Each segment carries its own inline
+// elapsed/ETA timing under the label so users read "actual / planned" per
+// stage at a glance. Total elapsed / ETA sits in the footer row below.
+function _buildActiveJobProgressBar(d) {
+    const state = (d && d.state) || {};
+    const curStep = state.step || '';
+    if (!curStep) return '';
+    const v = state.video_index || 1;
+    const curIdx = _STAGE_ORDER.indexOf(curStep);
+    const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
+    const totalSec = stageDurations.reduce((a, b) => a + b, 0);
+    const segWidths = stageDurations.map(dur => (dur / totalSec) * 100);
+    const stageElapsedSec = _stageStartTs ? (Date.now() - _stageStartTs) / 1000 : 0;
+    const curStageAvg = stageDurations[curIdx] || 30;
+    const stageProgressFraction = curIdx < 0 || !_stageStartTs
+        ? 0
+        : Math.min(1, stageElapsedSec / curStageAvg);
+    const isOverrun = curIdx >= 0 && _stageStartTs && stageElapsedSec > curStageAvg;
+    const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
+    const jobElapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
+    const totalElapsedHTML = _fmtElapsedHtml(jobElapsedMs);
+    const totalEtaHTML = _fmtElapsedHtml(totalSec * 1000);
+    const actuals = (_jobActuals[v] || {});
+    const segments = _STAGE_ORDER.map((s, i) => {
+        const isPast = curIdx >= 0 && i < curIdx;
+        const isCurrent = i === curIdx;
+        const cls = isPast ? 'pipeline-seg-past'
+                  : isCurrent ? 'pipeline-seg-current'
+                              : 'pipeline-seg-future';
+        const overrunCls = (isCurrent && isOverrun) ? ' pipeline-seg-overrun' : '';
+        const localFill = isPast ? 100 : (isCurrent ? stageProgressFraction * 100 : 0);
+        const meta = _STAGES_META.find(x => x[0] === s) || [,,s,,'primary'];
+        const tone = meta[4];
+        const shortLabel = meta[2];
+        // Inline per-segment timing under the label. Past stages render their
+        // recorded actual; current stage renders live elapsed (refreshed by
+        // the 1 Hz ticker against [data-seg-elapsed]); future stages render
+        // an em-dash. Each is paired with the model's ETA so users read
+        // "actual / planned" for every step at a glance.
+        let elapsedHtml;
+        let etaSec;
+        if (isPast) {
+            const a = actuals[s];
+            elapsedHtml = a ? _fmtElapsedHtml(a.duration_s * 1000) : '—';
+            etaSec = (a && a.eta_s) || stageDurations[i];
+        } else if (isCurrent) {
+            elapsedHtml = _fmtElapsedHtml(stageElapsedSec * 1000);
+            etaSec = stageDurations[i];
+        } else {
+            elapsedHtml = '—';
+            etaSec = stageDurations[i];
+        }
+        const etaHtml = etaSec ? _fmtElapsedHtml(etaSec * 1000) : '—';
+        return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: ${segWidths[i]} 1 0;" data-stage="${s}" data-tone="${tone}">
+            <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
+            <span class="pipeline-seg-label">${shortLabel}</span>
+            <span class="pipeline-seg-timing"><span data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA ${etaHtml}</span></span>
+        </div>`;
+    }).join('');
+    return `
+        <div class="pipeline-bar-wrap"
+             data-pipeline-bar
+             data-cur-stage="${curStep || ''}">
+            <div class="flex items-center justify-between gap-2 px-1 mb-1 text-[10px]">
+                <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
+                    <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
+                </span>
+            </div>
+            <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
+                <div class="flex" data-pipeline-segments>${segments}</div>
+            </div>
+            <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
+                <span class="opacity-70">Total</span>
+                <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
+                <span class="opacity-50">/</span>
+                <span class="opacity-70">ETA</span>
+                <span data-pipeline-total-eta>${totalEtaHTML}</span>
+            </div>
+        </div>
+    `;
 }
 
 async function editItem(ts, currentPrompt) {
@@ -650,47 +748,44 @@ async function requeueItem(ts) {
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
 setInterval(() => {
     if (!_isRendering) return;
-    // Update each active job's segmented pipeline bar in place. We avoid
-    // re-templating the whole queue item every second — instead we mutate
-    // .pipeline-seg-fill width on the current segment and refresh the
-    // overlaid activity + ETA text. This keeps the bar's CSS width
-    // transition smooth (no innerHTML thrash that would reset the
-    // animation).
+    // Update the SINGLE top-of-card segmented pipeline bar in place. We avoid
+    // re-templating the bar every second — instead we mutate the current
+    // .pipeline-seg-fill width, the per-segment inline elapsed timer
+    // ([data-seg-elapsed] inside .pipeline-seg-current), the activity text,
+    // and the total elapsed/ETA footer. The bar's CSS width transition stays
+    // smooth because we never thrash innerHTML on the segments.
     const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
     const totalSec = stageDurations.reduce((a, b) => a + b, 0);
-    document.querySelectorAll('[data-q-status="active"] [data-pipeline-bar]').forEach(bar => {
-        const curStage = bar.dataset.curStage || '';
-        const curIdx = _STAGE_ORDER.indexOf(curStage);
-        if (curIdx < 0 || !_stageStartTs) return;
-        const stageElapsed = (Date.now() - _stageStartTs) / 1000;
-        const stageAvg = stageDurations[curIdx] || 30;
-        const fraction = Math.min(1, stageElapsed / stageAvg);
-        const isOverrun = stageElapsed > stageAvg;
-        // Update current segment's fill.
-        const curSeg = bar.querySelector('.pipeline-seg-current');
-        if (curSeg) {
-            const fill = curSeg.querySelector('.pipeline-seg-fill');
-            if (fill) fill.style.width = (fraction * 100) + '%';
-            curSeg.classList.toggle('pipeline-seg-overrun', isOverrun);
-        }
-        // Activity text — re-derive in case stage label changed (rare, but
-        // cheap).
-        const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
-        const actEl = bar.querySelector('[data-pipeline-activity-text]');
-        if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
-        // Per-step elapsed / ETA (above the bar) and total elapsed / ETA
-        // (below the bar). Step ETA = current stage's historical avg;
-        // total ETA = sum of all stage avgs (totalSec already computed
-        // outside the loop).
-        const stepEl = bar.querySelector('[data-pipeline-step-elapsed]');
-        const stepEt = bar.querySelector('[data-pipeline-step-eta]');
-        const totEl  = bar.querySelector('[data-pipeline-total-elapsed]');
-        const totEt  = bar.querySelector('[data-pipeline-total-eta]');
-        if (stepEl && _stageStartTs) stepEl.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
-        if (stepEt) stepEt.innerHTML = _fmtElapsedHtml(stageAvg * 1000);
-        if (totEl && _jobStartTs) totEl.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
-        if (totEt && totalSec > 0) totEt.innerHTML = _fmtElapsedHtml(totalSec * 1000);
-    });
+    const host = document.getElementById('active-job-progress-bar');
+    if (!host) return;
+    const bar = host.querySelector('[data-pipeline-bar]');
+    if (!bar) return;
+    const curStage = bar.dataset.curStage || '';
+    const curIdx = _STAGE_ORDER.indexOf(curStage);
+    if (curIdx < 0 || !_stageStartTs) return;
+    const stageElapsed = (Date.now() - _stageStartTs) / 1000;
+    const stageAvg = stageDurations[curIdx] || 30;
+    const fraction = Math.min(1, stageElapsed / stageAvg);
+    const isOverrun = stageElapsed > stageAvg;
+    // Update current segment's fill + inline elapsed timer.
+    const curSeg = bar.querySelector('.pipeline-seg-current');
+    if (curSeg) {
+        const fill = curSeg.querySelector('.pipeline-seg-fill');
+        if (fill) fill.style.width = (fraction * 100) + '%';
+        curSeg.classList.toggle('pipeline-seg-overrun', isOverrun);
+        const segElapsedEl = curSeg.querySelector('[data-seg-elapsed]');
+        if (segElapsedEl) segElapsedEl.innerHTML = _fmtElapsedHtml(stageElapsed * 1000);
+    }
+    // Activity text — re-derive in case stage label changed (rare, but cheap).
+    const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
+    const actEl = bar.querySelector('[data-pipeline-activity-text]');
+    if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
+    // Total elapsed / ETA (below the bar). Per-step elapsed/ETA was lifted
+    // out of the header row — see _buildActiveJobProgressBar().
+    const totEl = bar.querySelector('[data-pipeline-total-elapsed]');
+    const totEt = bar.querySelector('[data-pipeline-total-eta]');
+    if (totEl && _jobStartTs) totEl.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
+    if (totEt && totalSec > 0) totEt.innerHTML = _fmtElapsedHtml(totalSec * 1000);
 }, 1000);
 
 const $ = (id) => document.getElementById(id);
@@ -1883,51 +1978,21 @@ function connect() {
             const qList = $('q-list');
             const cfg = d.config || {};
             const llmModelId = (cfg.llm && cfg.llm.model_id) || '';
-            // [canonicalStage, shortAcronym, displayLabel, activeVerb, tone].
-            // Tone matches the model badge color for the worker that runs
-            // the stage, so the pipeline strip and the Selected-Models row
-            // share a visual language: Image=info(qwen), Video=success(ltx),
-            // Music=secondary(heartmula), Voice=warning(qwen-tts), Concept=
-            // accent(LLM), Final=accent(FINAL accent).
-            const STAGES = [
-                ['Concept',      'T', 'Text',  'Texting',    'accent'],
-                ['Base Image',   'I', 'Image', 'Imaging',    'info'],
-                ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
-                ['Audio',        'M', 'Music', 'Composing',  'secondary'],
-                ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
-                ['Post Process', 'X', 'Post',  'Polishing',  'warning'],
-                ['Final Merge',  'F', 'Final', 'Merging',    'accent'],
-            ];
+            // Tone+label rows live at module scope as _STAGES_META so the
+            // top-of-card bar (_buildActiveJobProgressBar) can read the same
+            // table. See the const definition near _STAGE_ORDER.
+            const STAGES = _STAGES_META;
             const renderPipelineStrip = (q, opts) => {
                 const isActive = !!(opts && opts.running);
                 const curStep = isActive ? (opts.step || '') : null;
                 const v = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.video_index) || 1) : 0;
                 const c = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) : 0;
                 if (!isActive) return '';
-                // Single segmented bar: one segment per pipeline stage, weighted
-                // by historical average duration when known (else equal-weight
-                // 30s placeholder so the bar still renders on a fresh fleet).
-                // Active stage shows partial fill via stageProgressFraction;
-                // completed stages stay solid; future stages stay dim. Activity
-                // text + remaining-time are overlaid on top so the whole strip
-                // is one element instead of three (was: thin bar + activity row
-                // + totals row).
-                const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
-                const curIdx = _STAGE_ORDER.indexOf(curStep);
-                const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
-                const totalSec = stageDurations.reduce((a, b) => a + b, 0);
-                const segWidths = stageDurations.map(d => (d / totalSec) * 100);
-                const stageElapsedSec = _stageStartTs ? (Date.now() - _stageStartTs) / 1000 : 0;
-                const curStageAvg = stageDurations[curIdx] || 30;
-                const stageProgressFraction = curIdx < 0 || !_stageStartTs
-                    ? 0
-                    : Math.min(1, stageElapsedSec / curStageAvg);
-                const isOverrun = curIdx >= 0 && _stageStartTs && stageElapsedSec > curStageAvg;
-                // Overall fraction: completed durations + partial of current.
-                const completedDur = curIdx < 0 ? 0 : stageDurations.slice(0, curIdx).reduce((a, b) => a + b, 0);
-                const partialDur = curIdx < 0 ? 0 : stageDurations[curIdx] * stageProgressFraction;
-                const overallSec = completedDur + partialDur;
-                const remainingSec = Math.max(0, totalSec - overallSec);
+                // Per-item strip now ONLY emits the completed-stages history
+                // ("Output" block) + active-stage bridge thumbnails. The
+                // segmented progress bar was hoisted to the top of the queue
+                // card — see _buildActiveJobProgressBar() — so the user reads
+                // ONE bar regardless of which queue row is expanded.
                 // Each completed stage of THIS job becomes a single line:
                 //   [asset-link badge]  ⏱ actual / ETA was-eta
                 // Stage's clickable badge replaces the spinner+text it had
@@ -1950,12 +2015,12 @@ function connect() {
                         }
                         let assetBadge;
                         if (s === 'Concept') {
-                            // Concept stage: clicking opens the multi-stage
-                            // prompts editor focused on the first editable
-                            // stage (Base Image). The LLM-rewritten prompt
-                            // peek modal (showPromptPeek) is still defined
-                            // and used for inactive items in other contexts.
-                            assetBadge = `<button type="button" class="badge badge-xs badge-outline cursor-pointer" title="Edit per-stage prompts (live pickup before stage starts)" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">prompts →</button>`;
+                            // Concept stage: the Text tick badge itself is now
+                            // the prompts-editor shortcut (see stageLabelHtml
+                            // below). Drop the separate `prompts →` button so
+                            // there's a single click target instead of two
+                            // adjacent ones doing the same thing.
+                            assetBadge = '';
                         } else {
                             const asset = _STAGE_ASSET(s, v, c);
                             assetBadge = asset
@@ -1971,13 +2036,16 @@ function connect() {
                         // "✓ Image                        v3_base.png  3m22s / ETA 9m"
                         const animCls = isFresh ? ' stage-just-completed' : '';
                         // The stage label itself doubles as a shortcut to the
-                        // prompts editor focused on that stage — only for
-                        // stages that have an editable prompt key. Other
-                        // stages render a plain span (no extra affordance).
+                        // prompts editor focused on that stage. For Concept,
+                        // it opens the editor at Base Image (Concept itself
+                        // isn't editable but Text is the natural entry point
+                        // — replaces the standalone `prompts →` button).
                         const stageRoleEntry = _PROMPTS_STAGE_MAP.find(([st]) => st === s);
                         const stageLabelHtml = stageRoleEntry
                             ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Edit prompts (this stage already ran — opens locked)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${label}</button>`
-                            : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`;
+                            : (s === 'Concept'
+                                ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="Click to edit prompts" aria-label="Click to edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${label}</button>`
+                                : `<span class="badge badge-xs badge-${tone} opacity-70">✓ ${label}</span>`);
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             ${stageLabelHtml}
                             <span class="ml-auto flex items-center gap-2">${assetBadge}${timing}</span>
@@ -2064,45 +2132,13 @@ function connect() {
                         <span class="pipeline-seg-label">${shortLabel}</span>
                     </div>`;
                 }).join('');
+                // No more per-item segmented bar — see _buildActiveJobProgressBar()
+                // which renders ONE bar at the top of the queue card. This
+                // function now returns the completed-stages history block only.
                 const hasOutput = !!(completedLines || activeBridgesHtml);
-                // Per-step + total timers. Header row above the bar shows
-                // the current stage's elapsed and avg/expected (was a single
-                // countdown in PR #98 — restoring the elapsed/ETA pairing
-                // requested by the user). Footer row below the bar shows
-                // total elapsed since job start and the sum-of-stage-avgs ETA.
-                const stageNowHTML = _fmtElapsedHtml(stageElapsedSec * 1000);
-                const stageEtaHTML = _fmtElapsedHtml(curStageAvg * 1000);
-                const jobElapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
-                const totalElapsedHTML = _fmtElapsedHtml(jobElapsedMs);
-                const totalEtaHTML = _fmtElapsedHtml(totalSec * 1000);
-                return `
-                    ${hasOutput ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}` : ''}
-                    <div class="pipeline-bar-wrap mt-2"
-                         data-pipeline-bar
-                         data-cur-stage="${curStep || ''}">
-                        <div class="flex items-center justify-between gap-2 px-1 mb-1 text-[10px]">
-                            <span class="pipeline-activity flex items-center gap-1 truncate flex-1" data-pipeline-activity>
-                                <span class="loading loading-spinner loading-xs"></span><span data-pipeline-activity-text>${activityText}</span>
-                            </span>
-                            <span class="pipeline-eta font-mono flex-none flex items-center gap-1">
-                                <span data-pipeline-step-elapsed>${stageNowHTML}</span>
-                                <span class="opacity-50">/</span>
-                                <span class="opacity-70">ETA</span>
-                                <span data-pipeline-step-eta>${stageEtaHTML}</span>
-                            </span>
-                        </div>
-                        <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
-                            <div class="flex h-7" data-pipeline-segments>${segments}</div>
-                        </div>
-                        <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
-                            <span class="opacity-70">Total</span>
-                            <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
-                            <span class="opacity-50">/</span>
-                            <span class="opacity-70">ETA</span>
-                            <span data-pipeline-total-eta>${totalEtaHTML}</span>
-                        </div>
-                    </div>
-                `;
+                return hasOutput
+                    ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}`
+                    : '';
             };
             const renderItem = (q, opts) => {
                 const snap = (q && q.config_snapshot) || cfg;
@@ -2207,6 +2243,19 @@ function connect() {
                         items.push(_renderDoneItem(q));
                     });
                     qList.innerHTML = items.join('');
+                }
+            }
+            // Top-of-card segmented progress bar — single instance, hosted at
+            // #active-job-progress-bar. Hidden when nothing's running so the
+            // card collapses cleanly.
+            const barHost = document.getElementById('active-job-progress-bar');
+            if (barHost) {
+                if (isRunning) {
+                    barHost.innerHTML = _buildActiveJobProgressBar(d);
+                    barHost.style.display = '';
+                } else {
+                    barHost.innerHTML = '';
+                    barHost.style.display = 'none';
                 }
             }
             // Drawer is now self-managed via /queue/paginated. If it's open
