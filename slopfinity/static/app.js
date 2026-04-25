@@ -152,6 +152,27 @@ async function toggleItemInfinity(ts) {
     } catch (e) { console.warn('toggle-infinity failed', e); }
 }
 
+// Quick read-only popup for the LLM-rewritten prompt of the active job.
+// Lighter than openAssetInfo (which is for files); this is just text.
+function showPromptPeek(text) {
+    const existing = document.getElementById('prompt-peek-modal');
+    if (existing) existing.remove();
+    const dlg = document.createElement('dialog');
+    dlg.id = 'prompt-peek-modal';
+    dlg.className = 'modal';
+    dlg.innerHTML = `<div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
+        <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-2">LLM-rewritten prompt</h3>
+        <div class="text-xs whitespace-pre-wrap font-mono bg-base-300/50 p-3 rounded">${_htmlEscape(text || '(empty)')}</div>
+        <div class="modal-action">
+            <button class="btn btn-xs" onclick="navigator.clipboard.writeText(${JSON.stringify(text || '')}).catch(()=>{})">Copy</button>
+            <form method="dialog"><button class="btn btn-xs btn-primary">Close</button></form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>`;
+    document.body.appendChild(dlg);
+    dlg.showModal();
+}
+
 async function cancelItem(ts) {
     if (!ts) return;
     try {
@@ -920,6 +941,13 @@ function connect() {
                 const completedAssets = STAGES
                     .filter(([s]) => _stageDoneBefore(curStep, s))
                     .map(([s,,label,,tone]) => {
+                        // Concept's "asset" is the LLM-rewritten prompt — open
+                        // a peek modal showing it instead of the file modal.
+                        if (s === 'Concept') {
+                            const promptText = (_lastTick && _lastTick.state && _lastTick.state.current_prompt) || '(no prompt captured)';
+                            const safe = promptText.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                            return `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="LLM-rewritten prompt" onclick='showPromptPeek(${JSON.stringify(promptText)})'>${label} →</button>`;
+                        }
                         const asset = _STAGE_ASSET(s, v, c);
                         if (!asset) return `<span class="badge badge-xs badge-${tone} opacity-70" title="${s}">${label} ✓</span>`;
                         return `<button type="button" class="badge badge-xs badge-${tone} cursor-pointer" title="${s} → ${asset}" onclick='openAssetInfo(${JSON.stringify(asset)})'>${label} →</button>`;
@@ -931,6 +959,7 @@ function connect() {
                 const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
                 const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsed(totalEtaSec2 * 1000) : '';
                 return `
+                    ${completedAssets ? `<div class="flex flex-wrap items-center gap-1 mt-1 text-[9px]"><span class="text-base-content/50 uppercase tracking-widest mr-1">outputs</span>${completedAssets}</div>` : ''}
                     <div class="flex items-center gap-2 text-[10px] mt-1">
                         <span class="loading loading-spinner loading-xs text-primary"></span>
                         <span class="italic text-base-content/70">${activityText}</span>
@@ -939,7 +968,6 @@ function connect() {
                             ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
                         </span>
                     </div>
-                    ${completedAssets ? `<div class="flex flex-wrap items-center gap-1 mt-1 text-[9px]"><span class="text-base-content/50 uppercase tracking-widest mr-1">outputs</span>${completedAssets}</div>` : ''}
                     <div class="flex justify-end gap-1 mt-1">
                         <span class="text-[9px] text-base-content/50 mr-1">Total</span>
                         <span class="badge badge-xs badge-ghost font-mono text-[9px]" data-q-job-elapsed>${jobNow2}</span>
