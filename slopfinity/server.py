@@ -161,22 +161,26 @@ async def assets(offset: int = 0, limit: int = 48):
 async def assets_by_vidx(v_idx: int):
     """Resolve actual on-disk filenames for a given video index.
 
-    The fleet runner now uses slug-based filenames
-    (e.g. ``v1_sterile_chrome_corridors_algorithms_shep_base.png``)
+    The fleet runner uses slug-based filenames
+    (e.g. ``slop_1_sterile_chrome_corridors_algorithms_shep_base.png``)
     rather than the legacy ``v{N}_base.png`` shape that the dashboard
     used to synthesize. This endpoint maps a v_idx to whatever real
     filenames currently exist on disk so the client can build correct
     `/files/<name>` links instead of guessing — the previous synthesis
     would 404 against fresh slugged outputs, or worse, match a stale
     file from a previous run that happens to still be on disk under
-    the old un-slugged name.
+    the old un-slugged name. Both the legacy ``v<idx>_`` and current
+    ``slop_<idx>_`` prefixes are matched so historic outputs keep
+    showing in the slop feed after the rename landed.
     """
     try:
         files = os.listdir(EXP_DIR)
     except OSError:
         files = []
     result: dict = {}
-    prefix = f"v{v_idx}_"
+    legacy_prefix = f"v{v_idx}_"
+    current_prefix = f"slop_{v_idx}_"
+    prefix = current_prefix  # primary; legacy_prefix tested as fallback below
     # Track newest mtime per role so we prefer the most recent file when
     # the directory contains multiple matches (e.g. several video chains
     # for the same v_idx — keep the latest one for the `video` slot).
@@ -191,14 +195,14 @@ async def assets_by_vidx(v_idx: int):
             best_mtime[role] = mt
             result[role] = name
 
-    # ffmpeg bridge frames: v{N}_f{M}.png (and v{N}_<slug>_f{M}.png).
-    # Surfaced as a "bridges" {idx: filename} sub-map so the dashboard
-    # can render the per-chain last-frame extracts inline. We match the
-    # same slug-tolerant shape used by _ingestAssetFilename on the JS side.
-    bridge_re = re.compile(rf"^v{v_idx}(?:_.+)?_f(\d+)\.png$")
+    # ffmpeg bridge frames: slop_{N}_<slug>_f{M}.png (or legacy
+    # v{N}_<slug>_f{M}.png). Surfaced as a "bridges" {idx: filename}
+    # sub-map so the dashboard can render the per-chain last-frame
+    # extracts inline. The regex matches both prefixes for back-compat.
+    bridge_re = re.compile(rf"^(?:slop_{v_idx}|v{v_idx})(?:_.+)?_f(\d+)\.png$")
 
     for f in files:
-        if f.startswith(prefix):
+        if f.startswith(prefix) or f.startswith(legacy_prefix):
             mb = bridge_re.match(f)
             if mb:
                 idx = int(mb.group(1))

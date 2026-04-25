@@ -169,8 +169,10 @@ def get_output_counts(base_dir=None):
                 "total_mp4": 0, "total_png": 0, "latest_final": None}
     p = Path(base_dir)
     finals = sorted(p.glob("FINAL_*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True)
-    chains = list(p.glob("v*_c*.mp4"))
-    base_imgs = list(p.glob("v*_base.png"))
+    # Match both the current "slop_<idx>_" prefix and the legacy "v<idx>_"
+    # form so historic outputs still count after the rename.
+    chains = list(p.glob("slop_*_c*.mp4")) + list(p.glob("v*_c*.mp4"))
+    base_imgs = list(p.glob("slop_*_base.png")) + list(p.glob("v*_base.png"))
     latest = finals[0].name if finals else None
     return {
         "finals": len(finals),

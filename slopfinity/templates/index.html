@@ -467,8 +467,8 @@
                 {% elif is_mp4 %}{% set model_id = 'ltx-2.3' %}
                     {% set _m = f.split('_c') %}
                     {% if _m | length > 1 %}{% set part_n = _m[1].split('.')[0] %}{% endif %}
-                {% elif f.endswith('.png') and f.startswith('v') and '_base.' in f %}{% set model_id = 'qwen' %}
-                {% elif f.endswith('.png') and f.startswith('v') and '_f' in f %}{% set model_id = 'ltx-bridge' %}{% endif %}
+                {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_base.' in f %}{% set model_id = 'qwen' %}
+                {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_f' in f %}{% set model_id = 'ltx-bridge' %}{% endif %}
                 {% set _model_map = {
                     'qwen': ('Qwen Image', 'badge-info'),
                     'ernie': ('Ernie Image', 'badge-error'),
@@ -640,10 +640,11 @@
             <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
 
             <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Trigger</span>
-            <label id="when-idle-row" class="flex items-center gap-2">
-                <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                <span class="text-xs single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
-            </label>
+            {# When Idle moved to Settings → Triggers (gear icon, top right). The
+               control is fleet-lifecycle config, not a per-popup pipeline
+               choice. IDs preserved (when-idle-on / when-idle-row) so all
+               app.js handlers (_updateChaosEnabled, _updateGenModePill, …)
+               keep working regardless of which DOM hosts the toggle. #}
             <label class="flex items-center gap-2">
                 <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Next" data-off-label="Generate Next" title="Inserts your prompt right after the active job in the queue. With Terminate also on, the active job is cancelled first.">Generate Next</span>
@@ -1406,6 +1407,25 @@
                     <span class="text-[10px] opacity-50 italic">Save writes every Settings tab in one POST.</span>
                 </div>
             </div><!-- /Prompts tabpanel -->
+
+            {# Triggers — fleet-lifecycle controls (When Idle today, room to grow).
+               Hosts the When Idle toggle that previously lived in the Pipeline
+               popup's Trigger group. IDs (when-idle-on / when-idle-row) are
+               preserved so existing handlers (_updateChaosEnabled,
+               _updateGenModePill, buildSlopBody) keep working unchanged. #}
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Triggers" />
+            <div role="tabpanel" class="tab-content pt-4">
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Fleet triggers</div>
+                <label id="when-idle-row" class="flex items-center gap-3 py-2">
+                    <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                    <div class="flex flex-col">
+                        <span class="text-sm font-semibold single-label" data-toggle="when-idle-on" data-on-label="When Idle" data-off-label="When Idle">When Idle</span>
+                        <span class="text-[10px] text-base-content/60 leading-snug">
+                            Only fires the next iteration of the looping fleet once the GPU is idle. Pairs with <span class="font-mono">Infinity</span>; greyed-out otherwise.
+                        </span>
+                    </div>
+                </label>
+            </div><!-- /Triggers tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
             <div role="tabpanel" class="tab-content pt-4">
