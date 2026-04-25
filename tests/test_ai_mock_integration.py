@@ -92,12 +92,15 @@ class _Stack:
     procs: list[subprocess.Popen] = []
     state_dir: Path | None = None
     app_url: str = ""
+    setup_error: Exception | None = None
 
 
 _STACK = _Stack()
 
 
 def _spawn_all() -> _Stack:
+    if _STACK.setup_error is not None:
+        raise _STACK.setup_error
     if _STACK.procs:
         return _STACK
 
@@ -175,7 +178,7 @@ def _spawn_all() -> _Stack:
     app_url = f"http://127.0.0.1:{app_port}"
     try:
         _wait_http(app_url + "/", timeout=20)
-    except Exception:
+    except Exception as wait_err:
         # Surface uvicorn stderr so the failure is debuggable.
         try:
             p_app.terminate()
@@ -184,7 +187,8 @@ def _spawn_all() -> _Stack:
             sys.stderr.write("[uvicorn-stderr]\n" + (err or b"").decode(errors="replace") + "\n")
         except Exception:
             pass
-        raise
+        _STACK.setup_error = RuntimeError(f"uvicorn failed to start: {wait_err}")
+        raise _STACK.setup_error
 
     _STACK.state_dir = state_dir
     _STACK.app_url = app_url
