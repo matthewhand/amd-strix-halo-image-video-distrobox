@@ -450,7 +450,13 @@
                     <option value="__random__">Random</option>
                     <option value="__slopped__">Slopped</option>
                 </select>
-                <select id="cfg-base-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="image"></select>
+                <div id="cfg-base-slopped-wrap" class="hidden mt-1" data-slopped-role="image">
+                    <input type="hidden" id="cfg-base-slopped" onchange="updatePipeline()" />
+                    <div id="cfg-base-slopped-grid"
+                         class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-64 overflow-y-auto p-1 bg-base-200 rounded">
+                    </div>
+                    <div class="text-[10px] opacity-60 italic mt-1">Click an image to use it as the slopped source.</div>
+                </div>
             </label>
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video model</span>

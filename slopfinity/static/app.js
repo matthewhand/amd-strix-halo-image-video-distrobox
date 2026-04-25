@@ -611,8 +611,65 @@ async function loadPlanRender() {
 //   roleName - 'image' | 'audio' | 'tts' (server /pipeline/slopped role param)
 async function _onPseudoChanged(selId, roleName) {
     const top = $('cfg-' + selId);
+    if (!top) return;
+    // Image role uses a thumbnail grid (with a hidden input for compat); audio
+    // and tts still use the original plain <select> sub-selector.
+    if (roleName === 'image') {
+        const wrap = $('cfg-' + selId + '-slopped-wrap');
+        const grid = $('cfg-' + selId + '-slopped-grid');
+        const hidden = $('cfg-' + selId + '-slopped');
+        if (!wrap || !grid || !hidden) return;
+        if (top.value !== '__slopped__') {
+            wrap.classList.add('hidden');
+            return;
+        }
+        wrap.classList.remove('hidden');
+        if (grid.dataset.loaded === '1') {
+            // Already populated; just re-show the highlight for any saved value.
+            _slopppedHighlight(grid, hidden.value);
+            return;
+        }
+        grid.innerHTML = '<div class="col-span-full text-[11px] italic opacity-60 p-2">loading…</div>';
+        try {
+            const r = await fetch('/pipeline/slopped?role=' + encodeURIComponent(roleName));
+            const j = await r.json();
+            const files = ((j && j.files) || []).slice(0, 60);
+            if (!files.length) {
+                grid.innerHTML = '<div class="col-span-full text-[11px] italic opacity-60 p-2">No PNG files yet — generate something first.</div>';
+                grid.dataset.loaded = '1';
+                return;
+            }
+            grid.innerHTML = files.map(name => {
+                const safe = _htmlEscape(name);
+                const trunc = _htmlEscape(_truncMiddle(name, 18));
+                const url = '/files/' + encodeURIComponent(name);
+                return `<button type="button" class="slopped-cell relative aspect-square bg-black rounded overflow-hidden border-2 border-transparent hover:border-primary focus:border-primary focus:outline-none" data-fname="${safe}" title="${safe}">`
+                    + `<img src="${url}" loading="lazy" class="w-full h-full object-cover" alt="">`
+                    + `<span class="absolute bottom-0 inset-x-0 px-1 py-0.5 text-[8px] font-mono bg-black/60 text-white truncate">${trunc}</span>`
+                    + `</button>`;
+            }).join('');
+            grid.dataset.loaded = '1';
+            if (!grid.dataset.bound) {
+                grid.addEventListener('click', (e) => {
+                    const cell = e.target.closest('.slopped-cell');
+                    if (!cell) return;
+                    e.stopPropagation();
+                    e.preventDefault();
+                    _slopppedHighlight(grid, 'slopped:' + cell.dataset.fname);
+                    hidden.value = 'slopped:' + cell.dataset.fname;
+                    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                grid.dataset.bound = '1';
+            }
+            _slopppedHighlight(grid, hidden.value);
+        } catch (e) {
+            grid.innerHTML = '<div class="col-span-full text-[11px] italic opacity-60 p-2">(error loading files)</div>';
+        }
+        return;
+    }
+    // Non-image roles: keep legacy <select> behavior.
     const sub = $('cfg-' + selId + '-slopped');
-    if (!top || !sub) return;
+    if (!sub) return;
     if (top.value !== '__slopped__') {
         sub.classList.add('hidden');
         sub.innerHTML = '';
@@ -635,6 +692,15 @@ async function _onPseudoChanged(selId, roleName) {
             sub.innerHTML = '<option value="">(error)</option>';
         }
     }
+}
+
+// Highlight the cell whose data-fname matches the (possibly `slopped:`-prefixed) value.
+function _slopppedHighlight(grid, val) {
+    const target = (val || '').startsWith('slopped:') ? val.slice('slopped:'.length) : '';
+    grid.querySelectorAll('.slopped-cell').forEach(c => {
+        if (target && c.dataset.fname === target) c.classList.add('border-primary');
+        else c.classList.remove('border-primary');
+    });
 }
 
 function schedBadgeClass(type) {
