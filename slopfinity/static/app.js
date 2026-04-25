@@ -550,24 +550,41 @@ async function requeueItem(ts) {
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
 setInterval(() => {
     if (!_isRendering) return;
-    // Live update the active queue item's badges. Format must match the
-    // renderItem template exactly or the badges flicker between the two.
-    document.querySelectorAll('[data-q-status="active"] [data-q-stage-elapsed]').forEach(el => {
-        if (_stageStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _stageStartTs);
+    // Update each active job's segmented pipeline bar in place. We avoid
+    // re-templating the whole queue item every second — instead we mutate
+    // .pipeline-seg-fill width on the current segment and refresh the
+    // overlaid activity + ETA text. This keeps the bar's CSS width
+    // transition smooth (no innerHTML thrash that would reset the
+    // animation).
+    const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
+    const totalSec = stageDurations.reduce((a, b) => a + b, 0);
+    document.querySelectorAll('[data-q-status="active"] [data-pipeline-bar]').forEach(bar => {
+        const curStage = bar.dataset.curStage || '';
+        const curIdx = _STAGE_ORDER.indexOf(curStage);
+        if (curIdx < 0 || !_stageStartTs) return;
+        const stageElapsed = (Date.now() - _stageStartTs) / 1000;
+        const stageAvg = stageDurations[curIdx] || 30;
+        const fraction = Math.min(1, stageElapsed / stageAvg);
+        const isOverrun = stageElapsed > stageAvg;
+        // Update current segment's fill.
+        const curSeg = bar.querySelector('.pipeline-seg-current');
+        if (curSeg) {
+            const fill = curSeg.querySelector('.pipeline-seg-fill');
+            if (fill) fill.style.width = (fraction * 100) + '%';
+            curSeg.classList.toggle('pipeline-seg-overrun', isOverrun);
+        }
+        // Activity text — re-derive in case stage label changed (rare, but
+        // cheap).
+        const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
+        const actEl = bar.querySelector('[data-pipeline-activity-text]');
+        if (actEl && actEl.textContent !== activityText) actEl.textContent = activityText;
+        // Remaining = totalSec - (completed + partial).
+        const completedDur = stageDurations.slice(0, curIdx).reduce((a, b) => a + b, 0);
+        const partialDur = stageDurations[curIdx] * fraction;
+        const remaining = Math.max(0, totalSec - (completedDur + partialDur));
+        const etaEl = bar.querySelector('[data-pipeline-eta]');
+        if (etaEl) etaEl.innerHTML = _fmtElapsedHtml(remaining * 1000);
     });
-    document.querySelectorAll('[data-q-status="active"] [data-q-job-elapsed]').forEach(el => {
-        if (_jobStartTs) el.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
-    });
-    // Total ETA from rolling stage averages.
-    const totalEta = _STAGE_ORDER
-        .map(_stageAvgSeconds)
-        .filter(x => x != null)
-        .reduce((a, b) => a + b, 0);
-    if (totalEta > 0) {
-        document.querySelectorAll('[data-q-status="active"] [data-q-job-eta]').forEach(el => {
-            el.innerHTML = 'ETA ' + _fmtElapsedHtml(totalEta * 1000);
-        });
-    }
 }, 1000);
 
 const $ = (id) => document.getElementById(id);
@@ -1774,18 +1791,30 @@ function connect() {
                 const v = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.video_index) || 1) : 0;
                 const c = isActive ? ((_lastTick && _lastTick.state && _lastTick.state.chain_index) || 0) : 0;
                 if (!isActive) return '';
-                // Activity line: what the fleet is doing right now in plain
-                // English.
+                // Single segmented bar: one segment per pipeline stage, weighted
+                // by historical average duration when known (else equal-weight
+                // 30s placeholder so the bar still renders on a fresh fleet).
+                // Active stage shows partial fill via stageProgressFraction;
+                // completed stages stay solid; future stages stay dim. Activity
+                // text + remaining-time are overlaid on top so the whole strip
+                // is one element instead of three (was: thin bar + activity row
+                // + totals row).
                 const activityText = curStep && _STAGE_TEXT[curStep] ? `${_STAGE_TEXT[curStep]}…` : 'working…';
-                // Match the 1Hz interval handler exactly (no '⏱ '/'Σ ' prefix
-                // — the labels next to the badges already convey what they
-                // mean) so live updates don't flicker.
-                const stageNow = _stageStartTs ? _fmtElapsedHtml(Date.now() - _stageStartTs) : _fmtElapsedHtml(0);
-                const stageAvg = _stageAvgSeconds(curStep);
-                const stageEtaTxt = stageAvg != null ? 'ETA ' + _fmtElapsedHtml(stageAvg * 1000) : '';
-                const jobNow2 = _jobStartTs ? _fmtElapsedHtml(Date.now() - _jobStartTs) : _fmtElapsedHtml(0);
-                const totalEtaSec2 = _STAGE_ORDER.map(_stageAvgSeconds).filter(x => x != null).reduce((a, b) => a + b, 0);
-                const totalEtaTxt2 = totalEtaSec2 > 0 ? 'ETA ' + _fmtElapsedHtml(totalEtaSec2 * 1000) : '';
+                const curIdx = _STAGE_ORDER.indexOf(curStep);
+                const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
+                const totalSec = stageDurations.reduce((a, b) => a + b, 0);
+                const segWidths = stageDurations.map(d => (d / totalSec) * 100);
+                const stageElapsedSec = _stageStartTs ? (Date.now() - _stageStartTs) / 1000 : 0;
+                const curStageAvg = stageDurations[curIdx] || 30;
+                const stageProgressFraction = curIdx < 0 || !_stageStartTs
+                    ? 0
+                    : Math.min(1, stageElapsedSec / curStageAvg);
+                const isOverrun = curIdx >= 0 && _stageStartTs && stageElapsedSec > curStageAvg;
+                // Overall fraction: completed durations + partial of current.
+                const completedDur = curIdx < 0 ? 0 : stageDurations.slice(0, curIdx).reduce((a, b) => a + b, 0);
+                const partialDur = curIdx < 0 ? 0 : stageDurations[curIdx] * stageProgressFraction;
+                const overallSec = completedDur + partialDur;
+                const remainingSec = Math.max(0, totalSec - overallSec);
                 // Each completed stage of THIS job becomes a single line:
                 //   [asset-link badge]  ⏱ actual / ETA was-eta
                 // Stage's clickable badge replaces the spinner+text it had
@@ -1853,18 +1882,37 @@ function connect() {
                         });
                     }, 600);
                 }
+                // Build the segments. data-stage on each segment lets the
+                // 1 Hz tick handler find the current one without re-running
+                // renderPipelineStrip (cheaper than re-templating the whole
+                // queue item every second).
+                const segments = _STAGE_ORDER.map((s, i) => {
+                    const isPast = curIdx >= 0 && i < curIdx;
+                    const isCurrent = i === curIdx;
+                    const cls = isPast ? 'pipeline-seg-past'
+                              : isCurrent ? 'pipeline-seg-current'
+                                          : 'pipeline-seg-future';
+                    const overrunCls = (isCurrent && isOverrun) ? ' pipeline-seg-overrun' : '';
+                    const localFill = isPast ? 100 : (isCurrent ? stageProgressFraction * 100 : 0);
+                    const tone = (STAGES.find(x => x[0] === s) || [,,,,'primary'])[4];
+                    const shortLabel = (STAGES.find(x => x[0] === s) || [,,s])[2];
+                    return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: ${segWidths[i]} 1 0;" data-stage="${s}" data-tone="${tone}">
+                        <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
+                        <span class="pipeline-seg-label">${shortLabel}</span>
+                    </div>`;
+                }).join('');
                 return `
                     ${completedLines ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}` : ''}
-                    <div class="flex items-center gap-2 text-[10px] mt-1">
-                        <span class="loading loading-spinner loading-xs text-primary"></span>
-                        <span class="italic text-base-content/70 flex-1 truncate">${activityText}</span>
-                        <span class="badge badge-xs badge-primary font-mono text-[9px]" data-q-stage-elapsed>${stageNow}</span>
-                        ${stageEtaTxt ? `<span class="badge badge-xs badge-outline font-mono text-[9px] opacity-70" data-q-stage-eta>${stageEtaTxt}</span>` : ''}
-                    </div>
-                    <div class="flex items-center justify-end gap-1 mt-1 text-[9px]">
-                        <span class="text-base-content/50">Total</span>
-                        <span class="badge badge-xs badge-ghost font-mono" data-q-job-elapsed>${jobNow2}</span>
-                        ${totalEtaTxt2 ? `<span class="badge badge-xs badge-outline font-mono opacity-70" data-q-job-eta>${totalEtaTxt2}</span>` : ''}
+                    <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300 mt-2"
+                         data-pipeline-bar
+                         data-cur-stage="${curStep || ''}">
+                        <div class="flex h-7" data-pipeline-segments>${segments}</div>
+                        <div class="absolute inset-0 flex items-center justify-between px-2 pointer-events-none gap-2">
+                            <span class="pipeline-activity text-[10px] font-medium drop-shadow truncate flex-1" data-pipeline-activity>
+                                <span class="loading loading-spinner loading-xs mr-1 align-middle"></span><span data-pipeline-activity-text>${activityText}</span>
+                            </span>
+                            <span class="pipeline-eta text-[10px] font-mono drop-shadow flex-none" data-pipeline-eta>${_fmtElapsedHtml(remainingSec * 1000)}</span>
+                        </div>
                     </div>
                 `;
             };
