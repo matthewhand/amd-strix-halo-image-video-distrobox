@@ -1932,8 +1932,11 @@ function _updateStartBtn() {
   const inf = document.getElementById('inf-on');
   const now = document.getElementById('now-on');
   const term = document.getElementById('term-on');
-  if (term && term.checked) { b.textContent = 'Terminate & Queue'; return; }
-  if (inf && inf.checked) {
+  const termOn = !!(term && term.checked);
+  const infOn = !!(inf && inf.checked);
+  if (termOn && infOn) { b.textContent = 'Terminate and Queue Infinite Slop'; return; }
+  if (termOn) { b.textContent = 'Terminate & Queue'; return; }
+  if (infOn) {
     b.textContent = (now && now.checked) ? 'Queue Infinite Slop (now)' : 'Queue Infinite Slop';
     return;
   }
