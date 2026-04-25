@@ -730,7 +730,11 @@ function _modelDisplayName(id, role) {
 }
 
 // Build badge HTML strings from a config snapshot, including the LLM that wrote the prompt.
-function _configModelBadges(snap, llmModelId, activeRole) {
+// When `qTs` is provided (the queue item's timestamp / id), each badge becomes a
+// clickable button that opens the per-stage settings popup. The badges remain
+// rendered as <span>s in contexts where there is no item to associate with
+// (e.g. the live "Will use" preview).
+function _configModelBadges(snap, llmModelId, activeRole, qTs) {
     // Order matches the pipeline strip: LLM → Image → Video → Music → Voice → Post.
     // activeRole (optional) — string like 'llm'/'base'/'video'/'audio'/'tts'/
     // 'upscale' — that badge gets an inline spinner so the user can see at
@@ -738,20 +742,105 @@ function _configModelBadges(snap, llmModelId, activeRole) {
     const spin = role => activeRole === role
         ? '<span class="loading loading-spinner loading-xs mr-1"></span>'
         : '';
+    // Render either a clickable <button> (when we know which queue item this
+    // strip belongs to) or a passive <span>. The button stops propagation so
+    // it doesn't toggle the parent <details> reveal (same gotcha as PR #44).
+    const mk = (role, klass, title, label) => {
+        if (qTs == null) {
+            return `<span class="badge badge-xs ${klass} gap-1" title="${_htmlEscape(title)}">${spin(role)}${label}</span>`;
+        }
+        return `<button type="button" class="badge badge-xs ${klass} gap-1 cursor-pointer" title="${_htmlEscape(title)} — click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(role)}, ${qTs})'>${spin(role)}${label}</button>`;
+    };
     const out = [];
     if (llmModelId) {
         // Strip leading path (huggingface-style "owner/repo/...") but KEEP
         // the colon-separated name:tag — `qwen3:4b` should display as
         // `qwen3:4b`, not just `4b`.
         const short = llmModelId.replace(/^.*\//, '').replace(/\.gguf$/i, '');
-        out.push(`<span class="badge badge-xs badge-accent gap-1" title="prompt LLM: ${_htmlEscape(llmModelId)}">${spin('llm')}${_htmlEscape(short)}</span>`);
+        out.push(mk('llm', 'badge-accent', `prompt LLM: ${llmModelId}`, _htmlEscape(short)));
     }
-    if (snap.base_model) out.push(`<span class="badge badge-xs badge-info gap-1" title="image model">${spin('base')}${_htmlEscape(_modelDisplayName(snap.base_model, 'image'))}</span>`);
-    if (snap.video_model) out.push(`<span class="badge badge-xs badge-success gap-1" title="video model">${spin('video')}${_htmlEscape(_modelDisplayName(snap.video_model, 'video'))}</span>`);
-    if (snap.audio_model && snap.audio_model !== 'none') out.push(`<span class="badge badge-xs badge-secondary gap-1" title="music model">${spin('audio')}${_htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))}</span>`);
-    if (snap.tts_model && snap.tts_model !== 'none') out.push(`<span class="badge badge-xs badge-warning gap-1" title="voice model">${spin('tts')}${_htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))}</span>`);
-    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(`<span class="badge badge-xs badge-warning gap-1" title="upscaler">${spin('upscale')}${_htmlEscape(snap.upscale_model)}</span>`);
+    if (snap.base_model) out.push(mk('base', 'badge-info', 'image model', _htmlEscape(_modelDisplayName(snap.base_model, 'image'))));
+    if (snap.video_model) out.push(mk('video', 'badge-success', 'video model', _htmlEscape(_modelDisplayName(snap.video_model, 'video'))));
+    if (snap.audio_model && snap.audio_model !== 'none') out.push(mk('audio', 'badge-secondary', 'music model', _htmlEscape(_modelDisplayName(snap.audio_model, 'audio'))));
+    if (snap.tts_model && snap.tts_model !== 'none') out.push(mk('tts', 'badge-warning', 'voice model', _htmlEscape(_modelDisplayName(snap.tts_model, 'audio'))));
+    if (snap.upscale_model && snap.upscale_model !== 'none') out.push(mk('upscale', 'badge-warning', 'upscaler', _htmlEscape(snap.upscale_model)));
     return out;
+}
+
+// Open a small read-only popup describing the settings for one stage of one
+// queue item. Pulled fresh from `_lastTick` so values reflect the snapshot
+// captured when the item was queued (with global config as a fallback for
+// fields that aren't snapshotted, e.g. LLM provider).
+function openModelSettingsPopup(role, qTs) {
+    const tick = _lastTick || {};
+    const cfg = tick.config || {};
+    const queue = tick.queue || [];
+    // qTs === 0 is the synthetic "currently running" placeholder used by
+    // renderItem; treat it as "use the live config snapshot".
+    let q = null;
+    if (qTs) q = queue.find(x => (x.ts || 0) === qTs) || null;
+    const snap = (q && q.config_snapshot) || cfg;
+    const llm = (cfg.llm || {});
+    const promptText = (q && q.prompt) || (tick.state && tick.state.current_prompt) || '';
+
+    const titleMap = {
+        llm:     'LLM — prompt rewriter',
+        base:    'Image stage',
+        video:   'Video stage',
+        audio:   'Music stage',
+        tts:     'Voice stage',
+        upscale: 'Post-process stage',
+    };
+    const title = titleMap[role] || 'Stage settings';
+
+    // Each row is a [label, value] pair; missing values render as em-dash.
+    const rows = [];
+    const push = (k, v) => rows.push([k, (v == null || v === '') ? '—' : v]);
+
+    if (role === 'llm') {
+        push('Provider',     llm.provider || 'auto');
+        push('Model',        llm.model_id || 'auto-pick');
+        push('Base URL',     llm.base_url);
+        push('Rewrite mode', cfg.enhancer_prompt ? 'cinematic-director (custom)' : 'default');
+        push('Subject',      promptText);
+    } else if (role === 'base') {
+        push('Model',        _modelDisplayName(snap.base_model, 'image'));
+        push('Size',         snap.size);
+        push('Quality ramp', snap.quality_ramp ? 'on' : 'off');
+        push('Prompt override', snap.image_prompt_override);
+    } else if (role === 'video') {
+        push('Model',        _modelDisplayName(snap.video_model, 'video'));
+        push('Frames',       snap.frames);
+        push('Chains',       snap.chains);
+        push('Quality ramp', snap.video_quality_ramp ? 'on' : 'off');
+    } else if (role === 'audio') {
+        push('Model',        _modelDisplayName(snap.audio_model, 'audio'));
+        push('Music gain',   (snap.music_gain_db != null) ? `${snap.music_gain_db} dB` : null);
+        push('Fade',         (snap.fade_s != null) ? `${snap.fade_s}s` : null);
+    } else if (role === 'tts') {
+        push('Model',        _modelDisplayName(snap.tts_model, 'audio'));
+        push('Voice preset', snap.tts_voice || snap.voice_preset);
+        push('Voice gain',   (snap.voice_gain_db != null) ? `${snap.voice_gain_db} dB` : null);
+    } else if (role === 'upscale') {
+        push('Upscaler',     snap.upscale_model);
+        push('Upscale on',   snap.upscale ? 'yes' : 'no');
+        push('Consolidation', snap.consolidation);
+    }
+
+    const body = rows.map(([k, v]) =>
+        `<div class="text-base-content/50 uppercase tracking-widest text-[10px]">${_htmlEscape(k)}</div>` +
+        `<div class="font-mono text-xs whitespace-pre-wrap break-words">${_htmlEscape(String(v))}</div>`
+    ).join('');
+
+    const titleEl = document.getElementById('model-settings-title');
+    const bodyEl  = document.getElementById('model-settings-body');
+    if (titleEl) titleEl.textContent = title;
+    if (bodyEl) {
+        bodyEl.innerHTML = `<div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1">${body}</div>` +
+            `<div class="text-[10px] text-base-content/40 italic mt-3">Read-only snapshot from when this item was queued. Use “Open Pipeline Advanced” to edit defaults for future items.</div>`;
+    }
+    const d = document.getElementById('model-settings-modal');
+    if (d && d.showModal) d.showModal();
 }
 
 // Slop filter chips — toggle visibility of cards by data-slop-kind.
@@ -1229,7 +1318,7 @@ function connect() {
             const renderItem = (q, opts) => {
                 const snap = (q && q.config_snapshot) || cfg;
                 const activeRole = (opts && opts.running && opts.step) ? _STAGE_ROLE[opts.step] : null;
-                const badges = _configModelBadges(snap, llmModelId, activeRole);
+                const badges = _configModelBadges(snap, llmModelId, activeRole, q.ts || 0);
                 const meta = `${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f`;
                 const promptEsc = _htmlEscape(q.prompt || '');
                 const isActive = !!(opts && opts.running);
