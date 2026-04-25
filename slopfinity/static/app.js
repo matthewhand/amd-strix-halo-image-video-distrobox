@@ -4243,16 +4243,29 @@ function _updateStartBtn() {
 // Polymorphic + When Idle only make sense when the fleet is looping —
 // gray them out otherwise.
 function _updateChaosEnabled() {
+  // Polymorphic + When-Idle used to be force-disabled whenever Infinity
+  // Mode was off, on the rationale that they "only make sense in a loop."
+  // That tied Endless Story (a Subjects-card surface for the same flag)
+  // visually to those toggles in a way users found confusing — flipping
+  // Endless Story off would suddenly grey out Polymorphic / When-Idle.
+  // Leaving them editable independently: they sit dormant when Infinity
+  // is off, and take effect the moment a looping run starts. No more
+  // surprise greying-out. Function kept as a stub so existing call sites
+  // stay valid.
   const inf = document.getElementById('inf-on');
   const enabled = !!(inf && inf.checked);
-  [
-    ['chaos-on', 'chaos-row'],
-    ['when-idle-on', 'when-idle-row'],
-  ].forEach(([toggleId, rowId]) => {
-    const t = document.getElementById(toggleId);
+  // Light visual hint (50% opacity on the ROW only, not disabled) so the
+  // user still sees that those modifiers are inert without infinity, but
+  // can click them in advance.
+  ['chaos-row', 'when-idle-row'].forEach(rowId => {
     const r = document.getElementById(rowId);
-    if (t) t.disabled = !enabled;
-    if (r) r.classList.toggle('opacity-40', !enabled);
+    if (r) r.classList.toggle('opacity-60', !enabled);
+  });
+  // Make sure the toggles themselves are NOT disabled (clear any stale
+  // state from before this fix landed).
+  ['chaos-on', 'when-idle-on'].forEach(id => {
+    const t = document.getElementById(id);
+    if (t) t.disabled = false;
   });
 }
 
