@@ -297,25 +297,54 @@ async def enhance_distribute(data: dict = Body(...)):
     """Single-idea fan-out with preserve-tokens and lock support.
 
     Accepts: {core, stages: {image, video, music, tts}, locked: [...],
-              preserve_tokens: [...]}
-    Returns: {ok, stages, preserved_ok, preserved_dropped}
+              preserve_tokens: [...], persist: bool=True}
+    Returns: {ok, stages, preserved_ok, preserved_dropped, persisted}
+
+    When `persist` is True (the default), the resulting per-stage prompts
+    are written back to `config.{image,video,music,tts}_prompt` so they
+    show up — and are editable — in the "prompts →" modal. The fleet
+    runner re-reads config.json on each stage entry, so a fan-out followed
+    by an immediate run will pick up the freshly persisted overrides.
     """
     core = (data.get("core") or "").strip()
-    stages = data.get("stages") or {}
+    stages_in = data.get("stages") or {}
     locked = data.get("locked") or []
     preserve_tokens = data.get("preserve_tokens") or []
+    persist = data.get("persist")
+    if persist is None:
+        persist = True
     result = _fanout.fanout(
         core=core,
-        stages=stages,
+        stages=stages_in,
         locked=locked,
         preserve_tokens=preserve_tokens,
         llm_call=lmstudio_call,
     )
+    persisted = False
+    if persist:
+        out_stages = result.get("stages") or {}
+        try:
+            config = cfg.load_config()
+            if out_stages.get("image"):
+                config["image_prompt"] = out_stages["image"]
+            if out_stages.get("video"):
+                config["video_prompt"] = out_stages["video"]
+            if out_stages.get("music"):
+                config["music_prompt"] = out_stages["music"]
+            if out_stages.get("tts"):
+                config["tts_prompt"] = out_stages["tts"]
+            cfg.save_config(config)
+            persisted = True
+        except Exception as e:
+            # Persistence is best-effort — never fail the fan-out itself
+            # because of a transient config write hiccup.
+            print(f"[enhance/distribute] config persist failed: {e}")
     return {
         "ok": result["ok"],
         "stages": result["stages"],
         "preserved_ok": result["preserved_ok"],
         "preserved_dropped": result["preserved_dropped"],
+        "persisted": persisted,
     }
 
 
