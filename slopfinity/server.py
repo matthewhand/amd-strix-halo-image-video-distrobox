@@ -263,7 +263,12 @@ async def enhance(data: dict = Body(...)):
             "'music' = a short mood/genre description for a music generator, "
             "'tts' = a one or two sentence voiceover line. Return ONLY JSON, no prose."
         )
-        raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt)
+        # Manual LLM call — route through acquire_gpu so it participates in the
+        # auto-suspend dance (PR #75): if a fleet stage is mid-flight, this
+        # queues; if LM Studio was suspended, it gets resumed for this call.
+        # safety_gb=4 since this is just an LLM ping, not a 60 GB diffusion.
+        async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+            raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt)
         # Best-effort JSON extraction
         parsed = None
         try:
@@ -288,7 +293,8 @@ async def enhance(data: dict = Body(...)):
                 "tts": parsed.get("tts", ""),
             },
         }
-    suggestion = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], prompt)
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+        suggestion = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], prompt)
     return {"suggestion": suggestion}
 
 
@@ -313,13 +319,18 @@ async def enhance_distribute(data: dict = Body(...)):
     persist = data.get("persist")
     if persist is None:
         persist = True
-    result = _fanout.fanout(
-        core=core,
-        stages=stages_in,
-        locked=locked,
-        preserve_tokens=preserve_tokens,
-        llm_call=lmstudio_call,
-    )
+    # Fan-out makes multiple LLM calls. Hold acquire_gpu across the whole
+    # batch so we suspend/resume LM Studio just once, not per call.
+    # safety_gb=4 since this is just LLM rewrites, not a 60 GB diffusion stage.
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+        result = await asyncio.to_thread(
+            _fanout.fanout,
+            core,
+            stages_in,
+            locked,
+            preserve_tokens,
+            lmstudio_call,
+        )
     persisted = False
     if persist:
         out_stages = result.get("stages") or {}
@@ -393,7 +404,11 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     # Run the (blocking, network-bound) LLM call in a thread so it doesn't
     # stall FastAPI's event loop — without this, the WS state broadcast and
     # other endpoints (Settings open, etc.) freeze for the duration.
-    raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
+    # Wrap in acquire_gpu so manual 🎲 Suggest participates in auto-suspend
+    # (resumes LM Studio if a fleet stage paused it). safety_gb=4 since
+    # this is just an LLM ping, not a multi-GB diffusion stage.
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+        raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
     suggestions = []
     try:
         s = json.loads(raw)
@@ -713,8 +728,13 @@ async def tts(data: dict = Body(...)):
     voice = data.get("voice") or "ryan"
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
+    # Manual TTS preview — route through acquire_gpu with a TTS-shaped budget
+    # so a mid-fleet click queues correctly and LM Studio gets suspended
+    # (Qwen-TTS shares the GPU). safety_gb=4: the worker already lives in
+    # its own process holding ~10 GB, this lock just gates concurrent demand.
     try:
-        result = _call_tts_worker(text, voice)
+        async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
+            result = await asyncio.to_thread(_call_tts_worker, text, voice)
     except urllib.error.URLError as e:
         return JSONResponse(
             {
@@ -794,6 +814,23 @@ async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale
         upscale or None,
         tts or None,
     )
+
+
+@app.get("/system/ram")
+async def system_ram():
+    """Live MemAvailable (GB) plus the scheduler's safety threshold.
+
+    Used by the client-side RAM-tight warning modal to gate manual AI buttons
+    (🎲 Suggest, /enhance, /enhance/distribute, /tts). When `tight=True` the
+    UI prompts the user before firing the request; the user can still proceed.
+    """
+    available = sched._mem_available_gb()
+    safety = float(sched.SAFETY_GB)
+    return {
+        "available_gb": available,
+        "safety_gb": safety,
+        "tight": available < safety,
+    }
 
 
 @app.get("/pipeline/plan")
