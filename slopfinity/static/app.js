@@ -15,6 +15,51 @@ function applyTheme(name) {
 window.applyTheme = applyTheme;
 
 // ---------------------------------------------------------------------------
+// RAM-tight guard — wrapper that shows a confirmation modal before any
+// manual AI button (🎲 Suggest, ✨ Enhance, fan-out, TTS preview) fires
+// when GET /system/ram reports tight=true. Returns true iff the action
+// should proceed. Fail-open if the endpoint is unreachable so we never
+// strand the user without their manual buttons.
+//
+// This is a SOFT guard — it adds a confirm step but never auto-blocks.
+// The deeper protection (queueing behind fleet GPU stages, suspending
+// LM Studio etc.) lives in the server-side acquire_gpu wrap.
+// ---------------------------------------------------------------------------
+async function _ramGuardCheck() {
+  let r;
+  try {
+    const resp = await fetch('/system/ram');
+    r = await resp.json();
+  } catch (_) {
+    return true; // fail-open
+  }
+  if (!r || !r.tight) return true;
+  return new Promise(resolve => {
+    const modal = document.getElementById('ram-tight-modal');
+    if (!modal) return resolve(true);
+    const availEl = document.getElementById('ram-tight-available');
+    const safeEl = document.getElementById('ram-tight-safety');
+    if (availEl) availEl.textContent = Number(r.available_gb || 0).toFixed(1);
+    if (safeEl) safeEl.textContent = Number(r.safety_gb || 0).toFixed(0);
+    const btn = document.getElementById('ram-tight-proceed');
+    let resolved = false;
+    const finish = (val) => {
+      if (resolved) return;
+      resolved = true;
+      btn && btn.removeEventListener('click', onProceed);
+      modal.removeEventListener('close', onClose);
+      resolve(val);
+    };
+    const onProceed = () => { try { modal.close(); } catch (_) {} finish(true); };
+    const onClose = () => finish(false);
+    btn && btn.addEventListener('click', onProceed, { once: true });
+    modal.addEventListener('close', onClose, { once: true });
+    try { modal.showModal(); } catch (_) { finish(true); }
+  });
+}
+window._ramGuardCheck = _ramGuardCheck;
+
+// ---------------------------------------------------------------------------
 // Suggestions hidden-state — when the user clicks the × next to "Need ideas?"
 // the chip area collapses, the 🎲 button hides, and every auto-fetch entry
 // (tryAutoSuggest, _maybePrefetch, carousel right-overlay fresh-fetch) bails
@@ -2278,6 +2323,7 @@ async function enhanceStage(stage) {
     const core = ($('p-core') && $('p-core').value) || '';
     const seed = (ta.value || '').trim() || core.trim();
     if (!seed) return;
+    if (!(await _ramGuardCheck())) return;
     const sys = {
         image: 'Rewrite the prompt as a detailed visual still-frame description for an AI image generator. Lighting, texture, mood. Under 60 words. Output ONLY the rewritten prompt.',
         video: 'Rewrite the prompt as a motion/camera description for an AI video generator. Camera movement, pacing, transitions. Under 60 words. Output ONLY the rewritten prompt.',
@@ -2311,6 +2357,7 @@ async function enhance() {
         tts: _stageVal('tts'),
     };
     if (!core.trim() && !Object.values(stages).some(v => v && v.trim())) return;
+    if (!(await _ramGuardCheck())) return;
     const locked = _lockedList();
     const preview = $('fanout-preview');
     if (preview) preview.classList.remove('hidden');
@@ -2623,6 +2670,10 @@ async function generateTts() {
     const statusEl = $('tts-status');
     const previewEl = $('tts-preview');
     if (!text) { if (statusEl) statusEl.innerText = 'empty'; return; }
+    if (!(await _ramGuardCheck())) {
+        if (statusEl) { statusEl.innerText = 'cancelled'; statusEl.className = 'badge badge-xs badge-ghost'; }
+        return;
+    }
     if (statusEl) { statusEl.innerText = 'synth...'; statusEl.className = 'badge badge-xs badge-warning'; }
     try {
         const res = await fetch('/tts', {
@@ -3363,6 +3414,9 @@ function _renderCachedSuggestions() {
 async function regenSuggestions(n = 6) {
   // The 🎲 button: ALWAYS fires — never gated by GPU idle, never gated by
   // the suggest_auto_disabled toggle. Manual user intent always wins.
+  // RAM-tight guard is a separate, soft check (modal asks the user; cancel
+  // aborts with no side effects).
+  if (!(await _ramGuardCheck())) return;
   const box = document.getElementById('subject-chips-stack');
   if (!box) return;
   box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';

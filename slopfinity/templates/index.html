@@ -724,6 +724,25 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+<!-- RAM-tight warning modal — shown before manual AI buttons (🎲, ✨, /tts)
+     when GET /system/ram reports tight=true. Default action is Cancel; the
+     user can opt to proceed anyway. See _ramGuardCheck() in app.js. -->
+<dialog id="ram-tight-modal" class="modal">
+    <div class="modal-box bg-base-200 border border-base-100 max-w-md">
+        <h3 class="font-bold text-lg text-warning uppercase tracking-widest">RAM is tight</h3>
+        <p class="py-3 text-sm">
+            Only <span id="ram-tight-available" class="font-mono">?</span> GB available
+            (need at least <span id="ram-tight-safety" class="font-mono">?</span> GB for safe headroom).
+            Proceeding may cause swap thrashing or an OOM kill on the fleet.
+        </p>
+        <div class="modal-action">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('ram-tight-modal').close()">Cancel</button>
+            <button class="btn btn-warning btn-sm" id="ram-tight-proceed">Proceed anyway</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <!-- Keyboard Shortcuts Help Modal -->
 <dialog id="help-modal" class="modal">
     <div class="modal-box bg-base-200 border border-base-100">
