@@ -133,6 +133,7 @@
     overflow: hidden;
     border-right: 1px solid hsl(var(--bc) / 0.10);
     min-width: 0;
+    height: 38px;
 }
 .pipeline-seg:last-child { border-right: none; }
 .pipeline-seg-future  { background: hsl(var(--b1) / 0.6); }
@@ -146,7 +147,7 @@
 }
 .pipeline-seg-label {
     position: absolute;
-    left: 50%; top: 50%;
+    left: 50%; top: 30%;
     transform: translate(-50%, -50%);
     font-size: 9px;
     font-weight: 500;
@@ -159,6 +160,23 @@
     z-index: 1;
 }
 .pipeline-seg-current .pipeline-seg-label { opacity: 0.9; }
+/* Inline per-segment timing (elapsed / ETA) sits underneath the stage label
+   so each segment carries its own budget at a glance. Past stages show the
+   recorded actual; current shows live-tick elapsed; future shows an em-dash.
+   Tiny font + low opacity so it doesn't compete with the label. */
+.pipeline-seg-timing {
+    position: absolute;
+    left: 50%; bottom: 10%;
+    transform: translate(-50%, 0);
+    font-size: 8px;
+    font-family: monospace;
+    opacity: 0.65;
+    white-space: nowrap;
+    pointer-events: none;
+    color: hsl(var(--bc));
+    z-index: 1;
+}
+.pipeline-seg-current .pipeline-seg-timing { opacity: 0.9; }
 .pipeline-activity { color: hsl(var(--bc)); font-weight: 500; }
 .pipeline-eta      { color: hsl(var(--bc)); }
 .pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {

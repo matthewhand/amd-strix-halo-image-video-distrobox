@@ -372,15 +372,17 @@ function _stageDoneBefore(curStage, candidate) {
 }
 
 // Build the top-of-card segmented progress bar markup. Pulls all timing data
-// from the same _lastTick / _stageStartTs globals as the per-item
-// renderPipelineStrip did before — but emits ONE bar at the queue-card level,
-// not one per active item. Header above the bar shows just the activity
-// spinner + verb (per-step elapsed/ETA moved INSIDE each segment in commit 2);
-// total elapsed / ETA stays in the footer row below.
+// from the same _lastTick / _stageStartTs / _jobActuals globals as the
+// per-item renderPipelineStrip did before — but emits ONE bar at the
+// queue-card level, not one per active item. Header above the bar shows just
+// the activity spinner + verb. Each segment carries its own inline
+// elapsed/ETA timing under the label so users read "actual / planned" per
+// stage at a glance. Total elapsed / ETA sits in the footer row below.
 function _buildActiveJobProgressBar(d) {
     const state = (d && d.state) || {};
     const curStep = state.step || '';
     if (!curStep) return '';
+    const v = state.video_index || 1;
     const curIdx = _STAGE_ORDER.indexOf(curStep);
     const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
     const totalSec = stageDurations.reduce((a, b) => a + b, 0);
@@ -395,6 +397,7 @@ function _buildActiveJobProgressBar(d) {
     const jobElapsedMs = _jobStartTs ? (Date.now() - _jobStartTs) : 0;
     const totalElapsedHTML = _fmtElapsedHtml(jobElapsedMs);
     const totalEtaHTML = _fmtElapsedHtml(totalSec * 1000);
+    const actuals = (_jobActuals[v] || {});
     const segments = _STAGE_ORDER.map((s, i) => {
         const isPast = curIdx >= 0 && i < curIdx;
         const isCurrent = i === curIdx;
@@ -406,9 +409,29 @@ function _buildActiveJobProgressBar(d) {
         const meta = _STAGES_META.find(x => x[0] === s) || [,,s,,'primary'];
         const tone = meta[4];
         const shortLabel = meta[2];
+        // Inline per-segment timing under the label. Past stages render their
+        // recorded actual; current stage renders live elapsed (refreshed by
+        // the 1 Hz ticker against [data-seg-elapsed]); future stages render
+        // an em-dash. Each is paired with the model's ETA so users read
+        // "actual / planned" for every step at a glance.
+        let elapsedHtml;
+        let etaSec;
+        if (isPast) {
+            const a = actuals[s];
+            elapsedHtml = a ? _fmtElapsedHtml(a.duration_s * 1000) : '—';
+            etaSec = (a && a.eta_s) || stageDurations[i];
+        } else if (isCurrent) {
+            elapsedHtml = _fmtElapsedHtml(stageElapsedSec * 1000);
+            etaSec = stageDurations[i];
+        } else {
+            elapsedHtml = '—';
+            etaSec = stageDurations[i];
+        }
+        const etaHtml = etaSec ? _fmtElapsedHtml(etaSec * 1000) : '—';
         return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: ${segWidths[i]} 1 0;" data-stage="${s}" data-tone="${tone}">
             <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
             <span class="pipeline-seg-label">${shortLabel}</span>
+            <span class="pipeline-seg-timing"><span data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA ${etaHtml}</span></span>
         </div>`;
     }).join('');
     return `
@@ -421,7 +444,7 @@ function _buildActiveJobProgressBar(d) {
                 </span>
             </div>
             <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
-                <div class="flex h-7" data-pipeline-segments>${segments}</div>
+                <div class="flex" data-pipeline-segments>${segments}</div>
             </div>
             <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
                 <span class="opacity-70">Total</span>
@@ -727,11 +750,10 @@ setInterval(() => {
     if (!_isRendering) return;
     // Update the SINGLE top-of-card segmented pipeline bar in place. We avoid
     // re-templating the bar every second — instead we mutate the current
-    // .pipeline-seg-fill width, refresh the activity text, and update the
-    // total elapsed/ETA footer. The bar's CSS width transition stays smooth
-    // because we never thrash innerHTML on the segments. Per-step
-    // elapsed/ETA moved INSIDE each segment (commit 2 of this redesign);
-    // until then the header just shows the activity verb.
+    // .pipeline-seg-fill width, the per-segment inline elapsed timer
+    // ([data-seg-elapsed] inside .pipeline-seg-current), the activity text,
+    // and the total elapsed/ETA footer. The bar's CSS width transition stays
+    // smooth because we never thrash innerHTML on the segments.
     const stageDurations = _STAGE_ORDER.map(s => _stageAvgSeconds(s) || 30);
     const totalSec = stageDurations.reduce((a, b) => a + b, 0);
     const host = document.getElementById('active-job-progress-bar');
@@ -745,12 +767,14 @@ setInterval(() => {
     const stageAvg = stageDurations[curIdx] || 30;
     const fraction = Math.min(1, stageElapsed / stageAvg);
     const isOverrun = stageElapsed > stageAvg;
-    // Update current segment's fill.
+    // Update current segment's fill + inline elapsed timer.
     const curSeg = bar.querySelector('.pipeline-seg-current');
     if (curSeg) {
         const fill = curSeg.querySelector('.pipeline-seg-fill');
         if (fill) fill.style.width = (fraction * 100) + '%';
         curSeg.classList.toggle('pipeline-seg-overrun', isOverrun);
+        const segElapsedEl = curSeg.querySelector('[data-seg-elapsed]');
+        if (segElapsedEl) segElapsedEl.innerHTML = _fmtElapsedHtml(stageElapsed * 1000);
     }
     // Activity text — re-derive in case stage label changed (rare, but cheap).
     const activityText = curStage && _STAGE_TEXT[curStage] ? `${_STAGE_TEXT[curStage]}…` : 'working…';
