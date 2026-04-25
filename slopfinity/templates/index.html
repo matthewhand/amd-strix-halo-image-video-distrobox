@@ -139,7 +139,7 @@
                 class="textarea textarea-bordered textarea-primary w-full text-sm leading-snug"
                 placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
                 oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
-            <div id="subjects-need-ideas-row" class="flex items-center gap-1">
+            <div id="subjects-need-ideas-row" class="flex items-center justify-end gap-1">
                 <a id="subjects-suggestions-toggle"
                    href="#"
                    class="text-[10px] text-base-content/50 hover:link cursor-pointer"
