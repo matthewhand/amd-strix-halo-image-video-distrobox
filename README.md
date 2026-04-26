@@ -45,6 +45,7 @@ A **distrobox / Docker** image with a full **ROCm environment** for **image & vi
   - [8.3. Running Image/Video Workflows in ComfyUI](#83-running-imagevideo-workflows-in-comfyui)  
 - [9. Stability & Technical Notes](#9-stability--technical-notes)  
 - [10. Credits & Links](#10-credits--links)  
+- [14. Slopfinity Dashboard UI](#14-slopfinity-dashboard-ui)
 
 ---
 
@@ -708,3 +709,137 @@ Performance improvements to investigate:
 ---
 
 **Notes on persistence:** All model weights and outputs are stored in your **HOME** outside the distrobox (e.g., `~/.cache/huggingface/hub/`, `~/.qwen-image-studio/`, `~/Wan2.2-*`, `~/comfy-models`, `~/comfy-outputs`). This ensures they survive distrobox refreshes.
+
+---
+
+## 14. Slopfinity Dashboard UI
+
+The Slopfinity FastAPI dashboard at `:9099` orchestrates the toolbox into an end-to-end "subject → image → video → audio → final mp4" pipeline. The diagrams below capture the **intended layout** of its main surfaces — useful when reviewing UI changes or guiding agents to keep the design coherent.
+
+### 14.1. Holistic dashboard
+
+Top-down regions of the page:
+
+```mermaid
+flowchart TB
+  topbar["Top bar — logo · view ▼ · theme · GPU/RAM/Load tickers · ⚙ Settings"]
+  pipeline["Pipeline strip (collapsible) — segmented progress + per-char fill heartbeat"]
+  subgraph splits["ui-split (drag-resize)"]
+    direction LR
+    subgraph leftPane["Subjects card (#split-left)"]
+      L1["Mode pill — Raw · Endless · ⚙ Slop"]
+      L2["Seed textarea + Queue button"]
+      L3["Suggest controls"]
+      L4["Chip marquee rows"]
+    end
+    subgraph rightPane["Queue card (#split-right)"]
+      R1["Header — activity, requeue, clear-failed, clear-completed"]
+      R2["Per-item details rows"]
+    end
+  end
+  subgraph slop["Slop output (#output-section)"]
+    S1["Filter chips · preview-size pill (S/M/L)"]
+    S2["preview-grid (animated mini-thumbnails)"]
+  end
+
+  topbar --> pipeline --> splits --> slop
+```
+
+### 14.2. Subjects card — control layout
+
+The Suggest / Auto / Suggest-Prompt row is the most contested patch of the card; this is the canonical arrangement:
+
+```mermaid
+flowchart TB
+  subgraph card["Subjects card body"]
+    direction TB
+    subgraph header["Header row"]
+      direction LR
+      mode["Mode pill — [Raw][Endless][⚙ Slop]"]
+      pipBtn["Pipeline pill — [♾ Infinity][⚙ Pipeline]"]
+    end
+    subgraph body["Seed row"]
+      direction LR
+      ta["Seed textarea (locks in Endless+running)"]
+      q["Queue button — label varies by mode"]
+    end
+    subgraph sug["Suggest controls row"]
+      direction LR
+      join["Joined segmented control — 🎲 Suggest │ ↻ Auto knob"]
+      spacer[" "]
+      prompt["✎ Suggest Prompt — flush right, min-w to keep label whole"]
+    end
+    marquee["Chip marquee — each row reveals 🗑 on hover at right edge"]
+  end
+
+  header --> body --> sug --> marquee
+  style spacer fill:transparent,stroke:transparent
+```
+
+| Control | Position | Behavior |
+|---|---|---|
+| 🎲 Suggest | Joined left | Manual fire — calls `regenSuggestions()` |
+| ↻ Auto | Joined to Suggest | Knob toggle mirrors `config.suggest_auto_disabled` (knob ON = auto enabled) |
+| ✎ Suggest Prompt | Flush right (separate, has `min-w` so its label never truncates) | Opens Settings → LLM with the suggestion-prompt textarea focused |
+| 🗑 row delete | Hover right edge of any marquee row | Removes that row from DOM, re-measures marquee speed |
+
+### 14.3. Suggest control — state flow
+
+```mermaid
+flowchart LR
+  subgraph ui["UI"]
+    sugBtn["🎲 Suggest"]
+    autoKnob["↻ Auto knob"]
+    promptBtn["✎ Suggest Prompt"]
+    rows["Chip rows"]
+  end
+  subgraph storage["State"]
+    cfg["config.suggest_auto_disabled"]
+    ls["localStorage (slopfinity-*)"]
+  end
+  subgraph srv["Server"]
+    suggest["GET /subjects/suggest"]
+    settings["POST /settings"]
+  end
+
+  sugBtn -.manual fire.-> suggest
+  autoKnob -.toggle.-> settings --> cfg
+  cfg -.gates.-> suggest
+  promptBtn -.opens.-> SettingsLLM["Settings → LLM"]
+  rows -.row 🗑 click.-> RowDelete["DOM row.remove() + re-measure"]
+```
+
+### 14.4. Subjects modes (Raw vs Endless)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Raw
+    Raw --> Endless: click Endless pill
+    Endless --> Raw: click Raw pill / End story
+    state Raw {
+      [*] --> Idle_R
+      Idle_R --> Queued: Queue Slop
+      Queued --> Idle_R: orchestrator picks up
+    }
+    state Endless {
+      [*] --> Seeded
+      Seeded --> Running: click "Start Story"
+      Empty --> Running: click "I'm Feeling Lucky" (LLM opener)
+      Running --> Seeded: End story (✕)
+      Running --> Running: chip click — queue + append to story log
+    }
+```
+
+### 14.5. Slop card — preview-size pill
+
+The S / M / L pill in the slop card header sets `body[data-slop-size]`; CSS rules resize the preview-grid columns and per-card figure height:
+
+```mermaid
+flowchart LR
+  pill["S · M · L pill"] -->|sets body[data-slop-size]| dom
+  dom --> S["S — 3/4/6/8 cols, condensed body"]
+  dom --> M["M — 2/3/_/4 cols (default)"]
+  dom --> L["L — 1/2/_/3 cols, min-height 320px figures"]
+```
+
+> These diagrams describe the **intended** state of the dashboard. When a UI commit drifts from them (or the user asks for changes), update this section in the same commit so the doc and the code stay in sync.
