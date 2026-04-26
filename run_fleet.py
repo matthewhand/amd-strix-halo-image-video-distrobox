@@ -32,13 +32,13 @@ os.makedirs("comfy-input", exist_ok=True)
 # Override any tier with FLEET_TIER env var ("low" | "med" | "high").
 TIER_PROFILES = {
     # tier  : (qwen_steps, qwen_size, ltx_frames, video_timeout_s, image_timeout_s)
-    # Cold-start budget for low tier: 90s aiter build + 90s model load +
-    # 8 × 18s denoise + 60s VAE + slack = ~380s. 360s was too tight; 420s
-    # gives breathing room without black-holing the queue (v_idx still
-    # advances on timeout via the main-loop fix).
-    "low":   (8,  "1:1",  17, 600,  420),
-    "med":   (20, "4:3",  33, 900,  600),
-    "high":  (50, "16:9", 49, 1500, 900),
+    # Image budgets bumped 3× (2026-04-26) — Ernie on Strix Halo runs
+    # ~62-80 s/step under tier=low, so 420s timed out at ~7/8 steps. The
+    # 1260s headroom covers loading + 8 × 80s + VAE without black-holing
+    # the queue. v_idx still advances on timeout via the main-loop guard.
+    "low":   (8,  "1:1",  17, 600,  1260),
+    "med":   (20, "4:3",  33, 900,  1800),
+    "high":  (50, "16:9", 49, 1500, 2700),
 }
 
 _STOPWORDS = {

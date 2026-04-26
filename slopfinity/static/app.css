@@ -228,6 +228,18 @@
     transform: none;
 }
 
+/* New-row entry: each batch slides in from the right edge of the stack,
+   then settles into position. The track inside keeps its own marquee
+   scroll independently — the row's slide-in is purely the container.
+   JS adds .entering on append and removes it on animationend. */
+.suggest-marquee-row.entering {
+    animation: suggest-row-enter 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes suggest-row-enter {
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+
 /* Subjects textarea autogrow:
    - PRIMARY layout claim: grows vertically to fill the Subjects card up to
      a JS-managed max-height (card height minus Suggest button + chip row).
@@ -513,8 +525,6 @@ body[data-layout="gallery"] #gallery-fab {
     opacity: 1 !important;
 }
 
-}
-
 /* ---------------------------------------------------------------------------
    Queue-header "assembly line" render-heartbeat animation.
    Each character of the heartbeat text becomes its own .render-anim-char
@@ -594,20 +604,28 @@ body[data-layout="gallery"] #gallery-fab {
     transform: rotate(90deg);
 }
 
-/* Layout mode: 'queue' — Subjects card hidden, Queue fills the upper pane.
-   Layout mode: 'subjects' — Queue card hidden, Subjects fills the upper pane.
-   Both rely on body[data-layout="..."] being set by _applyLayoutView().
-   The vertical splitter handle is hidden because there's nothing to drag. */
-body[data-layout="queue"] #split-left,
-body[data-layout="subjects"] #split-right {
+/* Single-card and dual-card layout rules. body[data-layout="..."] is set
+   by _applyLayoutView() in app.js. The vertical splitter handle in the
+   upper pane is hidden whenever only one of Subjects/Queue is visible. */
+/* Hide whichever upper-pane card is excluded. */
+body[data-layout="queue"]      #split-left,
+body[data-layout="queue-slop"] #split-left,
+body[data-layout="subjects"]   #split-right,
+body[data-layout="subj-slop"]  #split-right {
     display: none !important;
 }
-body[data-layout="queue"] #split-divider,
-body[data-layout="subjects"] #split-divider {
+/* Drop the inter-card splitter when the upper pane has a single card. */
+body[data-layout="queue"]      #split-divider,
+body[data-layout="queue-slop"] #split-divider,
+body[data-layout="subjects"]   #split-divider,
+body[data-layout="subj-slop"]  #split-divider {
     display: none !important;
 }
-body[data-layout="queue"] #split-right,
-body[data-layout="subjects"] #split-left {
+/* Expand the surviving upper-pane card to fill the full width. */
+body[data-layout="queue"]      #split-right,
+body[data-layout="queue-slop"] #split-right,
+body[data-layout="subjects"]   #split-left,
+body[data-layout="subj-slop"]  #split-left {
     flex-basis: 100% !important;
     max-width: 100% !important;
 }
@@ -623,15 +641,19 @@ body[data-layout="subjects"] #split-left {
             mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }
 
-/* Slop FAB — surfaces a single floating button to open the Slop card
-   in a modal when the user is in Subjects-focused or Queue-focused mode
-   (Slop is hidden in those layouts). Mirrors the gallery-fab pattern
-   for Subjects + Queue used by Gallery-focused mode. */
+/* Focused-mode FAB — quick-jump buttons to the OTHER two cards while in
+   a single-card focus layout. Container is visible in subjects/queue
+   modes; per-button rules below hide whichever button targets the
+   currently-active layout (so e.g. in queue mode the Queue button hides
+   and you see Subjects + Slop). */
 #focus-slop-fab {
     display: none;
 }
-body[data-layout="subjects"] #focus-slop-fab,
-body[data-layout="queue"] #focus-slop-fab {
+body[data-layout="subjects"]   #focus-slop-fab,
+body[data-layout="queue"]      #focus-slop-fab,
+body[data-layout="subj-slop"]  #focus-slop-fab,
+body[data-layout="queue-slop"] #focus-slop-fab,
+body[data-layout="subj-queue"] #focus-slop-fab {
     display: flex;
     position: fixed;
     bottom: 16px;
@@ -639,12 +661,26 @@ body[data-layout="queue"] #focus-slop-fab {
     gap: 8px;
     z-index: 40;
 }
-/* Hide the inline Slop card when the focused-on-something-else views
-   are active. The FAB above replaces it. */
-body[data-layout="subjects"] #output-section,
-body[data-layout="queue"] #output-section,
-body[data-layout="subjects"] #ui-split-handle,
-body[data-layout="queue"] #ui-split-handle {
+/* Hide the FAB button that targets a card already visible in the
+   current layout. The remaining buttons surface as quick-jump shortcuts
+   to the cards NOT on screen. */
+body[data-layout="subjects"]   #focus-slop-fab [data-fab-target="subjects"],
+body[data-layout="queue"]      #focus-slop-fab [data-fab-target="queue"],
+body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="subjects"],
+body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="slop"],
+body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="queue"],
+body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="slop"],
+body[data-layout="subj-queue"] #focus-slop-fab [data-fab-target="subjects"],
+body[data-layout="subj-queue"] #focus-slop-fab [data-fab-target="queue"] {
+    display: none;
+}
+/* Hide the inline Slop card whenever Slop is not part of the layout. */
+body[data-layout="subjects"]   #output-section,
+body[data-layout="queue"]      #output-section,
+body[data-layout="subj-queue"] #output-section,
+body[data-layout="subjects"]   #ui-split-handle,
+body[data-layout="queue"]      #ui-split-handle,
+body[data-layout="subj-queue"] #ui-split-handle {
     display: none !important;
 }
 
