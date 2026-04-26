@@ -1660,6 +1660,19 @@
                         </button>
                     </div>
                     <p class="text-[10px] opacity-60 leading-snug">Clears the per-card "hidden" flag for Subjects, Queue, and Slop. The View dropdown still controls which layout is active.</p>
+
+                    {# Restore-FAB toggle. The focused-mode FAB cluster
+                       (bottom-right floating buttons) surfaces quick-jump
+                       affordances to the cards that aren't on screen in
+                       single/dual-card layouts. Some users want a cleaner
+                       view without these — flip it off here. Persists in
+                       localStorage; CSS hides via body.no-card-fabs. #}
+                    <label class="label cursor-pointer py-1 mt-3">
+                        <span class="label-text text-xs">Show floating restore buttons in focused layouts</span>
+                        <input type="checkbox" id="settings-show-card-fabs" class="toggle toggle-primary toggle-sm" checked
+                               onchange="_setShowCardFabs(this.checked)" />
+                    </label>
+                    <p class="text-[10px] opacity-60 leading-snug">When ON (default), the bottom-right FAB cluster surfaces quick-jump buttons for cards not visible in the current layout (Subjects / Queue / Slop, depending on mode). Off = clean layout, recover via View dropdown.</p>
                 </div>
 
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />

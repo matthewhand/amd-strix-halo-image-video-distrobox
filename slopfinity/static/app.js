@@ -495,6 +495,24 @@ function _closeCardLayout(which) {
 }
 window._closeCardLayout = _closeCardLayout;
 
+// Restore-FAB visibility toggle (Settings → General). Default ON.
+// Persisted in localStorage; CSS rule .no-card-fabs hides every FAB.
+const _SHOW_CARD_FABS_KEY = 'slopfinity-show-card-fabs';
+function _isShowCardFabsOn() {
+    try { const v = localStorage.getItem(_SHOW_CARD_FABS_KEY); return v === null ? true : v === '1'; }
+    catch (_) { return true; }
+}
+function _setShowCardFabs(on) {
+    try { localStorage.setItem(_SHOW_CARD_FABS_KEY, on ? '1' : '0'); } catch (_) {}
+    document.body.classList.toggle('no-card-fabs', !on);
+    const el = document.getElementById('settings-show-card-fabs');
+    if (el && el.checked !== on) el.checked = on;
+}
+window._setShowCardFabs = _setShowCardFabs;
+document.addEventListener('DOMContentLoaded', () => {
+    _setShowCardFabs(_isShowCardFabsOn());
+});
+
 // One-click "show every card" — clears all three hidden flags at once.
 // Wired into Settings so users don't have to drop into DevTools when they
 // accidentally close ✕ a card and forget how to bring it back.
