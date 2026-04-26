@@ -37,8 +37,14 @@ TIER_PROFILES = {
     # ~62-80 s/step under tier=low, so 420s timed out at ~7/8 steps. The
     # 1260s headroom covers loading + 8 × 80s + VAE without black-holing
     # the queue. v_idx still advances on timeout via the main-loop guard.
-    "low": (8, "1:1", 17, 600, 1260),
-    "med": (20, "4:3", 33, 900, 1800),
+    #
+    # Aspect ratio fixed at 16:9 across ALL tiers so the base image matches
+    # the default video output (1280*720 = 16:9). Previously low=1:1 / med=4:3
+    # caused a square or 4:3 image to be fed into 16:9 video gen — visible
+    # letterbox / stretch on every Fast Track or early-iter clip. Tier still
+    # gates quality (steps) and frames-per-chain.
+    "low": (8, "16:9", 17, 600, 1260),
+    "med": (20, "16:9", 33, 900, 1800),
     "high": (50, "16:9", 49, 1500, 2700),
 }
 

@@ -765,6 +765,28 @@ body[data-slop-expanded="1"] #ui-split-lower {
     border-top: none;
 }
 
+/* In the default 3-pane layout, the slop card is the workhorse — there's
+   no good reason to collapse it; doing so leaves the lower split mostly
+   empty. Lock it open in default mode and disable the click-to-toggle
+   on the summary. Other layouts (subjects, queue, gallery, …) keep the
+   collapsible behaviour for compactness. */
+body:not([data-layout]) #slop-collapsible {
+    pointer-events: auto; /* container itself stays interactive */
+}
+
+body:not([data-layout]) #slop-collapsible > summary {
+    cursor: default !important;
+    pointer-events: none; /* the summary row no longer toggles */
+}
+
+body:not([data-layout]) #slop-collapsible > summary > * {
+    pointer-events: auto; /* but inner buttons (⊕ upload) still click */
+}
+
+body:not([data-layout]) #slop-collapsible .slop-indicator {
+    visibility: hidden;
+}
+
 /* Summary bar is always visible as the toggle row. */
 #slop-collapsible summary {
     list-style: none;
