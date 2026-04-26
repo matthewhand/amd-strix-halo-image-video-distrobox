@@ -81,6 +81,66 @@ DEFAULT_VOID_FALLBACK_TEMPLATE = "A cynical {style} scene. Text: 'VOID'."
 # overrides the built-in suggestion system prompt entirely (empty = default).
 DEFAULT_SUGGEST_USE_SUBJECTS = True
 DEFAULT_SUGGEST_CUSTOM_PROMPT = ""
+
+# Named suggestion prompts — power the per-mode suggestion-row UX:
+#   Endless mode: each marquee row uses a DIFFERENT named prompt; the user
+#                 can swap a row's prompt via the in-row chip and the row
+#                 re-fetches with the new system prompt.
+#   Simple mode:  every row uses the same default ("yes-and") so behaviour
+#                 stays predictable.
+#   Chat mode:    one batch (no rows), reply-suggestion variant.
+#   Raw mode:     suggestions are skipped entirely (LLM-free workflow).
+#
+# Each entry: {id, title, system, active, builtin}. `builtin` flags the
+# 5 starter prompts so a "Restore defaults" button can put them back without
+# clobbering user-added entries.
+DEFAULT_SUGGEST_PROMPTS = [
+    {
+        "id": "yes-and", "title": "Yes, and…", "active": True, "builtin": True,
+        "system": (
+            "You are a story editor. Given the SEED below, output exactly {n} short "
+            "next-scene continuations that follow the seed's most natural, supportive "
+            "trajectory — 'yes, and…' improv style. Each line ≤ 8 words, plain text, "
+            "one per line, no numbering, no bullets, no quotes."
+        ),
+    },
+    {
+        "id": "plot-twist", "title": "Plot Twist", "active": True, "builtin": True,
+        "system": (
+            "You are a story editor. Given the SEED below, output exactly {n} short "
+            "continuations that subvert its expected direction — introduce ONE "
+            "unexpected element per line that recontextualizes the seed. "
+            "Each line ≤ 8 words, plain text, one per line, no numbering, no bullets."
+        ),
+    },
+    {
+        "id": "concrete-detail", "title": "Concrete Detail", "active": True, "builtin": True,
+        "system": (
+            "You are a sensory-detail editor. Given the SEED below, output exactly {n} "
+            "short continuations that add ONE specific tactile/sensory detail per line "
+            "(texture, scent, sound, temperature). Each line ≤ 8 words, plain text, "
+            "one per line, no numbering, no bullets, no quotes."
+        ),
+    },
+    {
+        "id": "cynic", "title": "Cynic's Take", "active": False, "builtin": True,
+        "system": (
+            "You are a deadpan cynic. Given the SEED below, output exactly {n} short "
+            "continuations that reframe it through a wry, slightly nihilist lens — "
+            "without being mean. Each line ≤ 8 words, plain text, one per line, "
+            "no numbering, no bullets, no quotes."
+        ),
+    },
+    {
+        "id": "wonder", "title": "Childlike Wonder", "active": False, "builtin": True,
+        "system": (
+            "You are a wide-eyed first-encounter narrator. Given the SEED below, "
+            "output exactly {n} short continuations that reframe it as if seen for "
+            "the first time, with awe. Each line ≤ 8 words, plain text, one per line, "
+            "no numbering, no bullets, no quotes."
+        ),
+    },
+]
 # When True, every automatic /subjects/suggest fetch path on the dashboard
 # (page-load tryAutoSuggest, hover/scroll/idle prefetch) bails early. The
 # manual 🎲 Suggest button stays exempt — explicit user intent always wins.
@@ -147,6 +207,7 @@ DEFAULT_CONFIG = {
     "void_fallback_template": None,
     "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
+    "suggest_prompts": DEFAULT_SUGGEST_PROMPTS,
     "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
     "auto_suggest_enabled": True,
     "idle_throttle_pct": 5,

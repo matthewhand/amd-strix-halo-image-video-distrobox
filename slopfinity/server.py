@@ -412,7 +412,7 @@ def _default_suggest_system_prompt(n: int) -> str:
 
 @app.get("/subjects/suggest")
 async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, opener: int = 0,
-                            fresh: int = 0):
+                            fresh: int = 0, prompt_id: str = ""):
     """Generate N short visual subject ideas via the configured local LLM.
 
     Cache key includes both N and (subjects, settings flags) so toggling the
@@ -441,7 +441,7 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     env_override = (os.environ.get("SLOPFINITY_SUGGEST_CUSTOM_PROMPT") or "").strip()
     custom_prompt = env_override or (config.get("suggest_custom_prompt") or "").strip()
     subjects_in = (subjects or "").strip() if use_subjects else ""
-    cache_key = (n, use_subjects, custom_prompt, subjects_in, bool(endless), bool(opener))
+    cache_key = (n, use_subjects, custom_prompt, subjects_in, bool(endless), bool(opener), (prompt_id or ""))
     cache = getattr(subjects_suggest, "_cache", None)
     now = time.time()
     # Cache persists indefinitely while the cache_key is unchanged — page
@@ -455,7 +455,20 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     #   * fresh=1 — caller explicitly asked for variation (marquee drip-feed)
     if cache and cache[1] == cache_key and not endless and not opener and not fresh:
         return {"suggestions": cache[2], "cached": True}
-    sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
+    # prompt_id wins over custom_prompt: it points at a NAMED entry in
+    # config.suggest_prompts (e.g. "yes-and", "plot-twist"). The named
+    # prompt's .system text is rendered with {n} substituted. When the id
+    # doesn't resolve, fall back to custom_prompt → built-in default.
+    named_sys = ""
+    if prompt_id:
+        prompts_list = config.get("suggest_prompts") or []
+        match = next((p for p in prompts_list if isinstance(p, dict) and p.get("id") == prompt_id), None)
+        if match and match.get("system"):
+            try:
+                named_sys = match["system"].format(n=n)
+            except Exception:
+                named_sys = match["system"]
+    sys_p = named_sys or custom_prompt or _default_suggest_system_prompt(n)
     # "I'm Feeling Lucky" — a single random story-opener used to seed an
     # Endless run when the textarea is empty. We override the system
     # prompt with one that asks for ONE evocative opening scene; the
