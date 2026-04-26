@@ -2483,7 +2483,7 @@ function connect() {
             // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
             const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
             const ramEl = $('v-v');
-            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'secondary'); }
+            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'primary'); }
             $('r-v').innerText = d.stats.ram_u + ' / ' + Math.round(d.stats.ram_t) + ' GB';
 
             gH.push(d.stats.gpu); vH.push(ramPct);
@@ -2508,7 +2508,7 @@ function connect() {
                 }).join('');
             };
             $('g-t').innerHTML = _tickerHTML(gH, 'primary', { invert: true });
-            $('v-t').innerHTML = _tickerHTML(vH, 'secondary');
+            $('v-t').innerHTML = _tickerHTML(vH, 'primary');
 
             // Load average (1m) — same tone-flip pattern as GPU/RAM: text-info
             // normally, text-error above 80 % so the colour tracks the ticker.
