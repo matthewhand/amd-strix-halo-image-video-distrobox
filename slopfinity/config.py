@@ -38,24 +38,26 @@ DEFAULT_PHILOSOPHICAL_PROMPT = "You are a master cinematic concept artist."
 DEFAULT_FANOUT_SYSTEM_PROMPT = (
     "You are a master multi-stage cinematic director. Produce STRICT JSON "
     "with keys image, video, music, tts. If a stage's seed text is "
-    "non-empty, you MUST extend it — keep every subject, name, and "
-    "quoted token intact; only add sensory detail, lighting, motion, mood, "
-    "or delivery. Under 40 words per stage. Return ONLY JSON."
+    "non-empty, you MUST extend it. Encourage short, memorable aphorisms "
+    "when expressing verbal or written statements. Under 40 words per stage. "
+    "Return ONLY JSON."
 )
 
 # Fleet rewriter user-message template — run_fleet.py queue branch.
 # `{seed}` is interpolated with the queued prompt.
 DEFAULT_FLEET_USER_PROMPT_TEMPLATE = (
     "Rewrite as a detailed, visually evocative scene description for an AI "
-    "image generator. Subject: {seed}. Under 40 words. Include a short quote "
-    "written somewhere in the scene. Return ONLY the description, no preamble."
+    "image generator. Subject: {seed}. Under 40 words. Include a short, "
+    "memorable aphorism as a written or verbal statement in the scene. "
+    "Return ONLY the description, no preamble."
 )
 
 # Infinity-mode user-message template — run_fleet.py infinity branch.
 # `{theme}` is interpolated with the rotating theme.
 DEFAULT_INFINITY_USER_PROMPT_TEMPLATE = (
     "Describe a detailed, visually evocative cynical philosophical scene "
-    "about: {theme}. Under 40 words. Short quote written in the scene."
+    "about: {theme}. Under 40 words. Include a short, memorable aphorism "
+    "expressed verbally or written in the scene."
 )
 
 # Chaos-mode tangential-suggest system prompt — slopfinity/server.py chaos
@@ -64,10 +66,9 @@ DEFAULT_INFINITY_USER_PROMPT_TEMPLATE = (
 DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT = (
     "You are a concept artist for an AI video fleet. The user is currently "
     "working with these subjects: [{subjects_csv}]. Generate 8 NEW visual "
-    "subject ideas that are TANGENTIALLY related to those — riff on the "
-    "themes, motifs, mood, or vibe, but introduce fresh angles. 3-8 words "
-    "each. Cynical, philosophical, surreal, visually rich. Output ONLY a "
-    "JSON array of strings, no prose."
+    "subject ideas that are TANGENTIALLY related. Encourage short, "
+    "memorable aphorisms and surreal verbal concepts. 3-8 words each. "
+    "Cynical, philosophical, surreal. Output ONLY a JSON array of strings, no prose."
 )
 
 # VOID-style fallback when no LLM is reachable — run_fleet.py.
@@ -115,7 +116,7 @@ DEFAULT_CONFIG = {
     "upscale": False,
     "frames": 49,
     "size": "1280*720",
-    "enhancer_prompt": "You are a master cinematic director. Rewrite the user's prompt into a highly detailed, visually evocative description for an AI video generator. Focus on lighting, texture, and mood. Keep it under 60 words.",
+    "enhancer_prompt": "You are a master cinematic director. Rewrite the user's prompt into a highly detailed, visually evocative description for an AI video generator. Focus on lighting, texture, and mood. Encourage short, memorable aphorisms for any verbal or written elements. Keep it under 60 words.",
     "infinity_mode": False,
     "infinity_themes": ["existential crisis of lumpy clay robots", "cyberpunk dragons in neon rain"],
     "infinity_index": 0,
@@ -137,6 +138,11 @@ DEFAULT_CONFIG = {
     "suggest_use_subjects": DEFAULT_SUGGEST_USE_SUBJECTS,
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
     "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
+    "auto_suggest_enabled": True,
+    "idle_throttle_pct": 5,
+    "creativity_score": 5,
+    "quality_score": 5,
+    "concurrency_budget_gb": 0.0,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
     "scheduler": DEFAULT_SCHEDULER,
 }
