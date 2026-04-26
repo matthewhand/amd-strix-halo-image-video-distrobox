@@ -983,6 +983,162 @@ function _updateEndlessEnabled() {
 window._updateEndlessEnabled = _updateEndlessEnabled;
 document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
 
+// ---------------------------------------------------------------------------
+// Named suggestion prompts — the registry powering the unified Suggestions
+// badge + per-mode rendering. Loaded from /settings.suggest_prompts on
+// DOMContentLoaded; cached on window so subsequent reads are sync.
+// ---------------------------------------------------------------------------
+const _DEFAULT_SUGGEST_PROMPT_ID_KEY = 'slopfinity-suggest-default-prompt-id';
+const _ENDLESS_ROW_PROMPTS_KEY = 'slopfinity-endless-row-prompts';
+let _suggestPromptsCache = null;
+async function _loadSuggestPrompts() {
+    if (_suggestPromptsCache) return _suggestPromptsCache;
+    try {
+        const r = await fetch('/settings');
+        const d = await r.json();
+        _suggestPromptsCache = Array.isArray(d.suggest_prompts) ? d.suggest_prompts : [];
+    } catch (_) { _suggestPromptsCache = []; }
+    return _suggestPromptsCache;
+}
+window._loadSuggestPrompts = _loadSuggestPrompts;
+function _getActivePrompts() {
+    return (_suggestPromptsCache || []).filter(p => p && p.active);
+}
+function _getPromptById(id) {
+    return (_suggestPromptsCache || []).find(p => p && p.id === id) || null;
+}
+function _getDefaultPromptId() {
+    try {
+        const v = localStorage.getItem(_DEFAULT_SUGGEST_PROMPT_ID_KEY);
+        if (v && _getPromptById(v)) return v;
+    } catch (_) {}
+    // First-active fallback so a fresh session doesn't render an empty badge.
+    const first = _getActivePrompts()[0];
+    return first ? first.id : 'yes-and';
+}
+function _setDefaultPromptId(id) {
+    try { localStorage.setItem(_DEFAULT_SUGGEST_PROMPT_ID_KEY, id); } catch (_) {}
+    _refreshSuggestBadge();
+    if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
+}
+window._getDefaultPromptId = _getDefaultPromptId;
+window._setDefaultPromptId = _setDefaultPromptId;
+
+// Endless mode tracks ONE prompt_id per row so each marquee line can
+// represent a different angle on the seed. Persisted in localStorage as
+// an array of ids; first run defaults to all-active prompts.
+function _getEndlessRowPrompts() {
+    try {
+        const raw = localStorage.getItem(_ENDLESS_ROW_PROMPTS_KEY);
+        const arr = raw ? JSON.parse(raw) : null;
+        if (Array.isArray(arr) && arr.length) {
+            return arr.filter(id => typeof id === 'string' && _getPromptById(id));
+        }
+    } catch (_) {}
+    return _getActivePrompts().slice(0, 4).map(p => p.id);
+}
+function _setEndlessRowPrompts(arr) {
+    const clean = (Array.isArray(arr) ? arr : []).filter(id => typeof id === 'string' && _getPromptById(id));
+    try { localStorage.setItem(_ENDLESS_ROW_PROMPTS_KEY, JSON.stringify(clean)); } catch (_) {}
+}
+window._getEndlessRowPrompts = _getEndlessRowPrompts;
+window._setEndlessRowPrompts = _setEndlessRowPrompts;
+
+function _refreshSuggestBadge() {
+    const sugInput = document.getElementById('subjects-suggestions-toggle-input');
+    const isOn = !!(sugInput && sugInput.checked);
+    const nameBtn = document.getElementById('subjects-suggest-prompt-name');
+    const refreshBtn = document.getElementById('subjects-suggest-btn');
+    const lbl = document.getElementById('subjects-suggest-prompt-name-label');
+    if (nameBtn) nameBtn.classList.toggle('hidden', !isOn);
+    // Refresh button stays visible even when Suggestions toggle is OFF — it's
+    // the badge's right-edge "kick" affordance. Clicking it auto-enables the
+    // toggle on the user's behalf so a stale-OFF state doesn't trap them.
+    if (refreshBtn) {
+        refreshBtn.classList.remove('hidden');
+        refreshBtn.title = isOn
+            ? 'Regenerate suggestions for the active prompt'
+            : 'Suggestions are off — click to enable + fetch a fresh batch';
+    }
+    if (lbl) {
+        const p = _getPromptById(_getDefaultPromptId());
+        // Cache may not be loaded yet on first paint — show the canonical
+        // built-in default (matches DEFAULT_SUGGEST_PROMPTS[0] in config.py)
+        // rather than a placeholder, so the badge always reads as a real
+        // option even before /settings has resolved.
+        lbl.textContent = p ? p.title : 'Yes, and…';
+    }
+}
+window._refreshSuggestBadge = _refreshSuggestBadge;
+
+// Popover picker — lists every active prompt; selecting one updates either
+// the global default OR the specific endless row (when invoked from there).
+// `targetRowIdx` is null for the unified badge / non-endless modes.
+let _pickerActiveTargetRowIdx = null;
+function _openSuggestPromptPicker(targetRowIdx) {
+    _pickerActiveTargetRowIdx = (typeof targetRowIdx === 'number') ? targetRowIdx : null;
+    const popover = document.getElementById('subjects-suggest-prompt-popover');
+    if (!popover) return;
+    const anchor = (targetRowIdx != null)
+        ? document.querySelector(`[data-endless-row-prompt-btn="${targetRowIdx}"]`)
+        : document.getElementById('subjects-suggest-prompt-name');
+    const active = _getActivePrompts();
+    const currentId = (targetRowIdx != null)
+        ? (_getEndlessRowPrompts()[targetRowIdx] || _getDefaultPromptId())
+        : _getDefaultPromptId();
+    popover.innerHTML = active.map(p => {
+        const sel = p.id === currentId ? 'bg-base-300/60' : '';
+        return `<button type="button" class="w-full text-left px-2 py-1 rounded ${sel} hover:bg-base-300/40"
+            onclick="_pickPromptForActiveTarget('${p.id}')">
+            <span class="font-semibold">${_htmlEscape(p.title)}</span>
+        </button>`;
+    }).join('') + `
+        <div class="border-t border-base-300/60 my-1"></div>
+        <button type="button" class="w-full text-left px-2 py-1 rounded hover:bg-base-300/40 text-base-content/60"
+            onclick="document.getElementById('subjects-suggest-prompt-popover').classList.add('hidden'); openSettings(); setTimeout(() => { const el = document.querySelector('#settings-modal input[type=radio][aria-label=&quot;LLM&quot;]'); if (el) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles:true})); } }, 200);">
+            ✎ Manage prompts in Settings
+        </button>`;
+    if (anchor) {
+        const r = anchor.getBoundingClientRect();
+        popover.style.position = 'fixed';
+        popover.style.left = r.left + 'px';
+        popover.style.top = (r.bottom + 4) + 'px';
+    }
+    popover.classList.remove('hidden');
+    // Dismiss on outside click.
+    setTimeout(() => {
+        const onDocClick = (e) => {
+            if (!popover.contains(e.target) && e.target !== anchor) {
+                popover.classList.add('hidden');
+                document.removeEventListener('click', onDocClick);
+            }
+        };
+        document.addEventListener('click', onDocClick);
+    }, 0);
+}
+window._openSuggestPromptPicker = _openSuggestPromptPicker;
+
+function _pickPromptForActiveTarget(id) {
+    const popover = document.getElementById('subjects-suggest-prompt-popover');
+    if (popover) popover.classList.add('hidden');
+    if (_pickerActiveTargetRowIdx != null) {
+        const arr = _getEndlessRowPrompts();
+        while (arr.length <= _pickerActiveTargetRowIdx) arr.push(_getDefaultPromptId());
+        arr[_pickerActiveTargetRowIdx] = id;
+        _setEndlessRowPrompts(arr);
+        if (typeof _regenEndlessRow === 'function') _regenEndlessRow(_pickerActiveTargetRowIdx);
+    } else {
+        _setDefaultPromptId(id);
+    }
+    _pickerActiveTargetRowIdx = null;
+}
+window._pickPromptForActiveTarget = _pickPromptForActiveTarget;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await _loadSuggestPrompts();
+    _refreshSuggestBadge();
+});
+
 // LLM-availability gate for Subjects modes. Endless / Simple / Chat all
 // need a reachable LLM; Raw is the only mode that works without one
 // (per-stage prompts pre-filled OR queued verbatim with no rewrite).
@@ -6631,68 +6787,163 @@ function _renderCachedSuggestions() {
 // 🎲 Suggest button entry point. INTENTIONALLY NOT gated by
 // _isGpuIdleEnough() — manual user click always wins. See the audit
 // block above _isGpuIdleEnough for the full inventory.
-async function regenSuggestions(n = 6) {
-    // The 🎲 button: ALWAYS fires for the FIRST row. Subsequent rows top
-    // up the marquee stack one at a time, gated by system pressure — we
-    // wait between calls and skip when GPU/RAM/Load look stressed so we
-    // don't fight the active fleet for the LLM's GPU time.
-    // RAM-tight guard is a separate, soft check (modal asks the user;
-    // cancel aborts with no side effects).
-    if (!(await _ramGuardCheck())) return;
-    const box = document.getElementById('subject-chips-stack');
-    if (!box) return;
-    // Bigger, labelled spinner in endless mode so the user understands
-    // a fresh batch is being requested for their story (the LLM call can
-    // take a few seconds). Other modes get the compact dots.
-    const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
-    box.innerHTML = isEndless
-        ? '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>'
-        : '<span class="loading loading-dots loading-xs"></span>';
+// Single fetch helper used by every mode-specific branch. fresh=1 tells
+// the server to bypass cache + nudge the LLM with a salt so successive
+// calls actually differ. promptId picks ONE named prompt's system text.
+async function _fetchSuggestBatch(opts) {
+    const o = opts || {};
     const subjects = (($('p-core') && $('p-core').value) || '').trim();
-    const fetchOne = async (forceFresh) => {
-        // fresh=1 tells the server to (a) bypass its cache and (b) inject a
-        // random salt nudge into the LLM user_msg so the batch ACTUALLY
-        // differs from the previous one. _t= is kept as a HTTP-cache buster.
-        const qs = '?n=' + n
-            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-            + (forceFresh ? '&fresh=1&_t=' + Date.now() : '');
+    const qs = '?n=' + (o.n || 6)
+        + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+        + (o.promptId ? '&prompt_id=' + encodeURIComponent(o.promptId) : '')
+        + (o.fresh ? '&fresh=1&_t=' + Date.now() : '');
+    try {
         const r = await fetch('/subjects/suggest' + qs);
         const data = await r.json();
-        return data.suggestions || [];
-    };
-    // Row 1 — wholesale-replace the stack so the user sees a fresh batch.
-    let arr;
-    try {
-        arr = await fetchOne(false);
-    } catch (e) {
-        box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+        return (data && data.suggestions) || [];
+    } catch (_) { return []; }
+}
+window._fetchSuggestBatch = _fetchSuggestBatch;
+
+// Per-mode regen entry. Branches on subjects mode.
+//   raw     — bail (suggestions skipped entirely)
+//   simple  — N rows (default 3) all using the user's default prompt_id
+//   endless — N rows, EACH using its own prompt_id from _getEndlessRowPrompts
+//             (per-row label clickable to swap → row regenerates)
+//   chat    — 4 reply chips, no marquee, derived from chat history
+async function regenSuggestions(n = 6) {
+    if (!(await _ramGuardCheck())) return;
+    // Clicking refresh while the Suggestions toggle is OFF auto-enables
+    // it — the user clearly wants suggestions, even if the toggle was
+    // turned off earlier. Saves them an extra click on the badge.
+    const sugInput = document.getElementById('subjects-suggestions-toggle-input');
+    if (sugInput && !sugInput.checked && typeof toggleSuggestionsHidden === 'function') {
+        toggleSuggestionsHidden(false);
+    }
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    const stackArea = document.getElementById('subjects-suggestions-area');
+    if (mode === 'raw') {
+        // Hide the suggestions area entirely; raw mode is LLM-free.
+        if (stackArea) stackArea.classList.add('hidden');
         return;
     }
+    if (stackArea) stackArea.classList.remove('hidden');
+    if (mode === 'chat') return _renderChatReplies();
+    const box = document.getElementById('subject-chips-stack');
+    if (!box) return;
+    if (mode === 'endless') return _renderEndlessRows(n);
+    return _renderSimpleRows(n);
+}
+window.regenSuggestions = regenSuggestions;
+
+// SIMPLE mode — 3 rows, all of the user's default prompt. Server-cache
+// hits row 1 → row 2/3 use fresh=1 to get genuinely different batches.
+async function _renderSimpleRows(n) {
+    const box = document.getElementById('subject-chips-stack');
+    if (!box) return;
+    const promptId = _getDefaultPromptId();
+    box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    const arr = await _fetchSuggestBatch({ n, promptId, fresh: false });
     if (!arr.length) {
         box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
         return;
     }
-    try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch { }
+    try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
     _renderSuggestChips(arr);
-    // Rows 2..N — drip-feed additional batches until the marquee stack has
-    // 4 rows (its display cap) OR pressure climbs. Each iteration: 1 s pause,
-    // pressure check, fetch, append. The pressure floor mirrors the existing
-    // ticker thresholds (>=80 % on any of GPU/RAM/Load is "stressed").
-    const TARGET_ROWS = 4;
-    const stack = document.getElementById('subject-chips-stack');
+    const TARGET_ROWS = 3;
     for (let i = 1; i < TARGET_ROWS; i++) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
         const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
         const ramT = t.ram_t || 0;
         const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
-        const stressed = (t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80;
-        if (stressed) break;
-        try {
-            const more = await fetchOne(true);
-            if (more && more.length && stack) _appendSuggestBatchRow(more);
-        } catch { break; }
+        if ((t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80) break;
+        const more = await _fetchSuggestBatch({ n, promptId, fresh: true });
+        if (more && more.length) _appendSuggestBatchRow(more);
     }
 }
+
+// ENDLESS mode — one row per entry in _getEndlessRowPrompts; each row
+// has a clickable prompt-name chip at its start (label inside
+// _appendSuggestBatchRow) so the user can swap that row's prompt and
+// trigger a re-fetch.
+async function _renderEndlessRows(n) {
+    const box = document.getElementById('subject-chips-stack');
+    if (!box) return;
+    box.innerHTML = '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>';
+    const rowPrompts = _getEndlessRowPrompts();
+    if (!rowPrompts.length) {
+        box.innerHTML = '<span class="text-[10px] italic text-warning">No active suggestion prompts. Add one in Settings → LLM.</span>';
+        return;
+    }
+    box.innerHTML = ''; // wipe spinner; rows append below
+    for (let i = 0; i < rowPrompts.length; i++) {
+        const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
+        const ramT = t.ram_t || 0;
+        const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
+        if (i > 0 && ((t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80)) break;
+        const promptId = rowPrompts[i];
+        const arr = await _fetchSuggestBatch({ n, promptId, fresh: i > 0 });
+        if (arr && arr.length) _appendSuggestBatchRow(arr, { promptId, rowIdx: i });
+        if (i < rowPrompts.length - 1) await new Promise(r => setTimeout(r, 700));
+    }
+}
+
+// Re-fetch a SINGLE endless row in place — invoked by the picker after the
+// user swaps that row's prompt. Replaces the row's chip content; rest of
+// the marquee stack is untouched.
+async function _regenEndlessRow(rowIdx) {
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    const rowPrompts = _getEndlessRowPrompts();
+    const promptId = rowPrompts[rowIdx];
+    if (!promptId) return;
+    const rows = stack.querySelectorAll('.suggest-marquee-row');
+    const row = rows[rowIdx];
+    if (row) row.innerHTML = '<span class="loading loading-dots loading-xs px-2"></span>';
+    const arr = await _fetchSuggestBatch({ n: 6, promptId, fresh: true });
+    if (!arr.length) {
+        if (row) row.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
+        return;
+    }
+    // Re-render the row by removing it + appending fresh; preserves order
+    // by re-walking from rowIdx and replacing only that one.
+    if (row) row.remove();
+    _appendSuggestBatchRow(arr, { promptId, rowIdx, insertAtIdx: rowIdx });
+}
+window._regenEndlessRow = _regenEndlessRow;
+
+// CHAT mode — 4 reply chips beneath the input, no marquee. Each chip is
+// a one-click "send this as your next message" shortcut. Generated against
+// the latest 6 messages of chat history so the suggestions stay contextual.
+async function _renderChatReplies() {
+    const host = document.getElementById('subjects-chat-replies');
+    if (!host) return;
+    const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
+    if (!history.length) { host.innerHTML = ''; return; }
+    host.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    // Compose a compact context: last assistant message text + last user message text.
+    const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
+    const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
+    const ctx = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
+    // Reuse /subjects/suggest with a tailored prompt_id 'chat-reply' (added
+    // to defaults in a follow-up; for now fall back to default prompt).
+    // Keep n=4 and use the chat context as the subjects seed.
+    const subjects = ctx;
+    const qs = '?n=4&subjects=' + encodeURIComponent(subjects) + '&fresh=1&_t=' + Date.now();
+    let arr = [];
+    try {
+        const r = await fetch('/subjects/suggest' + qs);
+        const d = await r.json();
+        arr = (d && d.suggestions) || [];
+    } catch (_) {}
+    if (!arr.length) { host.innerHTML = ''; return; }
+    host.innerHTML = arr.slice(0, 4).map(s =>
+        `<button type="button" class="btn btn-ghost btn-xs w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick="(function(t){const i=document.getElementById('subjects-chat-input');if(i){i.value=t;i.focus();}})(${JSON.stringify(s)})">
+            ${_htmlEscape(s)}
+        </button>`).join('');
+}
+window._renderChatReplies = _renderChatReplies;
 
 // ---------------------------------------------------------------------------
 // Multi-row marquee chip area — replaces the single-row carousel from #76.

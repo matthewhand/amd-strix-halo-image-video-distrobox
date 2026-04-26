@@ -2289,6 +2289,13 @@ body.subj-mode-endless.endless-running #subjects-input-row {
     display: none !important;
 }
 
+/* Raw mode — hide just the subject textarea (not the Queue button row).
+   The user fills the per-stage prompts directly; the subject seed is
+   irrelevant. The Queue button stays where it is, alone in the input row. */
+body.subj-mode-raw #p-core {
+    display: none !important;
+}
+
 /* The per-stage prompt panel (image / video / music / tts with AI Magic
    buttons) is only meaningful in Raw mode. Hide everywhere else.
    Simple mode lets the LLM auto-rewrite on queue; Endless cycles a story;

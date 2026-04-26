@@ -708,15 +708,23 @@
                                             class="btn btn-primary btn-sm flex-none"
                                             onclick="_sendChatMessage()">Send</button>
                                     </div>
+                                    {# Reply suggestions — populated by _renderChatReplies after
+                                       each assistant turn. 4 chips max, no marquee. Click a chip
+                                       to copy its text into the chat input. #}
+                                    <div id="subjects-chat-replies"
+                                        class="flex flex-col gap-1 mt-1 text-xs"></div>
                                 </div>
+                                {# Unified Suggestions badge — replaces the previous trio of
+                                   (toggle · prompt-link · refresh) buttons with a single
+                                   extended segment. When the toggle is ON, the row extends
+                                   right with the active prompt's name (clickable → popup
+                                   picker) and a refresh icon. _refreshSuggestBadge keeps
+                                   it in sync with localStorage state. #}
                                 <div id="subjects-need-ideas-row"
-                                    class="flex items-center justify-between gap-1 flex-wrap">
-                                    <div class="flex items-center gap-1 flex-wrap">
-                                        {# Suggestions on/off toggle. When OFF, Endless mode is
-                                           disabled with an explanatory tooltip — Endless drives
-                                           its story off the suggestion stream. #}
+                                    class="flex items-center gap-1 flex-wrap">
+                                    <div id="subjects-suggest-cluster" class="join">
                                         <label id="subjects-suggestions-toggle"
-                                            class="btn btn-primary btn-xs cursor-pointer gap-1.5"
+                                            class="join-item btn btn-primary btn-xs cursor-pointer gap-1.5"
                                             title="Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.">
                                             <input type="checkbox" id="subjects-suggestions-toggle-input"
                                                 class="hidden peer" onchange="toggleSuggestionsHidden(!this.checked);">
@@ -725,37 +733,40 @@
                                             </span>
                                             <span>Suggestions</span>
                                         </label>
-                                        <button id="subjects-suggestion-prompt-link" type="button"
-                                            class="btn btn-primary btn-xs gap-1.5 w-28"
-                                            title="Edit the system prompt used for auto-suggestions"
-                                            onclick="openSettingsToSuggestionPrompt()"><svg
-                                                xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                        <button id="subjects-suggest-prompt-name" type="button"
+                                            class="join-item btn btn-primary btn-outline btn-xs gap-1 hidden"
+                                            title="Active suggestion prompt — click to swap"
+                                            onclick="_openSuggestPromptPicker()">
+                                            <span id="subjects-suggest-prompt-name-label">Yes, and…</span>
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
                                                 stroke-linejoin="round" class="w-3 h-3 flex-none">
-                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                            </svg><span>Prompt settings</span></button>
+                                                <polyline points="6 9 12 15 18 9" />
+                                            </svg>
+                                        </button>
+                                        <button id="subjects-suggest-btn" type="button"
+                                            class="join-item btn btn-primary btn-outline btn-xs hidden"
+                                            onclick="regenSuggestions()"
+                                            title="Regenerate suggestions for the active prompt">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round" class="w-3 h-3 flex-none">
+                                                <path d="M21 12a9 9 0 0 0-15-6.7L3 8" />
+                                                <path d="M3 3v5h5" />
+                                                <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
+                                                <path d="M21 21v-5h-5" />
+                                            </svg>
+                                        </button>
                                     </div>
-                                    {# Regenerate moved to the far right of this row so it
-                                    visually mirrors the big Queue button to its left and
-                                    doesn't crowd the Suggestions / Suggest Prompt controls. #}
-                                    <button id="subjects-suggest-btn" type="button"
-                                        class="btn btn-primary btn-xs gap-1.5 whitespace-nowrap" onclick="regenSuggestions()"
-                                        title="Regenerate suggestions"><svg xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                            stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none">
-                                            <path d="M21 12a9 9 0 0 0-15-6.7L3 8" />
-                                            <path d="M3 3v5h5" />
-                                            <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
-                                            <path d="M21 21v-5h-5" />
-                                        </svg><span>Suggest</span></button>
                                     {# Hidden inputs preserve the IDs that JS handlers reach for
-                                    (endless-story-toggle, fresh-toggle). Real toggle UI lives
-                                    in Settings → LLM → Auto-suggestion. Both write to
-                                    localStorage so the persisted state hydrates these
-                                    on load and Settings on open. #}
+                                    (endless-story-toggle, fresh-toggle). #}
                                     <input type="checkbox" id="endless-story-toggle" class="hidden">
                                     <input type="checkbox" id="fresh-toggle" class="hidden">
+                                </div>
+                                {# Suggest-prompt picker popover. Position is relative to the
+                                   prompt-name button; shown via _openSuggestPromptPicker. #}
+                                <div id="subjects-suggest-prompt-popover"
+                                    class="hidden absolute z-30 mt-1 bg-base-200 border border-base-300 rounded-md shadow-lg p-1 min-w-[14rem] text-xs">
                                 </div>
                                 {# Multi-row marquee stack — each row auto-scrolls horizontally
                                 at a slow constant speed when its content overflows the row
