@@ -933,6 +933,30 @@ async def queue_requeue(data: dict = Body(...)):
     return {"ok": True}
 
 
+@app.get("/vae_grid")
+async def vae_grid_check(file: str):
+    """Return the VAE-grid detector's result for `file`. Reads the
+    persisted ``<file>.grid.json`` sidecar when present; otherwise
+    runs the FFT detector lazily and writes the sidecar so subsequent
+    requests are instant. `file` is resolved relative to EXP_DIR and
+    must not contain ``..``.
+    """
+    if not file or ".." in file or file.startswith("/"):
+        return JSONResponse({"ok": False, "error": "bad_path"}, status_code=400)
+    abs_path = os.path.join(EXP_DIR, file)
+    if not os.path.isfile(abs_path):
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    from . import vae_grid as _vg
+    cached = _vg.read_sidecar(abs_path)
+    if cached:
+        return {"ok": True, "cached": True, **cached}
+    # Lazy compute. Run in a thread so a 50ms FFT doesn't stall the
+    # event loop while the dashboard is busy with WS broadcasts.
+    result = await asyncio.to_thread(_vg.detect_grid, abs_path)
+    _vg.write_sidecar(abs_path, result)
+    return {"ok": True, "cached": False, **result}
+
+
 @app.post("/queue/clear-failed")
 async def queue_clear_failed():
     """Drop all done-but-failed items from the queue history.
