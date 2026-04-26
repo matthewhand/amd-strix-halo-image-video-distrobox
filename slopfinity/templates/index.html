@@ -138,7 +138,12 @@
         </div>
     </div>
 
-    <main class="w-full mx-auto p-4 md:p-6">
+    {# Main content starts invisible while the splash overlays the
+       viewport. _hideSplash() fades the splash out, then fades main
+       in (transition is set inline at the same time so it survives
+       even if app.css loads late). Without this, the dashboard
+       bleeds through the fading splash — user wants a clean handoff. #}
+    <main class="w-full mx-auto p-4 md:p-6" style="opacity:0;transition:opacity 400ms ease-out">
 
         <!-- Combined header + stats navbar — single sticky strip with brand on left, hardware pills + Latest, conn pill + settings on right. -->
         <!-- flex-nowrap + overflow-hidden on the inner row: when the viewport gets narrow, hardware pills clip behind the gear's left edge instead of wrapping to a second line. Settings gear stays anchored on the right. -->
