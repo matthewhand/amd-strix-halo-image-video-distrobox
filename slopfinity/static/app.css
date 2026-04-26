@@ -262,11 +262,11 @@ textarea.subjects-autogrow {
    On narrow viewports (< 768 px) we collapse the fixed-height container so
    the page reverts to natural document flow — the handle stays visible but
    inert. */
+/* Mirrors #split-divider's pill styling (between Subjects + Queue) so
+   the horizontal Slop divider reads as the same control idiom rotated
+   90° — primary/40 pill with shadow-md on default, primary on hover. */
 #ui-split-handle {
-    height: 8px;
-    background: linear-gradient(to bottom, transparent, hsl(var(--bc) / 0.15), transparent);
-    border-top: 1px solid hsl(var(--bc) / 0.10);
-    border-bottom: 1px solid hsl(var(--bc) / 0.10);
+    height: 12px;
     position: relative;
     margin: 4px 0;
     touch-action: none;
@@ -278,16 +278,15 @@ textarea.subjects-autogrow {
     top: 50%;
     transform: translate(-50%, -50%);
     width: 80px;
-    height: 4px;
-    background: hsl(var(--p) / 0.55);
-    border-radius: 3px;
-    box-shadow: 0 0 8px hsl(var(--p) / 0.25);
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    height: 6px;
+    background: hsl(var(--p) / 0.4);
+    border-radius: 9999px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    transition: background-color 0.15s ease;
 }
 #ui-split-handle:hover::after,
 #ui-split-handle.dragging::after {
     background: hsl(var(--p));
-    box-shadow: 0 0 12px hsl(var(--p) / 0.5);
 }
 /* Splitter container — no longer fixed height. Upper pane is splitter-sized
    (drag-to-resize); lower pane flows naturally and the page body itself
