@@ -2209,6 +2209,22 @@ body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
     min-height: 1.75rem;
 }
 
+/* DaisyUI's tablist uses display:grid (not flex). Grid auto-creates 0px
+   filler columns and the tab-content spans them all (grid-column 1/-1),
+   so without a width constraint the panel grows to the grid's full
+   intrinsic width — sometimes 20+kpx wide — overflowing the tablist's
+   overflow-x-auto and clipping prose at the right edge. Pin the panel
+   width to the modal-box max width (max-w-4xl = 56rem) so it can never
+   exceed its visible container. white-space:normal also undoes the
+   nowrap inheritance from the tab-strip's nowrap. */
+.tabs.settings-tabs > .tab-content {
+    white-space: normal !important;
+    max-width: min(56rem, 95vw) !important;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
 /* Card window-controls (hover overlay close/restore/max) — hidden when
    the user disables the feature in Settings. Toggle persists in
    localStorage as slopfinity_card_wm_enabled (default false post-Apr-26). */
