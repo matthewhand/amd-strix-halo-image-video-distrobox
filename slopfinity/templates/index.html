@@ -503,6 +503,13 @@
                                             <span class="subj-mode-full">Endless</span>
                                             <span class="subj-mode-short">E</span>
                                         </button>
+                                        <button type="button" data-subj-mode="variations"
+                                            class="join-item btn btn-xs btn-primary btn-outline"
+                                            onclick="_setSubjectsMode('variations')"
+                                            title="Variations — one seed subject becomes K LLM-rewritten takes (different style / lens / mood). All K queue together.">
+                                            <span class="subj-mode-full">Variations</span>
+                                            <span class="subj-mode-short">V</span>
+                                        </button>
                                     </div>
                                     {# Right-side cluster: live summary pill + pipeline-config button sit together so
                                     the
@@ -741,7 +748,7 @@
                                     conveys "in progress" so no spinner needed. Populated by
                                     the WS handler. Hidden when nothing's running. #}
                                     <span id="queue-header-activity"
-                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-start truncate"
+                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate"
                                         style="display:none">
                                         <span data-queue-header-activity-text></span>
                                     </span>
@@ -2156,7 +2163,32 @@
                         <br>
                         <span class="font-semibold">Endless</span> — seed a story (or use I'm Feeling Lucky for a random
                         opener); LLM auto-cycles continuation prompts at the cadence below.
+                        <br>
+                        <span class="font-semibold">Variations</span> — one seed becomes K LLM-rewritten takes (style /
+                        lens / mood). All K queue together.
                     </p>
+                    <label class="form-control mb-2">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
+                            <span>Variations · count K</span>
+                            <span class="font-mono"><span id="settings-variations-k-val">5</span></span>
+                        </span>
+                        <input id="settings-variations-k" type="range" min="2" max="12" step="1" value="5"
+                            class="range range-sm range-primary"
+                            oninput="$('settings-variations-k-val').innerText = this.value"
+                            onchange="(() => { try { localStorage.setItem('slopfinity-variations-k', this.value); } catch(_) {} if (typeof _updateSubjectsActionLabel === 'function') _updateSubjectsActionLabel(); }).call(this)" />
+                        <span class="label-text-alt text-[10px] opacity-60">How many variants to fan out per click (2–12).</span>
+                    </label>
+                    <label class="form-control mb-2">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Variations · spread axis</span>
+                        <select id="settings-variations-axis" class="select select-bordered select-sm"
+                            onchange="(() => { try { localStorage.setItem('slopfinity-variations-axis', this.value); } catch(_) {} }).call(this)">
+                            <option value="all">All — vary every dimension</option>
+                            <option value="style">Style — different visual media (cinematic / illustrated / dreamy / gritty)</option>
+                            <option value="lens">Lens — different camera angles + framings</option>
+                            <option value="mood">Mood — different emotional registers</option>
+                            <option value="time">Time — different time-of-day / weather / lighting</option>
+                        </select>
+                    </label>
                     <label class="form-control mb-2">
                         <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
                             <span>Endless cycle interval</span>
