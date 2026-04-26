@@ -1645,7 +1645,12 @@ async function _startEndlessStory() {
     if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => { });
 }
 
-function _endEndlessStory() {
+// Stop Endless mode and tear down its UI state. `clearLog`:
+//   true  → reset variant: also wipes the story log (destructive,
+//           confirmed by caller)
+//   false → submit variant: leaves the log so the user can copy / inspect
+function _endEndlessStory(clearLog) {
+    if (clearLog === undefined) clearLog = true; // legacy callers
     _endlessRunning = false;
     const ta = document.getElementById('p-core');
     if (ta) {
@@ -1653,9 +1658,11 @@ function _endEndlessStory() {
         ta.classList.remove('opacity-70');
     }
     const pane = document.getElementById('subjects-story-pane');
-    if (pane) pane.classList.add('hidden');
-    const log = document.getElementById('subjects-story-log');
-    if (log) log.textContent = '';
+    if (pane && clearLog) pane.classList.add('hidden');
+    if (clearLog) {
+        const log = document.getElementById('subjects-story-log');
+        if (log) log.textContent = '';
+    }
     // Stop the cycle.
     const t = document.getElementById('endless-story-toggle');
     if (t && t.checked) {
@@ -1665,6 +1672,20 @@ function _endEndlessStory() {
     _updateSubjectsActionLabel();
 }
 window._endEndlessStory = _endEndlessStory;
+
+// Submit — stop the auto-cycle, keep the story log visible so the user can
+// review what was queued. Doesn't clear, doesn't ask for confirmation.
+function _submitEndlessStory() {
+    _endEndlessStory(false);
+}
+window._submitEndlessStory = _submitEndlessStory;
+
+// Reset — destructive: clears the log and hides the pane. Confirms first.
+function _resetEndlessStory() {
+    if (!confirm('Reset story? This clears the story log. Already-queued clips keep running.')) return;
+    _endEndlessStory(true);
+}
+window._resetEndlessStory = _resetEndlessStory;
 
 function _copyEndlessStory() {
     const log = document.getElementById('subjects-story-log');
