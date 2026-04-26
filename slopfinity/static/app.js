@@ -55,15 +55,19 @@ document.addEventListener('DOMContentLoaded', () => {
 const _LAYOUT_VIEW_KEY = 'slopfinity-layout-view';
 function _applyLayoutView(view) {
   try { localStorage.setItem(_LAYOUT_VIEW_KEY, view); } catch (_) {}
-  // Four layout modes drive what the dashboard shows:
-  //   default  — Subjects + Queue + Slop (full dashboard)
-  //   queue    — Queue + Slop (Subjects hidden; Queue fills upper pane)
-  //   subjects — Subjects + Slop (Queue hidden; Subjects fills upper pane)
-  //   gallery  — Slop only (existing behaviour; upper pane fully hidden,
-  //              Subjects/Queue still reachable via FABs)
-  // The CSS rules in app.css gate visibility off body[data-layout="..."],
-  // mirroring how gallery already worked.
-  const valid = new Set(['gallery', 'queue', 'subjects']);
+  // Layout modes (drives body[data-layout="..."]; CSS in app.css gates
+  // visibility):
+  //   default     — Subjects + Queue + Slop (full dashboard)
+  //   subjects    — Subjects only (Queue + Slop hidden; FAB → Queue + Slop)
+  //   queue       — Queue only (Subjects + Slop hidden; FAB → Subjects + Slop)
+  //   gallery     — Slop only (Subjects + Queue hidden; FAB → Subjects + Queue)
+  //   subj-slop   — Subjects + Slop (Queue hidden; FAB → Queue)
+  //   queue-slop  — Queue + Slop (Subjects hidden; FAB → Subjects)
+  //   subj-queue  — Subjects + Queue (Slop hidden; FAB → Slop)
+  const valid = new Set([
+    'gallery', 'queue', 'subjects',
+    'subj-slop', 'queue-slop', 'subj-queue',
+  ]);
   if (valid.has(view)) document.body.dataset.layout = view;
   else delete document.body.dataset.layout;
 }
@@ -528,6 +532,29 @@ function _fmtElapsedHtml(ms) {
     return _fmtElapsed(ms).replace(/([hms]+)/g, '<span class="time-unit">$1</span>');
 }
 
+// Coarse, single-unit duration label that rounds UP to the next bigger unit
+// when the value is close to its boundary. Used in the per-stage output
+// reveal so each row's right-edge time chip stays narrow ("3m", "1h"). The
+// rule: ceil seconds — if that hits 60 promote to 1m; ceil minutes — if
+// that hits 60 promote to 1h. Anything ≥ 1h rounds up to the next hour.
+function _fmtRoundUp(ms) {
+    // null/undefined → unknown (caller decides whether to render). 0 or
+    // tiny durations still get a label ("0s" / "1s") so brief stages
+    // (LLM rewrite, TTS) don't render with an empty time column.
+    if (ms == null) return '';
+    if (ms < 0) ms = 0;
+    const sec = ms / 1000;
+    if (sec < 60) {
+        const s = Math.ceil(sec);
+        return s >= 60 ? '1m' : `${s}s`;
+    }
+    if (sec < 3600) {
+        const m = Math.ceil(sec / 60);
+        return m >= 60 ? '1h' : `${m}m`;
+    }
+    return `${Math.ceil(sec / 3600)}h`;
+}
+
 // ----- Done queue items: thumbnail / mini-player / asset link expanded card.
 // The summary row stays compact (badge · prompt · duration · asset count).
 // Expanding the <details> reveals a join-vertical list of asset previews:
@@ -861,7 +888,7 @@ function showPromptPeek(text, stage) {
     };
     const _label = stage ? (_stageRoleLabel[stage] || stage) : 'LLM-rewritten';
     const _subtitle = stage
-        ? `Sent to the ${_label.toLowerCase()} model for this iteration. Editable in <button type="button" class="link link-primary" onclick="document.getElementById('prompt-peek-modal').close(); openPromptsEdit('${_htmlEscape(stage)}')">Pipeline Advanced → ${_htmlEscape(_label)}</button>.`
+        ? `Sent to the ${_label.toLowerCase()} model for this iteration. Editable in <button type="button" class="link link-primary" onclick="document.getElementById('prompt-peek-modal').close(); openPromptsEdit('${_htmlEscape(stage)}')">Pipeline → ${_htmlEscape(_label)}</button>.`
         : 'The LLM-rewritten prompt the runner used.';
     dlg.innerHTML = `<div class="modal-box bg-base-200 border border-base-100 max-w-2xl">
         <h3 class="font-bold text-sm text-accent uppercase tracking-widest mb-1">${_htmlEscape(_label)} prompt</h3>
@@ -2059,7 +2086,7 @@ function openModelSettingsPopup(role, qTs) {
     if (titleEl) titleEl.textContent = title;
     if (bodyEl) {
         bodyEl.innerHTML = `<div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1">${body}</div>` +
-            `<div class="text-[10px] text-base-content/40 italic mt-3">Read-only snapshot from when this item was queued. Use “Open Pipeline Advanced” to edit defaults for future items.</div>`;
+            `<div class="text-[10px] text-base-content/40 italic mt-3">Read-only snapshot from when this item was queued. Use “Open Pipeline” to edit defaults for future items.</div>`;
     }
     const d = document.getElementById('model-settings-modal');
     if (d && d.showModal) d.showModal();
@@ -2754,8 +2781,16 @@ function connect() {
                         // or " in it (which would break onclick parsing).
                         // A delegated click handler (wired once at startup)
                         // reads the data-prompt-text on click.
+                        // Prompt button now opens the per-stage prompts
+                        // editor (used to open a read-only peek). The model
+                        // badge on the right takes over the "show what was
+                        // sent" role via openModelSettingsPopup, so the two
+                        // buttons effectively swap responsibilities — click
+                        // 📝 to edit prompts, click the model to see the
+                        // settings/snapshot for that stage.
+                        const _promptEditTarget = (s === 'Concept') ? 'Base Image' : s;
                         const promptBadge = promptForStage
-                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px] slop-prompt-peek" title="${_htmlEscape(s)} prompt — click to view" data-prompt-text="${_htmlEscape(promptForStage)}" data-prompt-stage="${_htmlEscape(s)}">📝 prompt →</button>`
+                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px]" title="${_htmlEscape(s)} prompt — click to edit" onclick='event.stopPropagation(); openPromptsEdit(${JSON.stringify(_promptEditTarget)})'>📝 prompt →</button>`
                             : '';
                         if (s === 'Concept') {
                             assetBadge = promptBadge;
@@ -2777,8 +2812,15 @@ function connect() {
                                 : asset && _isImg
                                 ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
                                 : '';
+                            // Tiny copy-button glyph that sits next to the
+                            // filename. Reads its target from data-copy-text
+                            // so quotes inside the path don't break the
+                            // attribute. Briefly tints success on copy.
+                            const _copyBtn = asset
+                                ? `<button type="button" class="flex-none w-4 h-4 inline-flex items-center justify-center opacity-50 hover:opacity-100 cursor-pointer" title="Copy ${_htmlEscape(asset)}" aria-label="Copy filename" data-copy-text="${_htmlEscape(asset)}" onclick="event.stopPropagation(); navigator.clipboard.writeText(this.dataset.copyText || '').then(()=>{this.classList.add('text-success');setTimeout(()=>this.classList.remove('text-success'),900);}).catch(()=>{});"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>`
+                                : '';
                             const fileBadge = asset
-                                ? `${_thumb}<a href="${_href}" target="_blank" rel="noopener" class="link link-hover font-mono text-[9px] truncate min-w-0" title="Open ${asset} in a new tab" onclick="event.stopPropagation()">${asset}</a>`
+                                ? `${_thumb}<a href="${_href}" target="_blank" rel="noopener" class="link link-hover font-mono text-[9px] truncate min-w-0" title="Open ${asset} in a new tab" onclick="event.stopPropagation()">${asset}</a>${_copyBtn}`
                                 : '';
                             // Stage shows BOTH the prompt badge (if a per-stage
                             // prompt exists from /enhance/distribute) AND the
@@ -2855,33 +2897,63 @@ function connect() {
                                     : modelId;
                             }
                         }
-                        const stageRoleEntry = _PROMPTS_STAGE_MAP.find(([st]) => st === s);
-                        const stageLabelHtml = stageRoleEntry
-                            ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts (locked: stage already ran)" onclick="event.stopPropagation(); openPromptsEdit(${JSON.stringify(s)})">✓ ${_htmlEscape(modelLabel)}</button>`
-                            : (s === 'Concept'
-                                ? `<button type="button" class="badge badge-xs badge-${tone} opacity-70 cursor-pointer" title="${s} — ${modelLabel}. Click to edit prompts" aria-label="Edit prompts" onclick="event.stopPropagation(); openPromptsEdit('Base Image')">✓ ${_htmlEscape(modelLabel)}</button>`
-                                : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">✓ ${_htmlEscape(modelLabel)}</span>`);
-                        // Right-edge cluster mirrors the queue summary row:
-                        //   [meta+timing] [model-badge] [menu-width spacer]
-                        // — anchored by min-widths so columns line up vertically
-                        // across every stage. The spacer reserves the same
-                        // horizontal space as the summary's ⋯ menu so model
-                        // badges align across summary AND output rows.
-                        const _metaTimingHtml = _metaHtml || timing
-                            ? `<span class="flex-none flex items-center gap-1 text-right font-mono text-[9px] text-base-content/60">${_metaHtml}${timing ? `<span class="opacity-70">${timing}</span>` : ''}</span>`
-                            : '';
-                        const _menuSpacer = `<span class="flex-none w-7" aria-hidden="true"></span>`;
+                        // Stage → role for openModelSettingsPopup. Final
+                        // Merge has no model settings (it's an ffmpeg
+                        // consolidation), so it stays a passive span.
+                        const _STAGE_SETTINGS_ROLE = {
+                            'Concept': 'llm',
+                            'Base Image': 'base',
+                            'Video Chains': 'video',
+                            'Audio': 'audio',
+                            'TTS': 'tts',
+                            'Post Process': 'upscale',
+                        };
+                        // ✓ if this stage actually produced output, ✗ if it
+                        // was skipped (model = none, or no asset on disk for
+                        // the asset-producing stages). Concept is always ✓
+                        // because the prompt itself is the artifact.
+                        let _stageHasOutput;
+                        if (s === 'Concept') {
+                            _stageHasOutput = true;
+                        } else if (s === 'Final Merge') {
+                            _stageHasOutput = !!_STAGE_ASSET(s, v, c);
+                        } else {
+                            const _fld = _STAGE_MODEL_FIELD[s];
+                            const _mid = _fld ? cfgSnap[_fld] : null;
+                            _stageHasOutput = !!(_mid && _mid !== 'none');
+                        }
+                        const _stageGlyph = _stageHasOutput ? '✓' : '✗';
+                        const _stageBadgeCls = _stageHasOutput
+                            ? `badge badge-xs badge-${tone} opacity-70 cursor-pointer`
+                            : 'badge badge-xs badge-ghost opacity-50 cursor-pointer';
+                        const _settingsRole = _STAGE_SETTINGS_ROLE[s];
+                        const stageLabelHtml = _settingsRole
+                            ? `<button type="button" class="${_stageBadgeCls}" title="${s} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_htmlEscape(modelLabel)}</button>`
+                            : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">${_stageGlyph} ${_htmlEscape(modelLabel)}</span>`;
+                        // Right-edge cluster mirrors the summary row's
+                        //   [model-badge] [menu]
+                        // by sitting the model in the same min-w-[7rem]
+                        // column and a coarse rounded-up duration chip in
+                        // the menu's slot (w-7). 2× overrun keeps its bold
+                        // error tint so wildly-overshooting stages still
+                        // jump out at a glance.
+                        const _roundedTime = a ? _fmtRoundUp(a.duration_s * 1000) : '';
+                        const _timeCls = _overrun2x
+                            ? "flex-none w-7 text-right font-mono text-[9px] font-bold text-error"
+                            : "flex-none w-7 text-right font-mono text-[9px] text-base-content/60";
+                        const timeChip = _roundedTime
+                            ? `<span class="${_timeCls}" title="${_htmlEscape(_fmtElapsed(a.duration_s * 1000))}${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}">${_roundedTime}</span>`
+                            : `<span class="flex-none w-7" aria-hidden="true"></span>`;
                         // min-w-0 on the LEFT cluster + truncate on the
                         // filename link clamps the asset column to whatever
-                        // horizontal space remains after meta + model + menu
-                        // claim their flex-none widths. Without this, a
-                        // long filename would push the right-side columns
+                        // horizontal space remains after model + time claim
+                        // their flex-none widths. Without this, a long
+                        // filename would push the right-side columns
                         // off-screen rather than truncating itself.
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
                             <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">${assetBadge}</span>
-                            ${_metaTimingHtml}
                             <span class="flex-none min-w-[7rem] text-right">${stageLabelHtml}</span>
-                            ${_menuSpacer}
+                            ${timeChip}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
                         // SUMMARY shows "<N> parts · <slug>" with the first
@@ -4372,20 +4444,16 @@ function _updateGenModePill() {
   const pill = document.getElementById('gen-mode-pill');
   if (!pill) return;
   const inf = document.getElementById('inf-on');
-  const idle = document.getElementById('when-idle-on');
-  const poly = document.getElementById('chaos-on');
   const now = document.getElementById('now-on');
   const term = document.getElementById('term-on');
   const parts = [];
   parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
-  if (inf && inf.checked && idle && idle.checked) parts.push('+idle');
-  if (inf && inf.checked && poly && poly.checked) parts.push('+poly');
   if (term && term.checked) parts.push('🛑 terminate');
   else if (now && now.checked) parts.push('⏯ now');
   else parts.push('queue');
-  // Concurrent dropped from this summary — it's a global Diagnostics
-  // setting now, not a per-popup pipeline choice, so it doesn't belong
-  // alongside the per-iteration mode chips.
+  // +idle / +poly / +concurrent dropped — those are global settings now
+  // (Diagnostics + Triggers tabs), not per-iteration knobs, so they
+  // don't belong alongside the queue-mode chips.
   pill.textContent = parts.join(' · ');
 }
 
@@ -4524,13 +4592,19 @@ function _appendSuggestBatchRow(items) {
     if (placeholder) placeholder.remove();
 
     const row = document.createElement('div');
-    row.className = 'suggest-marquee-row';
+    row.className = 'suggest-marquee-row entering';
     const track = document.createElement('div');
     track.className = 'suggest-marquee-track';
     const all = [...items, ...items]; // duplicate for seamless wraparound
     all.forEach(s => track.appendChild(_buildSuggestChip(s)));
     row.appendChild(track);
     stack.appendChild(row);
+    // Drop the .entering class once the slide-in completes so future
+    // hover/focus rules apply normally and the transform doesn't linger
+    // as inline animation state.
+    row.addEventListener('animationend', e => {
+        if (e.animationName === 'suggest-row-enter') row.classList.remove('entering');
+    }, { once: true });
 
     requestAnimationFrame(() => {
         const tw = track.scrollWidth;

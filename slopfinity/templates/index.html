@@ -217,6 +217,39 @@
                             <span class="text-[10px] text-primary hidden" data-view-check="gallery">●</span>
                         </button>
                     </li>
+                    <li class="menu-title pt-1 pb-0"><span class="text-[10px] uppercase opacity-50">Two-card</span></li>
+                    <li>
+                        <button type="button" data-view-option="subj-slop" onclick="selectLayoutView('subj-slop'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="18" rx="2" fill="currentColor" opacity="0.5"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Subjects + Slop</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="subj-slop">●</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" data-view-option="queue-slop" onclick="selectLayoutView('queue-slop'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="76" height="18" rx="2" fill="currentColor" opacity="0.5"/>
+                                <rect x="2"  y="24" width="76" height="24" rx="2" fill="currentColor" opacity="0.7"/>
+                                <line x1="6" y1="8"  x2="74" y2="8"  stroke="currentColor" stroke-width="1.5"/>
+                                <line x1="6" y1="14" x2="60" y2="14" stroke="currentColor" stroke-width="1.5"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Queue + Slop</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="queue-slop">●</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button type="button" data-view-option="subj-queue" onclick="selectLayoutView('subj-queue'); document.activeElement.blur();" class="flex items-center gap-2">
+                            <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
+                                <rect x="2"  y="2"  width="36" height="46" rx="2" fill="currentColor" opacity="0.5"/>
+                                <rect x="42" y="2"  width="36" height="46" rx="2" fill="currentColor" opacity="0.5"/>
+                            </svg>
+                            <span class="flex-1 text-xs">Subjects + Queue</span>
+                            <span class="text-[10px] text-primary hidden" data-view-check="subj-queue">●</span>
+                        </button>
+                    </li>
                 </ul>
             </div>
             {# Theme dropdown — lists every available theme with a 4-swatch
@@ -413,11 +446,11 @@
         <div class="card-body p-3 gap-2 mb-0 ui-split-cardbody">
             <div class="flex items-center gap-2">
                 <span class="text-xs font-bold uppercase tracking-wider text-accent flex-none">QUEUE <span id="q-count" class="badge badge-sm badge-accent ml-1">{{ queue | length }}</span></span>
-                {# Live activity in the middle of the header — spinner + verb
-                   ("rendering image…"). Populated by the WS handler. Hidden when
-                   nothing's running. #}
+                {# Live activity in the middle of the header — animated
+                   per-character render text. The fill animation already
+                   conveys "in progress" so no spinner needed. Populated by
+                   the WS handler. Hidden when nothing's running. #}
                 <span id="queue-header-activity" class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate" style="display:none">
-                    <span class="loading loading-spinner loading-xs"></span>
                     <span data-queue-header-activity-text></span>
                 </span>
                 {# Connection-lost pill stays here as a fallback only. #}
@@ -695,7 +728,7 @@
         <h3 id="model-settings-title" class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Stage settings</h3>
         <div id="model-settings-body" class="space-y-1 text-sm"></div>
         <div class="modal-action">
-            <button class="btn btn-sm btn-outline mr-auto" onclick="document.getElementById('model-settings-modal').close(); openPipeline();">Open Pipeline Advanced</button>
+            <button class="btn btn-sm btn-outline mr-auto" onclick="document.getElementById('model-settings-modal').close(); openPipeline();">Open Pipeline</button>
             <form method="dialog"><button class="btn btn-sm">Close</button></form>
         </div>
     </div>
@@ -718,7 +751,7 @@
 <!-- Pipeline Modal — compact, no tabs.
      Surface = toggles + 4 model selects + WILL-USE summary + RAM estimate.
      Heavier per-stage advanced (prompt overrides, LLM provider, Post, Quality
-     ramp, autonomous mode setup) lives in Settings → Pipeline Advanced. -->
+     ramp, autonomous mode setup) lives in Settings → Pipeline. -->
 <dialog id="pipeline-modal" class="modal">
     {# overflow-x-hidden + min-w-0 prevents the inner toggle row from forcing the
        modal wider than the viewport on narrow screens — toggles wrap cleanly. #}
@@ -768,7 +801,7 @@
         </div>
 
         <!-- ============ Output dims: aspect ratio + frames per part ============ -->
-        {# Both fields exist in Settings → Pipeline Advanced (Video tuning) too,
+        {# Both fields exist in Settings → Pipeline (Video tuning) too,
            but having them in the popup keeps the per-iteration knobs together.
            cfg-size's id is unique here; cfg-frames-popup mirrors to cfg-frames
            in the settings tab so updatePipeline() picks up either. #}
@@ -890,10 +923,10 @@
             </div>
         </div>
 
-        <p class="text-[11px] text-base-content/60 italic mb-2">Per-stage prompt overrides, LLM provider, frames, quality ramp, post-processing — moved to <button type="button" class="link link-primary" onclick="$('pipeline-modal').close(); openSettings();">Settings → Pipeline Advanced</button>.</p>
+        <p class="text-[11px] text-base-content/60 italic mb-2">Per-stage prompt overrides, LLM provider, frames, quality ramp, post-processing — moved to <button type="button" class="link link-primary" onclick="$('pipeline-modal').close(); openSettings();">Settings → Pipeline</button>.</p>
 
         {# Per-stage prompt overrides + LLM provider/Frames/Quality/Music gain/
-           Voice preset/Post-processing — relocated to Settings → Pipeline Advanced
+           Voice preset/Post-processing — relocated to Settings → Pipeline
            (lives below). The IDs are still rendered (in the Settings tab) so the
            existing app.js handlers keep working unchanged. #}
 
@@ -989,7 +1022,7 @@
     fleet runner re-reads config.json on entry to each stage, so any
     save here is picked up live by stages that have not yet started.
     Already-running and completed stages render disabled (locked).
-    The Settings → Pipeline Advanced tab remains the canonical
+    The Settings → Pipeline tab remains the canonical
     edit surface; this modal just exposes the same fields one click
     away from the active queue strip.
 -->
@@ -1063,9 +1096,9 @@
             </div>
         </div>
 
-        <div role="tablist" class="tabs tabs-boxed mb-4">
+        <div role="tablist" class="tabs tabs-lifted mb-4">
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" checked />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
 
                 <!-- ================== Section 1: Provider connection ================== -->
                 <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Provider connection</div>
@@ -1231,11 +1264,11 @@
                 </div>
             </div><!-- /LLM tabpanel -->
 
-            {# Pipeline Advanced — relocated from the old per-stage Pipeline-modal tabs.
+            {# Pipeline — relocated from the old per-stage Pipeline-modal tabs.
                Keeps every existing input ID so app.js handlers (updatePipeline, enhanceStage,
                etc.) keep working without changes. #}
-            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Pipeline Advanced" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Pipeline" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
 
                 <!-- LLM provider summary (read-only — full editor is the LLM tab) -->
                 <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Prompt LLM</div>
@@ -1318,24 +1351,6 @@
                     </div>
                 </fieldset>
 
-                <!-- Voice (TTS voiceover tuning) -->
-                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Voice · TTS voiceover</div>
-                <fieldset class="border border-base-300/60 rounded-lg px-3 pt-2 pb-3 mb-3">
-                    <legend class="px-1 text-[10px] uppercase tracking-widest opacity-60">Voice preset</legend>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <label class="form-control">
-                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice</span>
-                            <select id="tts-voice" class="select select-bordered select-sm w-full">
-                                <option value="ryan">Ryan (EN, m)</option>
-                                <option value="eric">Eric (EN, m)</option>
-                                <option value="vivian">Vivian (EN, f)</option>
-                                <option value="olivia">Olivia (EN, f)</option>
-                                <option value="ethan">Ethan (EN, m)</option>
-                            </select>
-                        </label>
-                    </div>
-                </fieldset>
-
                 <!-- Per-stage prompt overrides -->
                 <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Per-stage prompts</div>
                 <div class="space-y-3 mb-3">
@@ -1369,22 +1384,6 @@
                             <textarea id="p-music" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto mood from subject..."></textarea>
                         </div>
                     </div>
-                    <div>
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover line</span>
-                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
-                        </div>
-                        <div class="flex items-center gap-1 mb-2">
-                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
-                        </div>
-                        <div class="flex gap-2 items-center">
-                            <textarea id="tts-in" class="textarea textarea-bordered textarea-sm flex-1 h-10 text-xs" placeholder="One-off TTS preview..."></textarea>
-                            <button class="btn btn-xs btn-primary" onclick="generateTts()">Preview</button>
-                            <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
-                        </div>
-                        <audio id="tts-preview" class="w-full h-8 mt-2" controls preload="none"></audio>
-                    </div>
                 </div>
 
                 <!-- Mux & Post-process -->
@@ -1393,7 +1392,57 @@
                     Final-mux audio options (overlay/replace, cross-fade) now live with the
                     <span class="font-semibold not-italic">Music · heartmula track</span> group above so it's clear they affect the audio mix.
                 </div>
-            </div><!-- /Pipeline Advanced tabpanel -->
+            </div><!-- /Pipeline tabpanel -->
+
+            {# Speech tab — TTS voice picker, voiceover-line override, and
+               one-off preview. Was previously embedded inside the Pipeline
+               tab; relocated here so the speech-only knobs are easy to
+               find. IDs preserved so app.js handlers (generateTts,
+               enhanceStage('tts'), saveSettings, etc.) work unchanged. #}
+            <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Speech" />
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
+
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Voice preset</div>
+                <fieldset class="border border-base-300/60 rounded-lg px-3 pt-2 pb-3 mb-3">
+                    <legend class="px-1 text-[10px] uppercase tracking-widest opacity-60">Voice</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label class="form-control">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voice</span>
+                            <select id="tts-voice" class="select select-bordered select-sm w-full">
+                                <option value="ryan">Ryan (EN, m)</option>
+                                <option value="eric">Eric (EN, m)</option>
+                                <option value="vivian">Vivian (EN, f)</option>
+                                <option value="olivia">Olivia (EN, f)</option>
+                                <option value="ethan">Ethan (EN, m)</option>
+                            </select>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Voiceover line</div>
+                <div class="space-y-3 mb-3">
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover prompt override</span>
+                            <button type="button" class="btn btn-xs btn-primary btn-outline" onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI Magic</button>
+                        </div>
+                        <div class="flex items-center gap-1 mb-2">
+                            <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                            <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1" placeholder="Auto from subject..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Preview</div>
+                <div class="space-y-2">
+                    <div class="flex gap-2 items-center">
+                        <textarea id="tts-in" class="textarea textarea-bordered textarea-sm flex-1 h-10 text-xs" placeholder="One-off TTS preview..."></textarea>
+                        <button class="btn btn-xs btn-primary" onclick="generateTts()">Preview</button>
+                        <span class="badge badge-xs badge-outline badge-primary" id="tts-status">ready</span>
+                    </div>
+                    <audio id="tts-preview" class="w-full h-8" controls preload="none"></audio>
+                </div>
+            </div><!-- /Speech tabpanel -->
 
             {# Prompts tab — every hardcoded prompt-template the pipeline ships
                with, surfaced for end-user tuning. Each textarea is empty when
@@ -1407,7 +1456,7 @@
                infinity_user_prompt_template, chaos_suggest_system_prompt,
                void_fallback_template, enhancer_prompt). #}
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Prompts" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                 <p class="text-[11px] opacity-60 italic mb-3 leading-snug">
                     Every prompt below is a system or template string the
                     pipeline currently has hardcoded. Leave a textarea blank
@@ -1513,7 +1562,7 @@
                preserved so existing handlers (_updateChaosEnabled,
                _updateGenModePill, buildSlopBody) keep working unchanged. #}
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Triggers" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                 <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Fleet triggers</div>
                 <label id="when-idle-row" class="flex items-center gap-3 py-2">
                     <input type="checkbox" id="when-idle-on" class="toggle toggle-primary toggle-sm" {% if config.when_idle %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
@@ -1558,7 +1607,7 @@
             </div><!-- /Triggers tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                 <div class="flex items-center gap-2 mb-4">
                     <span class="text-[11px] uppercase tracking-widest text-base-content/60">Status</span>
                     <span id="sched-status-badge" class="badge badge-ghost font-mono">—</span>
@@ -1603,7 +1652,7 @@
             </div><!-- /Scheduler tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Diagnostics" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                 <div class="grid grid-cols-3 gap-3 mb-4">
                     <div class="bg-base-100 rounded-lg p-3 border border-base-300">
                         <div class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</div>
@@ -1653,7 +1702,7 @@
             {# Layout tab — choose between full-dashboard and gallery-focused
                views. Persisted in localStorage (`slopfinity-layout-view`). #}
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Layout" />
-            <div role="tabpanel" class="tab-content pt-4">
+            <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                 <p class="text-[11px] opacity-60 italic mb-3">Switch between full-dashboard and gallery-focused views. The gallery view hides the Subjects + Queue cards and exposes them as floating buttons that open in modals.</p>
                 <div class="grid grid-cols-2 gap-3">
                     <label class="cursor-pointer">
@@ -1722,7 +1771,7 @@
    uses w-full so the textarea + queue items expand to fill, not sit at
    their default narrow width. #}
 <dialog id="gallery-subjects-modal" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+    <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
         <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Subjects</h3>
         <div id="gallery-subjects-mount" class="w-full flex-1 overflow-y-auto"></div>
         <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
@@ -1730,7 +1779,7 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 <dialog id="gallery-queue-modal" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+    <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
         <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Queue</h3>
         <div id="gallery-queue-mount" class="w-full flex-1 overflow-y-auto"></div>
         <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>
@@ -1738,11 +1787,31 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-{# Slop FAB — visible in Subjects-focused / Queue-focused modes (the
-   inverse of the gallery FAB). Clicking moves #output-section into the
-   modal mount below so all its handlers stay live. #}
+{# Focused-mode FAB — visible in Subjects-focused / Queue-focused modes
+   (the inverse of the gallery FAB). Shows quick-jump buttons to the OTHER
+   two cards: in queue mode → Subjects + Slop; in subjects mode → Queue +
+   Slop. Each button is hidden by CSS when its target layout matches the
+   active layout (so the button for "where I already am" disappears). #}
 <div id="focus-slop-fab" aria-hidden="true">
-    <button class="btn btn-circle btn-accent shadow-xl" title="Slop" aria-label="Open Slop" onclick="openSlopFabDialog()">
+    <button data-fab-target="subjects" class="btn btn-circle btn-primary shadow-xl" title="Subjects" aria-label="Open Subjects" onclick="openGalleryFabDialog('subjects')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="13" x2="15" y2="13"/>
+            <line x1="9" y1="17" x2="13" y2="17"/>
+        </svg>
+    </button>
+    <button data-fab-target="queue" class="btn btn-circle btn-secondary shadow-xl" title="Queue" aria-label="Open Queue" onclick="openGalleryFabDialog('queue')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8"  y1="6"  x2="21" y2="6"/>
+            <line x1="8"  y1="12" x2="21" y2="12"/>
+            <line x1="8"  y1="18" x2="21" y2="18"/>
+            <line x1="3"  y1="6"  x2="3.01" y2="6"/>
+            <line x1="3"  y1="12" x2="3.01" y2="12"/>
+            <line x1="3"  y1="18" x2="3.01" y2="18"/>
+        </svg>
+    </button>
+    <button data-fab-target="slop" class="btn btn-circle btn-accent shadow-xl" title="Slop" aria-label="Open Slop" onclick="openSlopFabDialog()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="1"/>
             <rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -1752,7 +1821,7 @@
     </button>
 </div>
 <dialog id="focus-slop-modal" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl max-h-[85vh] flex flex-col">
+    <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
         <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Slop</h3>
         <div id="focus-slop-mount" class="w-full flex-1 overflow-y-auto"></div>
         <div class="modal-action flex-none"><form method="dialog"><button class="btn btn-sm">Close</button></form></div>

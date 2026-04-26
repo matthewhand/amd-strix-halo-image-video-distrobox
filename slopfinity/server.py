@@ -392,10 +392,16 @@ async def enhance_distribute(data: dict = Body(...)):
 
 
 def _default_suggest_system_prompt(n: int) -> str:
+    # Default prompt is intentionally GENERIC — no editorial tone — so a
+    # fresh install doesn't bias prompts toward any particular aesthetic.
+    # Users can override via the SLOPFINITY_SUGGEST_CUSTOM_PROMPT env var
+    # or Settings → Prompts → "Subjects-suggest system prompt".
     return (
         "You are a concept artist for an AI video fleet. "
-        f"Output ONLY a JSON array of exactly {n} short visual subject ideas "
-        "(3-8 words each). Cynical, philosophical, visually rich. Just the array."
+        f"Output exactly {n} short visual subject ideas, one per line. "
+        "Each line must be 3-8 words, plain text, no numbering, no bullets, "
+        "no quotes, no JSON, no markdown — just the phrase. "
+        "Variety across themes; visually rich."
     )
 
 
@@ -417,7 +423,12 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     import time
     config = cfg.load_config()
     use_subjects = bool(config.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS))
-    custom_prompt = (config.get("suggest_custom_prompt") or "").strip()
+    # Env override wins over Settings → Prompts. Lets a user pin their
+    # personal tone (e.g. "cynical philosophical") in `.env` so a fresh
+    # install/checkout doesn't lose it. Empty/unset → fall back to the
+    # Settings field, then the built-in default.
+    env_override = (os.environ.get("SLOPFINITY_SUGGEST_CUSTOM_PROMPT") or "").strip()
+    custom_prompt = env_override or (config.get("suggest_custom_prompt") or "").strip()
     subjects_in = (subjects or "").strip() if use_subjects else ""
     cache_key = (n, use_subjects, custom_prompt, subjects_in)
     cache = getattr(subjects_suggest, "_cache", None)
@@ -446,18 +457,46 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     # this is just an LLM ping, not a multi-GB diffusion stage.
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
         raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
+    # Parse plain-text, newline-separated lines. Strip common LLM
+    # decorations the prompt asks it not to use but sometimes still
+    # produces — leading numbers, bullets, quotes, surrounding markdown
+    # code fences. Falls back to legacy JSON-array parsing if the model
+    # ignored the plain-text instruction (so cached behaviour from older
+    # clients still works).
     suggestions = []
-    try:
-        s = json.loads(raw)
-        if isinstance(s, list):
-            suggestions = s
-    except Exception:
-        start, end = raw.find('['), raw.rfind(']')
-        if start != -1 and end > start:
-            try:
-                suggestions = json.loads(raw[start:end + 1])
-            except Exception:
-                pass
+    text = (raw or "").strip()
+    # Strip ``` fences if present.
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    # Plain-text path: line-by-line.
+    if text and not text.startswith("[") and not text.startswith("{"):
+        for line in text.splitlines():
+            t = line.strip()
+            if not t:
+                continue
+            # Strip leading bullets / numbering: "1. ", "1) ", "- ", "* "
+            t = re.sub(r"^\s*(?:\d+[\.\)]|[-*•])\s+", "", t)
+            # Trim wrapping quotes.
+            if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+                t = t[1:-1].strip()
+            if t:
+                suggestions.append(t)
+    # JSON-array fallback (legacy / model regression).
+    if not suggestions:
+        try:
+            s = json.loads(raw)
+            if isinstance(s, list):
+                suggestions = s
+        except Exception:
+            start, end = raw.find('['), raw.rfind(']')
+            if start != -1 and end > start:
+                try:
+                    suggestions = json.loads(raw[start:end + 1])
+                except Exception:
+                    pass
     suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
     if suggestions:
         subjects_suggest._cache = (now, cache_key, suggestions)
