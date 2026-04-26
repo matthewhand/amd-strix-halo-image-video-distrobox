@@ -1138,8 +1138,11 @@
                         </div>
                         {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
                         render each with data-slop-kind so filter chips can toggle visibility client-side. #}
-                        {% set _finals_set = vids | default([]) | list %}
-                        {% set all_assets = _finals_set + (live or []) %}
+                        {# Use the server's mixed-by-mtime list so a FINAL clip's
+                           component pieces (its base.png, chain mp4s) sit right
+                           next to it in the grid instead of being banished to a
+                           "below all finals" tail when the assets filter is on. #}
+                        {% set all_assets = mixed | default([]) | list %}
                         <div id="preview-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                             {% for f in all_assets[:64] %}
                             {% set is_mp4 = f.endswith('.mp4') %}

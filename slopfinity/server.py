@@ -93,11 +93,14 @@ def _kind_of(f: str) -> str:
 
 
 def _list_outputs():
-    """Return three lists sorted newest-first:
+    """Return four lists sorted newest-first:
         finals  — FINAL_*.mp4 (curated keepers → Completed Gallery)
         live    — everything else (chain mp4s, base pngs, bridges, test images)
                   mixed and sorted by mtime → Live Gallery
         legacy_pngs — all pngs (for back-compat templates that still branch on imgs)
+        mixed   — finals + live interleaved by mtime so a FINAL's component
+                  pieces (its base.png, chain mp4s) sit right next to it in
+                  the gallery instead of being banished below all finals.
     """
     try:
         entries = [
@@ -111,7 +114,8 @@ def _list_outputs():
     finals = [f for f, _ in entries if f.endswith('.mp4') and f.startswith('FINAL_')]
     live = [f for f, _ in entries if not (f.endswith('.mp4') and f.startswith('FINAL_'))]
     legacy_pngs = [f for f, _ in entries if f.endswith('.png')]
-    return finals, live, legacy_pngs
+    mixed = [f for f, _ in entries]
+    return finals, live, legacy_pngs, mixed
 
 
 @app.get("/assets")
@@ -249,7 +253,7 @@ async def assets_by_vidx(v_idx: int):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    finals, live, imgs = _list_outputs()
+    finals, live, imgs, mixed = _list_outputs()
     vids = finals  # alias preserved for Jinja template back-compat (v-grid)
     state = cfg.get_state()
     config = cfg.load_config()
@@ -273,6 +277,7 @@ async def index(request: Request):
             "vids": vids[:16],       # Completed Gallery (FINAL_*.mp4)
             "live": live[:64],        # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
             "imgs": imgs[:10],        # back-compat (hidden i-grid)
+            "mixed": mixed[:64],      # Finals interleaved with components by mtime — render path uses this when assets-filter is ON
             "storage": storage,
             "outputs_disk": outputs_disk,
             "ram": ram,
