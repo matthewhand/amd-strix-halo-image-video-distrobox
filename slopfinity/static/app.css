@@ -2173,3 +2173,25 @@ body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
 .divider {
     color: hsl(var(--bc) / 0.7);
 }
+
+/* Seed-asset drag-drop overlay — fires when files are dragged anywhere
+   over the page. The `seed-drag-active` class is toggled by
+   _wireSeedUpload() in app.js based on dragenter/dragleave depth. */
+body.seed-drag-active::before {
+    content: 'drop images to upload as seed assets';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background-color: hsl(var(--p) / 0.10);
+    border: 4px dashed hsl(var(--p) / 0.7);
+    color: hsl(var(--p));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    pointer-events: none;
+    backdrop-filter: blur(2px);
+}

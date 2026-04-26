@@ -1,5 +1,5 @@
 """Slopfinity FastAPI dashboard — packaged entry point."""
-from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Body
+from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Body, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -936,6 +936,63 @@ async def queue_requeue(data: dict = Body(...)):
         return JSONResponse({"ok": False, "error": "not requeueable (must be cancelled or done-failed)"}, status_code=404)
     cfg.save_queue(new_q)
     return {"ok": True}
+
+
+_SEED_IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
+_SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
+
+
+@app.post("/upload")
+async def upload_seed_assets(files: list[UploadFile] = File(...)):
+    """Accept user-uploaded image files and drop them into EXP_DIR
+    so they surface in the slop gallery via the existing /assets path.
+
+    Filename pattern: ``seed_{ts}_{slug}.{ext}`` — the ``seed_`` prefix
+    distinguishes user uploads from generator output for any future
+    consume-as-input pipeline branch.
+    """
+    saved = []
+    skipped = []
+    ts = int(time.time())
+    for idx, uf in enumerate(files or []):
+        original = (uf.filename or "upload").strip()
+        ext = os.path.splitext(original)[1].lower()
+        if ext not in _SEED_IMAGE_EXTS:
+            skipped.append({"name": original, "reason": "non-image extension"})
+            continue
+        # slugify: keep alnum + dash, replace anything else with _
+        stem = os.path.splitext(os.path.basename(original))[0] or "upload"
+        slug = "".join(c if c.isalnum() or c in "-_" else "_" for c in stem)[:64].strip("_") or "upload"
+        out_name = f"seed_{ts}_{idx:02d}_{slug}{ext}"
+        out_path = os.path.join(EXP_DIR, out_name)
+        size = 0
+        too_big = False
+        try:
+            with open(out_path, "wb") as fh:
+                while True:
+                    chunk = await uf.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > _SEED_MAX_BYTES:
+                        too_big = True
+                        break
+                    fh.write(chunk)
+            if too_big:
+                try:
+                    os.remove(out_path)
+                except OSError:
+                    pass
+                skipped.append({"name": original, "reason": "exceeds 25MB cap"})
+            else:
+                saved.append(out_name)
+        except OSError as exc:
+            skipped.append({"name": original, "reason": f"write failed: {exc}"})
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+    return {"ok": True, "saved": saved, "skipped": skipped}
 
 
 @app.get("/vae_grid")

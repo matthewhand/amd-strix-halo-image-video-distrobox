@@ -93,6 +93,103 @@ window._setSlopSize = _setSlopSize;
 document.addEventListener('DOMContentLoaded', () => _setSlopSize(_getSlopSize()));
 
 // ---------------------------------------------------------------------------
+// Seed-asset uploads — drag/drop anywhere on the page, paste from clipboard,
+// or click the ⊕ button in the slop gallery header. Files POST to /upload
+// and land in EXP_DIR with a `seed_` prefix so they surface in the gallery
+// via the existing /assets endpoint.
+// ---------------------------------------------------------------------------
+function _seedToast(msg, kind) {
+    const cls = ({ success: 'alert-success', warning: 'alert-warning', error: 'alert-error' })[kind] || 'alert-info';
+    const t = document.createElement('div');
+    t.className = 'toast toast-end z-50';
+    t.innerHTML = `<div class="alert ${cls} shadow-lg max-w-sm"><span class="text-sm">${msg.replace(/[<>&]/g, s => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[s]))}</span></div>`;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+}
+
+async function _uploadSeedFiles(fileList) {
+    const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith('image/'));
+    if (!files.length) return { saved: [], skipped: [] };
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f, f.name || 'upload.png'));
+    try {
+        const r = await fetch('/upload', { method: 'POST', body: fd });
+        const j = await r.json();
+        const saved = (j && j.saved) || [];
+        const skipped = (j && j.skipped) || [];
+        if (saved.length) _seedToast(`Uploaded ${saved.length} seed${saved.length === 1 ? '' : 's'}`, 'success');
+        if (skipped.length) _seedToast(`Skipped ${skipped.length} (${skipped[0].reason})`, 'warning');
+        return { saved, skipped };
+    } catch (e) {
+        _seedToast(`Upload failed: ${e.message}`, 'error');
+        return { saved: [], skipped: [] };
+    }
+}
+window._uploadSeedFiles = _uploadSeedFiles;
+
+(function _wireSeedUpload() {
+    let dragDepth = 0;
+    function isFileDrag(e) {
+        const types = e.dataTransfer && e.dataTransfer.types;
+        if (!types) return false;
+        for (let i = 0; i < types.length; i++) if (types[i] === 'Files') return true;
+        return false;
+    }
+    document.addEventListener('dragenter', (e) => {
+        if (!isFileDrag(e)) return;
+        dragDepth++;
+        document.body.classList.add('seed-drag-active');
+    });
+    document.addEventListener('dragleave', (e) => {
+        if (!isFileDrag(e)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) document.body.classList.remove('seed-drag-active');
+    });
+    document.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+    });
+    document.addEventListener('drop', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        dragDepth = 0;
+        document.body.classList.remove('seed-drag-active');
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) _uploadSeedFiles(files);
+    });
+    // Clipboard paste — only fire when no input/textarea is focused, so we
+    // don't hijack normal text paste.
+    document.addEventListener('paste', (e) => {
+        const ae = document.activeElement;
+        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        const files = [];
+        for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            if (it.kind === 'file') {
+                const f = it.getAsFile();
+                if (f && f.type && f.type.startsWith('image/')) files.push(f);
+            }
+        }
+        if (files.length) _uploadSeedFiles(files);
+    });
+    // Click handler for the ⊕ button + hidden file input in the gallery header.
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('btn-seed-upload');
+        const input = document.getElementById('seed-upload-input');
+        if (btn && input) {
+            btn.addEventListener('click', () => input.click());
+            input.addEventListener('change', () => {
+                if (input.files && input.files.length) {
+                    _uploadSeedFiles(input.files).then(() => { input.value = ''; });
+                }
+            });
+        }
+    });
+})();
+
+// ---------------------------------------------------------------------------
 // PriorityLoader: Limits concurrent media (img/video/audio) transfers.
 // Prevents browser slamming when many previews enter the viewport at once.
 // ---------------------------------------------------------------------------
