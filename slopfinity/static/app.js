@@ -6420,7 +6420,13 @@ async function regenSuggestions(n = 6) {
     if (!(await _ramGuardCheck())) return;
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
-    box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    // Bigger, labelled spinner in endless mode so the user understands
+    // a fresh batch is being requested for their story (the LLM call can
+    // take a few seconds). Other modes get the compact dots.
+    const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
+    box.innerHTML = isEndless
+        ? '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>'
+        : '<span class="loading loading-dots loading-xs"></span>';
     const subjects = (($('p-core') && $('p-core').value) || '').trim();
     const fetchOne = async (forceFresh) => {
         // Add a small randomized seed param so the server cache key changes
