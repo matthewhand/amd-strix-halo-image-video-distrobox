@@ -3509,13 +3509,13 @@ function connect() {
                         ? `<span class="flex-none w-12 text-right font-mono text-[9px] text-base-content/60" title="estimated (total chain time ÷ part count)">~${_fmtRoundUp(_perPartMs)}</span>`
                         : `<span class="flex-none w-12" aria-hidden="true"></span>`;
                     partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1" data-chain-row="${v}:${i}">
-                        <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
+                        <span class="min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
                             <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
                                 <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"></video>
                                 <span class="truncate">${_htmlEscape(chainName)}</span>
                             </a>
                         </span>
-                        <span class="flex-none min-w-[7rem] text-right">
+                        <span class="flex-none text-right ml-auto">
                             <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
                         </span>
                         ${_perPartChip}
@@ -3531,13 +3531,13 @@ function connect() {
                         const bridgeName = bridges[i] || `${stem}_f${i}.png`;
                         const bridgeHref = `/files/${encodeURIComponent(bridgeName)}`;
                         partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
-                            <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
+                            <span class="min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
                                 <a href="${bridgeHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
                                     <img src="${bridgeHref}" class="${thumbCls}" style="${thumbStyle}" loading="lazy" onerror="this.style.display='none'">
                                     <span class="truncate">${_htmlEscape(bridgeName)}</span>
                                 </a>
                             </span>
-                            <span class="flex-none min-w-[7rem] text-right">
+                            <span class="flex-none text-right ml-auto">
                                 <span class="badge badge-xs badge-warning opacity-80" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
                             </span>
                             <span class="flex-none w-12 text-right font-mono text-[9px] text-base-content/60" title="ffmpeg frame extract is sub-second">&lt;1s</span>
@@ -3582,10 +3582,10 @@ function connect() {
                 }
                 return `<details class="mt-1 video-chain-details" data-video-chain="${v}"${_vcOpen}>
                     <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono">
-                        <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r">
+                        <span class="min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r">
                             ${_vcLeftCluster}
                         </span>
-                        <span class="flex-none min-w-[7rem] text-right">
+                        <span class="flex-none text-right ml-auto">
                             <span class="badge badge-xs badge-success opacity-70">✓ ${_htmlEscape(_label)} · ${_totalChains}p</span>
                         </span>
                         ${_vcTimeChip}
@@ -3839,9 +3839,17 @@ function connect() {
                         // their flex-none widths. Without this, a long
                         // filename would push the right-side columns
                         // off-screen rather than truncating itself.
+                        // Layout: asset content sits at the left of the row;
+                        // model badge + time chip pinned to the right via
+                        // ml-auto. Asset uses min-w-0 + truncate so long
+                        // filenames clip rather than push the right
+                        // cluster off-screen. Earlier `flex-1` on the
+                        // asset column + min-w-[7rem] on the badge was
+                        // padding ~120px of empty whitespace between
+                        // filename and badge — now they sit adjacent.
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
-                            <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">${assetBadge}</span>
-                            <span class="flex-none min-w-[7rem] text-right">${stageLabelHtml}</span>
+                            <span class="min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">${assetBadge}</span>
+                            <span class="flex-none text-right ml-auto">${stageLabelHtml}</span>
                             ${timeChip}
                         </div>`;
                         // Video Chains stage emits a single collapsible whose
