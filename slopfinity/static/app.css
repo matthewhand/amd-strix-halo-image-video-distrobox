@@ -20,9 +20,9 @@
 .fade-edges {
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
           mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  scrollbar-width: none;
 }
 .fade-edges::-webkit-scrollbar { display: none; }
-.fade-edges { scrollbar-width: none; }
 
 /* Pipeline strip step labels — `.stage-full` shows the word ("Image"),
    `.stage-short` shows the acronym ("I"). Default to full; the .pipeline-compact
