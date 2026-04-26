@@ -1648,7 +1648,19 @@
             without breaking onto multiple lines. flex-nowrap forces a
             single row, overflow-x-auto adds the touch-scroll. #}
             <div role="tablist" class="tabs tabs-lifted mb-4 overflow-x-auto flex-nowrap whitespace-nowrap">
-                <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" checked />
+                <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="General" checked />
+                <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
+                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Interface</div>
+                    <label class="label cursor-pointer py-1">
+                        <span class="label-text text-xs">Enable layout switching (lock layout)</span>
+                        <input type="checkbox" id="settings-layout-lock-toggle" class="toggle toggle-primary toggle-sm"
+                            checked onchange="_setLayoutLocked(!this.checked)" />
+                    </label>
+                    <p class="text-[10px] opacity-60 leading-snug">When OFF, the View dropdown and card window controls
+                        are dimmed/disabled to prevent accidental layout shifts.</p>
+                </div>
+
+                <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />
                 <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
 
                     <!-- ================== Section 1: Provider connection ================== -->
@@ -2495,13 +2507,6 @@
                         <p class="text-[11px] opacity-60 italic leading-snug">Switch between full-dashboard and
                             gallery-focused views. The gallery view hides the Subjects + Queue cards and exposes them as
                             floating buttons that open in modals.</p>
-                        <label
-                            class="flex items-center gap-2 cursor-pointer select-none bg-base-200/50 p-1.5 rounded-lg border border-base-300 ml-4 flex-none">
-                            <input type="checkbox" id="settings-layout-lock-toggle"
-                                class="toggle toggle-primary toggle-xs" checked
-                                onchange="_setLayoutLocked(!this.checked)" />
-                            <span class="text-[10px] uppercase tracking-wider font-bold">Enable layout switching</span>
-                        </label>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label class="cursor-pointer">
