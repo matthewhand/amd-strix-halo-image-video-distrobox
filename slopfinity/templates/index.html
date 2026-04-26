@@ -759,13 +759,13 @@
         <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-3">Pipeline</h3>
 
         <!-- ============ Toggles row ============ -->
-        {# Toggles arranged into three logical groups (Lifecycle / Trigger /
-           Behavior). Single flex-wrap container — at narrow viewports the
-           groups reflow onto multiple rows, with each group's tiny uppercase
-           label acting as an inline header. Faint vertical dividers appear
-           only at lg+ viewports where everything fits on one line. #}
+        {# Per-iteration scheduler toggles in a flat row. Polymorphic +
+           Concurrent + When-Idle moved to Settings → Triggers / Diagnostics
+           (those are global, not per-popup choices); the chaos-on /
+           when-idle-on / concurrent-on IDs still exist over there so all
+           app.js handlers keep working unchanged. #}
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
-            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Lifecycle</span>
+            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Scheduler</span>
             <label class="flex items-center gap-2">
                 <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
@@ -774,30 +774,10 @@
                 <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Infinity">Infinity</span>
             </label>
-
-            <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
-
-            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Trigger</span>
-            {# When Idle moved to Settings → Triggers (gear icon, top right). The
-               control is fleet-lifecycle config, not a per-popup pipeline
-               choice. IDs preserved (when-idle-on / when-idle-row) so all
-               app.js handlers (_updateChaosEnabled, _updateGenModePill, …)
-               keep working regardless of which DOM hosts the toggle. #}
             <label class="flex items-center gap-2">
                 <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate ASAP" data-off-label="Generate ASAP" title="Inserts your prompt right after the active job in the queue. With Terminate also on, the active job is cancelled first.">Generate ASAP</span>
             </label>
-
-            <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
-
-            {# Polymorphic moved to Settings → Triggers (gear icon, top
-               right). It's a global lifecycle behavior, not a per-popup
-               pipeline choice. The toggle id (chaos-on) and row id
-               (chaos-row) are preserved so existing handlers
-               (_updateChaosEnabled, _updateGenModePill, buildSlopBody)
-               keep working regardless of which DOM hosts the toggle. #}
-            {# Concurrent toggle is also in Settings → Diagnostics for
-               the same reason. #}
         </div>
 
         <!-- ============ Output dims: aspect ratio + frames per part ============ -->
