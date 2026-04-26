@@ -531,6 +531,72 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     return {"suggestions": suggestions, "cached": False}
 
 
+@app.get("/subjects/variations")
+async def subjects_variations(seed: str = "", n: int = 5, axis: str = "all"):
+    """Generate N variant rewrites of a single SEED subject — different
+    angles on the same core idea (style, camera, mood, time-of-day, etc.).
+
+    Distinct from /subjects/suggest: that endpoint generates *unrelated*
+    new ideas; this one keeps the seed's essential subject intact and
+    explores AROUND it. Powers the Subjects-card Variations mode (one
+    seed → K queue entries each rendering a different take).
+
+    `axis` biases the spread:
+      all     — vary every dimension freely (default)
+      style   — same scene, different visual style/medium
+      lens    — same scene, different camera angle/framing
+      mood    — same scene, different emotional register
+      time    — same scene, different time-of-day / season / lighting
+    """
+    seed_in = (seed or "").strip()
+    if not seed_in:
+        return JSONResponse({"variations": [], "error": "empty seed"}, status_code=400)
+    n = max(2, min(int(n), 12))
+    axis = (axis or "all").strip().lower()
+    if axis not in ("all", "style", "lens", "mood", "time"):
+        axis = "all"
+
+    axis_hint = {
+        "all":   "different visual styles, camera angles, moods, and times of day",
+        "style": "different visual styles or media (cinematic, illustrated, dreamlike, gritty, claymation, oil-painted)",
+        "lens":  "different camera angles and framings (wide, closeup, overhead, dutch tilt, tracking shot)",
+        "mood":  "different emotional registers (tense, serene, chaotic, melancholy, triumphant)",
+        "time":  "different times of day or weather (golden hour, blue hour, monsoon, blizzard, neon midnight)",
+    }[axis]
+
+    sys_p = (
+        "You are a concept artist iterating on a single visual idea. "
+        f"Given the SEED below, output exactly {n} VARIATIONS that explore "
+        f"the same core subject through {axis_hint}. Each variation must "
+        "keep the SEED's essential subject intact — no new subjects, no "
+        "story continuation. Output: one variation per line, plain text, "
+        "3-10 words each, no numbering, no bullets, no quotes, no JSON."
+    )
+    user_msg = f"SEED: {seed_in}"
+
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+        raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
+
+    variations = []
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    for line in text.splitlines():
+        t = line.strip()
+        if not t:
+            continue
+        t = re.sub(r"^\s*(?:\d+[\.\)]|[-*•])\s+", "", t)
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1].strip()
+        if t:
+            variations.append(t)
+    variations = [str(v).strip() for v in variations if str(v).strip()][:n]
+    return {"variations": variations, "seed": seed_in, "axis": axis}
+
+
 # Real-model candidate pools per role. `__random__` picks uniformly from
 # the role's pool when /config arrives. Keep these in sync with the option
 # lists in templates/index.html.

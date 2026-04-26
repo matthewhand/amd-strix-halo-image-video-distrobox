@@ -1545,12 +1545,14 @@ let _endlessRunning = false;
 function _getSubjectsMode() {
     try {
         const v = localStorage.getItem(_SUBJ_MODE_KEY);
-        return v === 'endless' ? 'endless' : 'raw';
+        if (v === 'endless') return 'endless';
+        if (v === 'variations') return 'variations';
+        return 'raw';
     } catch (_) { return 'raw'; }
 }
 
 function _setSubjectsMode(mode) {
-    if (mode !== 'raw' && mode !== 'endless') mode = 'raw';
+    if (mode !== 'raw' && mode !== 'endless' && mode !== 'variations') mode = 'raw';
     try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) { }
     document.querySelectorAll('.subjects-mode-pill button[data-subj-mode]').forEach(b => {
         const active = b.getAttribute('data-subj-mode') === mode;
@@ -1566,6 +1568,25 @@ function _setSubjectsMode(mode) {
     if (pane) pane.classList.toggle('hidden', !(mode === 'endless' && _endlessRunning));
 }
 window._setSubjectsMode = _setSubjectsMode;
+
+// Variation count — how many LLM-rewritten takes to generate per click.
+// Lives in localStorage; settable via Settings → Pipeline → Variations.
+const _VAR_K_KEY = 'slopfinity-variations-k';
+const _VAR_AXIS_KEY = 'slopfinity-variations-axis';
+function _getVariationsK() {
+    try {
+        const v = parseInt(localStorage.getItem(_VAR_K_KEY) || '5', 10);
+        return Math.max(2, Math.min(12, isFinite(v) ? v : 5));
+    } catch (_) { return 5; }
+}
+function _getVariationsAxis() {
+    try {
+        const v = (localStorage.getItem(_VAR_AXIS_KEY) || 'all').trim().toLowerCase();
+        return ['all', 'style', 'lens', 'mood', 'time'].includes(v) ? v : 'all';
+    } catch (_) { return 'all'; }
+}
+window._getVariationsK = _getVariationsK;
+window._getVariationsAxis = _getVariationsAxis;
 
 function _updateSubjectsActionLabel() {
     const btn = document.getElementById('btn-start-stop-inline');
@@ -1583,6 +1604,11 @@ function _updateSubjectsActionLabel() {
             btn.disabled = false;
             btn.classList.remove('opacity-70');
         }
+    } else if (mode === 'variations') {
+        const k = _getVariationsK();
+        btn.textContent = seed ? `Queue ${k} Variations` : 'Type a seed…';
+        btn.disabled = !seed;
+        btn.classList.toggle('opacity-70', !seed);
     } else {
         // Raw mode — defer to existing label-builder which already
         // handles "Queue / Queue Infinite Slop / Generate ASAP …".
@@ -1593,16 +1619,72 @@ function _updateSubjectsActionLabel() {
 }
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 
+// Variations mode — fetch K LLM-rewritten variants of the seed and
+// queue each as its own task. Distinct from Endless (no auto-cycle, no
+// narrative continuation) and Raw (one queue entry per typed line, no
+// LLM expansion). Reuses the existing /inject path so all queue
+// behaviour (priority, infinity-toggle, seed-images, etc.) keeps working.
+async function _queueVariations() {
+    const ta = document.getElementById('p-core');
+    if (!ta) return;
+    const seed = (ta.value || '').trim().split(/\r?\n/).find(l => l.trim()) || '';
+    if (!seed) {
+        if (typeof _seedToast === 'function') _seedToast('Type a seed subject first', 'warning');
+        return;
+    }
+    const k = _getVariationsK();
+    const axis = _getVariationsAxis();
+    const btn = document.getElementById('btn-start-stop-inline');
+    const orig = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = `Generating ${k} variations…`;
+        btn.classList.add('opacity-70');
+    }
+    let variations = [];
+    try {
+        const url = `/subjects/variations?seed=${encodeURIComponent(seed)}&n=${k}&axis=${encodeURIComponent(axis)}`;
+        const r = await fetch(url);
+        const d = await r.json();
+        variations = (d && d.variations) || [];
+    } catch (e) {
+        if (typeof _seedToast === 'function') _seedToast(`Variations failed: ${e.message}`, 'error');
+    }
+    if (!variations.length) {
+        if (typeof _seedToast === 'function') _seedToast('LLM returned no variations', 'warning');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig;
+            btn.classList.remove('opacity-70');
+        }
+        return;
+    }
+    // Inject each variant as its own queue entry. Fire sequentially
+    // (not Promise.all) so the server's queue-write ordering is stable
+    // and the client's WS updates land in batches the user can watch.
+    for (const v of variations) {
+        const f = new FormData();
+        f.append('prompt', v);
+        f.append('priority', 'next');
+        try { await fetch('/inject', { method: 'POST', body: f }); }
+        catch (_) { /* keep going on individual failures */ }
+    }
+    if (typeof _seedToast === 'function') _seedToast(`Queued ${variations.length} variations`, 'success');
+    if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70');
+    }
+    _updateSubjectsActionLabel();
+}
+window._queueVariations = _queueVariations;
+
 // Single click handler on the big queue button — forks on mode.
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
-    if (mode !== 'endless') {
-        // Raw Slop = current behaviour.
-        if (typeof toggleInfinity === 'function') return toggleInfinity();
-        return;
-    }
-    // Endless mode — start a story (seeded or "I'm Feeling Lucky").
-    return _startEndlessStory();
+    if (mode === 'endless') return _startEndlessStory();
+    if (mode === 'variations') return _queueVariations();
+    // Raw — current behaviour.
+    if (typeof toggleInfinity === 'function') return toggleInfinity();
 }
 window._subjectsAction = _subjectsAction;
 
@@ -5386,6 +5468,15 @@ async function openSettings() {
         const fresh = localStorage.getItem('slopfinity-fresh') === '1';
         const fresEl = document.getElementById('slop-fresh-toggle-modal');
         if (fresEl) fresEl.checked = fresh;
+        // Variations mode tunables
+        const vk = parseInt(localStorage.getItem('slopfinity-variations-k') || '5', 10);
+        const vkSlider = document.getElementById('settings-variations-k');
+        const vkLbl = document.getElementById('settings-variations-k-val');
+        if (vkSlider) vkSlider.value = String(vk);
+        if (vkLbl) vkLbl.innerText = String(vk);
+        const vAxis = localStorage.getItem('slopfinity-variations-axis') || 'all';
+        const vAxisSel = document.getElementById('settings-variations-axis');
+        if (vAxisSel) vAxisSel.value = vAxis;
     } catch (_) { }
     try {
         const [sr, br] = await Promise.all([
