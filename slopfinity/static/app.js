@@ -2718,6 +2718,21 @@ const _openPendingItems = new Set();
 // state survives WS re-renders.
 const _openVideoChains = new Set();
 
+// Queue-render signature cache. The WS tick handler ticks ~1 Hz and used to
+// rebuild #q-list.innerHTML on every tick — even when the underlying queue
+// data was identical to the previous tick. That detach/reattach was the
+// root cause of dropdown glyph flicker, transient focus loss on the ⋯
+// menus, and image/video thumbnail poster reloads. We now compute a
+// stable signature over the fields the render path actually consumes and
+// skip the rebuild when it matches the previous tick. _openPendingItems
+// preserves user-expanded <details> across whatever rebuilds DO happen,
+// so this is purely an "elide redundant work" optimisation.
+let _lastQueueSig = null;
+// Tracks the empty<->has-items transition for the gated
+// _refreshCardVisibility() call inside the rebuild block. Initialised to
+// null so the first tick after page load forces a refresh.
+let _lastQueueHadItems = null;
+
 // Animated thumbnail cycle. Any <video data-anim-thumb> element gets
 // its currentTime stepped through {0, 50%, 95%} of its duration on a
 // shared 800ms timer, yielding a 3-frame GIF-like preview without
@@ -4559,7 +4574,43 @@ function connect() {
                     </details>
                 </li>`;
             };
-            if (qList) {
+            // Signature-gate the queue rebuild. Every WS tick (~1 Hz) used to
+            // call qList.innerHTML = … unconditionally, which detached and
+            // re-attached the dropdown ⋯ menus, badges, and thumbnails — the
+            // visible "flicker / random highlight" the user reported. We now
+            // hash the data the render path consumes and skip the rebuild
+            // when nothing relevant has changed. The hash covers per-item
+            // fields renderItem reads + the active-stage info that drives
+            // the synthesized "running" row, plus done-item completion ts.
+            const _nowSecForSig = Date.now() / 1000;
+            const _qSigPayload = [
+                isRunning,
+                d.state && d.state.mode,
+                d.state && d.state.step,
+                d.state && d.state.video_index,
+                d.state && d.state.chain_index,
+                d.state && d.state.current_prompt,
+                qLen,
+                (d.queue || []).map(q => [
+                    q.ts || 0,
+                    q.status || '',
+                    q.prompt || '',
+                    q.infinity ? 1 : 0,
+                    q.chaos ? 1 : 0,
+                    q.fast_track ? 1 : 0,
+                    q.completed_ts || 0,
+                    q.cancelled_ts || 0,
+                    q.v_idx || 0,
+                    // Cancelled items fade out after 5s; flip a bit when the
+                    // window expires so the gated rebuild fires once and
+                    // drops the row from the inline strip.
+                    (q.status === 'cancelled' && (_nowSecForSig - (q.cancelled_ts || 0) < 5)) ? 1 : 0,
+                ]),
+            ];
+            const _qSig = JSON.stringify(_qSigPayload);
+            const _queueChanged = _qSig !== _lastQueueSig;
+            if (_queueChanged) _lastQueueSig = _qSig;
+            if (qList && _queueChanged) {
                 if (!qLen) {
                     qList.innerHTML = '<li class="text-[10px] text-base-content/40 italic p-2">queue empty — click Generate to add</li>';
                 } else {
@@ -4612,6 +4663,19 @@ function connect() {
                     });
                     qList.innerHTML = items.join('');
                     qList.querySelectorAll('li[data-q-ts]').forEach(li => PriorityLoader.register(li));
+                }
+                // Default-layout queue card visibility hinges on whether
+                // q-list has any <li data-q-ts>. Only refresh on the
+                // empty<->has-items transition — the rest of the time
+                // _refreshCardVisibility would walk localStorage and
+                // toggle classes for nothing, which was contributing to
+                // the per-tick churn we just gated above. Other callers
+                // (layout-mode change, card show/hide, DOMContentLoaded,
+                // slop drawer toggle) still trigger it where it matters.
+                const _hadItems = !!_lastQueueHadItems;
+                const _hasItemsNow = qLen > 0;
+                if (_hadItems !== _hasItemsNow) {
+                    _lastQueueHadItems = _hasItemsNow;
                     _refreshCardVisibility();
                 }
             }
