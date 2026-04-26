@@ -181,8 +181,8 @@
 }
 
 /* Reveal on card hover */
-.card:hover>.card-wm-bar,
-section:hover>.card-wm-bar {
+.ui-split-card:hover>.card-wm-bar,
+#slop-collapsible:hover .card-wm-bar {
     opacity: 1;
     pointer-events: auto;
 }

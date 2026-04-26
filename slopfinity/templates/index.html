@@ -48,44 +48,6 @@
             pointer-events: none;
             background-image: url("{{ _bg_url }}");
 
-            background-repeat: {
-                    {
-                    _aes.repeat or 'no-repeat'
-                }
-            }
-
-            ;
-
-            background-size: {
-                    {
-                    _aes.size or 'cover'
-                }
-            }
-
-            ;
-
-            background-position: {
-                    {
-                    _aes.position or 'center'
-                }
-            }
-
-            ;
-
-                {
-                % if _aes.parallax %
-            }
-
-            background-attachment: fixed;
-
-                {
-                % endif %
-            }
-
-                {
-                % if _aes.blur_px and _aes.blur_px|int>0 %
-            }
-
             filter: blur({
                     {
                     _aes.blur_px|int
@@ -130,30 +92,6 @@
             pointer-events: none;
             background-image: url("data:image/svg+xml;utf8,{{ branding.background.svg | urlencode }}");
 
-            background-repeat: {
-                    {
-                    branding.background.tile or 'repeat'
-                }
-            }
-
-            ;
-
-            background-size: {
-                    {
-                    branding.background.size or 'auto'
-                }
-            }
-
-            ;
-
-            opacity: {
-                    {
-                    branding.background.opacity if branding.background.opacity is not none else 0.08
-                }
-            }
-
-            ;
-
             mix-blend-mode: {
                     {
                     branding.background.blend or 'normal'
@@ -161,6 +99,9 @@
             }
 
             ;
+        }
+
+        ;
         }
     </style>
     {% endif %}
