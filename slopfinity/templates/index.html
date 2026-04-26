@@ -550,47 +550,42 @@
                                         </div>
                                     </div>
                                 </div>
-                                {# Per-stage prompt overrides — visible only in raw mode (CSS gates
-                                   via body.subj-mode-raw). Each stage has an "✨ AI Magic" button
-                                   that calls /enhance with the seed from #p-core; the result lands
-                                   in this stage's textarea and is forwarded verbatim by /inject —
-                                   so when all 4 are filled the queued task ships zero LLM calls.
-                                   Image/video/music/tts inputs are the canonical p-image/p-video/
-                                   p-music/p-tts (relocated from Settings → Pipeline + Speech). #}
-                                <details id="subjects-per-stage" class="collapse collapse-arrow bg-base-300/30 border border-base-300/60 rounded-md">
-                                    <summary class="collapse-title text-[10px] uppercase tracking-widest text-base-content/60 py-2 px-3 min-h-0 cursor-pointer">
-                                        Per-stage prompts (skip LLM rewrite when filled)
-                                    </summary>
-                                    <div class="collapse-content text-xs space-y-2 pb-3">
-                                        {% for stage, label, placeholder in [
-                                            ('image', 'Image prompt', 'Auto from subject…'),
-                                            ('video', 'Video prompt', 'Auto motion / camera from subject…'),
-                                            ('music', 'Music prompt', 'Auto mood / genre from subject…'),
-                                            ('tts', 'Voice line', 'Auto voiceover from subject…'),
-                                        ] %}
-                                        <div>
-                                            <div class="flex items-center justify-between mb-1">
-                                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
-                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
-                                                    onclick="enhanceStage('{{ stage }}')"
-                                                    title="Rewrite this prompt with the LLM using the seed from the subject field above">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                        stroke-linejoin="round" class="w-3 h-3">
-                                                        <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
-                                                    </svg>
-                                                    AI Magic
-                                                </button>
-                                            </div>
-                                            <div class="flex items-center gap-1">
-                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
-                                                    placeholder="{{ placeholder }}"></textarea>
-                                            </div>
+                                {# Per-stage prompt overrides — visible directly (no expander) in
+                                   raw mode (CSS body.subj-mode-raw). Each stage has a "Rewrite"
+                                   button that calls /enhance with the seed from #p-core; the
+                                   result lands in this stage's textarea and is forwarded
+                                   verbatim by /inject. Image/video/music/tts inputs are the
+                                   canonical p-image/p-video/p-music/p-tts. #}
+                                <div id="subjects-per-stage"
+                                    class="bg-base-300/30 border border-base-300/60 rounded-md p-3 text-xs space-y-2">
+                                    {% for stage, label, placeholder in [
+                                        ('image', 'Image prompt', 'Auto from subject…'),
+                                        ('video', 'Video prompt', 'Auto motion / camera from subject…'),
+                                        ('music', 'Music prompt', 'Auto mood / genre from subject…'),
+                                        ('tts', 'Voice line', 'Auto voiceover from subject…'),
+                                    ] %}
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
+                                            <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
+                                                onclick="enhanceStage('{{ stage }}')"
+                                                title="Rewrite this prompt with the LLM using the seed from the subject field above">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                    stroke-linejoin="round" class="w-3 h-3">
+                                                    <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
+                                                </svg>
+                                                Rewrite
+                                            </button>
                                         </div>
-                                        {% endfor %}
+                                        <div class="flex items-center gap-1">
+                                            <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                                            <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
+                                                placeholder="{{ placeholder }}"></textarea>
+                                        </div>
                                     </div>
-                                </details>
+                                    {% endfor %}
+                                </div>
                                 {# Disk-low guard banner. Hidden by default; shown when
                                    /disk/guard returns ok:false. Click → opens Settings →
                                    General → Disk guard so the user can adjust thresholds

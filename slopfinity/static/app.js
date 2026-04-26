@@ -1121,11 +1121,21 @@ function _getEndlessRowPrompts() {
             if (valid.length && unique.size > 1) return valid;
         }
     } catch (_) {}
-    const active = _getActivePrompts();
+    // Build the default endless-row sequence: the user's currently-selected
+    // default prompt FIRST (so what the unified badge shows is what the
+    // first row renders with), followed by the other active prompts.
+    const defaultId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : null;
+    const orderActive = (list) => {
+        if (!defaultId) return list;
+        const head = list.filter(p => p.id === defaultId);
+        const tail = list.filter(p => p.id !== defaultId);
+        return head.concat(tail);
+    };
+    const active = orderActive(_getActivePrompts());
     if (active.length) return active.slice(0, Math.min(4, active.length)).map(p => p.id);
     // No cache loaded yet → fall through to the client-side fallback list
     // so endless mode never renders "all same prompt" on first paint.
-    return _SUGGEST_PROMPTS_FALLBACK.filter(p => p.active).slice(0, 3).map(p => p.id);
+    return orderActive(_SUGGEST_PROMPTS_FALLBACK.filter(p => p.active)).slice(0, 3).map(p => p.id);
 }
 function _setEndlessRowPrompts(arr) {
     const clean = (Array.isArray(arr) ? arr : []).filter(id => typeof id === 'string' && _getPromptById(id));
@@ -1141,14 +1151,30 @@ function _refreshSuggestBadge() {
     const refreshBtn = document.getElementById('subjects-suggest-btn');
     const lbl = document.getElementById('subjects-suggest-prompt-name-label');
     if (nameBtn) nameBtn.classList.toggle('hidden', !isOn);
-    // Refresh button stays visible even when Suggestions toggle is OFF — it's
-    // the badge's right-edge "kick" affordance. Clicking it auto-enables the
-    // toggle on the user's behalf so a stale-OFF state doesn't trap them.
+    // The right-edge action button is dual-purpose:
+    //   endless mode  → "+" (add a new row using the currently-selected
+    //                   default prompt). Per-row minus + per-row refresh
+    //                   handle the rest. onclick rebound below.
+    //   other modes   → "↻" refresh-all (regenerate every row).
+    // Visible regardless of toggle state — clicking it auto-enables the
+    // toggle when off so the user isn't trapped.
     if (refreshBtn) {
         refreshBtn.classList.remove('hidden');
-        refreshBtn.title = isOn
-            ? 'Regenerate suggestions for the active prompt'
-            : 'Suggestions are off — click to enable + fetch a fresh batch';
+        const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+        const isEndless = mode === 'endless';
+        if (isEndless) {
+            refreshBtn.innerHTML =
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+            refreshBtn.onclick = (typeof _addEndlessRow === 'function') ? _addEndlessRow : null;
+            refreshBtn.title = 'Add a row using the currently-selected suggestion prompt';
+        } else {
+            refreshBtn.innerHTML =
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg>';
+            refreshBtn.onclick = () => regenSuggestions();
+            refreshBtn.title = isOn
+                ? 'Regenerate suggestions for the active prompt'
+                : 'Suggestions are off — click to enable + fetch a fresh batch';
+        }
     }
     if (lbl) {
         const p = _getPromptById(_getDefaultPromptId());
@@ -1820,9 +1846,13 @@ function _buildActiveJobProgressBar(d) {
         }
         const etaHtml = etaSec ? _fmtElapsedHtml(etaSec * 1000) : '—';
         return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: 1 1 0;" data-stage="${s}" data-tone="${tone}">
-            <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
-            <button type="button" class="pipeline-seg-label cursor-pointer" onclick="event.stopPropagation(); _openSegSettings(${JSON.stringify(s)})" title="Open settings for ${_htmlEscape(s)}">${shortLabel}</button>
-            <span class="pipeline-seg-timing"><span class="pipeline-seg-time-chip" data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA <span class="pipeline-seg-time-chip">${etaHtml}</span></span></span>
+            <div class="pipeline-seg-top">
+                <button type="button" class="pipeline-seg-label cursor-pointer" onclick="event.stopPropagation(); _openSegSettings(${JSON.stringify(s)})" title="Open settings for ${_htmlEscape(s)}">${shortLabel}</button>
+            </div>
+            <div class="pipeline-seg-bottom">
+                <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
+                <span class="pipeline-seg-timing"><span class="pipeline-seg-time-chip" data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA <span class="pipeline-seg-time-chip">${etaHtml}</span></span></span>
+            </div>
         </div>`;
     }).join('');
     // Push initial Total elapsed/ETA into the external footer row
@@ -2024,6 +2054,10 @@ function _setSubjectsMode(mode) {
         _renderChatLog();
         if (typeof _renderChatReplies === 'function') _renderChatReplies();
     }
+    // Repaint the unified Suggestions badge — its right-edge action button
+    // swaps between "↻ refresh-all" (simple/chat) and "+ add row" (endless),
+    // so a mode change has to refire the icon swap immediately.
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 }
 window._setSubjectsMode = _setSubjectsMode;
 
@@ -6830,22 +6864,25 @@ function _appendSuggestBatchRow(items, opts) {
     }
 
     const row = document.createElement('div');
-    row.className = 'suggest-marquee-row entering flex items-center gap-1';
+    const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
+    const hasLead = isEndless && opts && typeof opts.rowIdx === 'number' && opts.promptId;
+    row.className = 'suggest-marquee-row entering' + (hasLead ? ' with-lead' : '');
     // Endless mode rows get a leading prompt-name chip + per-row refresh
     // icon. Click chip → popover picker scoped to THIS row's prompt; click
     // refresh → re-fetch this row only via _regenEndlessRow(rowIdx).
-    const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
-    if (isEndless && opts && typeof opts.rowIdx === 'number' && opts.promptId) {
+    if (hasLead) {
         const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(opts.promptId) : null;
         const ttl = promptObj ? promptObj.title : opts.promptId;
         const lead = document.createElement('div');
         lead.className = 'flex items-center gap-1 flex-none pl-1 pr-1';
+        lead.setAttribute('data-endless-row-lead', String(opts.rowIdx));
         lead.innerHTML = `
             <button type="button" class="btn btn-ghost btn-xs gap-1 px-1.5"
                 data-endless-row-prompt-btn="${opts.rowIdx}"
+                data-row-prompt-btn
                 title="Click to swap this row's prompt"
                 onclick="_openSuggestPromptPicker(${opts.rowIdx})">
-                <span class="font-semibold text-[10px]">${_htmlEscape(ttl)}</span>
+                <span class="font-semibold text-[10px]" data-row-prompt-label>${_htmlEscape(ttl)}</span>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round" class="w-2.5 h-2.5">
@@ -6853,6 +6890,7 @@ function _appendSuggestBatchRow(items, opts) {
                 </svg>
             </button>
             <button type="button" class="btn btn-ghost btn-xs btn-square"
+                data-row-refresh
                 title="Refresh this row" onclick="_regenEndlessRow(${opts.rowIdx})">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -6862,14 +6900,33 @@ function _appendSuggestBatchRow(items, opts) {
                     <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>
                     <path d="M21 21v-5h-5"/>
                 </svg>
+            </button>
+            <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
+                data-row-remove
+                title="Remove this row" onclick="_removeEndlessRow(${opts.rowIdx})">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+                    stroke-linejoin="round" class="w-3 h-3">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
             </button>`;
         row.appendChild(lead);
     }
     const track = document.createElement('div');
-    track.className = 'suggest-marquee-track flex-1 min-w-0';
+    track.className = 'suggest-marquee-track';
     const all = [...items, ...items]; // duplicate for seamless wraparound
     all.forEach(s => track.appendChild(_buildSuggestChip(s)));
-    row.appendChild(track);
+    if (hasLead) {
+        // Wrap the track in a masked viewport so the row's lead cluster
+        // stays fully opaque + interactive while the marquee fades at
+        // its own edges within its own clipping context.
+        const mask = document.createElement('div');
+        mask.className = 'suggest-marquee-mask';
+        mask.appendChild(track);
+        row.appendChild(mask);
+    } else {
+        row.appendChild(track);
+    }
     stack.appendChild(row);
     // Drop the .entering class once the slide-in completes so future
     // hover/focus rules apply normally and the transform doesn't linger
@@ -7016,9 +7073,17 @@ async function _renderSimpleRows(n) {
 // has a clickable prompt-name chip at its start (label inside
 // _appendSuggestBatchRow) so the user can swap that row's prompt and
 // trigger a re-fetch.
+//
+// Endless suggestions ONLY run while a story is active. Pre-start the
+// chip-stack just shows a hint so we don't burn LLM cycles on a seed
+// that hasn't been chosen yet.
 async function _renderEndlessRows(n) {
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
+    if (!_endlessRunning) {
+        box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+        return;
+    }
     box.innerHTML = '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>';
     const rowPrompts = _getEndlessRowPrompts();
     if (!rowPrompts.length) {
@@ -7061,6 +7126,50 @@ async function _regenEndlessRow(rowIdx) {
     _appendSuggestBatchRow(arr, { promptId, rowIdx, insertAtIdx: rowIdx });
 }
 window._regenEndlessRow = _regenEndlessRow;
+
+// Add a new endless row using the currently-selected default prompt id.
+// Wired from the unified badge's "+" button when in endless mode.
+async function _addEndlessRow() {
+    const arr = _getEndlessRowPrompts();
+    const newId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : 'yes-and';
+    arr.push(newId);
+    _setEndlessRowPrompts(arr);
+    const idx = arr.length - 1;
+    const batch = await _fetchSuggestBatch({ n: 6, promptId: newId, fresh: true });
+    if (batch && batch.length) _appendSuggestBatchRow(batch, { promptId: newId, rowIdx: idx });
+}
+window._addEndlessRow = _addEndlessRow;
+
+// Remove the row at rowIdx — drops its prompt from the persisted array
+// and removes its DOM node. Subsequent rows shift indices; we re-render
+// every row's leading chip so the minus/picker handlers stay synced.
+function _removeEndlessRow(rowIdx) {
+    const arr = _getEndlessRowPrompts();
+    if (rowIdx < 0 || rowIdx >= arr.length) return;
+    arr.splice(rowIdx, 1);
+    _setEndlessRowPrompts(arr);
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    const rows = stack.querySelectorAll('.suggest-marquee-row');
+    if (rows[rowIdx]) rows[rowIdx].remove();
+    // Re-walk surviving rows + re-attach lead clusters with updated indices
+    // so each row's minus/picker call references its NEW position.
+    const survivingRows = stack.querySelectorAll('.suggest-marquee-row');
+    survivingRows.forEach((row, i) => {
+        const lead = row.querySelector('[data-endless-row-lead]');
+        if (lead) {
+            const promptId = arr[i];
+            const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(promptId) : null;
+            const ttl = promptObj ? promptObj.title : promptId;
+            lead.setAttribute('data-endless-row-lead', String(i));
+            lead.querySelector('[data-row-prompt-btn]')?.setAttribute('onclick', `_openSuggestPromptPicker(${i})`);
+            lead.querySelector('[data-row-prompt-label]') && (lead.querySelector('[data-row-prompt-label]').textContent = ttl);
+            lead.querySelector('[data-row-refresh]')?.setAttribute('onclick', `_regenEndlessRow(${i})`);
+            lead.querySelector('[data-row-remove]')?.setAttribute('onclick', `_removeEndlessRow(${i})`);
+        }
+    });
+}
+window._removeEndlessRow = _removeEndlessRow;
 
 // CHAT mode — 4 reply chips beneath the input, no marquee. Each chip is
 // a one-click "send this as your next message" shortcut.
