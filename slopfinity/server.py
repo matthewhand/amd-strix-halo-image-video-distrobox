@@ -910,19 +910,19 @@ async def queue_requeue(data: dict = Body(...)):
                 continue
             if item.get("status") == "done" and item.get("succeeded") is False:
                 # Drop the failed record; append a fresh pending entry.
-                fresh = {
-                    "prompt": item.get("prompt", ""),
-                    "priority": item.get("priority", "next"),
+                fresh = item.copy()
+                fresh.update({
                     "status": "pending",
                     "ts": base_ts,
-                    "concurrent": item.get("concurrent", False),
-                    "infinity": item.get("infinity", False),
-                    "when_idle": item.get("when_idle", False),
-                    "chaos": item.get("chaos", False),
-                    "image_only": item.get("image_only", False),
-                    "config_snapshot": item.get("config_snapshot"),
                     "requeued_from_ts": item.get("ts"),
-                }
+                })
+                # Remove fields that represent the RESULT of the failed run.
+                # We keep 'times' as requested ("carry over times").
+                fresh.pop("completed_ts", None)
+                fresh.pop("succeeded", None)
+                fresh.pop("error", None)
+                fresh.pop("asset_paths", None)
+                fresh.pop("logs", None)
                 new_q.append(fresh)
                 requeued = True
                 continue
@@ -984,21 +984,19 @@ async def queue_requeue_failed():
     base_ts = time.time()
     for item in q:
         if item.get("status") == "done" and item.get("succeeded") is False:
-            fresh = {
-                "prompt": item.get("prompt", ""),
-                "priority": item.get("priority", "next"),
+            fresh = item.copy()
+            fresh.update({
                 "status": "pending",
                 # Disambiguate ts within the same second so multiple
                 # requeued items don't collide on the (ts) primary key.
                 "ts": base_ts + (requeued * 1e-6),
-                "concurrent": item.get("concurrent", False),
-                "infinity": item.get("infinity", False),
-                "when_idle": item.get("when_idle", False),
-                "chaos": item.get("chaos", False),
-                "image_only": item.get("image_only", False),
-                "config_snapshot": item.get("config_snapshot"),
                 "requeued_from_ts": item.get("ts"),
-            }
+            })
+            fresh.pop("completed_ts", None)
+            fresh.pop("succeeded", None)
+            fresh.pop("error", None)
+            fresh.pop("asset_paths", None)
+            fresh.pop("logs", None)
             new_q.append(fresh)
             requeued += 1
             # original failed entry is dropped (not appended to new_q)

@@ -3,14 +3,14 @@
 // Theme persistence — apply any previously-chosen theme as early as possible
 // to avoid a flash of unstyled/default theme on load.
 (function () {
-  const saved = localStorage.getItem('slopfinity-theme');
-  if (saved) document.documentElement.dataset.theme = saved;
+    const saved = localStorage.getItem('slopfinity-theme');
+    if (saved) document.documentElement.dataset.theme = saved;
 })();
 
 function applyTheme(name) {
-  if (!name) return;
-  document.documentElement.dataset.theme = name;
-  localStorage.setItem('slopfinity-theme', name);
+    if (!name) return;
+    document.documentElement.dataset.theme = name;
+    localStorage.setItem('slopfinity-theme', name);
 }
 window.applyTheme = applyTheme;
 
@@ -27,7 +27,7 @@ function _getSlopSize() {
 }
 function _setSlopSize(size) {
     if (size !== 's' && size !== 'm' && size !== 'l') size = 'm';
-    try { localStorage.setItem(_SLOP_SIZE_KEY, size); } catch (_) {}
+    try { localStorage.setItem(_SLOP_SIZE_KEY, size); } catch (_) { }
     document.body.dataset.slopSize = size;
     document.querySelectorAll('button[data-slop-size]').forEach(b => {
         b.classList.toggle('subj-mode-active', b.getAttribute('data-slop-size') === size);
@@ -38,38 +38,38 @@ document.addEventListener('DOMContentLoaded', () => _setSlopSize(_getSlopSize())
 
 // UI surface toggles (Settings → Diagnostics → UI surfaces). Default ON.
 const _UI_TOGGLE_KEYS = {
-  topbar: 'slopfinity-ui-topbar',
-  queueBar: 'slopfinity-ui-queue-bar',
-  outputThumbs: 'slopfinity-ui-output-thumbs',
+    topbar: 'slopfinity-ui-topbar',
+    queueBar: 'slopfinity-ui-queue-bar',
+    outputThumbs: 'slopfinity-ui-output-thumbs',
 };
 function _isUiToggleOn(name) {
-  try { const v = localStorage.getItem(_UI_TOGGLE_KEYS[name]); return v === null ? true : v === '1'; }
-  catch (_) { return true; }
+    try { const v = localStorage.getItem(_UI_TOGGLE_KEYS[name]); return v === null ? true : v === '1'; }
+    catch (_) { return true; }
 }
 function _applyUiToggle(name, on) {
-  try { localStorage.setItem(_UI_TOGGLE_KEYS[name], on ? '1' : '0'); } catch (_) {}
-  if (name === 'topbar') {
-    const navHw = document.querySelector('header .flex-1.flex.items-center.gap-x-6');
-    if (navHw) navHw.style.display = on ? '' : 'none';
-  } else if (name === 'queueBar') {
-    const bar = document.getElementById('active-job-progress-bar');
-    if (bar) bar.style.display = on ? '' : 'none';
-  }
-  // outputThumbs has no DOM mutation here — the cycle interval reads the
-  // pref each tick. Toggling off freezes the thumbs on whatever frame
-  // they were last seeked to (cheap, no flash).
+    try { localStorage.setItem(_UI_TOGGLE_KEYS[name], on ? '1' : '0'); } catch (_) { }
+    if (name === 'topbar') {
+        const navHw = document.querySelector('header .flex-1.flex.items-center.gap-x-6');
+        if (navHw) navHw.style.display = on ? '' : 'none';
+    } else if (name === 'queueBar') {
+        const bar = document.getElementById('active-job-progress-bar');
+        if (bar) bar.style.display = on ? '' : 'none';
+    }
+    // outputThumbs has no DOM mutation here — the cycle interval reads the
+    // pref each tick. Toggling off freezes the thumbs on whatever frame
+    // they were last seeked to (cheap, no flash).
 }
 window._applyUiToggle = _applyUiToggle;
 document.addEventListener('DOMContentLoaded', () => {
-  ['topbar', 'queueBar', 'outputThumbs'].forEach(name => {
-    const on = _isUiToggleOn(name);
-    _applyUiToggle(name, on);
-    const elId = name === 'topbar' ? 'ui-show-topbar'
-               : name === 'queueBar' ? 'ui-show-queue-bar'
-               : 'ui-output-thumbs';
-    const el = document.getElementById(elId);
-    if (el) el.checked = on;
-  });
+    ['topbar', 'queueBar', 'outputThumbs'].forEach(name => {
+        const on = _isUiToggleOn(name);
+        _applyUiToggle(name, on);
+        const elId = name === 'topbar' ? 'ui-show-topbar'
+            : name === 'queueBar' ? 'ui-show-queue-bar'
+                : 'ui-output-thumbs';
+        const el = document.getElementById(elId);
+        if (el) el.checked = on;
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -86,52 +86,106 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---------------------------------------------------------------------------
 const _LAYOUT_VIEW_KEY = 'slopfinity-layout-view';
 function _applyLayoutView(view) {
-  try { localStorage.setItem(_LAYOUT_VIEW_KEY, view); } catch (_) {}
-  // Layout modes (drives body[data-layout="..."]; CSS in app.css gates
-  // visibility):
-  //   default     — Subjects + Queue + Slop (full dashboard)
-  //   subjects    — Subjects only (Queue + Slop hidden; FAB → Queue + Slop)
-  //   queue       — Queue only (Subjects + Slop hidden; FAB → Subjects + Slop)
-  //   gallery     — Slop only (Subjects + Queue hidden; FAB → Subjects + Queue)
-  //   subj-slop   — Subjects + Slop (Queue hidden; FAB → Queue)
-  //   queue-slop  — Queue + Slop (Subjects hidden; FAB → Subjects)
-  //   subj-queue  — Subjects + Queue (Slop hidden; FAB → Slop)
-  const valid = new Set([
-    'gallery', 'queue', 'subjects',
-    'subj-slop', 'queue-slop', 'subj-queue',
-  ]);
-  if (valid.has(view)) document.body.dataset.layout = view;
-  else delete document.body.dataset.layout;
+    try { localStorage.setItem(_LAYOUT_VIEW_KEY, view); } catch (_) { }
+    // Layout modes (drives body[data-layout="..."]; CSS in app.css gates
+    // visibility):
+    //   default     — Subjects + Queue + Slop (full dashboard)
+    //   subjects    — Subjects only (Queue + Slop hidden; FAB → Queue + Slop)
+    //   queue       — Queue only (Subjects + Slop hidden; FAB → Subjects + Slop)
+    //   gallery     — Slop only (Subjects + Queue hidden; FAB → Subjects + Queue)
+    //   subj-slop   — Subjects + Slop (Queue hidden; FAB → Queue)
+    //   queue-slop  — Queue + Slop (Subjects hidden; FAB → Subjects)
+    //   subj-queue  — Subjects + Queue (Slop hidden; FAB → Slop)
+    const valid = new Set([
+        'gallery', 'queue', 'subjects',
+        'subj-slop', 'queue-slop', 'subj-queue',
+    ]);
+    if (valid.has(view)) document.body.dataset.layout = view;
+    else delete document.body.dataset.layout;
 }
 window._applyLayoutView = _applyLayoutView;
 
-// Track where each card lived so we can put it back exactly where we found it.
+// ---------------------------------------------------------------------------
+// Card maximize — maps each card to the layout that gives it the most space.
+// Subjects → 'subjects', Queue → 'queue', Slop → 'gallery'.
+// Calling again while already in that mode restores 'default' (toggle).
+// ---------------------------------------------------------------------------
+function _cardMaximizeLayout(which) {
+    if (_isLayoutLocked()) return;
+    const focusMap = { subjects: 'subjects', queue: 'queue', slop: 'gallery' };
+    const target = focusMap[which] || 'default';
+    const current = document.body.dataset.layout || 'default';
+    selectLayoutView(current === target ? 'default' : target);
+}
+window._cardMaximizeLayout = _cardMaximizeLayout;
+
+// ---------------------------------------------------------------------------
+// Layout lock — persists in localStorage; gates selectLayoutView calls.
+// ---------------------------------------------------------------------------
+const _LAYOUT_LOCK_KEY = 'slopfinity-layout-locked';
+
+function _isLayoutLocked() {
+    try { return localStorage.getItem(_LAYOUT_LOCK_KEY) === '1'; } catch (_) { return false; }
+}
+
+function _setLayoutLocked(locked) {
+    try { localStorage.setItem(_LAYOUT_LOCK_KEY, locked ? '1' : '0'); } catch (_) { }
+    document.body.classList.toggle('layout-locked', locked);
+    ['layout-lock-toggle', 'settings-layout-lock-toggle'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !locked;
+    });
+}
+window._setLayoutLocked = _setLayoutLocked;
+
+// Gate selectLayoutView so locked state prevents all layout changes.
+const _selectLayoutViewOrig = typeof selectLayoutView === 'function' ? selectLayoutView : null;
+// (selectLayoutView is defined later in this file; we monkey-patch it after
+//  DOMContentLoaded so we catch the real definition.)
+document.addEventListener('DOMContentLoaded', () => {
+    // Restore lock state on page load.
+    if (_isLayoutLocked()) {
+        document.body.classList.add('layout-locked');
+        const toggle = document.getElementById('layout-lock-toggle');
+        if (toggle) toggle.checked = false;
+    }
+    // Patch selectLayoutView to respect lock.
+    const orig = window.selectLayoutView;
+    if (orig) {
+        window.selectLayoutView = function (v) {
+            if (_isLayoutLocked()) return;
+            orig(v);
+        };
+    }
+}, { once: true });
+
+
 const _galleryReturn = { subjects: null, queue: null };
 
 function openGalleryFabDialog(which) {
-  const cardId = which === 'subjects' ? 'split-left' : 'split-right';
-  const mountId = which === 'subjects' ? 'gallery-subjects-mount' : 'gallery-queue-mount';
-  const dialogId = which === 'subjects' ? 'gallery-subjects-modal' : 'gallery-queue-modal';
-  const card = document.getElementById(cardId);
-  const mount = document.getElementById(mountId);
-  const dialog = document.getElementById(dialogId);
-  if (!card || !mount || !dialog) return;
-  // Remember original parent + nextSibling so we can restore exactly.
-  if (!_galleryReturn[which]) {
-    _galleryReturn[which] = { parent: card.parentNode, next: card.nextSibling };
-  }
-  mount.appendChild(card);
-  // Re-bind one-shot close listener that moves the card back.
-  const onClose = () => {
-    const r = _galleryReturn[which];
-    if (r && r.parent && card.parentNode === mount) {
-      r.parent.insertBefore(card, r.next || null);
+    const cardId = which === 'subjects' ? 'split-left' : 'split-right';
+    const mountId = which === 'subjects' ? 'gallery-subjects-mount' : 'gallery-queue-mount';
+    const dialogId = which === 'subjects' ? 'gallery-subjects-modal' : 'gallery-queue-modal';
+    const card = document.getElementById(cardId);
+    const mount = document.getElementById(mountId);
+    const dialog = document.getElementById(dialogId);
+    if (!card || !mount || !dialog) return;
+    // Remember original parent + nextSibling so we can restore exactly.
+    if (!_galleryReturn[which]) {
+        _galleryReturn[which] = { parent: card.parentNode, next: card.nextSibling };
     }
-    dialog.removeEventListener('close', onClose);
-  };
-  dialog.addEventListener('close', onClose);
-  if (typeof dialog.showModal === 'function') dialog.showModal();
-  else dialog.setAttribute('open', '');
+    mount.appendChild(card);
+    // Re-bind one-shot close listener that moves the card back.
+    const onClose = () => {
+        const r = _galleryReturn[which];
+        if (r && r.parent && card.parentNode === mount) {
+            r.parent.insertBefore(card, r.next || null);
+        }
+        dialog.removeEventListener('close', onClose);
+    };
+    dialog.addEventListener('close', onClose);
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
 }
 window.openGalleryFabDialog = openGalleryFabDialog;
 
@@ -173,45 +227,45 @@ window.openSlopFabDialog = openSlopFabDialog;
 // dispatches a `change` event so the existing layout-view handler runs —
 // no duplicate handler logic, just a relocated trigger.
 function selectLayoutView(v) {
-  const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
-  if (r) {
-    r.checked = true;
-    r.dispatchEvent(new Event('change', { bubbles: true }));
-  } else {
-    _applyLayoutView(v);
-  }
-  _refreshLayoutViewIndicator(v);
+    const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
+    if (r) {
+        r.checked = true;
+        r.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+        _applyLayoutView(v);
+    }
+    _refreshLayoutViewIndicator(v);
 }
 window.selectLayoutView = selectLayoutView;
 
 function _refreshLayoutViewIndicator(v) {
-  document.querySelectorAll('[data-view-check]').forEach(el => {
-    el.classList.toggle('hidden', el.getAttribute('data-view-check') !== v);
-  });
+    document.querySelectorAll('[data-view-check]').forEach(el => {
+        el.classList.toggle('hidden', el.getAttribute('data-view-check') !== v);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // URL ?layout=<mode> wins over localStorage so a kiosk / wall-display
-  // can pin a layout via its bookmark/PWA shortcut without depending on
-  // per-browser-profile state. The valid modes are listed in
-  // _applyLayoutView's `valid` set: default | subjects | queue | gallery
-  // | subj-slop | queue-slop | subj-queue. The URL choice is also
-  // persisted to localStorage so subsequent visits without the param
-  // remember it (use ?layout=default to reset).
-  const urlLayout = new URLSearchParams(location.search).get('layout');
-  const stored = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
-  const v = urlLayout || stored;
-  _applyLayoutView(v);
-  const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
-  if (r) r.checked = true;
-  document.querySelectorAll('input[name="layout-view"]').forEach(el => {
-    el.addEventListener('change', e => {
-      _applyLayoutView(e.target.value);
-      _refreshLayoutViewIndicator(e.target.value);
-      if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
+    // URL ?layout=<mode> wins over localStorage so a kiosk / wall-display
+    // can pin a layout via its bookmark/PWA shortcut without depending on
+    // per-browser-profile state. The valid modes are listed in
+    // _applyLayoutView's `valid` set: default | subjects | queue | gallery
+    // | subj-slop | queue-slop | subj-queue. The URL choice is also
+    // persisted to localStorage so subsequent visits without the param
+    // remember it (use ?layout=default to reset).
+    const urlLayout = new URLSearchParams(location.search).get('layout');
+    const stored = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
+    const v = urlLayout || stored;
+    _applyLayoutView(v);
+    const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
+    if (r) r.checked = true;
+    document.querySelectorAll('input[name="layout-view"]').forEach(el => {
+        el.addEventListener('change', e => {
+            _applyLayoutView(e.target.value);
+            _refreshLayoutViewIndicator(e.target.value);
+            if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
+        });
     });
-  });
-  _refreshLayoutViewIndicator(v);
+    _refreshLayoutViewIndicator(v);
 });
 
 // ---------------------------------------------------------------------------
@@ -224,35 +278,35 @@ document.addEventListener('DOMContentLoaded', () => {
 // placeholder only flips on when the Slop card is closed too.
 // ---------------------------------------------------------------------------
 const _CARD_KEYS = {
-  subjects: { dom: 'split-left',     storage: 'slopfinity_card_subjects_hidden' },
-  queue:    { dom: 'split-right',    storage: 'slopfinity_card_queue_hidden' },
-  slop:     { dom: 'output-section', storage: 'slopfinity_card_slop_hidden' },
+    subjects: { dom: 'split-left', storage: 'slopfinity_card_subjects_hidden' },
+    queue: { dom: 'split-right', storage: 'slopfinity_card_queue_hidden' },
+    slop: { dom: 'output-section', storage: 'slopfinity_card_slop_hidden' },
 };
 
 function _isCardHidden(which) {
-  try { return localStorage.getItem(_CARD_KEYS[which].storage) === '1'; }
-  catch (_) { return false; }
+    try { return localStorage.getItem(_CARD_KEYS[which].storage) === '1'; }
+    catch (_) { return false; }
 }
 
 function _setCardHidden(which, hidden) {
-  try { localStorage.setItem(_CARD_KEYS[which].storage, hidden ? '1' : '0'); }
-  catch (_) {}
-  const el = document.getElementById(_CARD_KEYS[which].dom);
-  if (el) {
-    if (hidden) {
-      el.style.display = 'none';
-    } else {
-      // The Slop output-section ships with an inline `display:block|none`
-      // baked in by the server template (visibility depends on whether
-      // there are assets). Force `block` here so a manual restore wins
-      // — otherwise `removeProperty` could fall back to `display:none`
-      // from the inline style and the user's click would appear to do
-      // nothing. The card body will still render its own empty state.
-      el.style.display = (which === 'slop') ? 'block' : '';
-      if (which !== 'slop') el.style.removeProperty('display');
+    try { localStorage.setItem(_CARD_KEYS[which].storage, hidden ? '1' : '0'); }
+    catch (_) { }
+    const el = document.getElementById(_CARD_KEYS[which].dom);
+    if (el) {
+        if (hidden) {
+            el.style.display = 'none';
+        } else {
+            // The Slop output-section ships with an inline `display:block|none`
+            // baked in by the server template (visibility depends on whether
+            // there are assets). Force `block` here so a manual restore wins
+            // — otherwise `removeProperty` could fall back to `display:none`
+            // from the inline style and the user's click would appear to do
+            // nothing. The card body will still render its own empty state.
+            el.style.display = (which === 'slop') ? 'block' : '';
+            if (which !== 'slop') el.style.removeProperty('display');
+        }
     }
-  }
-  _refreshCardVisibility();
+    _refreshCardVisibility();
 }
 
 function closeCard(which) { _setCardHidden(which, true); }
@@ -261,63 +315,63 @@ window.closeCard = closeCard;
 window.restoreCard = restoreCard;
 
 function _refreshCardVisibility() {
-  const ph = document.getElementById('cards-all-hidden-placeholder');
-  const subjectsHidden = _isCardHidden('subjects');
-  const queueHidden    = _isCardHidden('queue');
-  const slopHidden     = _isCardHidden('slop');
-  const galleryMode    = document.body.dataset.layout === 'gallery';
-  if (ph) {
-    // In gallery mode, Subjects + Queue are still reachable via FABs, so
-    // the placeholder is only meaningful when Slop is also closed.
-    const allGone = galleryMode ? slopHidden : (subjectsHidden && queueHidden && slopHidden);
-    ph.classList.toggle('hidden', !allGone);
-  }
-  // Hide the vertical divider between Subjects and Queue when only one of
-  // them is visible — there's nothing to drag-resize, and the visible
-  // card should fill the upper pane horizontally instead of sitting in a
-  // half-width column with empty space beside it.
-  const vDivider = document.getElementById('split-divider');
-  if (vDivider) {
-    const oneSide = subjectsHidden !== queueHidden; // exactly one visible
-    vDivider.classList.toggle('hidden', oneSide || (subjectsHidden && queueHidden));
-    const left  = document.getElementById('split-left');
-    const right = document.getElementById('split-right');
-    // When one side is hidden, drop the basis-1/2 cap on the other so it
-    // can grow to fill the row. When both visible, restore equal split.
-    if (left && right) {
-      if (subjectsHidden && !queueHidden) {
-        right.style.flexBasis = '100%';
-        right.style.maxWidth  = '100%';
-      } else if (queueHidden && !subjectsHidden) {
-        left.style.flexBasis  = '100%';
-        left.style.maxWidth   = '100%';
-      } else {
-        left.style.flexBasis  = '';
-        left.style.maxWidth   = '';
-        right.style.flexBasis = '';
-        right.style.maxWidth  = '';
-      }
+    const ph = document.getElementById('cards-all-hidden-placeholder');
+    const subjectsHidden = _isCardHidden('subjects');
+    const queueHidden = _isCardHidden('queue');
+    const slopHidden = _isCardHidden('slop');
+    const galleryMode = document.body.dataset.layout === 'gallery';
+    if (ph) {
+        // In gallery mode, Subjects + Queue are still reachable via FABs, so
+        // the placeholder is only meaningful when Slop is also closed.
+        const allGone = galleryMode ? slopHidden : (subjectsHidden && queueHidden && slopHidden);
+        ph.classList.toggle('hidden', !allGone);
     }
-  }
-  // Hide the horizontal divider (between upper [Subjects+Queue] and lower
-  // [Slop]) when one side is empty — same logic, different axis.
-  const hHandle = document.getElementById('ui-split-handle');
-  if (hHandle) {
-    const upperEmpty = subjectsHidden && queueHidden;
-    const oneSide = upperEmpty !== slopHidden; // exactly one half-pane has cards
-    hHandle.classList.toggle('hidden', oneSide || (upperEmpty && slopHidden));
-  }
+    // Hide the vertical divider between Subjects and Queue when only one of
+    // them is visible — there's nothing to drag-resize, and the visible
+    // card should fill the upper pane horizontally instead of sitting in a
+    // half-width column with empty space beside it.
+    const vDivider = document.getElementById('split-divider');
+    if (vDivider) {
+        const oneSide = subjectsHidden !== queueHidden; // exactly one visible
+        vDivider.classList.toggle('hidden', oneSide || (subjectsHidden && queueHidden));
+        const left = document.getElementById('split-left');
+        const right = document.getElementById('split-right');
+        // When one side is hidden, drop the basis-1/2 cap on the other so it
+        // can grow to fill the row. When both visible, restore equal split.
+        if (left && right) {
+            if (subjectsHidden && !queueHidden) {
+                right.style.flexBasis = '100%';
+                right.style.maxWidth = '100%';
+            } else if (queueHidden && !subjectsHidden) {
+                left.style.flexBasis = '100%';
+                left.style.maxWidth = '100%';
+            } else {
+                left.style.flexBasis = '';
+                left.style.maxWidth = '';
+                right.style.flexBasis = '';
+                right.style.maxWidth = '';
+            }
+        }
+    }
+    // Hide the horizontal divider (between upper [Subjects+Queue] and lower
+    // [Slop]) when one side is empty — same logic, different axis.
+    const hHandle = document.getElementById('ui-split-handle');
+    if (hHandle) {
+        const upperEmpty = subjectsHidden && queueHidden;
+        const oneSide = upperEmpty !== slopHidden; // exactly one half-pane has cards
+        hHandle.classList.toggle('hidden', oneSide || (upperEmpty && slopHidden));
+    }
 }
 window._refreshCardVisibility = _refreshCardVisibility;
 
 document.addEventListener('DOMContentLoaded', () => {
-  Object.keys(_CARD_KEYS).forEach(which => {
-    if (_isCardHidden(which)) {
-      const el = document.getElementById(_CARD_KEYS[which].dom);
-      if (el) el.style.display = 'none';
-    }
-  });
-  _refreshCardVisibility();
+    Object.keys(_CARD_KEYS).forEach(which => {
+        if (_isCardHidden(which)) {
+            const el = document.getElementById(_CARD_KEYS[which].dom);
+            if (el) el.style.display = 'none';
+        }
+    });
+    _refreshCardVisibility();
 });
 
 // ---------------------------------------------------------------------------
@@ -332,36 +386,36 @@ document.addEventListener('DOMContentLoaded', () => {
 // LM Studio etc.) lives in the server-side acquire_gpu wrap.
 // ---------------------------------------------------------------------------
 async function _ramGuardCheck() {
-  let r;
-  try {
-    const resp = await fetch('/system/ram');
-    r = await resp.json();
-  } catch (_) {
-    return true; // fail-open
-  }
-  if (!r || !r.tight) return true;
-  return new Promise(resolve => {
-    const modal = document.getElementById('ram-tight-modal');
-    if (!modal) return resolve(true);
-    const availEl = document.getElementById('ram-tight-available');
-    const safeEl = document.getElementById('ram-tight-safety');
-    if (availEl) availEl.textContent = Number(r.available_gb || 0).toFixed(1);
-    if (safeEl) safeEl.textContent = Number(r.safety_gb || 0).toFixed(0);
-    const btn = document.getElementById('ram-tight-proceed');
-    let resolved = false;
-    const finish = (val) => {
-      if (resolved) return;
-      resolved = true;
-      btn && btn.removeEventListener('click', onProceed);
-      modal.removeEventListener('close', onClose);
-      resolve(val);
-    };
-    const onProceed = () => { try { modal.close(); } catch (_) {} finish(true); };
-    const onClose = () => finish(false);
-    btn && btn.addEventListener('click', onProceed, { once: true });
-    modal.addEventListener('close', onClose, { once: true });
-    try { modal.showModal(); } catch (_) { finish(true); }
-  });
+    let r;
+    try {
+        const resp = await fetch('/system/ram');
+        r = await resp.json();
+    } catch (_) {
+        return true; // fail-open
+    }
+    if (!r || !r.tight) return true;
+    return new Promise(resolve => {
+        const modal = document.getElementById('ram-tight-modal');
+        if (!modal) return resolve(true);
+        const availEl = document.getElementById('ram-tight-available');
+        const safeEl = document.getElementById('ram-tight-safety');
+        if (availEl) availEl.textContent = Number(r.available_gb || 0).toFixed(1);
+        if (safeEl) safeEl.textContent = Number(r.safety_gb || 0).toFixed(0);
+        const btn = document.getElementById('ram-tight-proceed');
+        let resolved = false;
+        const finish = (val) => {
+            if (resolved) return;
+            resolved = true;
+            btn && btn.removeEventListener('click', onProceed);
+            modal.removeEventListener('close', onClose);
+            resolve(val);
+        };
+        const onProceed = () => { try { modal.close(); } catch (_) { } finish(true); };
+        const onClose = () => finish(false);
+        btn && btn.addEventListener('click', onProceed, { once: true });
+        modal.addEventListener('close', onClose, { once: true });
+        try { modal.showModal(); } catch (_) { finish(true); }
+    });
 }
 window._ramGuardCheck = _ramGuardCheck;
 
@@ -375,38 +429,38 @@ window._ramGuardCheck = _ramGuardCheck;
 const _SUGGEST_HIDDEN_KEY = 'slopfinity_suggestions_hidden';
 
 function _isSuggestionsHidden() {
-  try { return localStorage.getItem(_SUGGEST_HIDDEN_KEY) === '1'; }
-  catch (_) { return false; }
+    try { return localStorage.getItem(_SUGGEST_HIDDEN_KEY) === '1'; }
+    catch (_) { return false; }
 }
 
 function toggleSuggestionsHidden(hide) {
-  try { localStorage.setItem(_SUGGEST_HIDDEN_KEY, hide ? '1' : '0'); }
-  catch (_) {}
-  _applySuggestionsHiddenState();
+    try { localStorage.setItem(_SUGGEST_HIDDEN_KEY, hide ? '1' : '0'); }
+    catch (_) { }
+    _applySuggestionsHiddenState();
 }
 window.toggleSuggestionsHidden = toggleSuggestionsHidden;
 
 function _applySuggestionsHiddenState() {
-  const hidden = _isSuggestionsHidden();
-  const area = document.getElementById('subjects-suggestions-area');
-  const closeBtn = document.getElementById('subjects-suggestions-close');
-  const suggestBtn = document.getElementById('subjects-suggest-btn');
-  const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
-  const toggleBtn = document.getElementById('subjects-suggestions-toggle');
-  const toggleInput = document.getElementById('subjects-suggestions-toggle-input');
-  const endlessBtn = document.getElementById('subjects-endless-story');
-  if (area) area.style.display = hidden ? 'none' : '';
-  if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
-  // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
-  // controls. Endless toggle now stays VISIBLE alongside Suggestions but
-  // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
-  if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
-  if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
-  if (endlessBtn) endlessBtn.style.display = '';
-  // Mirror state on the new switch input + the host's aria-pressed.
-  if (toggleInput) toggleInput.checked = !hidden;
-  if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!hidden));
-  if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
+    const hidden = _isSuggestionsHidden();
+    const area = document.getElementById('subjects-suggestions-area');
+    const closeBtn = document.getElementById('subjects-suggestions-close');
+    const suggestBtn = document.getElementById('subjects-suggest-btn');
+    const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
+    const toggleBtn = document.getElementById('subjects-suggestions-toggle');
+    const toggleInput = document.getElementById('subjects-suggestions-toggle-input');
+    const endlessBtn = document.getElementById('subjects-endless-story');
+    if (area) area.style.display = hidden ? 'none' : '';
+    if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
+    // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
+    // controls. Endless toggle now stays VISIBLE alongside Suggestions but
+    // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
+    if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
+    if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
+    if (endlessBtn) endlessBtn.style.display = '';
+    // Mirror state on the new switch input + the host's aria-pressed.
+    if (toggleInput) toggleInput.checked = !hidden;
+    if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!hidden));
+    if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
 }
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
 
@@ -521,20 +575,20 @@ function _saveStageDuration(stage, seconds) {
     arr.push(seconds);
     while (arr.length > _STAGE_HISTORY_KEEP) arr.shift();
     hist[stage] = arr;
-    try { localStorage.setItem(_STAGE_HISTORY_KEY, JSON.stringify(hist)); } catch {}
+    try { localStorage.setItem(_STAGE_HISTORY_KEY, JSON.stringify(hist)); } catch { }
 }
 // Conservative defaults — tripled from the original observed-warm-run
 // numbers because real cold starts on Strix Halo (model load + 8 denoise
 // steps + VAE) routinely hit the upper end. ETAs should over-estimate
 // until we accumulate enough samples to trust them.
 const _STAGE_DEFAULT_SECONDS = {
-    'Concept':        24,
-    'Base Image':    540,
+    'Concept': 24,
+    'Base Image': 540,
     'Video Chains': 1800,
-    'Audio':         180,
-    'TTS':            60,
-    'Post Process':  180,
-    'Final Merge':    60,
+    'Audio': 180,
+    'TTS': 60,
+    'Post Process': 180,
+    'Final Merge': 60,
 };
 // Until the rolling history has at least this many samples, lean on the
 // default — small samples shouldn't yank the displayed ETA around. Once
@@ -758,13 +812,13 @@ const _STAGE_ORDER = ['Concept', 'Audio', 'TTS', 'Base Image', 'Video Chains', '
 // Module-scope so both renderPipelineStrip (per-item completed history) and
 // _buildActiveJobProgressBar (top-of-card active bar) read the same table.
 const _STAGES_META = [
-    ['Concept',      'T', 'Text',  'Texting',    'accent'],
-    ['Audio',        'M', 'Music', 'Composing',  'secondary'],
-    ['TTS',          'S', 'Voice', 'Voicing',    'warning'],
-    ['Base Image',   'I', 'Image', 'Imaging',    'info'],
+    ['Concept', 'T', 'Text', 'Texting', 'accent'],
+    ['Audio', 'M', 'Music', 'Composing', 'secondary'],
+    ['TTS', 'S', 'Voice', 'Voicing', 'warning'],
+    ['Base Image', 'I', 'Image', 'Imaging', 'info'],
     ['Video Chains', 'V', 'Video', 'Rendering parts', 'success'],
-    ['Post Process', 'U', 'Upscale',  'Upscaling',  'warning'],
-    ['Final Merge',  'F', 'Merge', 'Merging',    'accent'],
+    ['Post Process', 'U', 'Upscale', 'Upscaling', 'warning'],
+    ['Final Merge', 'F', 'Merge', 'Merging', 'accent'],
 ];
 function _stageDoneBefore(curStage, candidate) {
     const ci = _STAGE_ORDER.indexOf(curStage);
@@ -834,11 +888,11 @@ function _buildActiveJobProgressBar(d) {
         const isPast = curIdx >= 0 && i < curIdx;
         const isCurrent = i === curIdx;
         const cls = isPast ? 'pipeline-seg-past'
-                  : isCurrent ? 'pipeline-seg-current'
-                              : 'pipeline-seg-future';
+            : isCurrent ? 'pipeline-seg-current'
+                : 'pipeline-seg-future';
         const overrunCls = (isCurrent && isOverrun) ? ' pipeline-seg-overrun' : '';
         const localFill = isPast ? 100 : (isCurrent ? stageProgressFraction * 100 : 0);
-        const meta = _STAGES_META.find(x => x[0] === s) || [,,s,,'primary'];
+        const meta = _STAGES_META.find(x => x[0] === s) || [, , s, , 'primary'];
         const tone = meta[4];
         const shortLabel = meta[2];
         // Inline per-segment timing under the label. Past stages render their
@@ -930,7 +984,7 @@ function _endlessCycleMs() {
     try {
         const v = parseInt(localStorage.getItem('slopfinity-endless-cycle-s') || '12', 10);
         if (isFinite(v) && v >= 4 && v <= 60) return v * 1000;
-    } catch (_) {}
+    } catch (_) { }
     return 12000;
 }
 // Allow the Slop Config modal's interval slider to restart the timer
@@ -982,7 +1036,7 @@ function _wireEndlessStoryCycle() {
                 if (arr.length && typeof _appendSuggestBatchRow === 'function') {
                     _appendSuggestBatchRow(arr);
                 }
-            } catch (_) {}
+            } catch (_) { }
         }, _endlessCycleMs());
     };
     const stop = () => {
@@ -998,7 +1052,7 @@ function _wireEndlessStoryCycle() {
             const host = document.getElementById('subjects-endless-story');
             if (host) host.setAttribute('aria-pressed', persisted);
         }
-    } catch (_) {}
+    } catch (_) { }
     if (t.checked) start();
 }
 document.addEventListener('DOMContentLoaded', _wireEndlessStoryCycle);
@@ -1022,7 +1076,7 @@ function _getSubjectsMode() {
 
 function _setSubjectsMode(mode) {
     if (mode !== 'raw' && mode !== 'endless') mode = 'raw';
-    try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) {}
+    try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) { }
     document.querySelectorAll('.subjects-mode-pill button[data-subj-mode]').forEach(b => {
         const active = b.getAttribute('data-subj-mode') === mode;
         b.classList.toggle('subj-mode-active', active);
@@ -1089,7 +1143,7 @@ async function _startEndlessStory() {
             const d = await r.json();
             const arr = (d && d.suggestions) || [];
             seed = (arr[0] || '').trim();
-        } catch (_) {}
+        } catch (_) { }
         if (!seed) {
             console.warn('I\'m Feeling Lucky: no opener returned');
             return;
@@ -1113,7 +1167,7 @@ async function _startEndlessStory() {
     }
     _updateSubjectsActionLabel();
     // Fire one fresh batch immediately so the user sees movement.
-    if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
+    if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => { });
 }
 
 function _endEndlessStory() {
@@ -1183,7 +1237,7 @@ function openSlopConfig() {
         const fresh = localStorage.getItem('slopfinity-fresh') === '1';
         const fresEl = document.getElementById('slop-fresh-toggle-modal');
         if (fresEl) fresEl.checked = fresh;
-    } catch (_) {}
+    } catch (_) { }
     if (typeof d.showModal === 'function') d.showModal();
 }
 window.openSlopConfig = openSlopConfig;
@@ -1201,13 +1255,13 @@ function showPromptPeek(text, stage) {
     // the modal title reads "Video prompt" rather than "Video Chains
     // prompt". Falls back to a neutral label when stage is unknown.
     const _stageRoleLabel = {
-        'Concept':       'Concept',
-        'Base Image':    'Image',
-        'Video Chains':  'Video',
-        'Audio':         'Music',
-        'TTS':           'Voice',
-        'Post Process':  'Upscale',
-        'Final Merge':   'Final',
+        'Concept': 'Concept',
+        'Base Image': 'Image',
+        'Video Chains': 'Video',
+        'Audio': 'Music',
+        'TTS': 'Voice',
+        'Post Process': 'Upscale',
+        'Final Merge': 'Final',
     };
     const _label = stage ? (_stageRoleLabel[stage] || stage) : 'LLM-rewritten';
     const _subtitle = stage
@@ -1228,7 +1282,7 @@ function showPromptPeek(text, stage) {
     if (copyBtn) {
         copyBtn._prompt = text || '';
         copyBtn.addEventListener('click', (e) => {
-            navigator.clipboard.writeText(copyBtn._prompt || '').catch(() => {});
+            navigator.clipboard.writeText(copyBtn._prompt || '').catch(() => { });
             copyBtn.textContent = '✓ Copied';
             setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
         });
@@ -1249,16 +1303,16 @@ function showPromptPeek(text, stage) {
 // emitted the rewritten prompt by the time any image/video/etc stage
 // starts, so editing "Concept" wouldn't change downstream behaviour.
 const _PROMPTS_STAGE_MAP = [
-    ['Base Image',   'image', 'image_prompt'],
+    ['Base Image', 'image', 'image_prompt'],
     ['Video Chains', 'video', 'video_prompt'],
-    ['Audio',        'audio', 'music_prompt'],
-    ['TTS',          'tts',   'tts_prompt'],
+    ['Audio', 'audio', 'music_prompt'],
+    ['TTS', 'tts', 'tts_prompt'],
 ];
 const _PROMPTS_ROLE_TO_KEY = {
     image: 'image_prompt',
     video: 'video_prompt',
     audio: 'music_prompt',
-    tts:   'tts_prompt',
+    tts: 'tts_prompt',
 };
 
 function _buildPromptRow(stage, role, value, { locked, status, currentPrompt }) {
@@ -1570,7 +1624,7 @@ function updateOutputsDisk(d) {
     el.textContent = `${d.pct}%`;
     el.className = 'font-mono font-black ' + (
         d.status === 'danger' ? 'text-error' :
-        d.status === 'warn' ? 'text-warning' : 'text-accent'
+            d.status === 'warn' ? 'text-warning' : 'text-accent'
     );
     const freeGb = (d.free_gb !== undefined) ? d.free_gb : (d.total_gb - d.used_gb);
     // Update the used/free label beneath the percentage (mirrors RAM r-v line).
@@ -1635,7 +1689,7 @@ function updateRam(ram) {
     if (!el) return;
     const txt = el.querySelector('.ram-txt');
     const bar = el.querySelector('.ram-bar');
-    const bd  = el.querySelector('.ram-breakdown');
+    const bd = el.querySelector('.ram-breakdown');
     if (txt) txt.innerText = `${ram.estimated_gb} / ${ram.budget_gb || 128} GB unified`;
     if (bar) {
         bar.className = 'ram-bar progress w-full mt-1 ' + progressClass(ram.status);
@@ -1655,9 +1709,9 @@ function updateRam(ram) {
             const gb = (Math.round((e.gb || 0) * 10) / 10).toFixed(1);
             rows.push(
                 `<div class="flex items-baseline gap-2">` +
-                  `<span class="opacity-70 w-14 flex-none">${_htmlEscape(stage)}</span>` +
-                  `<span class="flex-1 truncate">${_htmlEscape(labelTrim)}</span>` +
-                  `<span class="font-mono text-right flex-none">${gb} GB</span>` +
+                `<span class="opacity-70 w-14 flex-none">${_htmlEscape(stage)}</span>` +
+                `<span class="flex-1 truncate">${_htmlEscape(labelTrim)}</span>` +
+                `<span class="font-mono text-right flex-none">${gb} GB</span>` +
                 `</div>`
             );
         }
@@ -1666,8 +1720,8 @@ function updateRam(ram) {
         const budget = ram.budget_gb || 128;
         rows.push(
             `<div class="flex items-baseline justify-between gap-2">` +
-              `<b>Total</b>` +
-              `<span><b class="font-mono">${total} GB</b> <span class="opacity-60">/ ${budget} GB unified</span></span>` +
+            `<b>Total</b>` +
+            `<span><b class="font-mono">${total} GB</b> <span class="opacity-60">/ ${budget} GB unified</span></span>` +
             `</div>`
         );
         bd.innerHTML = rows.join('');
@@ -1909,7 +1963,7 @@ async function openAssetInfo(filename) {
                 ? `<audio controls class="w-full"><source src="${m.url}"></audio>`
                 : `<img src="${m.url}" class="w-full rounded bg-black" />`;
         media.innerHTML = mediaHtml;
-        const badgeColor = ({final:'badge-accent',chain:'badge-primary',image:'badge-secondary',audio:'badge-warning'})[m.kind] || 'badge-ghost';
+        const badgeColor = ({ final: 'badge-accent', chain: 'badge-primary', image: 'badge-secondary', audio: 'badge-warning' })[m.kind] || 'badge-ghost';
         body.innerHTML = `
             <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1 text-xs font-mono">
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${m.filename}</div>
@@ -2001,7 +2055,7 @@ setInterval(() => {
         const frame = (parseInt(v.dataset.animFrame || '0', 10) + 1) % 3;
         v.dataset.animFrame = String(frame);
         const t = frame === 0 ? 0 : (frame === 1 ? v.duration * 0.5 : v.duration * 0.95);
-        try { v.currentTime = t; } catch (_) {}
+        try { v.currentTime = t; } catch (_) { }
     });
 }, 800);
 document.addEventListener('toggle', (e) => {
@@ -2094,13 +2148,13 @@ function _slopBadgeMeta(file) {
 // filename was produced for that stage. Used by the queue-item reveal so
 // the active badge spins, and completed stages append a clickable asset link.
 const _STAGE_ROLE = {
-    'Concept':       'llm',
-    'Base Image':    'base',
-    'Video Chains':  'video',
-    'Audio':         'audio',
-    'TTS':           'tts',
-    'Post Process':  'upscale',
-    'Final Merge':   'video',
+    'Concept': 'llm',
+    'Base Image': 'base',
+    'Video Chains': 'video',
+    'Audio': 'audio',
+    'TTS': 'tts',
+    'Post Process': 'upscale',
+    'Final Merge': 'video',
 };
 // ---- Asset filename resolution --------------------------------------------
 // The fleet runner now writes slug-based filenames (e.g.
@@ -2230,13 +2284,13 @@ const _STAGE_ASSET = (stage, v_idx, c_idx) => {
     return null;
 };
 const _STAGE_TEXT = {
-    'Concept':       'generating prompts',
-    'Base Image':    'rendering image',
-    'Video Chains':  'rendering video part',
-    'Audio':         'composing music',
-    'TTS':           'recording voiceover',
-    'Post Process':  'upscaling',
-    'Final Merge':   'merging final',
+    'Concept': 'generating prompts',
+    'Base Image': 'rendering image',
+    'Video Chains': 'rendering video part',
+    'Audio': 'composing music',
+    'TTS': 'recording voiceover',
+    'Post Process': 'upscaling',
+    'Final Merge': 'merging final',
 };
 
 // Backend-driven activity heartbeat. The server emits a `render_heartbeat`
@@ -2246,6 +2300,11 @@ const _STAGE_TEXT = {
 // the next heartbeat never arrives and the 1 Hz expiry ticker hides the
 // spinner cleanly. Replaces the old client-side derivation off state.step.
 let _renderHeartbeat = null;
+// Track whether the heartbeat was live on the previous tick so we can detect
+// the idle→live transition and fire the ignite burst exactly once per render.
+let _renderWasLive = false;
+// Timer handle for the ignite-class cleanup fallback.
+let _renderIgniteTimer = null;
 // Render the heartbeat text as a row of per-character spans so the assembly-
 // line CSS keyframes (bounce/border-pulse) can target each glyph individually.
 // Each char carries its position fraction `--char-pos` (0..1) so the 1 Hz
@@ -2267,9 +2326,9 @@ function _paintRenderText(host, text) {
         // index drives the per-char animation-delay so the assembly-line
         // bounce ripples left-to-right rather than firing in unison.
         html += `<span class="render-anim-char"${isSpace ? ' data-space="1"' : ''} `
-              + `style="--char-pos:${pos};--char-i:${i};">`
-              + (isSpace ? '&nbsp;' : _htmlEscape(ch))
-              + '</span>';
+            + `style="--char-pos:${pos};--char-i:${i};">`
+            + (isSpace ? '&nbsp;' : _htmlEscape(ch))
+            + '</span>';
     }
     host.innerHTML = html;
 }
@@ -2312,12 +2371,39 @@ function _updateRenderTextProgress(host) {
 // so the heartbeat reads as varied motion (bounce → wobble → pulse →
 // jump → wave → swap → repeat). Order is shuffled once on first paint
 // so the same stage doesn't always start with the same style.
-const _RENDER_ANIM_STYLES = ['bounce', 'wobble', 'pulse', 'jump', 'wave', 'swap'];
+const _RENDER_ANIM_STYLES = [
+    'bounce', 'wobble', 'pulse', 'jump', 'wave', 'swap',
+    'spin', 'flip', 'glitch', 'shake', 'orbit', 'typewriter',
+    'nod', 'stretch', 'skew', 'ping', 'drop', 'morph', 'ripple',
+    'slide', 'pacman', 'cube'
+];
 let _renderAnimStyleIdx = Math.floor(Math.random() * _RENDER_ANIM_STYLES.length);
 function _rotateRenderAnimStyle(host) {
     if (!host) return;
     _renderAnimStyleIdx = (_renderAnimStyleIdx + 1) % _RENDER_ANIM_STYLES.length;
     host.dataset.animStyle = _RENDER_ANIM_STYLES[_renderAnimStyleIdx];
+}
+
+// Fire the gradient-explosion ignite burst on the render-anim host.
+// Adds .render-ignite which triggers the CSS keyframes, then removes it
+// once the animation ends (animationend) or after 3.1 s max (fallback).
+function _fireRenderIgnite(host) {
+    if (!host) return;
+    // Clear any in-flight cleanup.
+    if (_renderIgniteTimer) { clearTimeout(_renderIgniteTimer); _renderIgniteTimer = null; }
+    host.classList.remove('render-ignite');
+    // Force reflow so re-adding the class restarts the animation.
+    void host.offsetWidth;
+    host.classList.add('render-ignite');
+    const cleanup = () => {
+        host.classList.remove('render-ignite');
+        host.removeEventListener('animationend', onEnd);
+        if (_renderIgniteTimer) { clearTimeout(_renderIgniteTimer); _renderIgniteTimer = null; }
+    };
+    const onEnd = (e) => { if (e.target === host) cleanup(); };
+    host.addEventListener('animationend', onEnd, { once: true });
+    // Safety fallback in case animationend never fires (e.g. display:none).
+    _renderIgniteTimer = setTimeout(cleanup, 3200);
 }
 
 function _applyRenderHeartbeat() {
@@ -2336,8 +2422,13 @@ function _applyRenderHeartbeat() {
         if (!txtEl.dataset.animStyle) {
             txtEl.dataset.animStyle = _RENDER_ANIM_STYLES[_renderAnimStyleIdx];
         }
+        // Fire the ignite burst on the idle→live transition.
+        if (!_renderWasLive) {
+            _fireRenderIgnite(txtEl);
+        }
     }
     if (!live && _renderHeartbeat) _renderHeartbeat = null;
+    _renderWasLive = live;
 }
 // Cycle animation styles every 5 s while a heartbeat is live.
 setInterval(() => {
@@ -2423,11 +2514,11 @@ function openModelSettingsPopup(role, qTs) {
     const promptText = (q && q.prompt) || (tick.state && tick.state.current_prompt) || '';
 
     const titleMap = {
-        llm:     'LLM — prompt rewriter',
-        base:    'Image stage',
-        video:   'Video stage',
-        audio:   'Music stage',
-        tts:     'Voice stage',
+        llm: 'LLM — prompt rewriter',
+        base: 'Image stage',
+        video: 'Video stage',
+        audio: 'Music stage',
+        tts: 'Voice stage',
         upscale: 'Post-process stage',
     };
     const title = titleMap[role] || 'Stage settings';
@@ -2437,32 +2528,32 @@ function openModelSettingsPopup(role, qTs) {
     const push = (k, v) => rows.push([k, (v == null || v === '') ? '—' : v]);
 
     if (role === 'llm') {
-        push('Provider',     llm.provider || 'auto');
-        push('Model',        llm.model_id || 'auto-pick');
-        push('Base URL',     llm.base_url);
+        push('Provider', llm.provider || 'auto');
+        push('Model', llm.model_id || 'auto-pick');
+        push('Base URL', llm.base_url);
         push('Rewrite mode', cfg.enhancer_prompt ? 'cinematic-director (custom)' : 'default');
-        push('Subject',      promptText);
+        push('Subject', promptText);
     } else if (role === 'base') {
-        push('Model',        _modelDisplayName(snap.base_model, 'image'));
-        push('Size',         snap.size);
+        push('Model', _modelDisplayName(snap.base_model, 'image'));
+        push('Size', snap.size);
         push('Quality ramp', snap.quality_ramp ? 'on' : 'off');
         push('Prompt override', snap.image_prompt_override);
     } else if (role === 'video') {
-        push('Model',        _modelDisplayName(snap.video_model, 'video'));
-        push('Frames',       snap.frames);
-        push('Parts',        snap.chains);
+        push('Model', _modelDisplayName(snap.video_model, 'video'));
+        push('Frames', snap.frames);
+        push('Parts', snap.chains);
         push('Quality ramp', snap.video_quality_ramp ? 'on' : 'off');
     } else if (role === 'audio') {
-        push('Model',        _modelDisplayName(snap.audio_model, 'audio'));
-        push('Music gain',   (snap.music_gain_db != null) ? `${snap.music_gain_db} dB` : null);
-        push('Fade',         (snap.fade_s != null) ? `${snap.fade_s}s` : null);
+        push('Model', _modelDisplayName(snap.audio_model, 'audio'));
+        push('Music gain', (snap.music_gain_db != null) ? `${snap.music_gain_db} dB` : null);
+        push('Fade', (snap.fade_s != null) ? `${snap.fade_s}s` : null);
     } else if (role === 'tts') {
-        push('Model',        _modelDisplayName(snap.tts_model, 'audio'));
+        push('Model', _modelDisplayName(snap.tts_model, 'audio'));
         push('Voice preset', snap.tts_voice || snap.voice_preset);
-        push('Voice gain',   (snap.voice_gain_db != null) ? `${snap.voice_gain_db} dB` : null);
+        push('Voice gain', (snap.voice_gain_db != null) ? `${snap.voice_gain_db} dB` : null);
     } else if (role === 'upscale') {
-        push('Upscaler',     snap.upscale_model);
-        push('Upscale on',   snap.upscale ? 'yes' : 'no');
+        push('Upscaler', snap.upscale_model);
+        push('Upscale on', snap.upscale ? 'yes' : 'no');
         push('Consolidation', snap.consolidation);
     }
 
@@ -2472,7 +2563,7 @@ function openModelSettingsPopup(role, qTs) {
     ).join('');
 
     const titleEl = document.getElementById('model-settings-title');
-    const bodyEl  = document.getElementById('model-settings-body');
+    const bodyEl = document.getElementById('model-settings-body');
     if (titleEl) titleEl.textContent = title;
     if (bodyEl) {
         bodyEl.innerHTML = `<div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1">${body}</div>` +
@@ -2528,7 +2619,7 @@ function _initSplitDivider() {
         const rect = row.getBoundingClientRect();
         const ratio = (e.clientX - rect.left) / rect.width;
         applyRatio(ratio);
-        try { localStorage.setItem(KEY, String(Math.max(0.2, Math.min(0.8, ratio)))); } catch {}
+        try { localStorage.setItem(KEY, String(Math.max(0.2, Math.min(0.8, ratio)))); } catch { }
     });
     document.addEventListener('mouseup', () => { dragging = false; document.body.style.userSelect = ''; });
 }
@@ -2578,7 +2669,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
             }
-            regenSuggestions().catch(() => {});
+            regenSuggestions().catch(() => { });
         };
         setTimeout(tryAutoSuggest, 500);
     }
@@ -2641,7 +2732,7 @@ function updateOutputs(o) {
     // data-slop-final="1" is a part. This fixes the chip showing "0" when
     // partials are clearly visible — the count was never wired.
     const chipP = document.querySelector('[data-chip-count="parts"]')
-                || document.querySelector('[data-chip-count="assets"]');
+        || document.querySelector('[data-chip-count="assets"]');
     if (chipP) chipP.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind][data-slop-final="0"]').length;
 }
 
@@ -2713,12 +2804,11 @@ const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 // Returns true when the user has flipped the Settings → LLM → Generation
 // "Disable automatic suggestion fetches" toggle ON. Falls back to false
 // (auto-suggest enabled) until the first WS tick lands.
-function _autoSuggestDisabled() {
-    try {
-        return !!(_lastTick && _lastTick.config && _lastTick.config.suggest_auto_disabled);
-    } catch (_) {
-        return false;
-    }
+function _isAutoSuggestDisabled() {
+    if (!_lastTick || !_lastTick.config) return false;
+    const c = _lastTick.config;
+    if (c.auto_suggest_enabled !== undefined) return !c.auto_suggest_enabled;
+    return !!c.suggest_auto_disabled;
 }
 
 function _isGpuIdleEnough() {
@@ -3228,7 +3318,7 @@ function connect() {
                 const justCompleted = new Set();
                 const completedLines = STAGES
                     .filter(([s]) => _stageDoneBefore(curStep, s))
-                    .map(([s,,label,,tone]) => {
+                    .map(([s, , label, , tone]) => {
                         const key = `${v}:${s}`;
                         const isFresh = !_displayedDoneStages.has(key);
                         if (isFresh) {
@@ -3287,8 +3377,8 @@ function connect() {
                             const _thumb = asset && _isVid
                                 ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"></video></button>`
                                 : asset && _isImg
-                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
-                                : '';
+                                    ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
+                                    : '';
                             // Tiny copy-button glyph that sits next to the
                             // filename. Reads its target from data-copy-text
                             // so quotes inside the path don't break the
@@ -3328,7 +3418,7 @@ function connect() {
                         // Image stages → resolution; Video parts → duration in
                         // seconds (frames/24); Audio + TTS → configured length;
                         // Final Merge → total length (chains × frames / 24).
-                        const _aspectToRes = {'1:1':'1024×1024','4:3':'1152×864','3:4':'864×1152','16:9':'1280×720','9:16':'720×1280'};
+                        const _aspectToRes = { '1:1': '1024×1024', '4:3': '1152×864', '3:4': '864×1152', '16:9': '1280×720', '9:16': '720×1280' };
                         const _frames = Number(cfgSnap.frames) || 0;
                         const _chains = Number(cfgSnap.chains) || 0;
                         let _meta = '';
@@ -3713,8 +3803,8 @@ function connect() {
 
             // Output section: hide when all three grids are empty; show ONE empty card instead.
             const hasAny = document.querySelector('#preview-grid > *') ||
-                           document.querySelector('#v-grid > *') ||
-                           document.querySelector('#i-grid > *');
+                document.querySelector('#v-grid > *') ||
+                document.querySelector('#i-grid > *');
             const outSec = $('output-section');
             const outEmpty = $('output-empty');
             if (outSec) outSec.style.display = hasAny ? 'block' : 'none';
@@ -4061,7 +4151,7 @@ async function inject(prio, terminate, concurrent, opts) {
 // Deprecated: the standalone "Will use" badge row was removed; the RAM
 // estimator breakdown now renders role + model + GB together. Keep this
 // stub so existing callers don't error.
-function _renderSubjectsModels() {}
+function _renderSubjectsModels() { }
 
 async function updatePipeline() {
     // Resolve a model select's value, swapping in the slopped sub-select
@@ -4075,9 +4165,9 @@ async function updatePipeline() {
         const subVal = sub ? sub.value : '';
         return subVal && subVal.startsWith('slopped:') ? subVal : '__slopped__';
     };
-    const baseVal  = _resolve('cfg-base',  'cfg-base-slopped');
+    const baseVal = _resolve('cfg-base', 'cfg-base-slopped');
     const audioVal = _resolve('cfg-audio', 'cfg-audio-slopped');
-    const ttsVal   = _resolve('cfg-tts',   'cfg-tts-slopped');
+    const ttsVal = _resolve('cfg-tts', 'cfg-tts-slopped');
     const body = {
         infinity_mode: $('inf-on') ? $('inf-on').checked : false,
         // Prefer newline-based subjects from #p-core textarea; fall back to
@@ -4091,7 +4181,7 @@ async function updatePipeline() {
         tts_model: ttsVal,
         upscale_model: $('cfg-upscale') ? $('cfg-upscale').value : '',
         frames: $('cfg-frames') ? parseInt($('cfg-frames').value, 10) :
-                ($('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49),
+            ($('cfg-video') && $('cfg-video').value.includes('wan') ? 81 : 49),
     };
     if ($('cfg-chains')) body.chains = parseInt($('cfg-chains').value, 10);
     if ($('cfg-size')) body.size = $('cfg-size').value;
@@ -4135,9 +4225,9 @@ function _renderQueueDrawerItem(q) {
         return `<ul class="m-0 p-0 list-none">${_renderDoneItem(q)}</ul>`;
     }
     const cls = q && q.status === 'cancelled' ? 'border-warning/40' :
-                q && q.status === 'pending' ? 'border-base-200' : 'border-base-200';
+        q && q.status === 'pending' ? 'border-base-200' : 'border-base-200';
     const badge = q && q.status === 'cancelled' ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>' :
-                  q && q.status === 'pending' ? '<span class="badge badge-xs badge-info mr-1">pending</span>' : '';
+        q && q.status === 'pending' ? '<span class="badge badge-xs badge-info mr-1">pending</span>' : '';
     const prompt = _htmlEscape(((q && q.prompt) || '').substring(0, 200));
     return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${prompt}</div>`;
 }
@@ -4581,8 +4671,39 @@ async function openSettings() {
         }
         const sugCustom = $('set-suggest-custom-prompt');
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
-        const sugAutoDis = $('set-suggest-auto-disabled');
-        if (sugAutoDis) sugAutoDis.checked = !!sr.suggest_auto_disabled;
+
+        // Part 3 — Positive/Scored config hydration
+        const sugAutoEn = $('set-suggest-auto-enabled');
+        if (sugAutoEn) sugAutoEn.checked = sr.auto_suggest_enabled ?? !sr.suggest_auto_disabled;
+
+        const idleThr = $('set-idle-throttle');
+        if (idleThr) {
+            idleThr.value = sr.idle_throttle_pct ?? (sr.when_idle ? 10 : 0);
+            const lbl = $('set-idle-throttle-val'); if (lbl) lbl.innerText = idleThr.value;
+        }
+
+        const creatScore = $('set-creativity-score');
+        if (creatScore) {
+            creatScore.value = sr.creativity_score ?? (sr.chaos_mode ? 8 : 5);
+            const lbl = $('set-creativity-score-val'); if (lbl) lbl.innerText = creatScore.value;
+        }
+
+        const qualScore = $('cfg-quality-score');
+        if (qualScore) {
+            let def = 5;
+            if (sr.tier === 'low') def = 2;
+            else if (sr.tier === 'med') def = 5;
+            else if (sr.tier === 'high') def = 9;
+            qualScore.value = sr.quality_score ?? def;
+            const lbl = $('cfg-quality-score-val'); if (lbl) lbl.innerText = qualScore.value;
+        }
+
+        const concBud = $('set-concurrent-budget');
+        if (concBud) {
+            concBud.value = sr.concurrency_budget_gb ?? (sr.concurrent ? 8 : 0);
+            const lbl = $('set-concurrent-budget-val'); if (lbl) lbl.innerText = concBud.value;
+        }
+        // ...
         // Prompts tab — pre-fill each textarea with the stored override
         // (empty when the user hasn't customised it). Placeholder shows the
         // built-in default so users know what they'd be overriding.
@@ -4804,18 +4925,19 @@ async function saveSettings() {
             timeout_s: parseInt($('set-timeout').value, 10),
         },
         auto_suspend: readAutoSuspendList(),
+        philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
+        suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
+        suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',
+        suggest_auto_disabled: !$('set-suggest-auto-enabled').checked,
+        auto_suggest_enabled: $('set-suggest-auto-enabled').checked,
+        idle_throttle_pct: parseInt($('set-idle-throttle').value, 10),
+        creativity_score: parseInt($('set-creativity-score').value, 10),
+        quality_score: parseInt($('cfg-quality-score').value, 10),
+        concurrency_budget_gb: parseFloat($('set-concurrent-budget').value),
+        when_idle: parseInt($('set-idle-throttle').value, 10) > 0,
+        chaos_mode: parseInt($('set-creativity-score').value, 10) > 5,
+        concurrent: parseFloat($('set-concurrent-budget').value) > 0,
     };
-    const fleetPrompt = $('set-fleet-prompt');
-    if (fleetPrompt) {
-        // Empty string is meaningful here (server interprets it as "use built-in default").
-        body.philosophical_prompt = fleetPrompt.value;
-    }
-    const sugUseSub = $('set-suggest-use-subjects');
-    if (sugUseSub) body.suggest_use_subjects = !!sugUseSub.checked;
-    const sugCustom = $('set-suggest-custom-prompt');
-    if (sugCustom) body.suggest_custom_prompt = sugCustom.value;
-    const sugAutoDis = $('set-suggest-auto-disabled');
-    if (sugAutoDis) body.suggest_auto_disabled = !!sugAutoDis.checked;
     // Prompts tab — collect every textarea verbatim. Empty string is
     // meaningful (server interprets it as "use built-in default").
     _collectPromptField(body, 'set-prompts-enhancer', 'enhancer_prompt');
@@ -4905,21 +5027,21 @@ document.addEventListener('DOMContentLoaded', () => {
 // -------------------- Single-page layout helpers --------------------
 
 function openPipeline() {
-  const d = document.getElementById('pipeline-modal');
-  if (d && d.showModal) d.showModal();
-  // Pre-select the active model_id so the dropdown reflects current state
-  // before the /settings/models fetch completes.
-  const sel = document.getElementById('cfg-llm');
-  if (sel) {
-    const cur = (_lastTick && _lastTick.config && _lastTick.config.llm && _lastTick.config.llm.model_id) || '';
-    if (cur) sel.dataset.selected = cur;
-  }
-  if (typeof reloadModels === 'function') reloadModels();
+    const d = document.getElementById('pipeline-modal');
+    if (d && d.showModal) d.showModal();
+    // Pre-select the active model_id so the dropdown reflects current state
+    // before the /settings/models fetch completes.
+    const sel = document.getElementById('cfg-llm');
+    if (sel) {
+        const cur = (_lastTick && _lastTick.config && _lastTick.config.llm && _lastTick.config.llm.model_id) || '';
+        if (cur) sel.dataset.selected = cur;
+    }
+    if (typeof reloadModels === 'function') reloadModels();
 }
 
 function _subjectsFromTextarea() {
-  const v = (document.getElementById('p-core') || {}).value || '';
-  return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const v = (document.getElementById('p-core') || {}).value || '';
+    return v.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 }
 
 // Generate-button behaviour:
@@ -4929,20 +5051,20 @@ function _subjectsFromTextarea() {
 // multiple infinity items round-robin against each other. To stop one, click
 // the ✕ on its queue row.
 async function toggleInfinity() {
-  const inf = document.getElementById('inf-on');
-  const nowToggle = document.getElementById('now-on');
-  const termToggle = document.getElementById('term-on');
-  const concToggle = document.getElementById('concurrent-on');
-  const idleToggle = document.getElementById('when-idle-on');
-  const chaosToggle = document.getElementById('chaos-on');
-  const prio = nowToggle && nowToggle.checked ? 'now' : 'next';
-  const terminate = !!(termToggle && termToggle.checked);
-  const concurrent = !!(concToggle && concToggle.checked);
-  const infinity = !!(inf && inf.checked);
-  const whenIdle = !!(idleToggle && idleToggle.checked);
-  const chaos = !!(chaosToggle && chaosToggle.checked);
-  await inject(prio, terminate, concurrent, { infinity, whenIdle, chaos });
-  _updateStartBtn();
+    const inf = document.getElementById('inf-on');
+    const nowToggle = document.getElementById('now-on');
+    const termToggle = document.getElementById('term-on');
+    const concToggle = document.getElementById('concurrent-on');
+    const idleToggle = document.getElementById('when-idle-on');
+    const chaosToggle = document.getElementById('chaos-on');
+    const prio = nowToggle && nowToggle.checked ? 'now' : 'next';
+    const terminate = !!(termToggle && termToggle.checked);
+    const concurrent = !!(concToggle && concToggle.checked);
+    const infinity = !!(inf && inf.checked);
+    const whenIdle = !!(idleToggle && idleToggle.checked);
+    const chaos = !!(chaosToggle && chaosToggle.checked);
+    await inject(prio, terminate, concurrent, { infinity, whenIdle, chaos });
+    _updateStartBtn();
 }
 
 // Tracks whether the fleet is actually rendering right now (driven by the WS
@@ -4957,34 +5079,34 @@ let _isRendering = false;
 // click will do. Each toggle's onchange must call _updateStartBtn() so the
 // label stays in sync.
 function _composeStartBtnLabel() {
-  const $ = (id) => document.getElementById(id);
-  const term = !!($('term-on') && $('term-on').checked);
-  const inf = !!($('inf-on') && $('inf-on').checked);
-  const idle = !!($('when-idle-on') && $('when-idle-on').checked);
-  const chaos = !!($('chaos-on') && $('chaos-on').checked);
-  const now = !!($('now-on') && $('now-on').checked);
+    const $ = (id) => document.getElementById(id);
+    const term = !!($('term-on') && $('term-on').checked);
+    const inf = !!($('inf-on') && $('inf-on').checked);
+    const idle = !!($('when-idle-on') && $('when-idle-on').checked);
+    const chaos = !!($('chaos-on') && $('chaos-on').checked);
+    const now = !!($('now-on') && $('now-on').checked);
 
-  let label = '';
-  if (term) label += 'Terminate and ';
-  label += 'Queue ';
-  if (inf) label += 'Infinite ';
-  if (chaos) label += 'Polymorphic ';
-  label += 'Slop';
+    let label = '';
+    if (term) label += 'Terminate and ';
+    label += 'Queue ';
+    if (inf) label += 'Infinite ';
+    if (chaos) label += 'Polymorphic ';
+    label += 'Slop';
 
-  const modifiers = [];
-  if (now) modifiers.push('asap');
-  if (idle) modifiers.push('when idle');
-  if (modifiers.length) label += ' (' + modifiers.join(', ') + ')';
-  return label;
+    const modifiers = [];
+    if (now) modifiers.push('asap');
+    if (idle) modifiers.push('when idle');
+    if (modifiers.length) label += ' (' + modifiers.join(', ') + ')';
+    return label;
 }
 
 function _updateStartBtn() {
-  const b = document.getElementById('btn-start-stop');
-  if (!b) return;
-  // Each click queues a new item. The Infinity toggle in the Generation tab
-  // makes the queued item re-loop after each completion (cancel via the ✕ on
-  // its queue row). Never use this button to stop running jobs.
-  b.textContent = _composeStartBtnLabel();
+    const b = document.getElementById('btn-start-stop');
+    if (!b) return;
+    // Each click queues a new item. The Infinity toggle in the Generation tab
+    // makes the queued item re-loop after each completion (cancel via the ✕ on
+    // its queue row). Never use this button to stop running jobs.
+    b.textContent = _composeStartBtnLabel();
 }
 
 // Polymorphic + When Idle only make sense when the fleet is looping —
@@ -5013,69 +5135,69 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function _updateChaosEnabled() {
-  // Polymorphic + When-Idle used to be force-disabled whenever Infinity
-  // Mode was off, on the rationale that they "only make sense in a loop."
-  // That tied Endless Story (a Subjects-card surface for the same flag)
-  // visually to those toggles in a way users found confusing — flipping
-  // Endless Story off would suddenly grey out Polymorphic / When-Idle.
-  // Leaving them editable independently: they sit dormant when Infinity
-  // is off, and take effect the moment a looping run starts. No more
-  // surprise greying-out. Function kept as a stub so existing call sites
-  // stay valid.
-  const inf = document.getElementById('inf-on');
-  const enabled = !!(inf && inf.checked);
-  // Light visual hint (50% opacity on the ROW only, not disabled) so the
-  // user still sees that those modifiers are inert without infinity, but
-  // can click them in advance.
-  ['chaos-row', 'when-idle-row'].forEach(rowId => {
-    const r = document.getElementById(rowId);
-    if (r) r.classList.toggle('opacity-60', !enabled);
-  });
-  // Make sure the toggles themselves are NOT disabled (clear any stale
-  // state from before this fix landed).
-  ['chaos-on', 'when-idle-on'].forEach(id => {
-    const t = document.getElementById(id);
-    if (t) t.disabled = false;
-  });
+    // Polymorphic + When-Idle used to be force-disabled whenever Infinity
+    // Mode was off, on the rationale that they "only make sense in a loop."
+    // That tied Endless Story (a Subjects-card surface for the same flag)
+    // visually to those toggles in a way users found confusing — flipping
+    // Endless Story off would suddenly grey out Polymorphic / When-Idle.
+    // Leaving them editable independently: they sit dormant when Infinity
+    // is off, and take effect the moment a looping run starts. No more
+    // surprise greying-out. Function kept as a stub so existing call sites
+    // stay valid.
+    const inf = document.getElementById('inf-on');
+    const enabled = !!(inf && inf.checked);
+    // Light visual hint (50% opacity on the ROW only, not disabled) so the
+    // user still sees that those modifiers are inert without infinity, but
+    // can click them in advance.
+    ['chaos-row', 'when-idle-row'].forEach(rowId => {
+        const r = document.getElementById(rowId);
+        if (r) r.classList.toggle('opacity-60', !enabled);
+    });
+    // Make sure the toggles themselves are NOT disabled (clear any stale
+    // state from before this fix landed).
+    ['chaos-on', 'when-idle-on'].forEach(id => {
+        const t = document.getElementById(id);
+        if (t) t.disabled = false;
+    });
 }
 
 // Back-compat shim — Terminate is now a flat flag; older callers may still
 // invoke this. No-op preserves the call site.
-function _updateTerminateEnabled() {}
+function _updateTerminateEnabled() { }
 
 // Build a one-line summary of the Generation tab toggles for the header pill,
 // so the user can glance at it without opening the modal.
 function _updateGenModePill() {
-  const pill = document.getElementById('gen-mode-pill');
-  if (!pill) return;
-  const inf = document.getElementById('inf-on');
-  const now = document.getElementById('now-on');
-  const term = document.getElementById('term-on');
-  const parts = [];
-  parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
-  if (term && term.checked) parts.push('🛑 terminate');
-  else if (now && now.checked) parts.push('⏯ asap');
-  else parts.push('queue');
-  // +idle / +poly / +concurrent dropped — those are global settings now
-  // (Diagnostics + Triggers tabs), not per-iteration knobs, so they
-  // don't belong alongside the queue-mode chips.
-  pill.textContent = parts.join(' · ');
+    const pill = document.getElementById('gen-mode-pill');
+    if (!pill) return;
+    const inf = document.getElementById('inf-on');
+    const now = document.getElementById('now-on');
+    const term = document.getElementById('term-on');
+    const parts = [];
+    parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
+    if (term && term.checked) parts.push('🛑 terminate');
+    else if (now && now.checked) parts.push('⏯ asap');
+    else parts.push('queue');
+    // +idle / +poly / +concurrent dropped — those are global settings now
+    // (Diagnostics + Triggers tabs), not per-iteration knobs, so they
+    // don't belong alongside the queue-mode chips.
+    pill.textContent = parts.join(' · ');
 }
 
 // Single-label toggle pattern: each label sits to the right of the toggle and
 // swaps text + emphasis based on the toggle state. data-on-label / data-off-label
 // hold the words; bold + full-opacity when on, dim when off.
 function _updateSingleLabels() {
-  document.querySelectorAll('.single-label').forEach(el => {
-    const t = document.getElementById(el.dataset.toggle);
-    if (!t) return;
-    const isOn = t.checked;
-    const onText = el.dataset.onLabel || '';
-    const offText = el.dataset.offLabel || onText;
-    el.textContent = isOn ? onText : offText;
-    el.classList.toggle('font-bold', isOn);
-    el.classList.toggle('opacity-50', !isOn);
-  });
+    document.querySelectorAll('.single-label').forEach(el => {
+        const t = document.getElementById(el.dataset.toggle);
+        if (!t) return;
+        const isOn = t.checked;
+        const onText = el.dataset.onLabel || '';
+        const offText = el.dataset.offLabel || onText;
+        el.textContent = isOn ? onText : offText;
+        el.classList.toggle('font-bold', isOn);
+        el.classList.toggle('opacity-50', !isOn);
+    });
 }
 // Back-compat shims — older onchange handlers may still reference these.
 function _updateSideLabels() { _updateSingleLabels(); }
@@ -5293,60 +5415,60 @@ function _renderCachedSuggestions() {
 // _isGpuIdleEnough() — manual user click always wins. See the audit
 // block above _isGpuIdleEnough for the full inventory.
 async function regenSuggestions(n = 6) {
-  // The 🎲 button: ALWAYS fires for the FIRST row. Subsequent rows top
-  // up the marquee stack one at a time, gated by system pressure — we
-  // wait between calls and skip when GPU/RAM/Load look stressed so we
-  // don't fight the active fleet for the LLM's GPU time.
-  // RAM-tight guard is a separate, soft check (modal asks the user;
-  // cancel aborts with no side effects).
-  if (!(await _ramGuardCheck())) return;
-  const box = document.getElementById('subject-chips-stack');
-  if (!box) return;
-  box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
-  const subjects = (($('p-core') && $('p-core').value) || '').trim();
-  const fetchOne = async (forceFresh) => {
-    // Add a small randomized seed param so the server cache key changes
-    // when we want a fresh batch (otherwise the cache-no-TTL change in
-    // server.py would return the same row over and over).
-    const qs = '?n=' + n
-             + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-             + (forceFresh ? '&_t=' + Date.now() : '');
-    const r = await fetch('/subjects/suggest' + qs);
-    const data = await r.json();
-    return data.suggestions || [];
-  };
-  // Row 1 — wholesale-replace the stack so the user sees a fresh batch.
-  let arr;
-  try {
-    arr = await fetchOne(false);
-  } catch (e) {
-    box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
-    return;
-  }
-  if (!arr.length) {
-    box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
-    return;
-  }
-  try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch {}
-  _renderSuggestChips(arr);
-  // Rows 2..N — drip-feed additional batches until the marquee stack has
-  // 4 rows (its display cap) OR pressure climbs. Each iteration: 1 s pause,
-  // pressure check, fetch, append. The pressure floor mirrors the existing
-  // ticker thresholds (>=80 % on any of GPU/RAM/Load is "stressed").
-  const TARGET_ROWS = 4;
-  const stack = document.getElementById('subject-chips-stack');
-  for (let i = 1; i < TARGET_ROWS; i++) {
-    await new Promise(r => setTimeout(r, 1000));
-    const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
-    const ramT = t.ram_t || 0;
-    const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
-    const stressed = (t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80;
-    if (stressed) break;
+    // The 🎲 button: ALWAYS fires for the FIRST row. Subsequent rows top
+    // up the marquee stack one at a time, gated by system pressure — we
+    // wait between calls and skip when GPU/RAM/Load look stressed so we
+    // don't fight the active fleet for the LLM's GPU time.
+    // RAM-tight guard is a separate, soft check (modal asks the user;
+    // cancel aborts with no side effects).
+    if (!(await _ramGuardCheck())) return;
+    const box = document.getElementById('subject-chips-stack');
+    if (!box) return;
+    box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    const subjects = (($('p-core') && $('p-core').value) || '').trim();
+    const fetchOne = async (forceFresh) => {
+        // Add a small randomized seed param so the server cache key changes
+        // when we want a fresh batch (otherwise the cache-no-TTL change in
+        // server.py would return the same row over and over).
+        const qs = '?n=' + n
+            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+            + (forceFresh ? '&_t=' + Date.now() : '');
+        const r = await fetch('/subjects/suggest' + qs);
+        const data = await r.json();
+        return data.suggestions || [];
+    };
+    // Row 1 — wholesale-replace the stack so the user sees a fresh batch.
+    let arr;
     try {
-      const more = await fetchOne(true);
-      if (more && more.length && stack) _appendSuggestBatchRow(more);
-    } catch { break; }
-  }
+        arr = await fetchOne(false);
+    } catch (e) {
+        box.innerHTML = '<span class="text-[10px] italic text-error">error</span>';
+        return;
+    }
+    if (!arr.length) {
+        box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
+        return;
+    }
+    try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch { }
+    _renderSuggestChips(arr);
+    // Rows 2..N — drip-feed additional batches until the marquee stack has
+    // 4 rows (its display cap) OR pressure climbs. Each iteration: 1 s pause,
+    // pressure check, fetch, append. The pressure floor mirrors the existing
+    // ticker thresholds (>=80 % on any of GPU/RAM/Load is "stressed").
+    const TARGET_ROWS = 4;
+    const stack = document.getElementById('subject-chips-stack');
+    for (let i = 1; i < TARGET_ROWS; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
+        const ramT = t.ram_t || 0;
+        const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
+        const stressed = (t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80;
+        if (stressed) break;
+        try {
+            const more = await fetchOne(true);
+            if (more && more.length && stack) _appendSuggestBatchRow(more);
+        } catch { break; }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5486,32 +5608,32 @@ window._dumpSuggestPrefetchStats = function () {
 };
 
 function updateStageSteps(state) {
-  if (!state) return;
-  const steps = document.querySelectorAll('#stage-steps li[data-stage]');
-  if (!steps.length) return;
-  const currentStage = state.step || '';
-  const order = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
-  const idx = order.indexOf(currentStage);
-  steps.forEach((el, i) => {
-    el.classList.remove('step-primary', 'step-accent');
-    if (idx < 0) return;
-    if (i < idx) el.classList.add('step-primary');
-    else if (i === idx) el.classList.add('step-accent');
-  });
-  const chainCounter = document.getElementById('chain-counter');
-  if (chainCounter) {
-    // Element id is legacy ("chain-counter"); display text now reads
-    // "Part X of Y" to match the user-facing rename. The state keys
-    // (`chain_index`, `total_chains`) come straight from the runner and
-    // stay unchanged.
-    chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
-      ? `Part ${state.chain_index} of ${state.total_chains}` : '';
-  }
+    if (!state) return;
+    const steps = document.querySelectorAll('#stage-steps li[data-stage]');
+    if (!steps.length) return;
+    const currentStage = state.step || '';
+    const order = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+    const idx = order.indexOf(currentStage);
+    steps.forEach((el, i) => {
+        el.classList.remove('step-primary', 'step-accent');
+        if (idx < 0) return;
+        if (i < idx) el.classList.add('step-primary');
+        else if (i === idx) el.classList.add('step-accent');
+    });
+    const chainCounter = document.getElementById('chain-counter');
+    if (chainCounter) {
+        // Element id is legacy ("chain-counter"); display text now reads
+        // "Part X of Y" to match the user-facing rename. The state keys
+        // (`chain_index`, `total_chains`) come straight from the runner and
+        // stay unchanged.
+        chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
+            ? `Part ${state.chain_index} of ${state.total_chains}` : '';
+    }
 }
 
 // No-op stubs for reference-modal inline handlers that don't yet exist client-side.
 if (typeof window._onAudioChanged !== 'function') {
-  window._onAudioChanged = function () { /* reserved for future audio-dependent UI */ };
+    window._onAudioChanged = function () { /* reserved for future audio-dependent UI */ };
 }
 
 connect();
@@ -5530,9 +5652,9 @@ _wireLockListeners();
         if (!top) return;
         try {
             if (localStorage.getItem(COLLAPSE_KEY) === '1') top.removeAttribute('open');
-        } catch (_) {}
+        } catch (_) { }
         top.addEventListener('toggle', () => {
-            try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) {}
+            try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) { }
         });
     };
     if (document.readyState === 'loading') {
@@ -5553,8 +5675,8 @@ _wireLockListeners();
 (function wireUiSplit() {
     const init = () => {
         const handle = document.getElementById('ui-split-handle');
-        const upper  = document.getElementById('ui-split-upper');
-        const lower  = document.getElementById('ui-split-lower');
+        const upper = document.getElementById('ui-split-upper');
+        const lower = document.getElementById('ui-split-lower');
         if (!handle || !upper || !lower) return;
         // Storage key changed from `_pct` (legacy %, container-relative) to
         // `_px` (absolute pixel height of the upper pane). The container no
@@ -5565,9 +5687,9 @@ _wireLockListeners();
         // re-layout code (textarea autogrow, suggestion-chip filler, etc.)
         // can recompute against the new available height.
         const _emitSplitResize = () => {
-            try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+            try { window.dispatchEvent(new Event('resize')); } catch (_) { }
             if (typeof window._autogrowSubjects === 'function') {
-                try { window._autogrowSubjects(); } catch (_) {}
+                try { window._autogrowSubjects(); } catch (_) { }
             }
         };
         const _bounds = () => ({
@@ -5588,7 +5710,7 @@ _wireLockListeners();
             dragging = true;
             startY = e.clientY;
             startUpperPx = upper.getBoundingClientRect().height;
-            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+            try { handle.setPointerCapture(e.pointerId); } catch (_) { }
             handle.classList.add('dragging');
             document.body.style.userSelect = 'none';
             e.preventDefault();
@@ -5605,7 +5727,7 @@ _wireLockListeners();
         const stop = (e) => {
             if (!dragging) return;
             dragging = false;
-            try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+            try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
             handle.classList.remove('dragging');
             document.body.style.userSelect = '';
             const px = upper.getBoundingClientRect().height;

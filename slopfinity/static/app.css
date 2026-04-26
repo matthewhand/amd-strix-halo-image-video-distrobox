@@ -3,50 +3,315 @@
    with the active theme. The .over modifier swaps to the danger color when
    the metric goes above 80 %. row-reverse so the newest sample (last pushed
    to the history array) renders on the LEFT and history flows to the right. */
-.ticker-bar { display: flex; flex-direction: row-reverse; align-items: flex-end; height: 30px; gap: 2px; }
-.ticker-col { width: 6px; transition: height 0.2s, background-color 0.2s; border-radius: 2px 2px 0 0; }
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--bc) / 0.25); border-radius: 3px; }
-.card-hover:hover { border-color: hsl(var(--p)); transform: translateY(-2px); transition: 0.2s; }
+.ticker-bar {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-end;
+    height: 30px;
+    gap: 2px;
+}
+
+.ticker-col {
+    width: 6px;
+    transition: height 0.2s, background-color 0.2s;
+    border-radius: 2px 2px 0 0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--bc) / 0.25);
+    border-radius: 3px;
+}
+
+.card-hover:hover {
+    border-color: hsl(var(--p));
+    transform: translateY(-2px);
+    transition: 0.2s;
+}
 
 /* Pipeline modal: lock each tab panel to a uniform height so switching tabs
    doesn't make the dialog jump in size. Video is the tallest stage today. */
-#pipeline-modal .tab-content { min-height: 360px; }
+#pipeline-modal .tab-content {
+    min-height: 360px;
+}
+
+/* ==========================================================================
+   GLOBAL TAB VISIBILITY OVERRIDES — settings modal + slop-config editor.
+
+   DaisyUI's default `.tab` is a small, low-contrast radio label that blends
+   into the card background. These overrides make every tab strip in the app
+   dramatically more readable without touching the underlying HTML.
+
+   Targets: any [role="tablist"] → .tab pairing (settings_tabs,
+   slop_config_tabs, and any future strips).
+   ========================================================================== */
+
+/* Tab strip row: ensure it's tall enough to feel like a real nav bar. */
+[role="tablist"].tabs {
+    min-height: 2.75rem;
+    gap: 2px;
+}
+
+/* Base tab: bigger text, bolder, more padding, smooth transitions. */
+.tab {
+    font-size: 0.8125rem !important;
+    /* 13 px — up from default ~11 px */
+    font-weight: 600 !important;
+    letter-spacing: 0.03em !important;
+    min-height: 2.5rem !important;
+    padding-inline: 1rem !important;
+    padding-block: 0.5rem !important;
+    color: hsl(var(--bc) / 0.65) !important;
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease !important;
+    border-radius: 6px 6px 0 0 !important;
+    position: relative;
+    white-space: nowrap;
+}
+
+/* Hover: lift contrast & add a subtle primary tint. */
+.tab:hover {
+    color: hsl(var(--bc)) !important;
+    background-color: hsl(var(--p) / 0.10) !important;
+}
+
+/* Hover accent underline sweep. */
+.tab:hover::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: hsl(var(--p) / 0.5);
+    border-radius: 2px 2px 0 0;
+    animation: tab-hover-line 0.2s ease-out forwards;
+}
+
+@keyframes tab-hover-line {
+    from {
+        transform: scaleX(0);
+        opacity: 0;
+    }
+
+    to {
+        transform: scaleX(1);
+        opacity: 1;
+    }
+}
+
+/* Active (checked) tab: solid primary background + bright label. */
+.tab:checked,
+.tab[aria-selected="true"] {
+    color: hsl(var(--pc, 0 0% 100%)) !important;
+    background-color: hsl(var(--p)) !important;
+    border-bottom-color: hsl(var(--p)) !important;
+    font-weight: 700 !important;
+    box-shadow: 0 -2px 8px hsl(var(--p) / 0.35), 0 1px 0 hsl(var(--p)) !important;
+}
+
+/* Active tab glow pulse on first appearance — very brief, non-distracting. */
+.tab:checked {
+    animation: tab-active-appear 0.35s ease-out both;
+}
+
+@keyframes tab-active-appear {
+    0% {
+        box-shadow: 0 0 0 0 hsl(var(--p) / 0);
+    }
+
+    50% {
+        box-shadow: 0 -2px 14px hsl(var(--p) / 0.5), 0 1px 0 hsl(var(--p));
+    }
+
+    100% {
+        box-shadow: 0 -2px 8px hsl(var(--p) / 0.35), 0 1px 0 hsl(var(--p));
+    }
+}
+
+/* Active tab ::before indicator stripe — top edge accent line. */
+.tab:checked::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 4px;
+    right: 4px;
+    height: 3px;
+    background: hsl(var(--pc, 0 0% 100%) / 0.45);
+    border-radius: 0 0 3px 3px;
+}
+
+/* Slop config tabs are narrower — allow slightly smaller text on mobile. */
+[role="tablist"]:has(input[name="slop_config_tabs"]) .tab {
+    padding-inline: 0.75rem !important;
+}
+
+/* Lift the tab-content panel slightly so it feels connected to the active tab.  */
+.tab-content {
+    border-color: hsl(var(--p) / 0.3) !important;
+}
+
+/* ========================================================================== */
+
+
+/* ==========================================================================
+   CARD WINDOW CONTROLS (macOS-style traffic-light buttons)
+   Positioned absolutely at the top-right of each card (.ui-split-card /
+   #output-section). Fade in on parent card hover; zero height in normal flow.
+   ========================================================================== */
+
+.card-wm-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: stretch;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease-in-out;
+    z-index: 50;
+    overflow: hidden;
+    border-bottom-left-radius: 8px;
+}
+
+/* Reveal on card hover */
+.card:hover>.card-wm-bar,
+section:hover>.card-wm-bar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Keep visible while any button inside is focused */
+.card-wm-bar:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.card-wm-btn {
+    width: 32px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: currentColor;
+    transition: background 0.15s ease;
+    opacity: 0.7;
+}
+
+.card-wm-btn:hover {
+    background: hsl(var(--bc) / 0.1);
+    opacity: 1;
+}
+
+.card-wm-close:hover {
+    background: #e81123 !important;
+    /* Win-style close red */
+    color: #fff !important;
+}
+
+.card-wm-btn svg {
+    pointer-events: none;
+}
+
+/* Dim restore when already at default layout */
+body:not([data-layout]) .card-wm-restore,
+body[data-layout="default"] .card-wm-restore {
+    filter: saturate(0.3);
+    opacity: 0.55;
+}
+
+/* ==========================================================================
+   LAYOUT LOCK — body.layout-locked dims the View dropdown items
+   ========================================================================== */
+body.layout-locked [data-view-option] {
+    opacity: 0.35;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+/* The toggle row itself stays fully interactive */
+body.layout-locked #layout-lock-toggle {
+    opacity: 1;
+    pointer-events: auto;
+}
 
 /* Fade-edge horizontal scroll affordance — used for the Pipeline toggle row
    on narrow viewports so the row scrolls instead of wrapping/clipping, and
    the rightmost toggle dissolves into the card border to hint at scroll. */
 .fade-edges {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-          mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-  scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    scrollbar-width: none;
 }
-.fade-edges::-webkit-scrollbar { display: none; }
+
+.fade-edges::-webkit-scrollbar {
+    display: none;
+}
 
 /* Pipeline strip step labels — `.stage-full` shows the word ("Image"),
    `.stage-short` shows the acronym ("I"). Default to full; the .pipeline-compact
    modifier swaps to acronyms when the container is too narrow to fit words.
    Container queries would be cleaner but DaisyUI v4 / Tailwind CDN don't
    ship the plugin, so we fall back to a viewport-width swap below. */
-.stage-full { display: inline; }
-.stage-short { display: none; }
+.stage-full {
+    display: inline;
+}
+
+.stage-short {
+    display: none;
+}
+
 /* DaisyUI's smallest spinner (loading-xs) is 1rem and overflows badge-xs.
    Force a tighter size for spinners that live inside pipeline-step badges. */
-.badge .loading.loading-spinner { width: 0.6rem; height: 0.6rem; }
+.badge .loading.loading-spinner {
+    width: 0.6rem;
+    height: 0.6rem;
+}
+
 @media (max-width: 1280px) {
-    .stage-full { display: none; }
-    .stage-short { display: inline; }
+    .stage-full {
+        display: none;
+    }
+
+    .stage-short {
+        display: inline;
+    }
 }
 
 /* Queue items that were just cancelled fade out over ~4 s, then the JS
    render skips them entirely (they remain in queue.json for the 48 h prune
    window — only their visual presence vanishes). */
 @keyframes slop-fade-out {
-    0%   { opacity: 0.5; max-height: 200px; }
-    50%  { opacity: 0.25; max-height: 200px; }
-    100% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; border-width: 0; }
+    0% {
+        opacity: 0.5;
+        max-height: 200px;
+    }
+
+    50% {
+        opacity: 0.25;
+        max-height: 200px;
+    }
+
+    100% {
+        opacity: 0;
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        margin-top: 0;
+        margin-bottom: 0;
+        border-width: 0;
+    }
 }
+
 .slop-cancelled-fade {
     animation: slop-fade-out 4s ease-out forwards;
     overflow: hidden;
@@ -59,14 +324,26 @@
    removed by JS via setTimeout so re-renders don't restart the animation on
    stages that have already settled. */
 @keyframes slop-stage-pop {
-    0%   { opacity: 0; transform: scale(0.8) translateY(-4px); }
-    60%  { opacity: 1; }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
+    0% {
+        opacity: 0;
+        transform: scale(0.8) translateY(-4px);
+    }
+
+    60% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
+
 .stage-just-completed {
     animation: slop-stage-pop 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
     transform-origin: left center;
 }
+
 .stage-just-completed .badge {
     animation: slop-stage-pop 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
     transform-origin: left center;
@@ -91,30 +368,55 @@
     overflow: hidden;
     margin-top: 4px;
 }
-.slop-progress > .slop-progress-fill {
+
+.slop-progress>.slop-progress-fill {
     height: 100%;
     width: 0%;
     border-radius: 3px;
     background: hsl(var(--p));
     transition: width 0.5s linear, background-color 0.3s ease;
 }
-.slop-progress-fill.slop-progress-warning  { background: hsl(var(--wa)); }
-.slop-progress-fill.slop-progress-success  { background: hsl(var(--su)); }
-.slop-progress-fill.slop-progress-error    { background: hsl(var(--er)); }
-.slop-progress-fill.slop-progress-neutral  { background: hsl(var(--bc) / 0.4); }
+
+.slop-progress-fill.slop-progress-warning {
+    background: hsl(var(--wa));
+}
+
+.slop-progress-fill.slop-progress-success {
+    background: hsl(var(--su));
+}
+
+.slop-progress-fill.slop-progress-error {
+    background: hsl(var(--er));
+}
+
+.slop-progress-fill.slop-progress-neutral {
+    background: hsl(var(--bc) / 0.4);
+}
 
 @keyframes slopfinity-progress-pulse {
-    0%, 100% { opacity: 1;    box-shadow: 0 0 0 rgba(0,0,0,0); }
-    50%      { opacity: 0.55; box-shadow: 0 0 8px currentColor; }
+
+    0%,
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+
+    50% {
+        opacity: 0.55;
+        box-shadow: 0 0 8px currentColor;
+    }
 }
+
 .slop-progress-overrun {
     color: hsl(var(--wa));
     animation: slopfinity-progress-pulse var(--pulse-period, 1s) ease-in-out infinite;
 }
+
 .slop-progress-celebrate {
     color: hsl(var(--su));
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
 }
+
 .slop-progress-alert {
     color: hsl(var(--er));
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
@@ -127,7 +429,10 @@
    0→100% over the stage's expected runtime; past segments are pinned at
    100% solid; future segments stay dim. The activity text + remaining-time
    are absolutely positioned overlays so the bar reads as a single unit. */
-.pipeline-bar { user-select: none; }
+.pipeline-bar {
+    user-select: none;
+}
+
 .pipeline-seg {
     position: relative;
     overflow: hidden;
@@ -135,19 +440,36 @@
     min-width: 0;
     height: 38px;
 }
-.pipeline-seg:last-child { border-right: none; }
-.pipeline-seg-future  { background: hsl(var(--b1) / 0.6); }
-.pipeline-seg-past    { background: hsl(var(--p) / 0.7); }
-.pipeline-seg-current { background: hsl(var(--p) / 0.15); }
+
+.pipeline-seg:last-child {
+    border-right: none;
+}
+
+.pipeline-seg-future {
+    background: hsl(var(--b1) / 0.6);
+}
+
+.pipeline-seg-past {
+    background: hsl(var(--p) / 0.7);
+}
+
+.pipeline-seg-current {
+    background: hsl(var(--p) / 0.15);
+}
+
 .pipeline-seg-fill {
     position: absolute;
-    top: 0; left: 0; bottom: 0;
+    top: 0;
+    left: 0;
+    bottom: 0;
     opacity: 0.85;
     transition: width 0.5s linear, background-color 0.3s ease;
 }
+
 .pipeline-seg-label {
     position: absolute;
-    left: 6px; top: 4px;
+    left: 6px;
+    top: 4px;
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.04em;
@@ -163,11 +485,17 @@
     pointer-events: none;
     z-index: 1;
 }
-.pipeline-seg-current .pipeline-seg-label { opacity: 1; font-weight: 600; }
+
+.pipeline-seg-current .pipeline-seg-label {
+    opacity: 1;
+    font-weight: 600;
+}
+
 /* Inline per-segment timing — also left-aligned, sits below the stage label */
 .pipeline-seg-timing {
     position: absolute;
-    left: 6px; bottom: 4px;
+    left: 6px;
+    bottom: 4px;
     font-size: 8px;
     font-family: monospace;
     opacity: 0.85;
@@ -177,7 +505,11 @@
     mix-blend-mode: difference;
     z-index: 1;
 }
-.pipeline-seg-current .pipeline-seg-timing { opacity: 1; }
+
+.pipeline-seg-current .pipeline-seg-timing {
+    opacity: 1;
+}
+
 /* Bordered chip around each timing value — solid page-bg fill so the
    number stays legible regardless of which color the segment fill is.
    Drops the mix-blend-mode trick on these inner chips since they have
@@ -193,16 +525,26 @@
     line-height: 1.2;
     margin: 0 1px;
 }
-.pipeline-activity { color: hsl(var(--bc)); font-weight: 500; }
-.pipeline-eta      { color: hsl(var(--bc)); }
+
+.pipeline-activity {
+    color: hsl(var(--bc));
+    font-weight: 500;
+}
+
+.pipeline-eta {
+    color: hsl(var(--bc));
+}
+
 .pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {
     background: hsl(var(--wa) / 0.8);
     animation: slopfinity-progress-pulse var(--pulse-period, 1s) ease-in-out infinite;
 }
+
 .pipeline-seg.pipeline-seg-success .pipeline-seg-fill {
     background: hsl(var(--p));
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
 }
+
 .pipeline-seg.pipeline-seg-failed .pipeline-seg-fill {
     background: hsl(var(--er));
     animation: slopfinity-progress-pulse 0.5s ease-in-out 3;
@@ -221,8 +563,9 @@
     height: 28px;
     flex: 0 0 auto;
     -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
-            mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
 }
+
 .suggest-marquee-track {
     display: inline-flex;
     gap: 6px;
@@ -230,14 +573,22 @@
     animation: suggest-marquee var(--marquee-duration, 60s) linear infinite;
     will-change: transform;
 }
+
 .suggest-marquee-row:hover .suggest-marquee-track,
 .suggest-marquee-row:focus-within .suggest-marquee-track {
     animation-play-state: paused;
 }
+
 @keyframes suggest-marquee {
-    from { transform: translateX(0); }
-    to   { transform: translateX(-50%); }
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(-50%);
+    }
 }
+
 .suggest-marquee-row.no-overflow .suggest-marquee-track {
     animation: none;
     transform: none;
@@ -250,9 +601,17 @@
 .suggest-marquee-row.entering {
     animation: suggest-row-enter 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
+
 @keyframes suggest-row-enter {
-    from { transform: translateX(100%); opacity: 0; }
-    to   { transform: translateX(0);    opacity: 1; }
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
 
 /* Subjects textarea autogrow:
@@ -286,6 +645,7 @@ textarea.subjects-autogrow {
     margin: 4px 0;
     touch-action: none;
 }
+
 #ui-split-handle::after {
     content: '';
     position: absolute;
@@ -299,10 +659,12 @@ textarea.subjects-autogrow {
     box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     transition: background-color 0.15s ease;
 }
+
 #ui-split-handle:hover::after,
 #ui-split-handle.dragging::after {
     background: hsl(var(--p));
 }
+
 /* Splitter container — no longer fixed height. Upper pane is splitter-sized
    (drag-to-resize); lower pane flows naturally and the page body itself
    scrolls when slop content extends past the viewport. */
@@ -321,23 +683,34 @@ textarea.subjects-autogrow {
     flex-direction: column;
     min-height: 0;
 }
+
 #top-collapsible[open] {
     flex: 0 0 auto;
 }
-#top-collapsible[open] > summary {
+
+#top-collapsible[open]>summary {
     display: none;
 }
-#top-collapsible:not([open]) > summary {
+
+#top-collapsible:not([open])>summary {
     padding: 6px 8px;
     font-size: 11px;
 }
-#top-collapsible:not([open]) ~ #ui-split-handle {
+
+#top-collapsible:not([open])~#ui-split-handle {
     display: none;
 }
+
 /* Default <details> marker is redundant — we render our own ▾ glyph that
    should also rotate when expanded. */
-#top-collapsible > summary::-webkit-details-marker { display: none; }
-#top-collapsible > summary { list-style: none; }
+#top-collapsible>summary::-webkit-details-marker {
+    display: none;
+}
+
+#top-collapsible>summary {
+    list-style: none;
+}
+
 /* Upper pane: splitter sets an explicit pixel height in JS. Cap to a sane
    range so a corrupt stored value can't collapse or eat the viewport.
    overflow:hidden preserves PR #74's content-squash so Subjects + Queue
@@ -350,6 +723,7 @@ textarea.subjects-autogrow {
     display: flex;
     flex-direction: column;
 }
+
 /* Lower pane: natural flow. No height cap, no internal scroll — the
    document body scrolls instead, so infinite-scroll feels like a normal
    feed. */
@@ -359,17 +733,20 @@ textarea.subjects-autogrow {
     display: flex;
     flex-direction: column;
 }
+
 /* Legacy class kept for any inner descendants that still reference it. */
 .ui-split-pane {
     min-height: 0;
     display: flex;
     flex-direction: column;
 }
+
 /* The Subjects+Queue row fills its parent pane's height so each card sees
    100% of the available vertical room (capped, not unbounded). */
 .ui-split-row {
     min-height: 0;
 }
+
 /* Queue list — keep the rendered height stable regardless of how many items
    are queued. New items scroll internally instead of pushing the whole page
    down. The lg+ block below replaces this cap with the splitter's flex
@@ -379,6 +756,7 @@ textarea.subjects-autogrow {
     min-height: 0;
     overflow-y: auto;
 }
+
 @media (min-width: 1280px) {
     .ui-split-row {
         flex: 1 1 0;
@@ -386,6 +764,7 @@ textarea.subjects-autogrow {
         height: 100%;
         overflow: hidden;
     }
+
     .ui-split-card {
         min-height: 0;
         max-height: 100%;
@@ -394,11 +773,13 @@ textarea.subjects-autogrow {
            scrolling concern is handled by #q-list's own overflow-y: auto. */
         overflow: visible;
     }
+
     .ui-split-cardbody {
         min-height: 0;
         flex: 1 1 0;
         overflow: visible;
     }
+
     /* Subjects textarea (#p-core) — let it shrink with its parent card; its
        row count gives the natural size, but min-height:0 means it gives up
        height before the buttons below get clipped. */
@@ -406,6 +787,7 @@ textarea.subjects-autogrow {
         flex: 1 1 auto;
         min-height: 0;
     }
+
     /* Queue list — scroll internally when squashed instead of pushing the
        card outward. Already a flex item; min-height:0 + overflow-y:auto is
        what unlocks shrinking-with-scroll. */
@@ -414,6 +796,7 @@ textarea.subjects-autogrow {
         min-height: 0;
         overflow-y: auto;
     }
+
     /* At lg+ the splitter's flex constraints govern queue size, so release
        the viewport-relative caps applied above. */
     #q-list {
@@ -422,25 +805,33 @@ textarea.subjects-autogrow {
         min-height: 0;
         overflow-y: auto;
     }
+
     /* Lower pane: flows with the page body now (no inner scroll). The
        output section just renders at its natural height and the document
        scrolls. */
-    #ui-split-lower > #output-section {
+    #ui-split-lower>#output-section {
         flex: 0 0 auto;
         min-height: 0;
     }
 }
+
 @media (max-width: 768px) {
     #ui-split {
         height: auto !important;
         display: block !important;
     }
-    #ui-split-upper, #ui-split-lower {
+
+    #ui-split-upper,
+    #ui-split-lower {
         overflow: visible !important;
         flex: none !important;
         display: block !important;
     }
-    #ui-split-handle { pointer-events: none; opacity: 0.4; }
+
+    #ui-split-handle {
+        pointer-events: none;
+        opacity: 0.4;
+    }
 }
 
 /* Slop card video controls — fade out the native control overlay until hover
@@ -450,15 +841,22 @@ textarea.subjects-autogrow {
     opacity: 0.15;
     transition: opacity 0.25s ease;
 }
-#preview-grid > [data-slop-kind]:hover video::-webkit-media-controls-panel,
-#preview-grid > [data-slop-kind]:hover video::-webkit-media-controls-enclosure {
+
+#preview-grid>[data-slop-kind]:hover video::-webkit-media-controls-panel,
+#preview-grid>[data-slop-kind]:hover video::-webkit-media-controls-enclosure {
     opacity: 1;
 }
+
 /* Firefox uses a different shadow-DOM structure — fall back to opacity
    on the whole video element's first child overlay. */
 @-moz-document url-prefix() {
-    #preview-grid video { filter: contrast(0.95); }
-    #preview-grid > [data-slop-kind]:hover video { filter: none; }
+    #preview-grid video {
+        filter: contrast(0.95);
+    }
+
+    #preview-grid>[data-slop-kind]:hover video {
+        filter: none;
+    }
 }
 
 /* Tint the letter unit suffixes (h/m/s) in elapsed/ETA strings so the
@@ -491,14 +889,43 @@ textarea.subjects-autogrow {
    shorthand `animation:` so we don't need a setTimeout to swap
    classes between phases. */
 @keyframes slop-chip-pulse {
-    0%, 100% { transform: scale(1); }
-    50%      { transform: scale(1.08); }
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.08);
+    }
 }
+
 @keyframes slop-chip-disappear {
-    0%   { opacity: 1; transform: scale(1); max-width: 320px; padding-left: 0.5rem; padding-right: 0.5rem; margin-right: 0; }
-    50%  { opacity: 0.4; transform: scale(0.85); }
-    100% { opacity: 0; transform: scale(0); max-width: 0; padding-left: 0; padding-right: 0; margin-right: -0.375rem; border-width: 0; }
+    0% {
+        opacity: 1;
+        transform: scale(1);
+        max-width: 320px;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        margin-right: 0;
+    }
+
+    50% {
+        opacity: 0.4;
+        transform: scale(0.85);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0);
+        max-width: 0;
+        padding-left: 0;
+        padding-right: 0;
+        margin-right: -0.375rem;
+        border-width: 0;
+    }
 }
+
 .chip-disappear {
     /* Pulse 3x over 1.4s, then collapse over 0.7s. Total = 2.1s. */
     animation:
@@ -526,12 +953,15 @@ body[data-layout="gallery"] #ui-split-handle,
 body[data-layout="gallery"] #top-collapsible {
     display: none !important;
 }
+
 body[data-layout="gallery"] #ui-split-lower {
     min-height: calc(100vh - 88px);
 }
+
 #gallery-fab {
     display: none;
 }
+
 body[data-layout="gallery"] #gallery-fab {
     display: flex;
     position: fixed;
@@ -555,6 +985,7 @@ body[data-layout="gallery"] #gallery-fab {
     line-height: 1;
     font-weight: 700;
 }
+
 .card-close-btn:hover {
     color: hsl(var(--er, 0 60% 50%));
     opacity: 1 !important;
@@ -583,6 +1014,7 @@ body[data-layout="gallery"] #gallery-fab {
     font-weight: 600;
     letter-spacing: 0.02em;
 }
+
 .render-anim-char {
     display: inline-block;
     min-width: 0.7em;
@@ -601,12 +1033,14 @@ body[data-layout="gallery"] #gallery-fab {
     box-sizing: border-box;
     transform-origin: center bottom;
 }
+
 .render-anim-char[data-space="1"] {
     border-color: transparent;
     background-color: transparent !important;
     animation: none;
     min-width: 0.35em;
 }
+
 /* Filled = "this character's position is <= current stage progress fraction".
    Inverts to a solid block: currentColor (themed via --bc) becomes the
    background and the surface tone (--b1) becomes the text color. The fill
@@ -626,72 +1060,754 @@ body[data-layout="gallery"] #gallery-fab {
     animation: render-bounce 1.4s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 60ms);
 }
+
 .render-anim[data-anim-style="wobble"] .render-anim-char {
     animation: render-wobble 1.6s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 80ms);
 }
+
 .render-anim[data-anim-style="pulse"] .render-anim-char {
     animation: render-pulse 1.0s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 50ms);
 }
+
 .render-anim[data-anim-style="jump"] .render-anim-char {
     animation: render-jump 0.8s cubic-bezier(0.5, 0.05, 0.3, 1.4) infinite;
     animation-delay: calc(var(--char-i, 0) * 90ms);
 }
+
 .render-anim[data-anim-style="wave"] .render-anim-char {
     animation: render-wave 1.6s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 100ms);
 }
+
 .render-anim[data-anim-style="swap"] .render-anim-char {
     animation: render-swap 1.2s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 70ms);
 }
 
 @keyframes render-char-cycle {
-    0%   { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
-    35%  { transform: translateY(-2px); border-color: var(--p, currentColor); opacity: 1; }
-    70%  { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.85; }
-    100% { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
+    0% {
+        transform: translateY(0);
+        border-color: var(--bc, currentColor);
+        opacity: 0.55;
+    }
+
+    35% {
+        transform: translateY(-2px);
+        border-color: var(--p, currentColor);
+        opacity: 1;
+    }
+
+    70% {
+        transform: translateY(0);
+        border-color: var(--bc, currentColor);
+        opacity: 0.85;
+    }
+
+    100% {
+        transform: translateY(0);
+        border-color: var(--bc, currentColor);
+        opacity: 0.55;
+    }
 }
+
 @keyframes render-bounce {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-3px); }
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-3px);
+    }
 }
+
 @keyframes render-wobble {
-    0%, 100% { transform: rotate(0deg); }
-    25%      { transform: rotate(-6deg) translateY(-1px); }
-    75%      { transform: rotate(6deg) translateY(-1px); }
+
+    0%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    25% {
+        transform: rotate(-6deg) translateY(-1px);
+    }
+
+    75% {
+        transform: rotate(6deg) translateY(-1px);
+    }
 }
+
 @keyframes render-pulse {
-    0%, 100% { transform: scale(1); }
-    50%      { transform: scale(1.15); border-color: var(--p, currentColor); }
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.15);
+        border-color: var(--p, currentColor);
+    }
 }
+
 @keyframes render-jump {
-    0%, 100% { transform: translateY(0) scale(1); }
-    30%      { transform: translateY(-5px) scale(1.05); }
-    50%      { transform: translateY(-5px) scale(1.05); }
-    70%      { transform: translateY(0) scale(0.95); }
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+
+    30% {
+        transform: translateY(-5px) scale(1.05);
+    }
+
+    50% {
+        transform: translateY(-5px) scale(1.05);
+    }
+
+    70% {
+        transform: translateY(0) scale(0.95);
+    }
 }
+
 /* Wave: chars rise + fall in sequence (animation-delay does the
    sequencing). Slight horizontal sway gives a bubble-up feel. */
 @keyframes render-wave {
-    0%, 100% { transform: translateY(0); }
-    25%      { transform: translateY(-3px) translateX(1px); }
-    50%      { transform: translateY(0); }
-    75%      { transform: translateY(-3px) translateX(-1px); }
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    25% {
+        transform: translateY(-3px) translateX(1px);
+    }
+
+    50% {
+        transform: translateY(0);
+    }
+
+    75% {
+        transform: translateY(-3px) translateX(-1px);
+    }
 }
+
 /* Swap: each char briefly slides one slot right then snaps back, so
    the row reads like a bubble-sort pass (visually only — chars don't
    actually swap positions). */
 @keyframes render-swap {
-    0%, 100% { transform: translateX(0); }
-    40%      { transform: translateX(0.4em); }
-    50%      { transform: translateX(0.4em) scale(1.05); }
-    60%      { transform: translateX(0); }
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    40% {
+        transform: translateX(0.4em);
+    }
+
+    50% {
+        transform: translateX(0.4em) scale(1.05);
+    }
+
+    60% {
+        transform: translateX(0);
+    }
 }
 
+/* ---- 14 additional styles (3 requested + 11 impressive extras) ----------- */
+.render-anim[data-anim-style="spin"] .render-anim-char {
+    animation: render-spin 1.2s linear infinite;
+    animation-delay: calc(var(--char-i, 0) * 80ms);
+}
+
+.render-anim[data-anim-style="flip"] .render-anim-char {
+    animation: render-flip 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 90ms);
+}
+
+.render-anim[data-anim-style="glitch"] .render-anim-char {
+    animation: render-glitch 0.6s steps(1) infinite;
+    animation-delay: calc(var(--char-i, 0) * 40ms);
+}
+
+.render-anim[data-anim-style="shake"] .render-anim-char {
+    animation: render-shake 0.5s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 30ms);
+}
+
+.render-anim[data-anim-style="orbit"] .render-anim-char {
+    animation: render-orbit 2.0s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 120ms);
+}
+
+.render-anim[data-anim-style="typewriter"] .render-anim-char {
+    animation: render-typewriter 2.0s steps(1) infinite;
+    animation-delay: calc(var(--char-i, 0) * 150ms);
+}
+
+.render-anim[data-anim-style="nod"] .render-anim-char {
+    animation: render-nod 1.0s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 75ms);
+}
+
+.render-anim[data-anim-style="stretch"] .render-anim-char {
+    animation: render-stretch 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 100ms);
+}
+
+.render-anim[data-anim-style="skew"] .render-anim-char {
+    animation: render-skew 1.2s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 60ms);
+}
+
+.render-anim[data-anim-style="ping"] .render-anim-char {
+    animation: render-ping 1.0s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+    animation-delay: calc(var(--char-i, 0) * 110ms);
+}
+
+.render-anim[data-anim-style="drop"] .render-anim-char {
+    animation: render-drop 1.4s cubic-bezier(0.3, 0, 0.1, 1) infinite;
+    animation-delay: calc(var(--char-i, 0) * 80ms);
+}
+
+.render-anim[data-anim-style="morph"] .render-anim-char {
+    animation: render-morph 2.0s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 130ms);
+}
+
+.render-anim[data-anim-style="ripple"] .render-anim-char {
+    animation: render-ripple 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 95ms);
+}
+
+.render-anim[data-anim-style="slide"] .render-anim-char {
+    animation: render-slide 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 85ms);
+}
+
+.render-anim[data-anim-style="pacman"] .render-anim-char {
+    animation: render-pacman 2s linear infinite;
+    animation-delay: calc(var(--char-i, 0) * 100ms);
+}
+
+.render-anim[data-anim-style="cube"] .render-anim-char {
+    perspective: 500px;
+    animation: render-cube 2s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 120ms);
+}
+
+/* Spin: each char rotates a full 360° around its centre. */
+@keyframes render-spin {
+    0% {
+        transform: rotateY(0deg);
+    }
+
+    100% {
+        transform: rotateY(360deg);
+    }
+}
+
+/* Flip: chars flip on the X axis (back-face flap). */
+@keyframes render-flip {
+
+    0%,
+    100% {
+        transform: rotateX(0deg);
+    }
+
+    40% {
+        transform: rotateX(180deg) scale(1.1);
+    }
+
+    60% {
+        transform: rotateX(180deg) scale(1.1);
+    }
+}
+
+/* Glitch: rapid micro-jitter with color inversion flashes. */
+@keyframes render-glitch {
+
+    0%,
+    90%,
+    100% {
+        transform: translate(0, 0);
+        filter: none;
+    }
+
+    10% {
+        transform: translate(-2px, 1px);
+        filter: hue-rotate(90deg);
+    }
+
+    20% {
+        transform: translate(2px, -1px);
+        filter: invert(0.6);
+    }
+
+    30% {
+        transform: translate(-1px, 2px);
+        filter: none;
+    }
+
+    40% {
+        transform: translate(1px, -2px);
+        filter: hue-rotate(180deg);
+    }
+
+    50% {
+        transform: translate(-2px, 0);
+        filter: none;
+    }
+}
+
+/* Shake: nervous left-right rattle. */
+@keyframes render-shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-3px) rotate(-4deg);
+    }
+
+    40% {
+        transform: translateX(3px) rotate(4deg);
+    }
+
+    60% {
+        transform: translateX(-2px) rotate(-2deg);
+    }
+
+    80% {
+        transform: translateX(2px) rotate(2deg);
+    }
+}
+
+/* Orbit: char traces a tiny ellipse (planetary motion feel). */
+@keyframes render-orbit {
+    0% {
+        transform: translate(0, 0);
+    }
+
+    25% {
+        transform: translate(2px, -3px) scale(1.08);
+    }
+
+    50% {
+        transform: translate(0, -4px) scale(1.12);
+        border-color: var(--p, currentColor);
+    }
+
+    75% {
+        transform: translate(-2px, -3px) scale(1.08);
+    }
+
+    100% {
+        transform: translate(0, 0);
+    }
+}
+
+/* Typewriter: chars pop in/out sequentially with opacity blink. */
+@keyframes render-typewriter {
+
+    0%,
+    49% {
+        opacity: 0.1;
+        transform: scaleX(0.5);
+    }
+
+    50%,
+    100% {
+        opacity: 1;
+        transform: scaleX(1);
+    }
+}
+
+/* Nod: short vertical dip and return (bobble-head effect). */
+@keyframes render-nod {
+
+    0%,
+    100% {
+        transform: translateY(0) rotate(0deg);
+    }
+
+    30% {
+        transform: translateY(3px) rotate(8deg);
+    }
+
+    60% {
+        transform: translateY(-1px) rotate(-4deg);
+    }
+}
+
+/* Stretch: squash and stretch along Y axis. */
+@keyframes render-stretch {
+
+    0%,
+    100% {
+        transform: scaleY(1) scaleX(1);
+    }
+
+    25% {
+        transform: scaleY(1.3) scaleX(0.85);
+    }
+
+    50% {
+        transform: scaleY(0.75) scaleX(1.15);
+    }
+
+    75% {
+        transform: scaleY(1.15) scaleX(0.92);
+    }
+}
+
+/* Skew: perspective-tilt lean left/right. */
+@keyframes render-skew {
+
+    0%,
+    100% {
+        transform: skewX(0deg);
+    }
+
+    25% {
+        transform: skewX(-10deg) translateY(-1px);
+    }
+
+    75% {
+        transform: skewX(10deg) translateY(-1px);
+    }
+}
+
+/* Ping: rapid outward bloom starting from the char's centre. */
+@keyframes render-ping {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    60% {
+        transform: scale(1.35);
+        opacity: 0.7;
+        border-color: var(--p, currentColor);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Drop: char falls from above and settles with a bounce. */
+@keyframes render-drop {
+    0% {
+        transform: translateY(-8px) scale(0.9);
+        opacity: 0.3;
+    }
+
+    55% {
+        transform: translateY(2px) scale(1.06);
+        opacity: 1;
+    }
+
+    75% {
+        transform: translateY(-2px) scale(0.97);
+    }
+
+    90% {
+        transform: translateY(1px) scale(1.02);
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Morph: border-radius oscillates between square and very round. */
+@keyframes render-morph {
+
+    0%,
+    100% {
+        border-radius: 2px;
+        transform: scale(1);
+    }
+
+    25% {
+        border-radius: 50%;
+        transform: scale(1.1);
+        border-color: var(--p, currentColor);
+    }
+
+    50% {
+        border-radius: 2px;
+        transform: scale(1);
+    }
+
+    75% {
+        border-radius: 30%;
+        transform: scale(1.05);
+    }
+}
+
+/* Ripple: each char pulses outward from its sibling in sequence. */
+@keyframes render-ripple {
+
+    0%,
+    100% {
+        transform: scale(1);
+        box-shadow: none;
+    }
+
+    40% {
+        transform: scale(1.18);
+        box-shadow: 0 0 0 4px hsl(var(--p) / 0.25);
+        border-color: var(--p, currentColor);
+    }
+
+    70% {
+        transform: scale(0.92);
+    }
+}
+
+/* Slide: each char slides in from the bottom and snaps to position. */
+@keyframes render-slide {
+    0% {
+        transform: translateY(6px);
+        opacity: 0.2;
+    }
+
+    40% {
+        transform: translateY(-2px);
+        opacity: 1;
+    }
+
+    60% {
+        transform: translateY(1px);
+    }
+
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Pacman: char is "eaten" (clip-path closure) then pops back. */
+@keyframes render-pacman {
+
+    0%,
+    40% {
+        clip-path: polygon(100% 0%, 100% 100%, 0% 100%, 0% 0%);
+        opacity: 1;
+    }
+
+    50% {
+        clip-path: polygon(100% 50%, 100% 50%, 0% 100%, 0% 0%);
+        opacity: 0;
+        transform: scale(0.8);
+    }
+
+    60%,
+    100% {
+        clip-path: polygon(100% 0%, 100% 100%, 0% 100%, 0% 0%);
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Cube: 3D spin with square-ish border-radius. */
+@keyframes render-cube {
+    0% {
+        transform: rotateY(0deg);
+        border-radius: 2px;
+    }
+
+    50% {
+        transform: rotateY(180deg) scale(1.1);
+        border-radius: 0;
+        background-color: hsl(var(--p) / 0.2);
+    }
+
+    100% {
+        transform: rotateY(360deg);
+        border-radius: 2px;
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+   RENDER IGNITE — explosion burst fired for ~3 s when rendering starts.
+   JS adds .render-ignite to the .render-anim host; removes it once the
+   animation ends (via animationend on the host pseudo). While the class
+   is present the chars play render-ignite-char (rainbow sweep of theme
+   colours) and the host ::before shows an expanding radial halo.
+   A focus-ring outline on the host draws attention without layout shift.
+   --------------------------------------------------------------------------- */
+
+/* Host: focus ring + expanding glow via ::before overlay. */
+.render-anim.render-ignite {
+    position: relative;
+    outline: 2px solid hsl(var(--p));
+    outline-offset: 4px;
+    border-radius: 4px;
+    /* Named animation drives the animationend listener used to remove the class. */
+    animation: render-ignite-host 3s ease-out forwards;
+}
+
+/* Radial burst disc behind the text. */
+.render-anim.render-ignite::before {
+    content: '';
+    position: absolute;
+    inset: -12px;
+    border-radius: 12px;
+    background: radial-gradient(ellipse at 50% 50%,
+            hsl(var(--p) / 0.35) 0%,
+            hsl(var(--s) / 0.25) 30%,
+            hsl(var(--a) / 0.15) 60%,
+            transparent 100%);
+    animation: render-ignite-bloom 3s ease-out forwards;
+    pointer-events: none;
+    z-index: -1;
+}
+
+/* Each char overrides its animation during ignite. */
+.render-anim.render-ignite .render-anim-char {
+    animation: render-ignite-char 3s ease-out forwards !important;
+    animation-delay: calc(var(--char-i, 0) * 55ms) !important;
+}
+
+/* Host keyframe: outline fades out as the burst settles. */
+@keyframes render-ignite-host {
+    0% {
+        outline-color: hsl(var(--p));
+        box-shadow: 0 0 0 0 hsl(var(--s) / 0);
+    }
+
+    10% {
+        outline-color: hsl(var(--a));
+        box-shadow: 0 0 18px 6px hsl(var(--s) / 0.55);
+    }
+
+    30% {
+        outline-color: hsl(var(--s));
+        box-shadow: 0 0 24px 10px hsl(var(--s) / 0.45);
+    }
+
+    60% {
+        outline-color: hsl(var(--p));
+        box-shadow: 0 0 12px 4px hsl(var(--s) / 0.25);
+    }
+
+    100% {
+        outline-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Bloom disc: expands then fades. */
+@keyframes render-ignite-bloom {
+    0% {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+
+    15% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1.3);
+    }
+}
+
+/* Per-char: rapid rainbow cycle (p→s→a→wa→p) into theme border tint, then
+   hands back to the normal animation once the ignite class is removed. */
+@keyframes render-ignite-char {
+    0% {
+        color: hsl(var(--p));
+        border-color: hsl(var(--p));
+        background-color: hsl(var(--p) / 0.15);
+        transform: scale(1.2) translateY(-3px);
+    }
+
+    12% {
+        color: hsl(var(--s));
+        border-color: hsl(var(--s));
+        background-color: hsl(var(--s) / 0.18);
+        transform: scale(1.35) translateY(-5px);
+    }
+
+    24% {
+        color: hsl(var(--a));
+        border-color: hsl(var(--a));
+        background-color: hsl(var(--a) / 0.18);
+        transform: scale(1.2) translateY(-3px);
+    }
+
+    36% {
+        color: hsl(var(--wa));
+        border-color: hsl(var(--wa));
+        background-color: hsl(var(--wa) / 0.15);
+        transform: scale(1.1) translateY(-2px);
+    }
+
+    50% {
+        color: hsl(var(--p));
+        border-color: hsl(var(--p));
+        background-color: hsl(var(--p) / 0.12);
+        transform: scale(1.05) translateY(-1px);
+    }
+
+    75% {
+        color: hsl(var(--s));
+        border-color: hsl(var(--s) / 0.6);
+        background-color: transparent;
+        transform: scale(1);
+    }
+
+    100% {
+        color: var(--bc, currentColor);
+        border-color: var(--bc, currentColor);
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
+/* Respect prefers-reduced-motion — no burst, just a brief outline flash. */
 @media (prefers-reduced-motion: reduce) {
-    .render-anim-char { animation: none; transition: none; }
+    .render-anim.render-ignite::before {
+        display: none;
+    }
+
+    .render-anim.render-ignite {
+        animation: none;
+        outline-color: hsl(var(--p));
+    }
+
+    .render-anim.render-ignite .render-anim-char {
+        animation: none !important;
+    }
+}
+
+/* --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+    .render-anim-char {
+        animation: none;
+        transition: none;
+    }
 }
 
 /* Video Chains collapsible: arrow rotates 90° when the <details> is
@@ -699,13 +1815,15 @@ body[data-layout="gallery"] #gallery-fab {
    on the [open] state. The label only shows until Final Merge produces
    the merged FINAL_<v>.mp4 — once it has, JS swaps in the filename +
    thumb instead. */
-.video-chain-details[open] > summary .video-chain-arrow {
+.video-chain-details[open]>summary .video-chain-arrow {
     transform: rotate(90deg);
 }
-.video-chain-details > summary .vc-toggle-label::before {
+
+.video-chain-details>summary .vc-toggle-label::before {
     content: 'expand';
 }
-.video-chain-details[open] > summary .vc-toggle-label::before {
+
+.video-chain-details[open]>summary .vc-toggle-label::before {
     content: 'collapse';
 }
 
@@ -718,26 +1836,31 @@ body[data-layout="gallery"] #gallery-fab {
 body[data-slop-size="s"] #preview-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
 }
+
 @media (min-width: 640px) {
     body[data-slop-size="s"] #preview-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
     }
 }
+
 @media (min-width: 768px) {
     body[data-slop-size="s"] #preview-grid {
         grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
     }
 }
+
 @media (min-width: 1024px) {
     body[data-slop-size="s"] #preview-grid {
         grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
     }
 }
-body[data-slop-size="s"] #preview-grid > [data-slop-kind] figure {
+
+body[data-slop-size="s"] #preview-grid>[data-slop-kind] figure {
     aspect-ratio: 16 / 9;
     min-height: 0;
 }
-body[data-slop-size="s"] #preview-grid > [data-slop-kind] .card-body {
+
+body[data-slop-size="s"] #preview-grid>[data-slop-kind] .card-body {
     padding: 0.25rem !important;
     font-size: 0.625rem;
 }
@@ -747,17 +1870,20 @@ body[data-slop-size="s"] #preview-grid > [data-slop-kind] .card-body {
 body[data-slop-size="l"] #preview-grid {
     grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
 }
+
 @media (min-width: 768px) {
     body[data-slop-size="l"] #preview-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 }
+
 @media (min-width: 1280px) {
     body[data-slop-size="l"] #preview-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     }
 }
-body[data-slop-size="l"] #preview-grid > [data-slop-kind] figure {
+
+body[data-slop-size="l"] #preview-grid>[data-slop-kind] figure {
     min-height: 320px;
 }
 
@@ -772,57 +1898,82 @@ body[data-slop-size="l"] #preview-grid > [data-slop-kind] figure {
    full label + primary background; inactive segments switch to a
    single-letter abbreviation when the parent card is narrow so the
    pill never wraps. The .subj-mode-active class is toggled by JS. */
-.subjects-mode-pill .subj-mode-short { display: none; }
-.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full { display: none; }
-.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short { display: inline; }
+.subjects-mode-pill .subj-mode-short {
+    display: none;
+}
+
+.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full {
+    display: none;
+}
+
+.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short {
+    display: inline;
+}
+
 @media (min-width: 768px) {
-    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full { display: inline; }
-    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short { display: none; }
+    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full {
+        display: inline;
+    }
+
+    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short {
+        display: none;
+    }
 }
 
 /* Endless Story toggle — the .es-knob slides 10px to the right when
    the hidden checkbox is checked, giving a daisyUI-style on/off
    visual without pulling in a full toggle component (the surrounding
    button is a daisyUI .btn, the toggle inside is bespoke). */
-#endless-story-toggle ~ .es-track .es-knob {
-    transition: transform 200ms ease;
+#endless-story-toggle~.es-track .es-knob,
+#subjects-suggestions-toggle-input~.es-track .es-knob {
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-#endless-story-toggle:checked ~ .es-track .es-knob {
-    transform: translateX(10px);
+
+#endless-story-toggle:checked~.es-track .es-knob,
+#subjects-suggestions-toggle-input:checked~.es-track .es-knob {
+    transform: translateX(12px);
 }
 
 /* Memory Estimate disclosure — same arrow-rotate idiom as Video Chains.
    Hides the per-model breakdown by default so the popup leads with a
    single-line "X / Y GB unified" total; clicking expands to show which
    model contributes what. */
-.ram-details[open] > summary .ram-disclosure {
+.ram-details[open]>summary .ram-disclosure {
     transform: rotate(90deg);
 }
-.ram-details > summary::-webkit-details-marker { display: none; }
-.ram-details > summary { list-style: none; }
+
+.ram-details>summary::-webkit-details-marker {
+    display: none;
+}
+
+.ram-details>summary {
+    list-style: none;
+}
 
 /* Single-card and dual-card layout rules. body[data-layout="..."] is set
    by _applyLayoutView() in app.js. The vertical splitter handle in the
    upper pane is hidden whenever only one of Subjects/Queue is visible. */
 /* Hide whichever upper-pane card is excluded. */
-body[data-layout="queue"]      #split-left,
+body[data-layout="queue"] #split-left,
 body[data-layout="queue-slop"] #split-left,
-body[data-layout="subjects"]   #split-right,
-body[data-layout="subj-slop"]  #split-right {
+body[data-layout="subjects"] #split-right,
+body[data-layout="subj-slop"] #split-right {
     display: none !important;
 }
+
 /* Drop the inter-card splitter when the upper pane has a single card. */
-body[data-layout="queue"]      #split-divider,
+body[data-layout="queue"] #split-divider,
 body[data-layout="queue-slop"] #split-divider,
-body[data-layout="subjects"]   #split-divider,
-body[data-layout="subj-slop"]  #split-divider {
+body[data-layout="subjects"] #split-divider,
+body[data-layout="subj-slop"] #split-divider {
     display: none !important;
 }
+
 /* Expand the surviving upper-pane card to fill the full width. */
-body[data-layout="queue"]      #split-right,
+body[data-layout="queue"] #split-right,
 body[data-layout="queue-slop"] #split-right,
-body[data-layout="subjects"]   #split-left,
-body[data-layout="subj-slop"]  #split-left {
+body[data-layout="subjects"] #split-left,
+body[data-layout="subj-slop"] #split-left {
     flex-basis: 100% !important;
     max-width: 100% !important;
 }
@@ -835,7 +1986,7 @@ body[data-layout="subj-slop"]  #split-left {
    right-edge-only so the LEFT side stays sharp. */
 .fade-edges-r {
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-            mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }
 
 /* Focused-mode FAB — quick-jump buttons to the OTHER two cards while in
@@ -846,9 +1997,10 @@ body[data-layout="subj-slop"]  #split-left {
 #focus-slop-fab {
     display: none;
 }
-body[data-layout="subjects"]   #focus-slop-fab,
-body[data-layout="queue"]      #focus-slop-fab,
-body[data-layout="subj-slop"]  #focus-slop-fab,
+
+body[data-layout="subjects"] #focus-slop-fab,
+body[data-layout="queue"] #focus-slop-fab,
+body[data-layout="subj-slop"] #focus-slop-fab,
 body[data-layout="queue-slop"] #focus-slop-fab {
     display: flex;
     position: fixed;
@@ -857,28 +2009,31 @@ body[data-layout="queue-slop"] #focus-slop-fab {
     gap: 8px;
     z-index: 40;
 }
+
 /* subj-queue keeps Slop on screen as a horizontal filmstrip (rules
    below) so the FAB Slop button isn't needed there — explicitly hide
    the entire FAB instead of shipping a one-button stub. */
 body[data-layout="subj-queue"] #focus-slop-fab {
     display: none !important;
 }
+
 /* Hide the FAB button that targets a card already visible in the
    current layout. The remaining buttons surface as quick-jump shortcuts
    to the cards NOT on screen. */
-body[data-layout="subjects"]   #focus-slop-fab [data-fab-target="subjects"],
-body[data-layout="queue"]      #focus-slop-fab [data-fab-target="queue"],
-body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="subjects"],
-body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="slop"],
+body[data-layout="subjects"] #focus-slop-fab [data-fab-target="subjects"],
+body[data-layout="queue"] #focus-slop-fab [data-fab-target="queue"],
+body[data-layout="subj-slop"] #focus-slop-fab [data-fab-target="subjects"],
+body[data-layout="subj-slop"] #focus-slop-fab [data-fab-target="slop"],
 body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="queue"],
 body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="slop"] {
     display: none;
 }
+
 /* Hide the inline Slop card whenever Slop is not part of the layout. */
 body[data-layout="subjects"] #output-section,
-body[data-layout="queue"]    #output-section,
+body[data-layout="queue"] #output-section,
 body[data-layout="subjects"] #ui-split-handle,
-body[data-layout="queue"]    #ui-split-handle,
+body[data-layout="queue"] #ui-split-handle,
 body[data-layout="subj-queue"] #ui-split-handle {
     display: none !important;
 }
@@ -896,6 +2051,7 @@ body[data-layout="subj-queue"] #output-section {
     display: flex;
     flex-direction: column;
 }
+
 body[data-layout="subj-queue"] #preview-grid {
     display: flex !important;
     flex-direction: row !important;
@@ -906,18 +2062,21 @@ body[data-layout="subj-queue"] #preview-grid {
     align-items: stretch;
     padding-bottom: 4px;
 }
-body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] {
+
+body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] {
     flex: 0 0 auto;
     width: 200px;
     margin: 0;
 }
-body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] figure {
+
+body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] figure {
     height: 110px;
 }
+
 /* Drop everything except the figure — filename + badges would
    eat the whole vertical budget at this scale. The card-body
    stays in DOM but visually collapses. */
-body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] .card-body {
+body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
     display: none;
 }
 
@@ -931,6 +2090,7 @@ body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] .card-body {
 .divider::after {
     background-color: hsl(var(--p) / 0.35) !important;
 }
+
 .divider {
     color: hsl(var(--bc) / 0.7);
 }
