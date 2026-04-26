@@ -1644,12 +1644,22 @@
                 <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                     <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Interface</div>
                     <label class="label cursor-pointer py-1">
-                        <span class="label-text text-xs">Enable layout switching (lock layout)</span>
+                        <span class="label-text text-xs">Allow layout switching</span>
                         <input type="checkbox" id="settings-layout-lock-toggle" class="toggle toggle-primary toggle-sm"
                             checked onchange="_setLayoutLocked(!this.checked)" />
                     </label>
                     <p class="text-[10px] opacity-60 leading-snug">When OFF, the View dropdown and card window controls
                         are dimmed/disabled to prevent accidental layout shifts.</p>
+
+                    <div class="flex items-center justify-between gap-2 mt-3 py-1">
+                        <span class="label-text text-xs">Reset card visibility</span>
+                        <button type="button" class="btn btn-xs btn-outline btn-primary"
+                                onclick="restoreAllCards()"
+                                title="Show every card (Subjects + Queue + Slop). Use this if you accidentally closed one and don't see it after switching layouts.">
+                            Show all cards
+                        </button>
+                    </div>
+                    <p class="text-[10px] opacity-60 leading-snug">Clears the per-card "hidden" flag for Subjects, Queue, and Slop. The View dropdown still controls which layout is active.</p>
                 </div>
 
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />

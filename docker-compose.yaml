@@ -172,7 +172,13 @@ services:
           sleep 30
           exit 0
         fi
-        echo '🖼️  Starting ComfyUI (FP16 Mode)...'
+        echo '🖼️  Starting ComfyUI (FP16 weights, FP32 VAE)...'
         cd /opt/ComfyUI
-        exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16
+        # --fp32-vae: forces every VAE decode to fp32 regardless of the
+        #   model's native dtype. On Strix Halo (gfx1151) bf16/fp16 VAE
+        #   decodes produce a faint 8/16-px block-grid pattern in some
+        #   models (LTX-Video-2.3 especially); fp32 eliminates it. Costs
+        #   ~2× VAE-decode VRAM, fine on UMA. See README §14 + the
+        #   slop-card "⚠ vae grid" chip's tooltip for context.
+        exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16 --fp32-vae
       "

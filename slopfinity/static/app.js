@@ -450,6 +450,14 @@ function _setCardHidden(which, hidden) {
 
 function closeCard(which) { _setCardHidden(which, true); }
 function restoreCard(which) { _setCardHidden(which, false); }
+
+// One-click "show every card" — clears all three hidden flags at once.
+// Wired into Settings so users don't have to drop into DevTools when they
+// accidentally close ✕ a card and forget how to bring it back.
+function restoreAllCards() {
+    Object.keys(_CARD_KEYS).forEach(which => _setCardHidden(which, false));
+}
+window.restoreAllCards = restoreAllCards;
 window.closeCard = closeCard;
 window.restoreCard = restoreCard;
 
