@@ -461,8 +461,14 @@
                     <span id="conn-pill-text">Connecting</span>
                 </span>
                 <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
-                <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
-                <button id="btn-clear-completed" class="btn btn-ghost btn-xs text-base-content/70 flex-none" title="Drop all successfully-completed items from history" onclick="clearCompletedQueue()" style="display:none">clear completed</button>
+                <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none gap-1" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    clear failed
+                </button>
+                <button id="btn-clear-completed" class="btn btn-ghost btn-xs text-base-content/70 flex-none gap-1" title="Drop all successfully-completed items from history" onclick="clearCompletedQueue()" style="display:none">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    clear completed
+                </button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
                 {# Per-card × removed — visibility driven entirely by the View
                    dropdown (see top of page). #}
