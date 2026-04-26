@@ -2693,7 +2693,6 @@ function _applySlopFilters() {
     if (vidSpan) vidSpan.textContent = `${vCount} vids`;
     if (imgSpan) imgSpan.textContent = `${iCount} imgs`;
 }
-}
 document.addEventListener('change', e => {
     if (e.target.matches('[data-slop-filter]')) _applySlopFilters();
 });
