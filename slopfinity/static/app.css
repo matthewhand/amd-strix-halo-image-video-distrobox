@@ -604,6 +604,16 @@ body[data-layout="gallery"] #gallery-fab {
     transform: rotate(90deg);
 }
 
+/* Memory Estimate disclosure — same arrow-rotate idiom as Video Chains.
+   Hides the per-model breakdown by default so the popup leads with a
+   single-line "X / Y GB unified" total; clicking expands to show which
+   model contributes what. */
+.ram-details[open] > summary .ram-disclosure {
+    transform: rotate(90deg);
+}
+.ram-details > summary::-webkit-details-marker { display: none; }
+.ram-details > summary { list-style: none; }
+
 /* Single-card and dual-card layout rules. body[data-layout="..."] is set
    by _applyLayoutView() in app.js. The vertical splitter handle in the
    upper pane is hidden whenever only one of Subjects/Queue is visible. */
