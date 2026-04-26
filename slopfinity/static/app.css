@@ -728,10 +728,51 @@ textarea.subjects-autogrow {
    document body scrolls instead, so infinite-scroll feels like a normal
    feed. */
 #ui-split-lower {
-    flex: 0 0 auto;
-    min-height: 200px;
+    flex: 1 1 auto;
+    min-height: 48px;
     display: flex;
     flex-direction: column;
+}
+
+#slop-collapsible {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+}
+
+#slop-collapsible[open] {
+    flex: 1 1 auto;
+}
+
+#slop-collapsible summary {
+    list-style: none;
+    outline: none;
+}
+
+#slop-collapsible summary::-webkit-details-marker {
+    display: none;
+}
+
+#slop-collapsible[open] .slop-indicator {
+    transform: rotate(180deg);
+}
+
+#slop-collapsible .slop-indicator {
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+/* Hide the slop summary bar in focused modes so the gallery fills 100% space */
+body[data-layout="gallery"] #slop-collapsible summary,
+body[data-layout="slop"] #slop-collapsible summary {
+    display: none;
+}
+
+body[data-layout="gallery"] #slop-collapsible[open],
+body[data-layout="slop"] #slop-collapsible[open] {
+    border-top: none;
+    background: transparent;
 }
 
 /* Legacy class kept for any inner descendants that still reference it. */

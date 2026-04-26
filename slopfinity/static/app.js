@@ -57,22 +57,24 @@ const PriorityLoader = (function () {
         const src = el.dataset.src;
         if (!src) { activeCount--; process(); return; }
 
+        // Check if it's a <source> inside <video>/<audio> or just <img>
+        const target = el.tagName === 'SOURCE' ? el.parentElement : el;
+
         const onDone = () => {
-            el.removeEventListener('load', onDone);
-            el.removeEventListener('canplaythrough', onDone);
-            el.removeEventListener('error', onDone);
+            target.removeEventListener('load', onDone);
+            target.removeEventListener('canplaythrough', onDone);
+            target.removeEventListener('error', onDone);
             activeCount--;
             process();
         };
 
-        el.addEventListener('load', onDone);
-        el.addEventListener('canplaythrough', onDone);
-        el.addEventListener('error', onDone);
+        target.addEventListener('load', onDone);
+        target.addEventListener('canplaythrough', onDone);
+        target.addEventListener('error', onDone);
 
-        // Check if it's a <source> inside <video>/<audio> or just <img>
-        const target = el.tagName === 'SOURCE' ? el.parentElement : el;
+        const isSource = el.tagName === 'SOURCE';
 
-        if (el.tagName === 'SOURCE') {
+        if (isSource) {
             el.src = src;
             target.load();
         } else {
@@ -394,9 +396,17 @@ window.restoreCard = restoreCard;
 function _refreshCardVisibility() {
     const ph = document.getElementById('cards-all-hidden-placeholder');
     const subjectsHidden = _isCardHidden('subjects');
-    const queueHidden = _isCardHidden('queue');
+    let queueHidden = _isCardHidden('queue');
     const slopHidden = _isCardHidden('slop');
     const galleryMode = document.body.dataset.layout === 'gallery';
+    const isDefaultLayout = !document.body.dataset.layout || document.body.dataset.layout === 'default';
+
+    // "default mode layout hides queue, but shows queue if queue exists"
+    if (isDefaultLayout) {
+        const qList = document.getElementById('q-list');
+        const hasWork = qList && qList.querySelector('li[data-q-status="active"], li[data-q-status="pending"]');
+        if (!hasWork) queueHidden = true;
+    }
     if (ph) {
         // In gallery mode, Subjects + Queue are still reachable via FABs, so
         // the placeholder is only meaningful when Slop is also closed.
@@ -2662,12 +2672,27 @@ function _applySlopFilters() {
     // frames) become visible too. The kind chips (video/image/audio) still
     // gate by media type independently.
     const showAssets = enabled.assets !== false; // default false = only finals
+    let vCount = 0;
+    let iCount = 0;
     document.querySelectorAll('#preview-grid > [data-slop-kind]').forEach(card => {
         const kindOk = enabled[card.dataset.slopKind] !== false;
         const isFinal = card.dataset.slopFinal === '1';
         const passesAssets = showAssets || isFinal;
-        card.style.display = (kindOk && passesAssets) ? '' : 'none';
+        const visible = kindOk && passesAssets;
+        card.style.display = visible ? '' : 'none';
+
+        if (visible) {
+            if (card.dataset.slopKind === 'video') vCount++;
+            else if (card.dataset.slopKind === 'image') iCount++;
+        }
     });
+
+    // Update Slop Bar stats
+    const vidSpan = document.getElementById('slop-bar-count-video');
+    const imgSpan = document.getElementById('slop-bar-count-image');
+    if (vidSpan) vidSpan.textContent = `${vCount} vids`;
+    if (imgSpan) imgSpan.textContent = `${iCount} imgs`;
+}
 }
 document.addEventListener('change', e => {
     if (e.target.matches('[data-slop-filter]')) _applySlopFilters();
@@ -2704,6 +2729,20 @@ function _initSplitDivider() {
 document.addEventListener('DOMContentLoaded', () => {
     _applySlopFilters();
     _initSplitDivider();
+
+    // Slop Bottom Bar persistence
+    const slopCollapsible = document.getElementById('slop-collapsible');
+    if (slopCollapsible) {
+        const _SLOP_COLLAPSED_KEY = 'slopfinity_slop_collapsed';
+        if (localStorage.getItem(_SLOP_COLLAPSED_KEY) === '1') {
+            slopCollapsible.open = false;
+        }
+        slopCollapsible.addEventListener('toggle', () => {
+            localStorage.setItem(_SLOP_COLLAPSED_KEY, slopCollapsible.open ? '0' : '1');
+            // Refresh layout/scroll values if needed
+            if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
+        });
+    }
     if (typeof _updateSingleLabels === 'function') _updateSingleLabels();
     if (typeof _updateChaosEnabled === 'function') _updateChaosEnabled();
     if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
