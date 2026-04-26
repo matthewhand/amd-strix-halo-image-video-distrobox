@@ -757,6 +757,36 @@ function _stageDoneBefore(curStage, candidate) {
 // the activity spinner + verb. Each segment carries its own inline
 // elapsed/ETA timing under the label so users read "actual / planned" per
 // stage at a glance. Total elapsed / ETA sits in the footer row below.
+// Route a progress-bar segment-label click to the most relevant
+// settings surface for that stage. Concept → Settings → LLM tab; TTS →
+// Settings → Speech tab; everything else → the Pipeline popup (which
+// hosts every model select + per-stage tuning).
+function _openSegSettings(stage) {
+    if (stage === 'Concept') {
+        if (typeof openSettings === 'function') {
+            openSettings();
+            // Settings is async; flip the LLM radio after the modal opens.
+            setTimeout(() => {
+                const r = document.querySelector('input[name="settings_tabs"][aria-label="LLM"]');
+                if (r) r.checked = true;
+            }, 60);
+        }
+        return;
+    }
+    if (stage === 'TTS') {
+        if (typeof openSettings === 'function') {
+            openSettings();
+            setTimeout(() => {
+                const r = document.querySelector('input[name="settings_tabs"][aria-label="Speech"]');
+                if (r) r.checked = true;
+            }, 60);
+        }
+        return;
+    }
+    if (typeof openPipeline === 'function') openPipeline();
+}
+window._openSegSettings = _openSegSettings;
+
 function _buildActiveJobProgressBar(d) {
     const state = (d && d.state) || {};
     const curStep = state.step || '';
@@ -810,8 +840,8 @@ function _buildActiveJobProgressBar(d) {
         const etaHtml = etaSec ? _fmtElapsedHtml(etaSec * 1000) : '—';
         return `<div class="pipeline-seg ${cls}${overrunCls}" style="flex: 1 1 0;" data-stage="${s}" data-tone="${tone}">
             <div class="pipeline-seg-fill bg-${tone}" style="width: ${localFill}%"></div>
-            <span class="pipeline-seg-label">${shortLabel}</span>
-            <span class="pipeline-seg-timing"><span data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA ${etaHtml}</span></span>
+            <button type="button" class="pipeline-seg-label cursor-pointer" onclick="event.stopPropagation(); _openSegSettings(${JSON.stringify(s)})" title="Open settings for ${_htmlEscape(s)}">${shortLabel}</button>
+            <span class="pipeline-seg-timing"><span class="pipeline-seg-time-chip" data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA <span class="pipeline-seg-time-chip">${etaHtml}</span></span></span>
         </div>`;
     }).join('');
     return `
@@ -2256,6 +2286,18 @@ function _updateRenderTextProgress(host) {
     }
 }
 
+// Animation styles cycled through every ~5 s on the render-anim host
+// so the heartbeat reads as varied motion (bounce → wobble → pulse →
+// jump → wave → swap → repeat). Order is shuffled once on first paint
+// so the same stage doesn't always start with the same style.
+const _RENDER_ANIM_STYLES = ['bounce', 'wobble', 'pulse', 'jump', 'wave', 'swap'];
+let _renderAnimStyleIdx = Math.floor(Math.random() * _RENDER_ANIM_STYLES.length);
+function _rotateRenderAnimStyle(host) {
+    if (!host) return;
+    _renderAnimStyleIdx = (_renderAnimStyleIdx + 1) % _RENDER_ANIM_STYLES.length;
+    host.dataset.animStyle = _RENDER_ANIM_STYLES[_renderAnimStyleIdx];
+}
+
 function _applyRenderHeartbeat() {
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;
@@ -2268,9 +2310,21 @@ function _applyRenderHeartbeat() {
         // run the fill pass every tick so the bar advances live.
         _paintRenderText(txtEl, _renderHeartbeat.text);
         _updateRenderTextProgress(txtEl);
+        // Initial style assignment — only on first paint.
+        if (!txtEl.dataset.animStyle) {
+            txtEl.dataset.animStyle = _RENDER_ANIM_STYLES[_renderAnimStyleIdx];
+        }
     }
     if (!live && _renderHeartbeat) _renderHeartbeat = null;
 }
+// Cycle animation styles every 5 s while a heartbeat is live.
+setInterval(() => {
+    if (!_renderHeartbeat || Date.now() > _renderHeartbeat.expiresAt) return;
+    const headerAct = document.getElementById('queue-header-activity');
+    if (!headerAct) return;
+    const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
+    _rotateRenderAnimStyle(txtEl);
+}, 5000);
 // 1 Hz expiry tick — fires regardless of WS traffic so a stalled backend
 // hides the label within ~1 s of the TTL elapsing.
 setInterval(_applyRenderHeartbeat, 1000);
@@ -3053,7 +3107,7 @@ function connect() {
                                 </a>
                             </span>
                             <span class="flex-none min-w-[7rem] text-right">
-                                <span class="badge badge-xs badge-ghost" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
+                                <span class="badge badge-xs badge-warning opacity-80" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
                             </span>
                             <span class="flex-none w-12" aria-hidden="true"></span>
                         </div>`);
