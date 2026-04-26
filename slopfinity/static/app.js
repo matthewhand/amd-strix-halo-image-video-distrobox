@@ -451,6 +451,50 @@ function _setCardHidden(which, hidden) {
 function closeCard(which) { _setCardHidden(which, true); }
 function restoreCard(which) { _setCardHidden(which, false); }
 
+// ---------------------------------------------------------------------------
+// Window-control close ✕ now drives LAYOUT switching instead of inline
+// hide. "Hide subjects from this view" → flip to the layout that has
+// the OTHER cards from the current view, sans subjects. Cleaner mental
+// model + the user can always recover via the View dropdown OR by
+// clicking close on a different card. The legacy closeCard()/restoreCard()
+// pair is kept in place for any external callers but no template uses
+// them anymore.
+// ---------------------------------------------------------------------------
+const _LAYOUT_TO_CARDS = {
+    default:      ['S', 'Q', 'Slop'],
+    subjects:     ['S'],
+    queue:        ['Q'],
+    gallery:      ['Slop'],
+    'subj-slop':  ['S', 'Slop'],
+    'queue-slop': ['Q', 'Slop'],
+    'subj-queue': ['S', 'Q'],
+};
+const _CARD_SET_TO_LAYOUT = {
+    'S':       'subjects',
+    'Q':       'queue',
+    'Slop':    'gallery',
+    'SQ':      'subj-queue',
+    'SSlop':   'subj-slop',
+    'QSlop':   'queue-slop',
+    'SQSlop':  'default',
+};
+function _closeCardLayout(which) {
+    const cardKey = which === 'subjects' ? 'S'
+                   : which === 'queue'    ? 'Q'
+                   : which === 'slop'     ? 'Slop'
+                   : null;
+    if (!cardKey) return;
+    const current = document.body.dataset.layout || 'default';
+    const cards = _LAYOUT_TO_CARDS[current] || ['S', 'Q', 'Slop'];
+    const remaining = cards.filter(c => c !== cardKey);
+    // Closing the only visible card is a no-op — don't strand the user
+    // on an empty layout. They should use View dropdown to switch away.
+    if (!remaining.length) return;
+    const target = _CARD_SET_TO_LAYOUT[remaining.join('')] || 'default';
+    if (typeof selectLayoutView === 'function') selectLayoutView(target);
+}
+window._closeCardLayout = _closeCardLayout;
+
 // One-click "show every card" — clears all three hidden flags at once.
 // Wired into Settings so users don't have to drop into DevTools when they
 // accidentally close ✕ a card and forget how to bring it back.
