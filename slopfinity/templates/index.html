@@ -591,6 +591,19 @@
                                         {% endfor %}
                                     </div>
                                 </details>
+                                {# Disk-low guard banner. Hidden by default; shown when
+                                   /disk/guard returns ok:false. Click → opens Settings →
+                                   General → Disk guard so the user can adjust thresholds
+                                   if the reading is wrong. _refreshDiskGuardUI in app.js
+                                   polls /disk/guard and toggles this + the Queue button. #}
+                                <div id="subjects-disk-warn"
+                                    class="hidden text-[11px] cursor-pointer rounded-md bg-error/15 border border-error/40 text-error px-3 py-2 mt-1 hover:bg-error/25 transition-colors"
+                                    onclick="openSettings(); setTimeout(() => { const el = document.querySelector('#settings-modal input[type=radio][aria-label=&quot;General&quot;]'); if (el) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles:true})); } const dpct = document.getElementById('set-disk-min-pct'); if (dpct) dpct.scrollIntoView({behavior:'smooth', block:'center'}); }, 400);"
+                                    title="Click to open Settings → General → Disk guard">
+                                    <span class="font-semibold">⛔ Disk-low — generation blocked.</span>
+                                    <span id="subjects-disk-warn-detail" class="opacity-80"></span>
+                                    <span class="opacity-60"> · click to adjust threshold</span>
+                                </div>
                                 <div id="subjects-input-row" class="flex gap-2 items-stretch">
                                     <textarea id="p-core" rows="5"
                                         class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
@@ -862,6 +875,21 @@
                                              into #queue-total-elapsed / #queue-total-eta #}
                                 <div id="queue-progress-footer" class="flex items-center justify-between gap-2 mt-1 mb-2 text-[10px] min-h-[1.25rem]">
                                     <div class="flex items-center gap-1">
+                                        {# Pause / Resume — soft-stops new iter starts in run_fleet
+                                           via pause.flag in EXP_DIR. Active iter finishes naturally.
+                                           _refreshPauseButton() in app.js polls /queue/pause-state. #}
+                                        <button id="btn-queue-pause" type="button"
+                                            class="btn btn-ghost btn-xs flex-none gap-1"
+                                            title="Pause new iter starts (active iter finishes)"
+                                            onclick="_toggleQueuePause()">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round" class="w-3 h-3" id="btn-queue-pause-icon">
+                                                <rect x="6" y="4" width="4" height="16" />
+                                                <rect x="14" y="4" width="4" height="16" />
+                                            </svg>
+                                            <span id="btn-queue-pause-label">Pause</span>
+                                        </button>
                                         <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none"
                                             title="Re-add all failed items as pending; drop the failed records"
                                             onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>

@@ -1045,6 +1045,93 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(_updateLlmAvailability, 60_000);
 });
 
+// Queue pause/resume — soft-stops new iter starts via pause.flag.
+// Polls /queue/pause-state every 5s; updates the button icon + label.
+async function _refreshPauseButton() {
+    const btn = document.getElementById('btn-queue-pause');
+    if (!btn) return;
+    try {
+        const r = await fetch('/queue/pause-state');
+        if (r.status === 404) return; // pre-bounce server, endpoint missing
+        const d = await r.json();
+        const paused = !!(d && d.paused);
+        const lbl = document.getElementById('btn-queue-pause-label');
+        const icon = document.getElementById('btn-queue-pause-icon');
+        if (lbl) lbl.textContent = paused ? 'Resume' : 'Pause';
+        btn.classList.toggle('text-warning', paused);
+        btn.classList.toggle('text-success', !paused && false); // keep neutral when running
+        // Swap icon: ▶ play when paused (means "click to resume"); ⏸ when running.
+        if (icon) {
+            icon.innerHTML = paused
+                ? '<polygon points="5 3 19 12 5 21 5 3"/>'
+                : '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+        }
+        btn.title = paused
+            ? 'Resume — clear pause.flag so new iters can start'
+            : 'Pause new iter starts (active iter finishes)';
+    } catch (_) { /* fail silently */ }
+}
+async function _toggleQueuePause() {
+    try {
+        const cur = await fetch('/queue/pause-state').then(r => r.json()).catch(() => ({ paused: false }));
+        const next = cur.paused ? 'resume' : 'pause';
+        await fetch('/queue/' + next, { method: 'POST' });
+        await _refreshPauseButton();
+    } catch (e) {
+        if (typeof _seedToast === 'function') _seedToast(`Pause toggle failed: ${e.message}`, 'error');
+    }
+}
+window._refreshPauseButton = _refreshPauseButton;
+window._toggleQueuePause = _toggleQueuePause;
+document.addEventListener('DOMContentLoaded', () => {
+    _refreshPauseButton();
+    setInterval(_refreshPauseButton, 5_000);
+});
+
+// Disk-guard UI — polls /disk/guard, toggles the warning banner beneath
+// the Queue button + disables the Queue button when blocked. Click on the
+// warning banner opens Settings → General → Disk guard so the user can
+// raise the threshold if the reading is wrong. Fail-open on 404 (the
+// endpoint is new; older servers shouldn't lock users out).
+async function _refreshDiskGuardUI() {
+    const warn = document.getElementById('subjects-disk-warn');
+    const detail = document.getElementById('subjects-disk-warn-detail');
+    const queueBtn = document.getElementById('btn-start-stop-inline');
+    if (!warn) return;
+    let ok = true;
+    let info = null;
+    try {
+        const r = await fetch('/disk/guard');
+        if (r.status === 404) { ok = true; }
+        else {
+            info = await r.json();
+            ok = !!(info && info.ok);
+        }
+    } catch (_) { ok = true; /* fail open */ }
+    if (ok) {
+        warn.classList.add('hidden');
+        if (queueBtn) {
+            queueBtn.disabled = false;
+            queueBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        return;
+    }
+    warn.classList.remove('hidden');
+    if (detail && info) {
+        detail.textContent = ` ${info.free_gb} GB / ${info.free_pct}% free (threshold: ${info.threshold_gb} GB or ${info.threshold_pct}%).`;
+    }
+    if (queueBtn) {
+        queueBtn.disabled = true;
+        queueBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        queueBtn.title = 'Disk-low — adjust threshold in Settings → General → Disk guard';
+    }
+}
+window._refreshDiskGuardUI = _refreshDiskGuardUI;
+document.addEventListener('DOMContentLoaded', () => {
+    _refreshDiskGuardUI();
+    setInterval(_refreshDiskGuardUI, 30_000);
+});
+
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
 // Also detect when a new SW takes control (cache version bumped) and surface
 // a toast inviting the user to reload — they don't have to, but the UI may be

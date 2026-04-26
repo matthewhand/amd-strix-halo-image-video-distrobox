@@ -1152,6 +1152,40 @@ async def runner_terminate():
     return {"ok": True, "killed": killed}
 
 
+@app.post("/queue/pause")
+async def queue_pause():
+    """Pause new iter starts in run_fleet. Writes pause.flag in EXP_DIR;
+    the orchestrator polls the flag and skips its iter loop body while
+    it exists. The currently-running iter (if any) finishes naturally —
+    pause is a SOFT stop, not a kill.
+
+    Resume via POST /queue/resume."""
+    try:
+        with open(os.path.join(EXP_DIR, "pause.flag"), "w") as f:
+            f.write(str(time.time()))
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return {"ok": True, "paused": True}
+
+
+@app.post("/queue/resume")
+async def queue_resume():
+    """Remove pause.flag — fleet returns to its iter loop on next poll."""
+    flag = os.path.join(EXP_DIR, "pause.flag")
+    try:
+        if os.path.exists(flag):
+            os.remove(flag)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return {"ok": True, "paused": False}
+
+
+@app.get("/queue/pause-state")
+async def queue_pause_state():
+    """Quick poll for the dashboard. Returns {paused: bool}."""
+    return {"paused": os.path.exists(os.path.join(EXP_DIR, "pause.flag"))}
+
+
 @app.post("/cancel-all")
 async def cancel_all():
     """Mark every pending or in-flight queue item as cancelled and

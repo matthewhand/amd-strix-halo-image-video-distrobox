@@ -1551,6 +1551,17 @@ def main():
     except Exception as e:
         print(f"[FLEET] startup working-sweep failed: {e!r}", flush=True)
     while True:
+        # Pause gate — dashboard's POST /queue/pause writes pause.flag in
+        # OUTPUT_DIR. We check at the TOP of every iter so an active iter
+        # finishes naturally (pause is a soft stop, not a kill) but no
+        # NEW iter starts until the flag is removed via /queue/resume.
+        # 5s poll cadence balances responsiveness vs CPU when paused.
+        _pause_flag = os.path.join(OUTPUT_DIR, "pause.flag")
+        if os.path.exists(_pause_flag):
+            update_state(mode="Paused", step="User-paused (no new iters)",
+                         video=0, total=0)
+            time.sleep(5)
+            continue
         config = cfg.load_config()
         if not config.get("infinity_mode") and v_idx > 1000:
             break
