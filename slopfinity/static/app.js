@@ -962,9 +962,80 @@ function _updateEndlessEnabled() {
         host.classList.toggle('opacity-50', !enabled);
         host.classList.toggle('pointer-events-none', !enabled);
     }
+    // Mode-pill Endless button — disabled when Suggestions is off, with a
+    // tooltip explaining why. Endless mode drives its story off the
+    // suggestion stream, so without suggestions there's nothing to cycle.
+    const endlessBtn = document.querySelector('.subjects-mode-pill button[data-subj-mode="endless"]');
+    if (endlessBtn) {
+        endlessBtn.disabled = !enabled;
+        endlessBtn.classList.toggle('opacity-50', !enabled);
+        endlessBtn.classList.toggle('cursor-not-allowed', !enabled);
+        endlessBtn.title = enabled
+            ? "Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts."
+            : 'Endless mode requires Suggestions to be ON — turn it on next to the mode pill to enable.';
+        // If user is currently in endless mode and disables suggestions,
+        // bounce them back to Simple so the UI doesn't get stuck.
+        if (!enabled && _getSubjectsMode() === 'endless' && typeof _setSubjectsMode === 'function') {
+            _setSubjectsMode('simple');
+        }
+    }
 }
 window._updateEndlessEnabled = _updateEndlessEnabled;
 document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
+
+// LLM-availability gate for Subjects modes. Endless / Simple / Chat all
+// need a reachable LLM; Raw is the only mode that works without one
+// (per-stage prompts pre-filled OR queued verbatim with no rewrite).
+// Pings /llm/health on load and every 60s — quick probe, low overhead.
+let _llmAvailableCached = null;
+async function _updateLlmAvailability() {
+    let ok = false;
+    try {
+        const r = await fetch('/llm/health');
+        const d = await r.json();
+        ok = !!(d && d.ok);
+    } catch (_) { ok = false; }
+    _llmAvailableCached = ok;
+    document.body.classList.toggle('llm-down', !ok);
+    const llmGated = ['endless', 'simple', 'chat'];
+    llmGated.forEach(mode => {
+        const btn = document.querySelector(`.subjects-mode-pill button[data-subj-mode="${mode}"]`);
+        if (!btn) return;
+        if (!ok) {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            const orig = btn.getAttribute('data-orig-title') || btn.title;
+            if (!btn.getAttribute('data-orig-title')) btn.setAttribute('data-orig-title', orig);
+            btn.title = `${mode.charAt(0).toUpperCase() + mode.slice(1)} mode requires the LLM provider — currently unreachable. Switch to Raw mode or check Settings → LLM.`;
+        } else {
+            // Restore (unless another gate — like _updateEndlessEnabled —
+            // disabled this specific button for its own reason).
+            const orig = btn.getAttribute('data-orig-title');
+            if (orig) {
+                btn.title = orig;
+                btn.removeAttribute('data-orig-title');
+            }
+            // Don't blanket-enable: _updateEndlessEnabled may still want
+            // endless disabled if Suggestions is off. Re-run it.
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    });
+    // Re-run the suggestions/endless gate on top so its rules win.
+    if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
+    // Bounce out of an LLM-gated mode if the LLM just went down.
+    if (!ok) {
+        const cur = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+        if (llmGated.includes(cur) && typeof _setSubjectsMode === 'function') {
+            _setSubjectsMode('raw');
+        }
+    }
+}
+window._updateLlmAvailability = _updateLlmAvailability;
+document.addEventListener('DOMContentLoaded', () => {
+    _updateLlmAvailability();
+    setInterval(_updateLlmAvailability, 60_000);
+});
 
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
 // Also detect when a new SW takes control (cache version bumped) and surface
@@ -2248,9 +2319,13 @@ function updateOutputsDisk(d) {
     const el = document.getElementById('d-v');
     if (!el) return;
     el.textContent = `${d.pct}%`;
+    // Tone matches the disk ticker columns (bg-primary baseline + bg-error
+    // when the disk slice in the ticker reads pressure). Aligns with the
+    // RAM/GPU/Load convention where the percentage label colour tracks the
+    // ticker's most-recent column tint.
     el.className = 'font-mono font-black ' + (
         d.status === 'danger' ? 'text-error' :
-            d.status === 'warn' ? 'text-warning' : 'text-accent'
+            d.status === 'warn' ? 'text-warning' : 'text-primary'
     );
     const freeGb = (d.free_gb !== undefined) ? d.free_gb : (d.total_gb - d.used_gb);
     // Update the used/free label beneath the percentage (mirrors RAM r-v line).
@@ -3938,7 +4013,7 @@ function connect() {
             lH.push(loadPct);
             if (lH.length > 15) lH.shift();
             const lt = $('l-t');
-            if (lt) lt.innerHTML = _tickerHTML(lH, 'info');
+            if (lt) lt.innerHTML = _tickerHTML(lH, 'primary');
 
             // Disk ticker: usage barely moves, so sample at 1/120 the rate of
             // GPU/RAM. With WS broadcasting every 2 s that's one new column
@@ -3953,7 +4028,7 @@ function connect() {
                 else dH.push(d.outputs_disk.pct);
                 if (dH.length > 15) dH.shift();
                 const dt = $('d-t');
-                if (dt) dt.innerHTML = _tickerHTML(dH, 'accent');
+                if (dt) dt.innerHTML = _tickerHTML(dH, 'primary');
             }
 
             $('h-m').innerText = d.state.mode;
