@@ -2769,6 +2769,25 @@ async function saveSchedUsePlanner(checked) {
     }
 }
 
+// CPU offload toggles for LLM + TTS. Persisted under
+// scheduler.{llm_cpu_only, tts_cpu_only}; the orchestrator + memory
+// planner read these to skip the GPU-idle wait for the relevant stage
+// and exclude the model from GPU budget accounting.
+async function saveSchedCpuOffload(role, checked) {
+    if (role !== 'llm' && role !== 'tts') return;
+    const field = role === 'llm' ? 'llm_cpu_only' : 'tts_cpu_only';
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduler: { [field]: !!checked } }),
+        });
+    } catch (e) {
+        console.warn('saveSchedCpuOffload failed', e);
+    }
+}
+window.saveSchedCpuOffload = saveSchedCpuOffload;
+
 // Per-model loading preferences. Reads every checkbox in the
 // "Per-model loading preferences" grid and POSTs the union as
 // model_loading.{sticky,eager_unload}: [model_ids].
@@ -3385,9 +3404,24 @@ function connect() {
                             ? `badge badge-xs badge-${tone} opacity-70 cursor-pointer`
                             : 'badge badge-xs badge-ghost opacity-50 cursor-pointer';
                         const _settingsRole = _STAGE_SETTINGS_ROLE[s];
+                        // CPU badge — shows next to the model glyph when
+                        // the active scheduler config has CPU offload on
+                        // for this stage. _lastTick.config.scheduler is
+                        // the live source of truth (defaults to ON when
+                        // unset, matching the Settings UI promise).
+                        let _cpuBadge = '';
+                        const _sched = (_lastTick && _lastTick.config && _lastTick.config.scheduler) || {};
+                        const _cpuOn = (s === 'Concept')
+                            ? (_sched.llm_cpu_only !== false)
+                            : (s === 'TTS')
+                                ? (_sched.tts_cpu_only !== false)
+                                : false;
+                        if (_cpuOn) {
+                            _cpuBadge = `<span class="inline-flex items-center align-middle mr-0.5 opacity-70" title="Running on CPU"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg></span>`;
+                        }
                         const stageLabelHtml = _settingsRole
-                            ? `<button type="button" class="${_stageBadgeCls}" title="${s} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_htmlEscape(modelLabel)}</button>`
-                            : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">${_stageGlyph} ${_htmlEscape(modelLabel)}</span>`;
+                            ? `<button type="button" class="${_stageBadgeCls}" title="${s} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</button>`
+                            : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</span>`;
                         // Right-edge cluster mirrors the summary row's
                         //   [model-badge] [menu]
                         // by sitting the model in the same min-w-[7rem]
@@ -4598,6 +4632,16 @@ async function openSettings() {
         const usePlanner = !!(sr.scheduler && sr.scheduler.use_planner);
         const planEl = $('sched-use-planner');
         if (planEl) planEl.checked = usePlanner;
+        // CPU offload defaults: ON when not yet persisted (matches the
+        // "default on" UX promise). Unset → checked; explicit false →
+        // unchecked.
+        const sched = sr.scheduler || {};
+        const llmCpu = sched.llm_cpu_only === undefined ? true : !!sched.llm_cpu_only;
+        const ttsCpu = sched.tts_cpu_only === undefined ? true : !!sched.tts_cpu_only;
+        const llmEl = $('sched-llm-cpu-only');
+        const ttsEl = $('sched-tts-cpu-only');
+        if (llmEl) llmEl.checked = llmCpu;
+        if (ttsEl) ttsEl.checked = ttsCpu;
         // Per-model loading-prefs grid is in the same Scheduler tab.
         if (typeof _hydrateModelLoadingPrefs === 'function') _hydrateModelLoadingPrefs(sr);
         // (Endless + Fresh prefs migrated to the Subjects-card Slop

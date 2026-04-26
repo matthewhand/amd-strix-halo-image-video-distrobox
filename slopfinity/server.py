@@ -1454,6 +1454,11 @@ async def settings_get():
         "scheduler": {
             "memory_safety_gb": (c.get("scheduler") or {}).get("memory_safety_gb", 10),
             "use_planner": bool((c.get("scheduler") or {}).get("use_planner", False)),
+            # CPU offload prefs default ON — Strix Halo iGPU is the
+            # bottleneck for image/video stages, so giving the LLM + TTS
+            # to CPU lets them run alongside without competing for GPU.
+            "llm_cpu_only": bool((c.get("scheduler") or {}).get("llm_cpu_only", True)),
+            "tts_cpu_only": bool((c.get("scheduler") or {}).get("tts_cpu_only", True)),
         },
     }
 
