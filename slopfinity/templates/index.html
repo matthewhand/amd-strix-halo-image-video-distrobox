@@ -489,21 +489,6 @@
                                     so they read as "the toggle"; Slop uses btn-secondary
                                     tint with a gear icon so it visually reads as "open
                                     settings", distinct from mode selection. #}
-                                    {# Suggestions on/off toggle sits to the LEFT of the mode pill.
-                                       When OFF, Endless mode is disabled with an explanatory
-                                       tooltip — Endless drives its story off the suggestion stream
-                                       and has nothing to cycle without it. _updateEndlessEnabled
-                                       keeps both states in sync. #}
-                                    <label id="subjects-suggestions-toggle"
-                                        class="btn btn-primary btn-xs cursor-pointer gap-1.5 mr-1"
-                                        title="Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.">
-                                        <input type="checkbox" id="subjects-suggestions-toggle-input"
-                                            class="hidden peer" onchange="toggleSuggestionsHidden(!this.checked);">
-                                        <span class="es-track inline-block w-6 h-3 rounded-full border border-current relative">
-                                            <span class="es-knob absolute top-[1px] left-[1px] w-2 h-2 rounded-full bg-current"></span>
-                                        </span>
-                                        <span>Suggestions</span>
-                                    </label>
                                     {# Mode pill order (per UX request): Endless · Simple · Chat · Raw.
                                        Endless / Simple / Chat all need an LLM; Raw is the only mode
                                        that can run when LLM is unreachable. _updateLlmAvailability
@@ -714,8 +699,19 @@
                                 <div id="subjects-need-ideas-row"
                                     class="flex items-center justify-between gap-1 flex-wrap">
                                     <div class="flex items-center gap-1 flex-wrap">
-                                        {# Suggestions toggle relocated above (next to mode pill).
-                                           This row keeps the Suggest / Edit-prompt buttons. #}
+                                        {# Suggestions on/off toggle. When OFF, Endless mode is
+                                           disabled with an explanatory tooltip — Endless drives
+                                           its story off the suggestion stream. #}
+                                        <label id="subjects-suggestions-toggle"
+                                            class="btn btn-primary btn-xs cursor-pointer gap-1.5"
+                                            title="Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.">
+                                            <input type="checkbox" id="subjects-suggestions-toggle-input"
+                                                class="hidden peer" onchange="toggleSuggestionsHidden(!this.checked);">
+                                            <span class="es-track inline-block w-6 h-3 rounded-full border border-current relative">
+                                                <span class="es-knob absolute top-[1px] left-[1px] w-2 h-2 rounded-full bg-current"></span>
+                                            </span>
+                                            <span>Suggestions</span>
+                                        </label>
                                         <button id="subjects-suggestion-prompt-link" type="button"
                                             class="btn btn-primary btn-xs gap-1.5 w-28"
                                             title="Edit the system prompt used for auto-suggestions"

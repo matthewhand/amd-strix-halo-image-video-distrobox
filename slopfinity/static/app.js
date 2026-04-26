@@ -6512,12 +6512,12 @@ async function regenSuggestions(n = 6) {
         : '<span class="loading loading-dots loading-xs"></span>';
     const subjects = (($('p-core') && $('p-core').value) || '').trim();
     const fetchOne = async (forceFresh) => {
-        // Add a small randomized seed param so the server cache key changes
-        // when we want a fresh batch (otherwise the cache-no-TTL change in
-        // server.py would return the same row over and over).
+        // fresh=1 tells the server to (a) bypass its cache and (b) inject a
+        // random salt nudge into the LLM user_msg so the batch ACTUALLY
+        // differs from the previous one. _t= is kept as a HTTP-cache buster.
         const qs = '?n=' + n
             + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-            + (forceFresh ? '&_t=' + Date.now() : '');
+            + (forceFresh ? '&fresh=1&_t=' + Date.now() : '');
         const r = await fetch('/subjects/suggest' + qs);
         const data = await r.json();
         return data.suggestions || [];
