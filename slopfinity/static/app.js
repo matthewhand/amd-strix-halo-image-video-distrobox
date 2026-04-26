@@ -625,7 +625,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // persisted to localStorage so subsequent visits without the param
     // remember it (use ?layout=default to reset).
     const urlLayout = new URLSearchParams(location.search).get('layout');
-    const stored = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
+    // Mobile auto-default: when the viewport is below the desktop breakpoint
+    // (Tailwind md = 768 px) AND the user hasn't explicitly picked a layout
+    // before, default to 'gallery' (slop-only) — the gallery is the most
+    // useful single view on a phone, and Subjects/Queue are reachable via
+    // edge-swipe gestures (see _wireMobileEdgeSwipes). On desktop we keep
+    // the existing 'default' (3-pane) behaviour.
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+    const storedRaw = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY); } catch (_) { return null; } })();
+    const stored = storedRaw || (isMobile ? 'gallery' : 'default');
     const v = urlLayout || stored;
     _applyLayoutView(v);
     const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
@@ -638,7 +646,62 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     _refreshLayoutViewIndicator(v);
+    if (isMobile) _wireMobileEdgeSwipes();
 });
+
+// Mobile edge-swipe gestures — when the user is in gallery layout on a
+// phone, a swipe from the LEFT edge slides the Subjects card in as a
+// sheet; right edge slides Queue. Tap-outside or swipe-back dismisses.
+// PointerEvent-based; no library dependency. Only wired on mobile to
+// keep desktop drag-behaviour unchanged.
+function _wireMobileEdgeSwipes() {
+    const EDGE = 28;          // px from edge that counts as a swipe-start
+    const TRIGGER = 60;       // px of horizontal travel before the sheet opens
+    let startX = 0, startY = 0, startedFrom = null, currentSheet = null;
+    const SHEETS = {
+        left:  { sel: '#split-left',  cls: 'mobile-sheet-left' },
+        right: { sel: '#split-right', cls: 'mobile-sheet-right' },
+    };
+    const closeAnyOpenSheet = () => {
+        document.body.classList.remove('mobile-sheet-open-left', 'mobile-sheet-open-right');
+        currentSheet = null;
+    };
+    document.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch') return;
+        // Outside-click closes an open sheet.
+        if (currentSheet) {
+            const cur = document.querySelector(SHEETS[currentSheet].sel);
+            if (cur && !cur.contains(e.target)) {
+                closeAnyOpenSheet();
+                return;
+            }
+        }
+        if (e.clientX <= EDGE) startedFrom = 'left';
+        else if (e.clientX >= window.innerWidth - EDGE) startedFrom = 'right';
+        else { startedFrom = null; return; }
+        startX = e.clientX;
+        startY = e.clientY;
+    });
+    document.addEventListener('pointermove', (e) => {
+        if (!startedFrom || e.pointerType !== 'touch') return;
+        const dx = e.clientX - startX;
+        const dy = Math.abs(e.clientY - startY);
+        if (dy > 40) { startedFrom = null; return; } // vertical drag — ignore
+        const open = (startedFrom === 'left' && dx > TRIGGER)
+                  || (startedFrom === 'right' && -dx > TRIGGER);
+        if (open) {
+            currentSheet = startedFrom;
+            document.body.classList.add('mobile-sheet-open-' + startedFrom);
+            startedFrom = null; // single-shot
+        }
+    });
+    document.addEventListener('pointerup', () => { startedFrom = null; });
+    // Esc key dismisses too.
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && currentSheet) closeAnyOpenSheet();
+    });
+}
+window._wireMobileEdgeSwipes = _wireMobileEdgeSwipes;
 
 // ---------------------------------------------------------------------------
 // Card close/restore — Subjects (#split-left), Queue (#split-right), and
@@ -1049,10 +1112,20 @@ function _getEndlessRowPrompts() {
         const raw = localStorage.getItem(_ENDLESS_ROW_PROMPTS_KEY);
         const arr = raw ? JSON.parse(raw) : null;
         if (Array.isArray(arr) && arr.length) {
-            return arr.filter(id => typeof id === 'string' && _getPromptById(id));
+            const valid = arr.filter(id => typeof id === 'string' && _getPromptById(id));
+            // If the saved list collapsed to a single repeated id (common
+            // after a stale upgrade where every prompt mapped to the
+            // default), reset to the active-prompts diversity. Otherwise
+            // every endless row would render identical chips.
+            const unique = new Set(valid);
+            if (valid.length && unique.size > 1) return valid;
         }
     } catch (_) {}
-    return _getActivePrompts().slice(0, 4).map(p => p.id);
+    const active = _getActivePrompts();
+    if (active.length) return active.slice(0, Math.min(4, active.length)).map(p => p.id);
+    // No cache loaded yet → fall through to the client-side fallback list
+    // so endless mode never renders "all same prompt" on first paint.
+    return _SUGGEST_PROMPTS_FALLBACK.filter(p => p.active).slice(0, 3).map(p => p.id);
 }
 function _setEndlessRowPrompts(arr) {
     const clean = (Array.isArray(arr) ? arr : []).filter(id => typeof id === 'string' && _getPromptById(id));
@@ -1118,8 +1191,23 @@ function _openSuggestPromptPicker(targetRowIdx) {
     if (anchor) {
         const r = anchor.getBoundingClientRect();
         popover.style.position = 'fixed';
-        popover.style.left = r.left + 'px';
-        popover.style.top = (r.bottom + 4) + 'px';
+        // Position the popover so it does NOT overlap the chip stack
+        // below the badge — measure available space and flip up when
+        // there isn't enough room below the anchor.
+        popover.style.visibility = 'hidden';
+        popover.classList.remove('hidden');
+        const popH = popover.offsetHeight || 200;
+        popover.classList.add('hidden');
+        popover.style.visibility = '';
+        const spaceBelow = window.innerHeight - r.bottom;
+        if (spaceBelow < popH + 16) {
+            // Not enough room below — open ABOVE the anchor (right-aligned).
+            popover.style.left = r.left + 'px';
+            popover.style.top = Math.max(8, r.top - popH - 4) + 'px';
+        } else {
+            popover.style.left = r.left + 'px';
+            popover.style.top = (r.bottom + 4) + 'px';
+        }
     }
     popover.classList.remove('hidden');
     // Dismiss on outside click.
