@@ -4449,7 +4449,7 @@ function _updateGenModePill() {
   const parts = [];
   parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
   if (term && term.checked) parts.push('🛑 terminate');
-  else if (now && now.checked) parts.push('+asap');
+  else if (now && now.checked) parts.push('⏯ asap');
   else parts.push('queue');
   // +idle / +poly / +concurrent dropped — those are global settings now
   // (Diagnostics + Triggers tabs), not per-iteration knobs, so they
