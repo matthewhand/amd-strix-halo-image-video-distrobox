@@ -212,15 +212,11 @@
                     </button>
                     <ul tabindex="0"
                         class="dropdown-content menu menu-sm bg-base-200 rounded-box shadow-xl mt-1 w-56 z-50 flex-nowrap">
-                        {# Layout-lock toggle: when OFF all layout buttons are disabled #}
-                        <li class="px-2 py-1.5 border-b border-base-300 mb-1">
-                            <label class="flex items-center gap-2 cursor-pointer select-none"
-                                onclick="event.stopPropagation()">
-                                <input type="checkbox" id="layout-lock-toggle" class="toggle toggle-primary toggle-xs"
-                                    checked onchange="_setLayoutLocked(!this.checked); event.stopPropagation()" />
-                                <span class="text-xs font-semibold">Enable layout switching</span>
-                            </label>
-                        </li>
+                        {# Layout-lock toggle moved to Settings → General → Interface
+                           (it was a chicken-and-egg here: the lock gates this dropdown,
+                           so it can't live inside it). The body.layout-locked class
+                           still dims/disables every [data-view-option] below when
+                           lock is on. #}
                         <li>
                             <button type="button" data-view-option="default"
                                 onclick="selectLayoutView('default'); document.activeElement.blur();"
@@ -703,21 +699,12 @@
                                             }}</span></span>
                                     <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all
                                         →</button>
-                                    {# Live activity in the middle of the header — animated
-                                    per-character render text. The fill animation already
-                                    conveys "in progress" so no spinner needed. Populated by
-                                    the WS handler. Hidden when nothing's running. #}
-                                    <span id="queue-header-activity"
-                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate"
-                                        style="display:none">
-                                        <span data-queue-header-activity-text></span>
-                                    </span>
-                                    {# Connection-lost pill stays here as a fallback only. #}
-                                    <span id="conn-pill"
-                                        class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono flex-none"
-                                        style="display:none">
-                                        <span id="conn-pill-text">Connecting</span>
-                                    </span>
+                                    {# Bulk-action buttons (requeue / clear-failed / clear-completed)
+                                       moved to the LEFT cluster so they don't collide with the
+                                       card-wm-bar window controls that fade in on hover at the
+                                       top-right. Each is hidden until the queue contains the
+                                       relevant kind of item — _refreshFailedActionsVisibility()
+                                       toggles their display in app.js. #}
                                     <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none"
                                         title="Re-add all failed items as pending; drop the failed records"
                                         onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
@@ -751,7 +738,21 @@
                                         </svg>
                                         clear completed
                                     </button>
-                                    </button>
+                                    {# Live activity in the middle of the header — animated
+                                    per-character render text. The fill animation already
+                                    conveys "in progress" so no spinner needed. Populated by
+                                    the WS handler. Hidden when nothing's running. #}
+                                    <span id="queue-header-activity"
+                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate"
+                                        style="display:none">
+                                        <span data-queue-header-activity-text></span>
+                                    </span>
+                                    {# Connection-lost pill stays here as a fallback only. #}
+                                    <span id="conn-pill"
+                                        class="badge badge-sm badge-error rounded-full gap-1 normal-case font-mono flex-none"
+                                        style="display:none">
+                                        <span id="conn-pill-text">Connecting</span>
+                                    </span>
                                 </div>
                                 {# Single segmented progress bar for the currently-active job.
                                 Hosted at the top of the queue card so the user reads ONE bar

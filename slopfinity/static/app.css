@@ -202,20 +202,22 @@
     border: none;
     cursor: pointer;
     background: transparent;
-    color: currentColor;
-    transition: background 0.15s ease;
-    opacity: 0.7;
+    color: hsl(var(--p));
+    transition: background 0.15s ease, color 0.15s ease;
+    opacity: 0.75;
 }
 
 .card-wm-btn:hover {
-    background: hsl(var(--bc) / 0.1);
+    background: hsl(var(--p) / 0.18);
+    color: hsl(var(--p));
     opacity: 1;
 }
 
+/* Close still flips to a red error bg on hover so destructive intent
+   reads — but the resting state matches the rest of the bar. */
 .card-wm-close:hover {
-    background: #e81123 !important;
-    /* Win-style close red */
-    color: #fff !important;
+    background: hsl(var(--er, 0 60% 50%)) !important;
+    color: hsl(var(--erc, 0 0% 100%)) !important;
 }
 
 .card-wm-btn svg {
@@ -678,14 +680,20 @@ textarea.subjects-autogrow {
    When CLOSED we render only the one-line summary and the splitter handle
    becomes irrelevant — hide it so the slop gallery flows directly under the
    summary line and fills the viewport. */
+/* Upper pane: splitter sets an explicit pixel height in JS. Cap to a sane
+   range so a corrupt stored value can't collapse or eat the viewport.
+   overflow:hidden preserves PR #74's content-squash so Subjects + Queue
+   cards still scroll internally instead of pushing the pane outward. */
 #ui-split-upper {
-    flex: 1;
+    flex: 0 0 auto;
     min-height: 200px;
+    max-height: 80vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
 
-/* When the slop gallery is expanded, it takes over the flexible height 
+/* When the slop gallery is expanded, it takes over the flexible height
    and the upper panes (Subjects/Queue) shrink to their natural height. */
 body[data-slop-expanded="1"] #ui-split-upper {
     flex: 0 0 auto;
@@ -722,19 +730,6 @@ body[data-slop-expanded="1"] #ui-split-lower {
     list-style: none;
 }
 
-/* Upper pane: splitter sets an explicit pixel height in JS. Cap to a sane
-   range so a corrupt stored value can't collapse or eat the viewport.
-   overflow:hidden preserves PR #74's content-squash so Subjects + Queue
-   cards still scroll internally instead of pushing the pane outward. */
-#ui-split-upper {
-    flex: 0 0 auto;
-    min-height: 200px;
-    max-height: 80vh;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
 /* Lower pane: natural flow. No height cap, no internal scroll — the
    document body scrolls instead, so infinite-scroll feels like a normal
    feed. */
@@ -754,8 +749,10 @@ body[data-slop-expanded="1"] #ui-split-lower {
 
 #slop-collapsible[open] {
     flex: 1 1 auto;
+    border-top: none;
 }
 
+/* Summary bar is always visible as the toggle row. */
 #slop-collapsible summary {
     list-style: none;
     outline: none;
@@ -772,16 +769,6 @@ body[data-slop-expanded="1"] #ui-split-lower {
 #slop-collapsible .slop-indicator {
     display: inline-block;
     transition: transform 0.2s;
-}
-
-/* The slop summary bar is always visible as the toggle/summary row */
-#slop-collapsible summary {
-    list-style: none;
-    outline: none;
-}
-
-#slop-collapsible[open] {
-    border-top: none;
 }
 
 /* Legacy class kept for any inner descendants that still reference it. */
