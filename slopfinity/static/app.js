@@ -2458,9 +2458,81 @@ async function openAssetInfo(filename) {
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt || '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
             </div>
         `;
+        // For FINAL_*.mp4, append a Components section listing the source
+        // chain mp4s + base.png + any music/tts wavs that were merged into
+        // this final asset. Best-effort; failures are non-fatal.
+        if (filename.startsWith('FINAL_') && filename.endsWith('.mp4')) {
+            renderAssetComponents(filename, body).catch(() => undefined);
+        }
     } catch (e) {
         body.innerHTML = `<div class="alert alert-error text-xs">${String(e)}</div>`;
     }
+}
+
+// Fetch and render the "Components" section for a FINAL_*.mp4 asset.
+// Each row links to /files/<name> and shows a small thumbnail when the
+// component is a png/jpg/mp4 (audio rows skip the thumbnail).
+async function renderAssetComponents(filename, body) {
+    if (!body) return;
+    const section = document.createElement('div');
+    section.className = 'mt-3 pt-3 border-t border-base-content/10';
+    section.innerHTML = `
+        <div class="text-[10px] uppercase tracking-widest text-base-content/50 mb-2">Components</div>
+        <div class="space-y-1 text-xs">
+            <div class="skeleton h-6 w-full"></div>
+            <div class="skeleton h-6 w-full"></div>
+        </div>
+    `;
+    body.appendChild(section);
+    let data;
+    try {
+        const r = await fetch('/asset/components/' + encodeURIComponent(filename));
+        data = await r.json();
+    } catch (e) {
+        section.querySelector('.space-y-1').innerHTML = `<div class="text-base-content/40">components unavailable: ${String(e)}</div>`;
+        return;
+    }
+    if (!data || !data.ok) {
+        section.querySelector('.space-y-1').innerHTML = `<div class="text-base-content/40">components unavailable</div>`;
+        return;
+    }
+    const list = data.components || [];
+    if (list.length === 0) {
+        section.querySelector('.space-y-1').innerHTML = `<div class="text-base-content/40">(no source components found)</div>`;
+        return;
+    }
+    const kindBadge = (k) => {
+        const map = { final: 'badge-accent', chain: 'badge-primary', video: 'badge-primary', image: 'badge-secondary', audio: 'badge-warning' };
+        return map[k] || 'badge-ghost';
+    };
+    const rowHtml = (c) => {
+        const isVid = c.file.endsWith('.mp4');
+        const isImg = c.file.endsWith('.png') || c.file.endsWith('.jpg');
+        const thumb = isVid
+            ? `<video class="w-12 h-8 rounded bg-black object-cover" preload="metadata" muted playsinline><source src="${c.url}#t=0.1"></video>`
+            : isImg
+                ? `<img src="${c.url}" class="w-12 h-8 rounded bg-black object-cover" loading="lazy" />`
+                : `<div class="w-12 h-8 rounded bg-base-300 flex items-center justify-center text-[9px] text-base-content/50">wav</div>`;
+        const partTxt = (c.part != null && c.of != null) ? `part ${c.part} of ${c.of}` : (c.part != null ? `part ${c.part}` : '');
+        const modelTxt = c.model ? `<span class="badge badge-xs badge-ghost">${c.model}</span>` : '';
+        const kindTxt = `<span class="badge badge-xs ${kindBadge(c.kind)}">${c.kind || '—'}</span>`;
+        return `
+            <div class="flex items-center gap-2 py-1">
+                <button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(c.file)})' title="Open ${c.file}">
+                    ${thumb}
+                </button>
+                <div class="flex-1 min-w-0">
+                    <a href="${c.url}" target="_blank" rel="noopener" class="link link-hover truncate block font-mono text-[11px]" title="${c.file}">${c.file}</a>
+                    <div class="flex flex-wrap items-center gap-1 mt-0.5">
+                        ${kindTxt}
+                        ${modelTxt}
+                        ${partTxt ? `<span class="text-[10px] text-base-content/60">${partTxt}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    };
+    section.querySelector('.space-y-1').innerHTML = list.map(rowHtml).join('');
 }
 
 // Click-to-info wiring for any asset card in the Slop feed
