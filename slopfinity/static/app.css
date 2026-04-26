@@ -1931,6 +1931,25 @@ body[data-slop-size="l"] #preview-grid>[data-slop-kind] figure {
     color: hsl(var(--p));
 }
 
+/* Suggest-controls row stacks vertically when the Subjects card is
+   narrow (compact / single-column viewports). Each button takes a
+   full row instead of wrapping mid-cluster, so the order reads top-
+   to-bottom: Suggestions toggle → Suggest Prompt → Regenerate. The
+   parent #subjects-need-ideas-row already has flex-wrap, so widening
+   it back to a row is automatic on >=lg viewports. */
+@media (max-width: 1023px) {
+    #subjects-need-ideas-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    #subjects-need-ideas-row > * {
+        width: 100%;
+    }
+    #subjects-need-ideas-row .btn {
+        justify-content: center;
+    }
+}
+
 /* Subjects mode pill (Raw Slop · Endless). Active segment shows the
    full label + primary background; inactive segments switch to a
    single-letter abbreviation when the parent card is narrow so the
