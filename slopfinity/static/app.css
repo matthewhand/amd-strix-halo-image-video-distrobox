@@ -2289,10 +2289,16 @@ body.subj-mode-endless.endless-running #subjects-input-row {
     display: none !important;
 }
 
-/* Raw mode — hide just the subject textarea (not the Queue button row).
-   The user fills the per-stage prompts directly; the subject seed is
-   irrelevant. The Queue button stays where it is, alone in the input row. */
-body.subj-mode-raw #p-core {
+/* Raw mode — hide every suggestions-related UI element. Raw is the
+   LLM-free workflow: per-stage prompts are filled directly (or via AI
+   Magic on each stage), and the subject seed is irrelevant. We hide:
+     #p-core                         — the subject textarea
+     #subjects-need-ideas-row        — the unified Suggestions badge
+     #subjects-suggestions-area      — the marquee chip stack
+   Queue button stays visible (still inside #subjects-input-row). */
+body.subj-mode-raw #p-core,
+body.subj-mode-raw #subjects-need-ideas-row,
+body.subj-mode-raw #subjects-suggestions-area {
     display: none !important;
 }
 

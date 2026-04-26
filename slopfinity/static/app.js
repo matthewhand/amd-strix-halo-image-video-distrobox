@@ -990,14 +990,31 @@ document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
 // ---------------------------------------------------------------------------
 const _DEFAULT_SUGGEST_PROMPT_ID_KEY = 'slopfinity-suggest-default-prompt-id';
 const _ENDLESS_ROW_PROMPTS_KEY = 'slopfinity-endless-row-prompts';
+// Hardcoded mirror of slopfinity/config.py DEFAULT_SUGGEST_PROMPTS — used as a
+// fallback when /settings is served by a pre-bounce server that doesn't yet
+// expose suggest_prompts. Without this the dropdown would render empty even
+// though the user has the registry on disk.
+const _SUGGEST_PROMPTS_FALLBACK = [
+    { id: 'yes-and',         title: 'Yes, and…',        active: true,  builtin: true },
+    { id: 'plot-twist',      title: 'Plot Twist',       active: true,  builtin: true },
+    { id: 'concrete-detail', title: 'Concrete Detail',  active: true,  builtin: true },
+    { id: 'cynic',           title: "Cynic's Take",     active: false, builtin: true },
+    { id: 'wonder',          title: 'Childlike Wonder', active: false, builtin: true },
+];
 let _suggestPromptsCache = null;
 async function _loadSuggestPrompts() {
-    if (_suggestPromptsCache) return _suggestPromptsCache;
+    if (_suggestPromptsCache && _suggestPromptsCache.length) return _suggestPromptsCache;
     try {
         const r = await fetch('/settings');
         const d = await r.json();
-        _suggestPromptsCache = Array.isArray(d.suggest_prompts) ? d.suggest_prompts : [];
-    } catch (_) { _suggestPromptsCache = []; }
+        if (Array.isArray(d.suggest_prompts) && d.suggest_prompts.length) {
+            _suggestPromptsCache = d.suggest_prompts;
+        } else {
+            _suggestPromptsCache = _SUGGEST_PROMPTS_FALLBACK;
+        }
+    } catch (_) {
+        _suggestPromptsCache = _SUGGEST_PROMPTS_FALLBACK;
+    }
     return _suggestPromptsCache;
 }
 window._loadSuggestPrompts = _loadSuggestPrompts;
@@ -6699,7 +6716,7 @@ function _isFreshMode() {
 // inside the row, mark `.no-overflow` and skip the animation; otherwise
 // scale the duration so a single chip travels at ~60 px/s, clamped to
 // 40..180 s for the full track. Hover/focus-within pauses via CSS.
-function _appendSuggestBatchRow(items) {
+function _appendSuggestBatchRow(items, opts) {
     const stack = document.getElementById('subject-chips-stack');
     if (!stack || !items || !items.length) return;
     // First batch — drop the placeholder span if present.
@@ -6714,9 +6731,43 @@ function _appendSuggestBatchRow(items) {
     }
 
     const row = document.createElement('div');
-    row.className = 'suggest-marquee-row entering';
+    row.className = 'suggest-marquee-row entering flex items-center gap-1';
+    // Endless mode rows get a leading prompt-name chip + per-row refresh
+    // icon. Click chip → popover picker scoped to THIS row's prompt; click
+    // refresh → re-fetch this row only via _regenEndlessRow(rowIdx).
+    const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
+    if (isEndless && opts && typeof opts.rowIdx === 'number' && opts.promptId) {
+        const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(opts.promptId) : null;
+        const ttl = promptObj ? promptObj.title : opts.promptId;
+        const lead = document.createElement('div');
+        lead.className = 'flex items-center gap-1 flex-none pl-1 pr-1';
+        lead.innerHTML = `
+            <button type="button" class="btn btn-ghost btn-xs gap-1 px-1.5"
+                data-endless-row-prompt-btn="${opts.rowIdx}"
+                title="Click to swap this row's prompt"
+                onclick="_openSuggestPromptPicker(${opts.rowIdx})">
+                <span class="font-semibold text-[10px]">${_htmlEscape(ttl)}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" class="w-2.5 h-2.5">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+            </button>
+            <button type="button" class="btn btn-ghost btn-xs btn-square"
+                title="Refresh this row" onclick="_regenEndlessRow(${opts.rowIdx})">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" class="w-3 h-3">
+                    <path d="M21 12a9 9 0 0 0-15-6.7L3 8"/>
+                    <path d="M3 3v5h5"/>
+                    <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>
+                    <path d="M21 21v-5h-5"/>
+                </svg>
+            </button>`;
+        row.appendChild(lead);
+    }
     const track = document.createElement('div');
-    track.className = 'suggest-marquee-track';
+    track.className = 'suggest-marquee-track flex-1 min-w-0';
     const all = [...items, ...items]; // duplicate for seamless wraparound
     all.forEach(s => track.appendChild(_buildSuggestChip(s)));
     row.appendChild(track);
