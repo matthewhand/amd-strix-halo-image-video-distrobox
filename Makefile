@@ -52,7 +52,7 @@ endif
 
 TAILWIND_URL := https://github.com/tailwindlabs/tailwindcss/releases/$(TAILWIND_VERSION)/download/$(TAILWIND_ASSET)
 
-.PHONY: tailwind tailwind-watch tailwind-clean lint help
+.PHONY: tailwind tailwind-watch tailwind-clean lint e2e help
 
 help:
 	@echo "Targets:"
@@ -60,6 +60,7 @@ help:
 	@echo "  tailwind-watch  Rebuild on change (Ctrl-C to stop)"
 	@echo "  tailwind-clean  Remove the CLI binary + generated CSS"
 	@echo "  lint            stylelint app.css + node --check app.js/sw.js + ast.parse python"
+	@echo "  e2e             Playwright smoke test against the live dashboard"
 
 # Download the standalone Tailwind binary on first use, cache in bin/.
 $(TAILWIND_BIN):
@@ -104,3 +105,18 @@ lint:
 	node --check slopfinity/static/sw.js
 	python3 -m py_compile slopfinity/server.py run_fleet.py
 	@echo "→ lint OK"
+
+# End-to-end smoke test against the live Slopfinity dashboard. Loads
+# the page in chromium, asserts no JS pageerror fired, and checks that
+# the three primary cards (Subjects / Queue / Slop) all render with
+# non-zero size. Catches the silent "JS dies, page renders blank" class
+# of regressions that pure stylelint + node --check miss.
+#
+#   make e2e            — run against http://localhost:9099 by default
+#   SLOPFINITY_URL=...  — override target
+e2e:
+	@command -v npm >/dev/null || { echo "npm required for Playwright"; exit 1; }
+	@test -d node_modules/@playwright/test || npm install --silent --save-dev @playwright/test@1.59.1
+	@test -d node_modules/playwright/.local-browsers 2>/dev/null || npx playwright install chromium
+	npx playwright test --reporter=list
+	@echo "→ e2e OK"

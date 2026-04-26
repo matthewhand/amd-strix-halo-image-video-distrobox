@@ -78,3 +78,8 @@ slopfinity/static/tailwind.css
 # lockfile (package-lock.json) IS committed so CI installs are
 # reproducible; only the resolved tree is gitignored.
 node_modules/
+
+# Playwright e2e — generated artifacts only, the spec stays committed.
+test-results/
+playwright-report/
+e2e/artifacts/
