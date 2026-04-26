@@ -371,27 +371,46 @@ function _applySuggestionsHiddenState() {
   const suggestBtn = document.getElementById('subjects-suggest-btn');
   const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
   const toggleBtn = document.getElementById('subjects-suggestions-toggle');
+  const toggleInput = document.getElementById('subjects-suggestions-toggle-input');
   const endlessBtn = document.getElementById('subjects-endless-story');
   if (area) area.style.display = hidden ? 'none' : '';
   if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
-  // Hide Regenerate + Suggestion Prompt + Endless Story when suggestions are
-  // hidden; the "Need Suggestions?" toggle stays visible to invite reveal.
+  // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
+  // controls. Endless toggle now stays VISIBLE alongside Suggestions but
+  // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
   if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
   if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
-  if (endlessBtn) endlessBtn.style.display = hidden ? 'none' : '';
-  if (toggleBtn) {
-    // Hidden state ⇒ solid btn-primary (matches the big Queue button — strong
-    // invitation to reveal). Revealed state ⇒ btn-outline btn-secondary
-    // (subdued "hide me" affordance, distinct from the now-primary
-    // Regenerate / Suggestion Prompt / Endless Story trio).
-    toggleBtn.classList.toggle('btn-primary', hidden);
-    toggleBtn.classList.toggle('btn-outline', !hidden);
-    toggleBtn.classList.toggle('btn-secondary', !hidden);
-    toggleBtn.title = hidden ? 'Reveal suggestion controls' : 'Hide suggestion controls';
-    toggleBtn.setAttribute('aria-pressed', !hidden);
-  }
+  if (endlessBtn) endlessBtn.style.display = '';
+  // Mirror state on the new switch input + the host's aria-pressed.
+  if (toggleInput) toggleInput.checked = !hidden;
+  if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!hidden));
+  if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
 }
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
+
+// Endless is a sub-toggle of Suggestions — meaningless when Suggestions
+// is hidden because no marquee rows render at all. When Suggestions is
+// off we disable the input, force-uncheck it, and dim the host so the
+// dependency reads visually. Mirrors _updateTermEnabled's pattern.
+function _updateEndlessEnabled() {
+    const sug = document.getElementById('subjects-suggestions-toggle-input');
+    const ends = document.getElementById('endless-story-toggle');
+    const host = document.getElementById('subjects-endless-story');
+    const enabled = !!(sug && sug.checked);
+    if (ends) {
+        ends.disabled = !enabled;
+        if (!enabled && ends.checked) {
+            ends.checked = false;
+            ends.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    if (host) {
+        host.classList.toggle('opacity-50', !enabled);
+        host.classList.toggle('pointer-events-none', !enabled);
+    }
+}
+window._updateEndlessEnabled = _updateEndlessEnabled;
+document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
 
 // PWA: register service worker (scoped to /) for installable desktop-icon experience.
 // Also detect when a new SW takes control (cache version bumped) and surface
@@ -4300,6 +4319,17 @@ async function openSettings() {
         if (planEl) planEl.checked = usePlanner;
         // Per-model loading-prefs grid is in the same Scheduler tab.
         if (typeof _hydrateModelLoadingPrefs === 'function') _hydrateModelLoadingPrefs(sr);
+        // Endless + Fresh checkboxes mirror the localStorage state — the
+        // hidden inputs in the Subjects card are the JS-facing source of
+        // truth; this just keeps the Settings UI in sync on each open.
+        try {
+            const endlessOn = localStorage.getItem('slopfinity-endless-story') === '1';
+            const freshOn = localStorage.getItem('slopfinity-fresh') === '1';
+            const seEl = $('set-endless-toggle');
+            const sfEl = $('set-fresh-toggle');
+            if (seEl) seEl.checked = endlessOn;
+            if (sfEl) sfEl.checked = freshOn;
+        } catch (_) {}
         // Hydrate theme selector from localStorage (falling back to branding default).
         const themeSel = $('theme-select');
         if (themeSel) {
@@ -4839,8 +4869,14 @@ function _buildSuggestChip(s) {
     return b;
 }
 
-// Hard cap on rows in the marquee stack — oldest row evicted (FIFO).
+// Hard cap on rows in the marquee stack — oldest row evicted (FIFO)
+// when the Fresh toggle is on; new batches are dropped once full when
+// Fresh is off so the user can pin a curated set on screen.
 const _SUGGEST_MAX_ROWS = 5;
+function _isFreshMode() {
+    try { return localStorage.getItem('slopfinity-fresh') === '1'; }
+    catch (_) { return false; }
+}
 
 // Append a fresh marquee row to #subject-chips-stack. Items are duplicated
 // (items + items) so the keyframes' translateX(-50%) yields a seamless
@@ -4854,6 +4890,13 @@ function _appendSuggestBatchRow(items) {
     // First batch — drop the placeholder span if present.
     const placeholder = document.getElementById('subject-chips-empty');
     if (placeholder) placeholder.remove();
+
+    // Fresh OFF + at cap → drop the new batch instead of evicting old
+    // ones. This lets the user pin a curated set on screen. Fresh ON
+    // (default once user opts in) keeps the FIFO eviction below.
+    if (!_isFreshMode() && stack.children.length >= _SUGGEST_MAX_ROWS) {
+        return;
+    }
 
     const row = document.createElement('div');
     row.className = 'suggest-marquee-row entering';
@@ -4886,9 +4929,13 @@ function _appendSuggestBatchRow(items) {
         _refreshChipHighlights();
     });
 
-    // FIFO eviction — drop oldest rows past the cap.
-    while (stack.children.length > _SUGGEST_MAX_ROWS) {
-        stack.removeChild(stack.firstElementChild);
+    // FIFO eviction — drop oldest rows past the cap. Only runs when
+    // Fresh is on (when off, the cap-check above already short-circuits
+    // before we reach here, so children.length stays ≤ cap).
+    if (_isFreshMode()) {
+        while (stack.children.length > _SUGGEST_MAX_ROWS) {
+            stack.removeChild(stack.firstElementChild);
+        }
     }
 }
 
