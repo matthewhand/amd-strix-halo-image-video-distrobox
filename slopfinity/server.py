@@ -925,6 +925,56 @@ async def pipeline_slopped(role: str):
     return {"role": role, "files": [n for n, _ in files[:60]]}
 
 
+def _check_disk_guard():
+    """Return (ok, reason) — False when the outputs partition is below
+    the user-configured low-water marks. Two thresholds; either trips
+    the guard. Setting either to 0 disables that check."""
+    config = cfg.load_config()
+    min_pct = float(config.get("disk_min_pct") or 0)
+    min_gb = float(config.get("disk_min_gb") or 0)
+    if min_pct <= 0 and min_gb <= 0:
+        return True, ""
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = 100 - (d.get("pct") or 0)
+    except Exception:
+        return True, ""  # fail open if we can't read disk stats
+    if min_pct > 0 and free_pct <= min_pct:
+        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
+    if min_gb > 0 and free_gb <= min_gb:
+        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
+    return True, ""
+
+
+@app.get("/disk/guard")
+async def disk_guard_endpoint():
+    """Live disk-guard check. Used by the dashboard to pre-warn the user
+    before they click Queue Slop instead of failing the /inject call.
+    Returns {ok, reason, free_pct, free_gb, threshold_pct, threshold_gb}."""
+    ok, reason = _check_disk_guard()
+    config = cfg.load_config()
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = round(100 - (d.get("pct") or 0), 1)
+    except Exception:
+        free_gb = 0
+        free_pct = 0
+    return {
+        "ok": ok,
+        "reason": reason,
+        "free_pct": free_pct,
+        "free_gb": round(float(free_gb or 0), 1),
+        "threshold_pct": float(config.get("disk_min_pct") or 0),
+        "threshold_gb": float(config.get("disk_min_gb") or 0),
+    }
+
+
 @app.post("/inject")
 async def inject(
     prompt: str = Form(...),
@@ -940,6 +990,19 @@ async def inject(
     seed_images: str = Form(default=""),
     seeds_mode: str = Form(default=""),
 ):
+    # Disk-low guard — bail early when the outputs partition is below the
+    # configured threshold so the queue doesn't pile up against a wall.
+    # User can lift the guard in Settings → General if they really want
+    # to push past it. terminate=1 still works (it cancels rather than
+    # creates work).
+    if not terminate:
+        ok, reason = _check_disk_guard()
+        if not ok:
+            return JSONResponse(
+                {"status": "blocked", "reason": f"disk-low guard: {reason}",
+                 "hint": "raise the threshold in Settings → General → Disk guard"},
+                status_code=409,
+            )
     q = cfg.get_queue()
     if terminate:
         # Mark every pending and in-flight item cancelled (so the user
@@ -2089,6 +2152,8 @@ async def settings_get():
         "suggest_use_subjects": bool(c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)),
         "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
         "suggest_auto_disabled": bool(c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)),
+        "disk_min_pct": float(c.get("disk_min_pct") if c.get("disk_min_pct") is not None else 1),
+        "disk_min_gb": float(c.get("disk_min_gb") if c.get("disk_min_gb") is not None else 5),
         "auto_suspend": c.get("auto_suspend") or list(cfg.DEFAULT_AUTO_SUSPEND),
         # Per-model loading prefs (Settings → Scheduler → "Per-model loading
         # preferences"). Both lists default to empty; the hydrator on the
