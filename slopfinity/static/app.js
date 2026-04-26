@@ -3998,12 +3998,22 @@ function connect() {
             // the threshold so 0–20% renders bg-error instead of 80–100%.
             // (Disk / RAM / Load keep the default "high = bad" semantics
             // because they genuinely indicate resource pressure.)
+            // Each column's TINT scales with its value: full primary (or
+            // tone) at 100 %, fading toward 30 % opacity at 0 %. Above the
+            // alarm threshold (>80 % normal, <20 % when inverted) we flip
+            // to bg-error at full opacity so pressure POPS regardless of
+            // the surrounding gradient. Net: a row of low-value columns
+            // looks subdued, a row at 100 % looks fully saturated, and an
+            // alarm column stands out as a distinct red against either.
             const _tickerHTML = (vals, tone, opts) => {
                 const invert = !!(opts && opts.invert);
                 return vals.map(v => {
                     const isAlarming = invert ? (v < 20) : (v > 80);
                     const cls = isAlarming ? 'bg-error' : ('bg-' + tone);
-                    return `<div class="ticker-col ${cls}" style="height:${Math.max(5, (v / 100) * 30)}px"></div>`;
+                    // Map 0..100 → 0.30..1.0 opacity for the non-alarm tone.
+                    // Alarm columns stay at full opacity (clarity > consistency).
+                    const opacity = isAlarming ? 1 : Math.max(0.3, Math.min(1, 0.3 + (v / 100) * 0.7));
+                    return `<div class="ticker-col ${cls}" style="height:${Math.max(5, (v / 100) * 30)}px;opacity:${opacity.toFixed(2)}"></div>`;
                 }).join('');
             };
             $('g-t').innerHTML = _tickerHTML(gH, 'primary', { invert: true });

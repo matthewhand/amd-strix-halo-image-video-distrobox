@@ -163,9 +163,9 @@
                         <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span
                                 class="opacity-60 normal-case">(1hr)</span></span>
                         <span
-                            class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-accent{% endif %}"
+                            class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-primary{% endif %}"
                             id="d-v">{{ outputs_disk.pct }}%</span>
-                        <span class="ticker-bar ml-1" id="d-t" data-tone="accent"></span>
+                        <span class="ticker-bar ml-1" id="d-t" data-tone="primary"></span>
                     </span>
                     <span class="font-mono text-[9px] text-base-content/50 leading-none" id="d-r">{{
                         outputs_disk.used_gb }} used / {{ (outputs_disk.free_gb if outputs_disk.free_gb else
