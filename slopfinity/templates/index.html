@@ -785,7 +785,7 @@
                keep working regardless of which DOM hosts the toggle. #}
             <label class="flex items-center gap-2">
                 <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate Next" data-off-label="Generate Next" title="Inserts your prompt right after the active job in the queue. With Terminate also on, the active job is cancelled first.">Generate Next</span>
+                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate ASAP" data-off-label="Generate ASAP" title="Inserts your prompt right after the active job in the queue. With Terminate also on, the active job is cancelled first.">Generate ASAP</span>
             </label>
 
             <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
@@ -897,13 +897,17 @@
             <div class="card-body !p-3 gap-2">
                 <!-- RAM estimator (kept inside Pipeline popup per spec) -->
                 <div id="ram-est" class="border-t border-base-300 pt-2 mt-1 {% if ram.status == 'danger' %}border-error{% elif ram.status == 'warn' %}border-warning{% else %}border-success{% endif %}">
-                    <div class="flex items-center justify-between gap-2">
-                        <div class="text-[10px] uppercase tracking-widest opacity-60">Memory Estimate</div>
-                        <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB</div>
-                    </div>
-                    <!-- Per-model breakdown rendered by updateRam() in app.js. SSR-empty;
-                         the WS tick + popup-open both fire updateRam() shortly after load. -->
-                    <div class="ram-breakdown text-[10px] font-mono leading-tight mt-1 opacity-80"></div>
+                    <details class="ram-details">
+                        <summary class="flex items-center justify-between gap-2 cursor-pointer select-none list-none">
+                            <div class="text-[10px] uppercase tracking-widest opacity-60 flex items-center gap-1">
+                                <span class="ram-disclosure inline-block transition-transform">▸</span> Memory Estimate
+                            </div>
+                            <div class="ram-txt font-mono text-sm font-bold">{{ ram.estimated_gb }} / {{ ram.budget_gb }} GB unified</div>
+                        </summary>
+                        <!-- Per-model breakdown rendered by updateRam() in app.js. SSR-empty;
+                             the WS tick + popup-open both fire updateRam() shortly after load. -->
+                        <div class="ram-breakdown text-[10px] font-mono leading-tight mt-2 opacity-80"></div>
+                    </details>
                     <progress class="ram-bar progress w-full mt-1 {% if ram.status == 'danger' %}progress-error{% elif ram.status == 'warn' %}progress-warning{% else %}progress-success{% endif %}" value="{{ (ram.estimated_gb / ram.budget_gb * 100) | round(1) }}" max="100"></progress>
                 </div>
                 <!-- ============ Load plan (Belady-MIN advisory) ============ -->

@@ -4390,7 +4390,7 @@ function _composeStartBtnLabel() {
   label += 'Slop';
 
   const modifiers = [];
-  if (now) modifiers.push('now');
+  if (now) modifiers.push('asap');
   if (idle) modifiers.push('when idle');
   if (modifiers.length) label += ' (' + modifiers.join(', ') + ')';
   return label;
@@ -4449,7 +4449,7 @@ function _updateGenModePill() {
   const parts = [];
   parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
   if (term && term.checked) parts.push('🛑 terminate');
-  else if (now && now.checked) parts.push('⏯ now');
+  else if (now && now.checked) parts.push('+asap');
   else parts.push('queue');
   // +idle / +poly / +concurrent dropped — those are global settings now
   // (Diagnostics + Triggers tabs), not per-iteration knobs, so they
