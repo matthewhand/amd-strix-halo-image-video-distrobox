@@ -121,6 +121,16 @@ DEFAULT_CONFIG = {
     "infinity_themes": ["existential crisis of lumpy clay robots", "cyberpunk dragons in neon rain"],
     "infinity_index": 0,
     "chains": 10,
+    # Multi-frame chain handoff — anchors the next chain's first K frames to
+    # the previous chain's last K frames via stacked LTXVAddGuide nodes.
+    # K=1 reverts to legacy single-last-frame chaining (drifts visibly).
+    # K=4 is the consistency-vs-speed sweet spot per research; cap=8.
+    "chain_handoff_keyframes": 4,
+    # FILM VFI seam smoothing — post-process pass that regenerates the 4
+    # frames straddling each chain boundary (last 2 of N-1 + first 2 of N)
+    # via FILM frame interpolation (Fannovel16/ComfyUI-Frame-Interpolation).
+    # Falls back silently if the node isn't installed.
+    "smooth_chain_seams": True,
     "tier": "auto",
     "consolidation": "overlay",
     "music_gain_db": 0,

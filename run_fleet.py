@@ -1183,6 +1183,166 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
         raise e
 
 
+def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_str, frames):
+    """LTX 2.3 chain continuation with multi-frame handoff.
+
+    Instead of seeding the next chain from a single last-frame (which drifts
+    visibly across cuts), this anchors the new chain's first K frames to the
+    PREVIOUS chain's last K frames. K guides go in at frame_idx 0, 8, 16, …
+    — successive multiples of 8 per LTX's temporal token grid. The model
+    follows the recent history then extends freely past it.
+
+    ``handoff_image_fns`` — list of basenames already staged into
+    ``comfy-input/`` (caller's responsibility), oldest-first so frame_idx=0
+    pins the OLDEST handoff and the LATEST handoff lands deepest into the
+    new clip. K is auto-clamped to fit (frames-1)//8 + 1 so the very-short
+    Fast-Track frames=17 budget still works (K_max=2 there).
+    """
+    size_str = _resolve_size(size_str)
+    w, h = map(int, size_str.split("*"))
+    # Clamp K so all guide indices fit. For frames=17 → max_idx=16 → K_max=3.
+    # For frames=49 → max_idx=48 → K_max=7. We honor caller's K up to that.
+    max_k = ((frames - 1) // 8) + 1
+    k = max(1, min(len(handoff_image_fns), max_k))
+    handoff_image_fns = handoff_image_fns[:k]
+    print(f"🎬 Video Gen [LTX-2.3 continuation, K={k}]")
+    seed = random.randint(1, 1000000)
+    prefix = f"cont_{int(time.time())}"
+    workflow = {
+        "1": {
+            "class_type": "LowVRAMCheckpointLoader",
+            "inputs": {"ckpt_name": "ltx-2.3-22b-distilled-fp8.safetensors"},
+        },
+        "2": {
+            "class_type": "LTXVGemmaCLIPModelLoader",
+            "inputs": {
+                "gemma_path": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
+                "ltxv_path": "ltx-2.3-22b-distilled-fp8.safetensors",
+                "max_length": 1024,
+            },
+        },
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": prompt, "clip": ["2", 0]},
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "blurry, low quality", "clip": ["2", 0]},
+        },
+        "10": {
+            "class_type": "EmptyLTXVLatentVideo",
+            "inputs": {"width": w, "height": h, "length": frames, "batch_size": 1},
+        },
+        "7": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+        "8": {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "model": ["1", 0],
+                "scheduler": "simple",
+                "steps": 8,
+                "denoise": 1.0,
+            },
+        },
+        "9": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+    }
+    # Build the K LoadImage + K LTXVAddGuide chain. Each guide consumes the
+    # previous one's positive/negative/latent outputs so all K anchors
+    # accumulate. Strength schedule: full 1.0 on the leading anchor (matches
+    # cleanly across the cut), 0.8 on subsequent so the model has slack to
+    # invent motion past the handoff window.
+    prev_pos = ["4", 0]
+    prev_neg = ["5", 0]
+    prev_lat = ["10", 0]
+    for i, img_fn in enumerate(handoff_image_fns):
+        load_id = f"3_{i}"
+        guide_id = f"11_{i}"
+        workflow[load_id] = {"class_type": "LoadImage", "inputs": {"image": img_fn}}
+        workflow[guide_id] = {
+            "class_type": "LTXVAddGuide",
+            "inputs": {
+                "positive": prev_pos,
+                "negative": prev_neg,
+                "vae": ["1", 2],
+                "latent": prev_lat,
+                "image": [load_id, 0],
+                "frame_idx": i * 8,
+                "strength": 1.0 if i == 0 else 0.8,
+            },
+        }
+        prev_pos = [guide_id, 0]
+        prev_neg = [guide_id, 1]
+        prev_lat = [guide_id, 2]
+    workflow["6"] = {
+        "class_type": "CFGGuider",
+        "inputs": {
+            "model": ["1", 0],
+            "positive": prev_pos,
+            "negative": prev_neg,
+            "cfg": 1.0,
+        },
+    }
+    workflow["12"] = {
+        "class_type": "SamplerCustomAdvanced",
+        "inputs": {
+            "noise": ["9", 0],
+            "guider": ["6", 0],
+            "sampler": ["7", 0],
+            "sigmas": ["8", 0],
+            "latent_image": prev_lat,
+        },
+    }
+    workflow["13"] = {
+        "class_type": "LTXVVAEDecode",
+        "inputs": {"vae": ["1", 2], "latents": ["12", 0]},
+    }
+    workflow["14"] = {
+        "class_type": "SaveImage",
+        "inputs": {"filename_prefix": prefix, "images": ["13", 0]},
+    }
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:8188/prompt",
+            data=json.dumps({"prompt": workflow}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            p_id = json.loads(r.read())["prompt_id"]
+        while True:
+            time.sleep(10)
+            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
+                h = json.loads(r.read())
+                if p_id in h:
+                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
+                    first = imgs[0]
+                    match = re.search(r"(\d+)(?=_\.png)", first)
+                    num = match.group(1) if match else "00001"
+                    parts = first.rsplit(num, 1)
+                    patt = f"%0{len(num)}d".join(parts)
+                    print(f"   🎞️  Encoding…")
+                    repo_root = os.path.abspath(os.path.dirname(__file__))
+                    args = [
+                        "-y", "-hide_banner", "-loglevel", "error",
+                        "-framerate", "24",
+                        "-start_number", str(int(num)),
+                        "-i", f"comfy-outputs/{patt}",
+                        "-c:v", _ffmpeg_h264_encoder(),
+                        "-pix_fmt", "yuv420p",
+                        "-b:v", "8M",
+                        out_path,
+                    ]
+                    _ffmpeg_run(args, check=True)
+                    for f in imgs:
+                        try:
+                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
+                        except OSError:
+                            pass
+                    return
+    except urllib.error.HTTPError as e:
+        print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
+        print(f"   Body: {e.read().decode('utf-8')}")
+        raise e
+
+
 # ---- Pipeline matrix --------------------------------------------------------
 # User-requested ramp: first prove Qwen → LTX 2.3, then Ernie → LTX 2.3, then
 # Ernie → LTX 2.3 + Heartmula music. Enabled with FLEET_MATRIX=1. Counts per
@@ -1460,6 +1620,16 @@ def main():
 
             chain_vids = []
             _flf2v_active = len(_per_chain_seeds) >= 2
+            # Multi-frame chain handoff — anchor the next chain's first K
+            # frames to the previous chain's last K frames via stacked
+                # LTXVAddGuide nodes. K=1 reverts to legacy last-frame chaining.
+            _handoff_k = int(
+                (_task_opts.get("_config_snapshot") or config or {}).get(
+                    "chain_handoff_keyframes", 4
+                ) or 4
+            )
+            _handoff_k = max(1, min(_handoff_k, 8))
+            _handoff_frames: list = []  # populated after chain c, used by chain c+1
             for c_idx in range(1, _n_chains + 1):
                 update_state(
                     mode="Rendering",
@@ -1503,7 +1673,25 @@ def main():
                         kf_start=_start_seed,
                         kf_end=_end_seed,
                     )
+                elif c_idx > 1 and _handoff_k > 1 and _handoff_frames:
+                    # Multi-frame continuation: c_idx > 1 with handoff_k > 1.
+                    # _handoff_frames was populated after chain c-1 below.
+                    generate_video_ltx_continuation(
+                        _handoff_frames, p, seg,
+                        config["size"], config["frames"],
+                    )
+                    _write_sidecar(
+                        seg,
+                        prompt=p,
+                        model="ltx-2.3-cont",
+                        kind="video",
+                        part=c_idx,
+                        of=_n_chains,
+                        handoff_k=len(_handoff_frames),
+                    )
                 else:
+                    # First chain (any mode), or chains where K=1 (legacy
+                    # single-frame handoff) — original I2V workflow.
                     generate_video_ltx(
                         os.path.basename(in_img), p, seg, config["size"], config["frames"]
                     )
@@ -1517,29 +1705,52 @@ def main():
                     )
                 chain_vids.append(seg)
                 if c_idx < _n_chains and not _flf2v_active:
-                    next_in = f"comfy-input/{_stem}_f{c_idx}.png"
-                    _ffmpeg_run(
-                        [
-                            "-y",
-                            "-sseof",
-                            "-1",
-                            "-i",
-                            seg,
-                            "-update",
-                            "1",
-                            "-q:v",
-                            "1",
-                            next_in,
-                        ],
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    in_img = next_in
-                    subprocess.run(
-                        ["cp", next_in, f"{OUTPUT_DIR}/{_stem}_f{c_idx}.png"],
-                        check=True,
-                    )
+                    if _handoff_k > 1:
+                        # Extract last K frames (with small margin) as PNGs
+                        # into comfy-input/ for the continuation workflow.
+                        sec = max(0.4, (_handoff_k + 2) / 24.0)
+                        handoff_pattern = (
+                            f"comfy-input/{_stem}_h{c_idx}_%03d.png"
+                        )
+                        _ffmpeg_run(
+                            ["-y", "-sseof", f"-{sec}", "-i", seg,
+                             "-vsync", "0", handoff_pattern],
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        stem_prefix = f"{_stem}_h{c_idx}_"
+                        try:
+                            extracted = sorted(
+                                [f for f in os.listdir("comfy-input")
+                                 if f.startswith(stem_prefix)],
+                                key=lambda x: int(
+                                    re.search(r"_(\d+)\.png$", x).group(1)
+                                ),
+                            )
+                        except (OSError, AttributeError):
+                            extracted = []
+                        _handoff_frames = extracted[-_handoff_k:]
+                        print(
+                            f"[FLEET] 🔗 chain handoff: extracted "
+                            f"{len(_handoff_frames)} trailing frames for c{c_idx+1}",
+                            flush=True,
+                        )
+                    else:
+                        # Legacy single-frame handoff
+                        next_in = f"comfy-input/{_stem}_f{c_idx}.png"
+                        _ffmpeg_run(
+                            ["-y", "-sseof", "-1", "-i", seg,
+                             "-update", "1", "-q:v", "1", next_in],
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        in_img = next_in
+                        subprocess.run(
+                            ["cp", next_in, f"{OUTPUT_DIR}/{_stem}_f{c_idx}.png"],
+                            check=True,
+                        )
 
             update_state(
                 mode="Finalizing", step="Final Merge", video=v_idx, total=1000, prompt=p
