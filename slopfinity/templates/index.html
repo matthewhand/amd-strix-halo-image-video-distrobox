@@ -898,7 +898,8 @@
                     <summary id="slop-collapsible-summary"
                         class="cursor-pointer p-2 bg-base-300/40 flex items-center gap-3 text-xs select-none hover:bg-base-300/60 transition-colors">
                         <span class="slop-indicator opacity-60">▾</span>
-                        <span class="flex-1 font-bold uppercase tracking-widest opacity-70">Slop Gallery</span>
+                        <span class="flex-1 font-bold uppercase tracking-widest text-primary">{{ branding.labels.gallery_completed }}</span>
+                        <span class="loading loading-ring loading-xs text-accent" id="live-ring" style="display:none"></span>
                         <div id="slop-bar-stats" class="flex items-center gap-3 text-[10px] opacity-60">
                             <span id="slop-bar-count-video">0 vids</span>
                             <span id="slop-bar-count-image">0 imgs</span>
@@ -930,13 +931,11 @@
                                     <rect x="3" y="3" width="18" height="18" rx="2"></rect>
                                 </svg></button>
                         </div>
+                        {# Title + live-ring hoisted to the collapsible summary
+                           above so the section header isn't duplicated when
+                           the section is expanded. Filter chips stay here as
+                           the only inline header content. #}
                         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                            <h1 id="branding"
-                                class="text-2xl font-black uppercase tracking-tighter text-primary flex items-center gap-2 streak-overlay">
-                                {{ branding.labels.gallery_completed }}
-                                <span class="loading loading-ring loading-sm text-accent" id="live-ring"
-                                    style="display:none"></span>
-                            </h1>
                             <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
                                 {# Filter chip colors aligned to PR #58 token map: video=primary, image=info,
                                 audio=secondary #}
