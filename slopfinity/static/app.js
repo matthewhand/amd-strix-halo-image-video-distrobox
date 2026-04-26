@@ -739,6 +739,25 @@ document.addEventListener('DOMContentLoaded', () => {
     _setShowCardFabs(_isShowCardFabsOn());
 });
 
+// Card window-controls (hover overlay close/restore/max chrome). User
+// found these annoying — default OFF. Persisted in localStorage; CSS
+// rule body.no-card-wm hides every .card-wm-bar.
+const _CARD_WM_KEY = 'slopfinity-card-wm-enabled';
+function _isCardWmOn() {
+    try { const v = localStorage.getItem(_CARD_WM_KEY); return v === null ? false : v === '1'; }
+    catch (_) { return false; }
+}
+function _setCardWm(on) {
+    try { localStorage.setItem(_CARD_WM_KEY, on ? '1' : '0'); } catch (_) {}
+    document.body.classList.toggle('no-card-wm', !on);
+    const el = document.getElementById('settings-card-wm-toggle');
+    if (el && el.checked !== on) el.checked = on;
+}
+window._setCardWm = _setCardWm;
+document.addEventListener('DOMContentLoaded', () => {
+    _setCardWm(_isCardWmOn());
+});
+
 // One-click "show every card" — clears all three hidden flags at once.
 // Wired into Settings so users don't have to drop into DevTools when they
 // accidentally close ✕ a card and forget how to bring it back.

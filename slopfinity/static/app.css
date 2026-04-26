@@ -2174,6 +2174,25 @@ body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
     color: hsl(var(--bc) / 0.7);
 }
 
+/* Settings tabs — DaisyUI's default .tab has 16px lateral padding which,
+   combined with 9 tabs, blows past the modal width. Tighten to 8px and
+   shrink the font to fit comfortably on a max-w-4xl modal. */
+.tabs.settings-tabs > .tab {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 0.01em;
+    height: auto !important;
+    min-height: 1.75rem;
+}
+
+/* Card window-controls (hover overlay close/restore/max) — hidden when
+   the user disables the feature in Settings. Toggle persists in
+   localStorage as slopfinity_card_wm_enabled (default false post-Apr-26). */
+body.no-card-wm .card-wm-bar {
+    display: none !important;
+}
+
 /* Seed-asset drag-drop overlay — fires when files are dragged anywhere
    over the page. The `seed-drag-active` class is toggled by
    _wireSeedUpload() in app.js based on dragenter/dragleave depth. */
