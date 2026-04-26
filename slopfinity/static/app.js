@@ -169,7 +169,16 @@ function _refreshLayoutViewIndicator(v) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const v = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
+  // URL ?layout=<mode> wins over localStorage so a kiosk / wall-display
+  // can pin a layout via its bookmark/PWA shortcut without depending on
+  // per-browser-profile state. The valid modes are listed in
+  // _applyLayoutView's `valid` set: default | subjects | queue | gallery
+  // | subj-slop | queue-slop | subj-queue. The URL choice is also
+  // persisted to localStorage so subsequent visits without the param
+  // remember it (use ?layout=default to reset).
+  const urlLayout = new URLSearchParams(location.search).get('layout');
+  const stored = (() => { try { return localStorage.getItem(_LAYOUT_VIEW_KEY) || 'default'; } catch (_) { return 'default'; } })();
+  const v = urlLayout || stored;
   _applyLayoutView(v);
   const r = document.querySelector(`input[name="layout-view"][value="${v}"]`);
   if (r) r.checked = true;
