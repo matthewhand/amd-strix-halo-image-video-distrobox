@@ -909,11 +909,12 @@ body[data-slop-expanded="1"] #ui-split-lower {
     }
 }
 
-/* Tint the letter unit suffixes (h/m/s) in elapsed/ETA strings so the
-   numeric digits visually pop without the units disappearing. Emitted
-   by _fmtElapsedHtml() in app.js. */
+/* Letter unit suffixes (h/m/s) in elapsed/ETA strings — kept at full
+   opacity to match the numbers so durations read as one consistent unit
+   ("3m12s") rather than digits + ghosted suffix. Emitted by
+   _fmtElapsedHtml() in app.js. */
 .time-unit {
-    opacity: 0.55;
+    opacity: 1;
 }
 
 /* (Marquee rules live in the upper Subjects-suggest block.) */
