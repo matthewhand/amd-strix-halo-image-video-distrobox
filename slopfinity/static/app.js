@@ -2573,7 +2573,17 @@ async function openAssetInfo(filename) {
                 : `<img src="${m.url}" class="w-full rounded bg-black" />`;
         media.innerHTML = mediaHtml;
         const badgeColor = ({ final: 'badge-accent', chain: 'badge-primary', image: 'badge-secondary', audio: 'badge-warning' })[m.kind] || 'badge-ghost';
+        // Prompt-notes link to the Markdown sidecar (`<file>.md`). The
+        // sidecar is only written for FINAL/iter outputs by run_fleet.py's
+        // `_write_md_sidecar`, so this row is conditional on a successful
+        // fetch below. We render the row first with a placeholder and
+        // hydrate it after the MD fetch resolves.
+        const mdHref = '/files/' + encodeURIComponent(filename) + '.md';
         body.innerHTML = `
+            <div id="asset-info-md-row" class="hidden mb-2">
+                <a href="${mdHref}" target="_blank" rel="noopener" class="link link-primary text-xs uppercase tracking-widest">Prompt notes</a>
+                <pre id="asset-info-md-preview" class="text-xs whitespace-pre-wrap leading-snug bg-base-200/40 rounded p-2 max-h-48 overflow-y-auto mt-1"></pre>
+            </div>
             <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1 text-xs font-mono">
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${m.filename}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Kind</div><div><span class="badge badge-xs ${badgeColor}">${m.kind}</span></div>
@@ -2589,6 +2599,22 @@ async function openAssetInfo(filename) {
         if (filename.startsWith('FINAL_') && filename.endsWith('.mp4')) {
             renderAssetComponents(filename, body).catch(() => undefined);
         }
+        // Best-effort MD-sidecar fetch (only FINAL/iter outputs have one).
+        // 404 silently leaves the row hidden. textContent is enough for v1
+        // — the raw Markdown reads fine in a monospace <pre>.
+        try {
+            const mdHref = `/files/${encodeURIComponent(filename)}.md`;
+            const mdRes = await fetch(mdHref);
+            if (mdRes.ok) {
+                const txt = await mdRes.text();
+                const row = document.getElementById('asset-info-md-row');
+                const pre = document.getElementById('asset-info-md-preview');
+                if (row && pre) {
+                    pre.textContent = txt;
+                    row.classList.remove('hidden');
+                }
+            }
+        } catch (_e) { /* non-fatal — asset still renders */ }
     } catch (e) {
         body.innerHTML = `<div class="alert alert-error text-xs">${String(e)}</div>`;
     }
