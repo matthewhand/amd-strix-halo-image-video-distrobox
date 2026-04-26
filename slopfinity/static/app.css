@@ -1931,6 +1931,16 @@ body[data-slop-size="l"] #preview-grid>[data-slop-kind] figure {
     color: hsl(var(--p));
 }
 
+/* Restore-FAB visibility kill-switch — Settings → General. When the
+   user opts out via the "Show floating restore buttons" toggle, body
+   gets .no-card-fabs and every focused-mode FAB cluster collapses
+   regardless of layout. View dropdown still works as the recovery
+   path. */
+body.no-card-fabs #focus-slop-fab,
+body.no-card-fabs #gallery-fab {
+    display: none !important;
+}
+
 /* Suggest-controls row stacks vertically when the Subjects card is
    narrow (compact / single-column viewports). Each button takes a
    full row instead of wrapping mid-cluster, so the order reads top-
