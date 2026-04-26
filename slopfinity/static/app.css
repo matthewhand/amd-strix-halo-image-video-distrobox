@@ -633,6 +633,17 @@ body[data-layout="gallery"] #gallery-fab {
     content: 'collapse';
 }
 
+/* Endless Story toggle — the .es-knob slides 10px to the right when
+   the hidden checkbox is checked, giving a daisyUI-style on/off
+   visual without pulling in a full toggle component (the surrounding
+   button is a daisyUI .btn, the toggle inside is bespoke). */
+#endless-story-toggle ~ .es-track .es-knob {
+    transition: transform 200ms ease;
+}
+#endless-story-toggle:checked ~ .es-track .es-knob {
+    transform: translateX(10px);
+}
+
 /* Memory Estimate disclosure — same arrow-rotate idiom as Video Chains.
    Hides the per-model breakdown by default so the popup leads with a
    single-line "X / Y GB unified" total; clicking expands to show which

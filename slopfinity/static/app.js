@@ -551,27 +551,27 @@ function _fmtElapsedHtml(ms) {
     return _fmtElapsed(ms).replace(/([hms]+)/g, '<span class="time-unit">$1</span>');
 }
 
-// Coarse, single-unit duration label that rounds UP to the next bigger unit
-// when the value is close to its boundary. Used in the per-stage output
-// reveal so each row's right-edge time chip stays narrow ("3m", "1h"). The
-// rule: ceil seconds — if that hits 60 promote to 1m; ceil minutes — if
-// that hits 60 promote to 1h. Anything ≥ 1h rounds up to the next hour.
+// Compact 1-or-2-unit duration label. Used in the per-stage output
+// reveal so each row's right-edge time chip stays narrow but exact.
+//   < 60s            → "Xs"          (45s)
+//   60s – 59m59s     → "XmYs" or "Xm" when seconds are 0
+//   ≥ 1h             → "XhYm" or "Xh" when minutes are 0
+// Total seconds is ceil()'d so the label never under-reports duration —
+// matches the prior "rounded up" intent of the chip while letting two
+// units show through when the leftover is non-zero.
 function _fmtRoundUp(ms) {
-    // null/undefined → unknown (caller decides whether to render). 0 or
-    // tiny durations still get a label ("0s" / "1s") so brief stages
-    // (LLM rewrite, TTS) don't render with an empty time column.
     if (ms == null) return '';
     if (ms < 0) ms = 0;
-    const sec = ms / 1000;
-    if (sec < 60) {
-        const s = Math.ceil(sec);
-        return s >= 60 ? '1m' : `${s}s`;
+    const totalSec = Math.ceil(ms / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+    if (totalSec < 3600) {
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec - m * 60;
+        return s > 0 ? `${m}m${s}s` : `${m}m`;
     }
-    if (sec < 3600) {
-        const m = Math.ceil(sec / 60);
-        return m >= 60 ? '1h' : `${m}m`;
-    }
-    return `${Math.ceil(sec / 3600)}h`;
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec - h * 3600) / 60);
+    return m > 0 ? `${h}h${m}m` : `${h}h`;
 }
 
 // ----- Done queue items: thumbnail / mini-player / asset link expanded card.
@@ -867,7 +867,25 @@ function _wireEndlessStoryCycle() {
             // Direct fetch + APPEND (vs regenSuggestions which clears the stack)
             // so existing rows stay visible while new ones queue below them.
             try {
-                const r = await fetch('/subjects/suggest?n=6');
+                // Endless Story mode = continuation of the existing chip
+                // history. Grab the most-recent visible chip texts and
+                // pass them as `subjects=` so the server can prompt the
+                // LLM to extend the story rather than generate isolated
+                // fresh subjects. `endless=1` flips the server's
+                // user-message wording.
+                const recentChips = Array.from(
+                    document.querySelectorAll('#subject-chips-stack button[data-suggest]')
+                ).map(b => b.dataset.suggest).filter(Boolean);
+                // Dedupe (chips are duplicated in each row for the
+                // marquee wraparound) and keep the last 6 unique.
+                const seen = new Set(); const uniq = [];
+                for (const t of recentChips) {
+                    if (!seen.has(t)) { seen.add(t); uniq.push(t); }
+                    if (uniq.length >= 6) break;
+                }
+                const qs = new URLSearchParams({ n: '6', endless: '1' });
+                if (uniq.length) qs.set('subjects', uniq.join('\n'));
+                const r = await fetch('/subjects/suggest?' + qs.toString());
                 const d = await r.json();
                 const arr = (d && d.suggestions) || [];
                 if (arr.length && typeof _appendSuggestBatchRow === 'function') {
@@ -880,6 +898,16 @@ function _wireEndlessStoryCycle() {
         if (_endlessStoryTimer) { clearInterval(_endlessStoryTimer); _endlessStoryTimer = null; }
     };
     t.addEventListener('change', () => { t.checked ? start() : stop(); });
+    // Hydrate from localStorage on first load — the toggle is now its
+    // own piece of state (decoupled from Infinity / queue settings).
+    try {
+        const persisted = localStorage.getItem('slopfinity-endless-story') === '1';
+        if (persisted !== t.checked) {
+            t.checked = persisted;
+            const host = document.getElementById('subjects-endless-story');
+            if (host) host.setAttribute('aria-pressed', persisted);
+        }
+    } catch (_) {}
     if (t.checked) start();
 }
 document.addEventListener('DOMContentLoaded', _wireEndlessStoryCycle);
@@ -2781,7 +2809,7 @@ function connect() {
                         <span class="flex-none min-w-[7rem] text-right">
                             <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
                         </span>
-                        <span class="flex-none w-7" aria-hidden="true"></span>
+                        <span class="flex-none w-12" aria-hidden="true"></span>
                     </div>`);
                     if (i < _maxPart) {
                         // Bridge i = extracted last frame of chain i, fed as
@@ -2803,7 +2831,7 @@ function connect() {
                             <span class="flex-none min-w-[7rem] text-right">
                                 <span class="badge badge-xs badge-ghost" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
                             </span>
-                            <span class="flex-none w-7" aria-hidden="true"></span>
+                            <span class="flex-none w-12" aria-hidden="true"></span>
                         </div>`);
                     }
                 }
@@ -2822,8 +2850,8 @@ function connect() {
                 const _roundedTime = (roundedMs != null) ? _fmtRoundUp(roundedMs) : '';
                 const _timeTitle = (timingHtml || '').replace(/<[^>]+>/g, '');
                 const _vcTimeChip = _roundedTime
-                    ? `<span class="flex-none w-7 text-right font-mono text-[9px] text-base-content/60" title="${_htmlEscape(_timeTitle)}">${_roundedTime}</span>`
-                    : `<span class="flex-none w-7" aria-hidden="true"></span>`;
+                    ? `<span class="flex-none w-12 text-right font-mono text-[9px] text-base-content/60" title="${_htmlEscape(_timeTitle)}">${_roundedTime}</span>`
+                    : `<span class="flex-none w-12" aria-hidden="true"></span>`;
                 const _vcOpen = _openVideoChains.has(String(v)) ? ' open' : '';
                 // No single playable mp4 exists for the chain stage —
                 // only after Final Merge concatenates the parts. Until
@@ -3076,8 +3104,8 @@ function connect() {
                         // completes faster than the 1 Hz heartbeat).
                         const _roundedTime = a ? _fmtRoundUp(a.duration_s * 1000) : '';
                         const _timeCls = _overrun2x
-                            ? "flex-none w-7 text-right font-mono text-[9px] font-bold text-error"
-                            : "flex-none w-7 text-right font-mono text-[9px] text-base-content/60";
+                            ? "flex-none w-12 text-right font-mono text-[9px] font-bold text-error"
+                            : "flex-none w-12 text-right font-mono text-[9px] text-base-content/60";
                         const timeChip = _roundedTime
                             ? `<span class="${_timeCls}" title="${_htmlEscape(_fmtElapsed(a.duration_s * 1000))}${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}">${_roundedTime}</span>`
                             : `<span class="${_timeCls} opacity-40" title="duration not recorded">—</span>`;
