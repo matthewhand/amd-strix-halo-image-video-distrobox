@@ -704,10 +704,15 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
                 },
             },
             "11": {
-                "class_type": "LTXVVAEDecode",
+                "class_type": "LTXVTiledVAEDecode",
                 "inputs": {
                     "vae": ["1", 2],
                     "latents": ["10", 0],
+                    "horizontal_tiles": 1,
+                    "vertical_tiles": 1,
+                    "overlap": 8,
+                    "last_frame_fix": False,
+                    "working_dtype": "float32",
                 },
             },
             "12": {
@@ -1008,10 +1013,15 @@ def generate_base_image_ltx23(prompt, output_path, size_str):
             },
         },
         "11": {
-            "class_type": "LTXVVAEDecode",
+            "class_type": "LTXVTiledVAEDecode",
             "inputs": {
                 "vae": ["1", 2],
                 "latents": ["10", 0],
+                "horizontal_tiles": 1,
+                "vertical_tiles": 1,
+                "overlap": 8,
+                "last_frame_fix": False,
+                "working_dtype": "float32",
             },
         },
         "12": {
@@ -1097,8 +1107,8 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
             },
         },
         "13": {
-            "class_type": "LTXVVAEDecode",
-            "inputs": {"vae": ["1", 2], "latents": ["12", 0]},
+            "class_type": "LTXVTiledVAEDecode",
+            "inputs": {"vae": ["1", 2], "latents": ["12", 0], "horizontal_tiles": 1, "vertical_tiles": 1, "overlap": 8, "last_frame_fix": False, "working_dtype": "float32"},
         },
         "14": {
             "class_type": "SaveImage",
@@ -1274,8 +1284,8 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
             },
         },
         "13": {
-            "class_type": "LTXVVAEDecode",
-            "inputs": {"vae": ["1", 2], "latents": ["12", 0]},
+            "class_type": "LTXVTiledVAEDecode",
+            "inputs": {"vae": ["1", 2], "latents": ["12", 0], "horizontal_tiles": 1, "vertical_tiles": 1, "overlap": 8, "last_frame_fix": False, "working_dtype": "float32"},
         },
         "14": {
             "class_type": "SaveImage",
@@ -1444,8 +1454,16 @@ def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_st
         },
     }
     workflow["13"] = {
-        "class_type": "LTXVVAEDecode",
-        "inputs": {"vae": ["1", 2], "latents": ["12", 0]},
+        "class_type": "LTXVTiledVAEDecode",
+        "inputs": {
+            "vae": ["1", 2],
+            "latents": ["12", 0],
+            "horizontal_tiles": 1,
+            "vertical_tiles": 1,
+            "overlap": 8,
+            "last_frame_fix": False,
+            "working_dtype": "float32",
+        },
     }
     workflow["14"] = {
         "class_type": "SaveImage",
