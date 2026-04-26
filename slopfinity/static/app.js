@@ -1553,13 +1553,13 @@ function _getSubjectsMode() {
     try {
         const v = localStorage.getItem(_SUBJ_MODE_KEY);
         if (v === 'endless') return 'endless';
-        if (v === 'variations') return 'variations';
+        if (v === 'chat') return 'chat';
         return 'raw';
     } catch (_) { return 'raw'; }
 }
 
 function _setSubjectsMode(mode) {
-    if (mode !== 'raw' && mode !== 'endless' && mode !== 'variations') mode = 'raw';
+    if (mode !== 'raw' && mode !== 'endless' && mode !== 'chat') mode = 'raw';
     try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) { }
     document.querySelectorAll('.subjects-mode-pill button[data-subj-mode]').forEach(b => {
         const active = b.getAttribute('data-subj-mode') === mode;
@@ -1573,27 +1573,17 @@ function _setSubjectsMode(mode) {
     // Story pane only relevant in endless+running. Re-evaluate.
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.toggle('hidden', !(mode === 'endless' && _endlessRunning));
+    // Chat pane is the inverse — visible only in chat mode.
+    const chatPane = document.getElementById('subjects-chat-pane');
+    if (chatPane) chatPane.classList.toggle('hidden', mode !== 'chat');
+    // The big Queue button is irrelevant in chat mode (the chat input is
+    // the only action). Hide it; restore on mode switch.
+    const bigBtn = document.getElementById('btn-start-stop-inline');
+    if (bigBtn) bigBtn.classList.toggle('hidden', mode === 'chat');
+    // Render any persisted history on first switch into chat.
+    if (mode === 'chat') _renderChatLog();
 }
 window._setSubjectsMode = _setSubjectsMode;
-
-// Variation count — how many LLM-rewritten takes to generate per click.
-// Lives in localStorage; settable via Settings → Pipeline → Variations.
-const _VAR_K_KEY = 'slopfinity-variations-k';
-const _VAR_AXIS_KEY = 'slopfinity-variations-axis';
-function _getVariationsK() {
-    try {
-        const v = parseInt(localStorage.getItem(_VAR_K_KEY) || '5', 10);
-        return Math.max(2, Math.min(12, isFinite(v) ? v : 5));
-    } catch (_) { return 5; }
-}
-function _getVariationsAxis() {
-    try {
-        const v = (localStorage.getItem(_VAR_AXIS_KEY) || 'all').trim().toLowerCase();
-        return ['all', 'style', 'lens', 'mood', 'time'].includes(v) ? v : 'all';
-    } catch (_) { return 'all'; }
-}
-window._getVariationsK = _getVariationsK;
-window._getVariationsAxis = _getVariationsAxis;
 
 function _updateSubjectsActionLabel() {
     const btn = document.getElementById('btn-start-stop-inline');
@@ -1611,11 +1601,8 @@ function _updateSubjectsActionLabel() {
             btn.disabled = false;
             btn.classList.remove('opacity-70');
         }
-    } else if (mode === 'variations') {
-        const k = _getVariationsK();
-        btn.textContent = seed ? `Queue ${k} Variations` : 'Type a seed…';
-        btn.disabled = !seed;
-        btn.classList.toggle('opacity-70', !seed);
+    } else if (mode === 'chat') {
+        // Big button is hidden in chat mode; nothing to update.
     } else {
         // Raw mode — defer to existing label-builder which already
         // handles "Queue / Queue Infinite Slop / Generate ASAP …".
@@ -1626,70 +1613,127 @@ function _updateSubjectsActionLabel() {
 }
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 
-// Variations mode — fetch K LLM-rewritten variants of the seed and
-// queue each as its own task. Distinct from Endless (no auto-cycle, no
-// narrative continuation) and Raw (one queue entry per typed line, no
-// LLM expansion). Reuses the existing /inject path so all queue
-// behaviour (priority, infinity-toggle, seed-images, etc.) keeps working.
-async function _queueVariations() {
-    const ta = document.getElementById('p-core');
-    if (!ta) return;
-    const seed = (ta.value || '').trim().split(/\r?\n/).find(l => l.trim()) || '';
-    if (!seed) {
-        if (typeof _seedToast === 'function') _seedToast('Type a seed subject first', 'warning');
-        return;
-    }
-    const k = _getVariationsK();
-    const axis = _getVariationsAxis();
-    const btn = document.getElementById('btn-start-stop-inline');
-    const orig = btn ? btn.textContent : '';
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = `Generating ${k} variations…`;
-        btn.classList.add('opacity-70');
-    }
-    let variations = [];
+// ---------------------------------------------------------------------------
+// Chat mode — tool-using assistant. The LLM has tools to queue clips,
+// inspect status, list recent outputs, etc. Client owns conversation
+// history (localStorage), sends it on each turn, renders the returned
+// message list including tool-call chips.
+// ---------------------------------------------------------------------------
+const _CHAT_HISTORY_KEY = 'slopfinity-chat-history-v1';
+const _CHAT_HISTORY_MAX = 50;
+
+function _getChatHistory() {
     try {
-        const url = `/subjects/variations?seed=${encodeURIComponent(seed)}&n=${k}&axis=${encodeURIComponent(axis)}`;
-        const r = await fetch(url);
-        const d = await r.json();
-        variations = (d && d.variations) || [];
-    } catch (e) {
-        if (typeof _seedToast === 'function') _seedToast(`Variations failed: ${e.message}`, 'error');
-    }
-    if (!variations.length) {
-        if (typeof _seedToast === 'function') _seedToast('LLM returned no variations', 'warning');
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = orig;
-            btn.classList.remove('opacity-70');
-        }
+        const raw = localStorage.getItem(_CHAT_HISTORY_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+}
+function _setChatHistory(arr) {
+    const trimmed = (Array.isArray(arr) ? arr : []).slice(-_CHAT_HISTORY_MAX);
+    try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(trimmed)); } catch (_) {}
+}
+
+function _resetChat() {
+    if (!confirm('Clear chat history? This wipes the current conversation.')) return;
+    _setChatHistory([]);
+    _renderChatLog();
+}
+window._resetChat = _resetChat;
+
+function _renderChatLog() {
+    const log = document.getElementById('subjects-chat-log');
+    if (!log) return;
+    const history = _getChatHistory();
+    if (!history.length) {
+        log.innerHTML = '<div class="text-[10px] opacity-50 italic">no messages yet — try "queue 3 short clips of dragons" or "what\'s running?"</div>';
         return;
     }
-    // Inject each variant as its own queue entry. Fire sequentially
-    // (not Promise.all) so the server's queue-write ordering is stable
-    // and the client's WS updates land in batches the user can watch.
-    for (const v of variations) {
-        const f = new FormData();
-        f.append('prompt', v);
-        f.append('priority', 'next');
-        try { await fetch('/inject', { method: 'POST', body: f }); }
-        catch (_) { /* keep going on individual failures */ }
-    }
-    if (typeof _seedToast === 'function') _seedToast(`Queued ${variations.length} variations`, 'success');
-    if (btn) {
-        btn.disabled = false;
-        btn.classList.remove('opacity-70');
-    }
-    _updateSubjectsActionLabel();
+    log.innerHTML = history.map(m => {
+        const role = m.role || '';
+        if (role === 'user') {
+            return `<div class="flex justify-end"><div class="bg-primary/20 text-base-content rounded-lg px-3 py-1.5 max-w-[85%] whitespace-pre-wrap">${_htmlEscape(m.content || '')}</div></div>`;
+        }
+        if (role === 'assistant') {
+            const content = (m.content || '').trim();
+            const calls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+            const callChips = calls.map(c => {
+                const fn = (c.function || {});
+                const name = fn.name || 'unknown';
+                let args = '';
+                try {
+                    const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
+                    args = Object.entries(parsed).map(([k, v]) => `${k}=${typeof v === 'string' ? '"' + v.slice(0, 40) + (v.length > 40 ? '…' : '') + '"' : JSON.stringify(v)}`).join(' ');
+                } catch (_) {}
+                return `<div class="text-[10px] font-mono opacity-70 bg-base-300/40 rounded px-2 py-1 mt-1">→ ${_htmlEscape(name)}(${_htmlEscape(args)})</div>`;
+            }).join('');
+            const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
+            return `<div class="flex justify-start"><div class="bg-base-300/40 text-base-content rounded-lg px-3 py-1.5 max-w-[90%]">${body}${callChips}</div></div>`;
+        }
+        if (role === 'tool') {
+            // Tool result chip — compact, monospaced. Truncate to keep the
+            // log readable; full payload is still in localStorage.
+            let preview = m.content || '';
+            if (preview.length > 200) preview = preview.slice(0, 200) + '…';
+            return `<div class="flex justify-start"><div class="text-[10px] font-mono opacity-60 bg-base-200/40 border-l-2 border-info pl-2 py-1">↳ ${_htmlEscape(m.name || 'tool')}: ${_htmlEscape(preview)}</div></div>`;
+        }
+        return '';
+    }).join('');
+    log.scrollTop = log.scrollHeight;
 }
-window._queueVariations = _queueVariations;
+window._renderChatLog = _renderChatLog;
+
+async function _sendChatMessage() {
+    const input = document.getElementById('subjects-chat-input');
+    const sendBtn = document.getElementById('subjects-chat-send');
+    if (!input) return;
+    const text = (input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = '…';
+    }
+    const history = _getChatHistory();
+    history.push({ role: 'user', content: text });
+    _setChatHistory(history);
+    _renderChatLog();
+    try {
+        const r = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: history }),
+        });
+        const d = await r.json();
+        if (d && d.ok && Array.isArray(d.messages)) {
+            _setChatHistory(d.messages);
+            _renderChatLog();
+        } else {
+            const fallback = (d && d.error) || 'chat request failed';
+            const after = _getChatHistory();
+            after.push({ role: 'assistant', content: `Error: ${fallback}` });
+            _setChatHistory(after);
+            _renderChatLog();
+        }
+    } catch (e) {
+        const after = _getChatHistory();
+        after.push({ role: 'assistant', content: `Network error: ${e.message}` });
+        _setChatHistory(after);
+        _renderChatLog();
+    }
+    if (sendBtn) {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+    }
+    if (input) input.focus();
+}
+window._sendChatMessage = _sendChatMessage;
 
 // Single click handler on the big queue button — forks on mode.
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
     if (mode === 'endless') return _startEndlessStory();
-    if (mode === 'variations') return _queueVariations();
+    if (mode === 'chat') return; // chat input is the only action; big button is hidden
     // Raw — current behaviour.
     if (typeof toggleInfinity === 'function') return toggleInfinity();
 }
@@ -5481,15 +5525,6 @@ async function openSettings() {
         const fresh = localStorage.getItem('slopfinity-fresh') === '1';
         const fresEl = document.getElementById('slop-fresh-toggle-modal');
         if (fresEl) fresEl.checked = fresh;
-        // Variations mode tunables
-        const vk = parseInt(localStorage.getItem('slopfinity-variations-k') || '5', 10);
-        const vkSlider = document.getElementById('settings-variations-k');
-        const vkLbl = document.getElementById('settings-variations-k-val');
-        if (vkSlider) vkSlider.value = String(vk);
-        if (vkLbl) vkLbl.innerText = String(vk);
-        const vAxis = localStorage.getItem('slopfinity-variations-axis') || 'all';
-        const vAxisSel = document.getElementById('settings-variations-axis');
-        if (vAxisSel) vAxisSel.value = vAxis;
     } catch (_) { }
     try {
         const [sr, br] = await Promise.all([

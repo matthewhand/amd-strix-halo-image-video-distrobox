@@ -57,7 +57,7 @@ test.describe('slopfinity dashboard smoke', () => {
         await expect(
             page.locator('.subjects-mode-pill button[data-subj-mode]'),
             'mode pill segments'
-        ).toHaveCount(2);
+        ).toHaveCount(3);
         await expect(
             page.locator('#subjects-suggest-btn'),
             'Suggest / Regenerate button'

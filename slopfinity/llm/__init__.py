@@ -86,8 +86,60 @@ def lmstudio_call(sys_p: str, user_p: str) -> str:
     return f"Error: {last_err}"
 
 
+def lmstudio_chat_raw(messages: list, tools: list | None = None,
+                       temperature: float | None = None,
+                       timeout_override: int | None = None) -> dict:
+    """Multi-turn chat with optional tool-calling. Returns the full
+    ``choices[0].message`` dict (content + optional tool_calls) so the
+    caller can detect tool-call requests and feed the results back.
+
+    Wraps the configured provider's /v1/chat/completions endpoint with
+    OpenAI-compat tool plumbing. Used by the dashboard's Chat mode.
+    """
+    import urllib.request
+    import urllib.error
+    import json
+    from .providers import _http_json, _auth_headers
+
+    llm = _load_llm_cfg()
+    base_url = (llm.get("base_url") or "http://localhost:1234/v1").rstrip("/")
+    api_key = llm.get("api_key") or None
+    timeout = int(timeout_override or llm.get("timeout_s") or 120)
+    temp = float(temperature if temperature is not None else (llm.get("temperature") or 0.7))
+    extra_headers = llm.get("extra_headers") or None
+    model_id = llm.get("model_id") or ""
+    if not model_id:
+        provider = get_provider(llm.get("provider") or "lmstudio")
+        model_id = _auto_pick_model(provider, base_url, api_key, timeout=5) or ""
+        if not model_id:
+            return {"role": "assistant", "content": "Error: no model available from configured provider"}
+
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "temperature": temp,
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    url = base_url + "/chat/completions"
+    try:
+        data = _http_json("POST", url, body=payload,
+                          headers=_auth_headers(api_key, extra_headers),
+                          timeout=timeout)
+        msg = data.get("choices", [{}])[0].get("message") or {}
+        # Normalize: ensure content is a string (some servers return null when
+        # only tool_calls are present).
+        if msg.get("content") is None:
+            msg["content"] = ""
+        return msg
+    except Exception as e:
+        return {"role": "assistant", "content": f"Error: {e}"}
+
+
 __all__ = [
     "lmstudio_call",
+    "lmstudio_chat_raw",
     "get_provider",
     "list_providers",
     "Provider",
