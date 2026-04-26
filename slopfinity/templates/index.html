@@ -1733,6 +1733,50 @@
                     OFF (default) = load one model at a time, unload before next. ON = the planner consults model usage across upcoming queue items and keeps models resident across stages when budget allows. See docs/memory-stage-planner-design.md.
                 </span>
 
+                {# CPU offload — when ON, the listed stage runs on the host
+                   CPU instead of the iGPU. The scheduler skips its
+                   acquire_gpu wait (only blocks on load-avg) and the
+                   memory planner treats the model as non-resident on
+                   GPU so it doesn't fight image/video stages for budget.
+                   Sequencer also avoids back-to-back LLM+TTS when both
+                   are CPU-pinned (CPU can't run two heavy models at once,
+                   though sequentially they're fine).
+
+                   Setting the flag does NOT auto-reconfigure LM Studio /
+                   the TTS launcher to actually use CPU — you still need
+                   to load each model with GPU offload off in its host
+                   app. The flag tells slopfinity what's true. #}
+                <div class="border border-base-300 rounded-box p-3 mt-3 mb-3">
+                    <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-2">CPU offload</div>
+                    <label class="label cursor-pointer py-1">
+                        <span class="label-text text-xs flex items-center gap-1">
+                            LLM runs on CPU
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 opacity-60"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg>
+                        </span>
+                        <input id="sched-llm-cpu-only" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                               onchange="saveSchedCpuOffload('llm', this.checked)" />
+                    </label>
+                    <span class="label-text-alt text-[10px] opacity-60 leading-snug">
+                        Skip the GPU-idle wait for the Concept stage; only block on load-avg. A small CPU icon shows next to the LLM model badge in the output rows.
+                    </span>
+
+                    <label class="label cursor-pointer py-1 mt-2">
+                        <span class="label-text text-xs flex items-center gap-1">
+                            TTS runs on CPU
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 opacity-60"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg>
+                        </span>
+                        <input id="sched-tts-cpu-only" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                               onchange="saveSchedCpuOffload('tts', this.checked)" />
+                    </label>
+                    <span class="label-text-alt text-[10px] opacity-60 leading-snug">
+                        Same idea for Qwen-TTS / Kokoro. CPU badge surfaces on the Voice model badge.
+                    </span>
+
+                    <p class="text-[10px] opacity-50 italic mt-2 leading-snug">
+                        With both ON, the scheduler avoids placing LLM and TTS adjacent in any concurrent slot (they'd compete for the same CPU). Sequential ordering is unaffected — the orchestrator runs stages one at a time anyway.
+                    </p>
+                </div>
+
                 {# Per-model loading preferences. The planner respects these
                    when picking eviction victims (sticky = evict last) and
                    when finishing a step (eager-unload = drop right away).
