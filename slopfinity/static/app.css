@@ -691,14 +691,19 @@ body[data-layout="subj-slop"]  #split-left {
 body[data-layout="subjects"]   #focus-slop-fab,
 body[data-layout="queue"]      #focus-slop-fab,
 body[data-layout="subj-slop"]  #focus-slop-fab,
-body[data-layout="queue-slop"] #focus-slop-fab,
-body[data-layout="subj-queue"] #focus-slop-fab {
+body[data-layout="queue-slop"] #focus-slop-fab {
     display: flex;
     position: fixed;
     bottom: 16px;
     right: 16px;
     gap: 8px;
     z-index: 40;
+}
+/* subj-queue keeps Slop on screen as a horizontal filmstrip (rules
+   below) so the FAB Slop button isn't needed there — explicitly hide
+   the entire FAB instead of shipping a one-button stub. */
+body[data-layout="subj-queue"] #focus-slop-fab {
+    display: none !important;
 }
 /* Hide the FAB button that targets a card already visible in the
    current layout. The remaining buttons surface as quick-jump shortcuts
@@ -708,19 +713,54 @@ body[data-layout="queue"]      #focus-slop-fab [data-fab-target="queue"],
 body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="subjects"],
 body[data-layout="subj-slop"]  #focus-slop-fab [data-fab-target="slop"],
 body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="queue"],
-body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="slop"],
-body[data-layout="subj-queue"] #focus-slop-fab [data-fab-target="subjects"],
-body[data-layout="subj-queue"] #focus-slop-fab [data-fab-target="queue"] {
+body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="slop"] {
     display: none;
 }
 /* Hide the inline Slop card whenever Slop is not part of the layout. */
-body[data-layout="subjects"]   #output-section,
-body[data-layout="queue"]      #output-section,
-body[data-layout="subj-queue"] #output-section,
-body[data-layout="subjects"]   #ui-split-handle,
-body[data-layout="queue"]      #ui-split-handle,
+body[data-layout="subjects"] #output-section,
+body[data-layout="queue"]    #output-section,
+body[data-layout="subjects"] #ui-split-handle,
+body[data-layout="queue"]    #ui-split-handle,
 body[data-layout="subj-queue"] #ui-split-handle {
     display: none !important;
+}
+
+/* subj-queue filmstrip: Slop stays visible but compressed to a
+   short horizontal strip along the bottom. The preview-grid flips
+   from a wrapping CSS grid into a single-row flex with horizontal
+   overflow scroll, and each card shrinks to a fixed-width thumbnail
+   tile. The card body's filename / badge cluster is hidden — only
+   the figure (the actual image / video / audio thumbnail) shows so
+   the strip reads as a content row, not a stack of mini-cards. */
+body[data-layout="subj-queue"] #output-section {
+    height: 180px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+body[data-layout="subj-queue"] #preview-grid {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.5rem !important;
+    align-items: stretch;
+    padding-bottom: 4px;
+}
+body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] {
+    flex: 0 0 auto;
+    width: 200px;
+    margin: 0;
+}
+body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] figure {
+    height: 110px;
+}
+/* Drop everything except the figure — filename + badges would
+   eat the whole vertical budget at this scale. The card-body
+   stays in DOM but visually collapses. */
+body[data-layout="subj-queue"] #preview-grid > [data-slop-kind] .card-body {
+    display: none;
 }
 
 /* daisyUI .divider — used as section separators inside the Settings
