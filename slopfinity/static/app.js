@@ -1391,19 +1391,23 @@ function _buildActiveJobProgressBar(d) {
             <span class="pipeline-seg-timing"><span class="pipeline-seg-time-chip" data-seg-elapsed>${elapsedHtml}</span><span class="opacity-60"> / ETA <span class="pipeline-seg-time-chip">${etaHtml}</span></span></span>
         </div>`;
     }).join('');
+    // Push initial Total elapsed/ETA into the external footer row
+    // (#queue-progress-footer in template) — see the 1Hz tick handler
+    // which keeps these in sync as the bar progresses.
+    try {
+        const tot = document.getElementById('queue-progress-total');
+        const elEl = document.getElementById('queue-total-elapsed');
+        const etEl = document.getElementById('queue-total-eta');
+        if (tot) tot.style.display = '';
+        if (elEl) elEl.innerHTML = totalElapsedHTML;
+        if (etEl) etEl.innerHTML = totalEtaHTML;
+    } catch (_) { }
     return `
         <div class="pipeline-bar-wrap"
              data-pipeline-bar
              data-cur-stage="${curStep || ''}">
             <div class="pipeline-bar relative overflow-hidden rounded-md bg-base-200 border border-base-300">
                 <div class="flex" data-pipeline-segments>${segments}</div>
-            </div>
-            <div class="flex items-center justify-end gap-1 px-1 mt-1 text-[10px] opacity-60">
-                <span class="opacity-70">Total</span>
-                <span data-pipeline-total-elapsed>${totalElapsedHTML}</span>
-                <span class="opacity-50">/</span>
-                <span class="opacity-70">ETA</span>
-                <span data-pipeline-total-eta>${totalEtaHTML}</span>
             </div>
         </div>
     `;
@@ -1590,19 +1594,6 @@ function _updateSubjectsActionLabel() {
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 
 // Single click handler on the big queue button — forks on mode.
-// Fast Track — one-shot inject with per-iter overrides for fastest
-// possible turnaround. Lands a flag on the queued task; run_fleet's
-// opts builder reads task.fast_track and overrides chains=2,
-// frames=17, tier=low, audio=none, tts=none for THAT iter only.
-// Global Pipeline config is untouched. Doesn't honor mode pill —
-// always queues whatever's in the textarea verbatim.
-async function _queueFastTrack() {
-    if (typeof inject === 'function') {
-        await inject('next', false, false, { fastTrack: true });
-    }
-}
-window._queueFastTrack = _queueFastTrack;
-
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
     if (mode !== 'endless') {
@@ -1705,26 +1696,6 @@ document.addEventListener('DOMContentLoaded', () => {
     _setSubjectsMode(_getSubjectsMode());
     _updateSubjectsActionLabel();
 });
-
-// Slop Config modal — opened by the gear icon next to the mode pill.
-// Pre-fills its three inputs (interval slider, Fresh toggle) from
-// localStorage on each open so it always reflects current state.
-function openSlopConfig() {
-    const d = document.getElementById('slop-config-modal');
-    if (!d) return;
-    try {
-        const interval = parseInt(localStorage.getItem('slopfinity-endless-cycle-s') || '12', 10);
-        const slider = document.getElementById('slop-endless-interval');
-        const lbl = document.getElementById('slop-endless-interval-val');
-        if (slider) slider.value = String(interval);
-        if (lbl) lbl.innerText = String(interval);
-        const fresh = localStorage.getItem('slopfinity-fresh') === '1';
-        const fresEl = document.getElementById('slop-fresh-toggle-modal');
-        if (fresEl) fresEl.checked = fresh;
-    } catch (_) { }
-    if (typeof d.showModal === 'function') d.showModal();
-}
-window.openSlopConfig = openSlopConfig;
 
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
 // Lighter than openAssetInfo (which is for files); this is just text.
@@ -2067,10 +2038,10 @@ setInterval(() => {
     // spinner stuck on. The 1Hz expiry ticker (setInterval below) keeps
     // the label hiding itself if heartbeats stop arriving.
     if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
-    // Total elapsed / ETA (below the bar). Per-step elapsed/ETA was lifted
-    // out of the header row — see _buildActiveJobProgressBar().
-    const totEl = bar.querySelector('[data-pipeline-total-elapsed]');
-    const totEt = bar.querySelector('[data-pipeline-total-eta]');
+    // Total elapsed / ETA — now lives in the external #queue-progress-footer
+    // row (template), so they sit on the same line as the bulk-action buttons.
+    const totEl = document.getElementById('queue-total-elapsed');
+    const totEt = document.getElementById('queue-total-eta');
     if (totEl && _jobStartTs) totEl.innerHTML = _fmtElapsedHtml(Date.now() - _jobStartTs);
     if (totEt && totalSec > 0) totEt.innerHTML = _fmtElapsedHtml(totalSec * 1000);
 }, 1000);
@@ -4495,6 +4466,11 @@ function connect() {
                 } else {
                     barHost.innerHTML = '';
                     barHost.style.display = 'none';
+                    // Hide the Total elapsed / ETA cluster on the footer row
+                    // when nothing's running. Bulk-action buttons still show
+                    // (their visibility is independent — driven by queue contents).
+                    const tot = document.getElementById('queue-progress-total');
+                    if (tot) tot.style.display = 'none';
                 }
             }
             // Drawer is now self-managed via /queue/paginated. If it's open
@@ -5377,6 +5353,19 @@ async function openSettingsToSuggestionPrompt() {
 async function openSettings() {
     const modal = $('settings-modal');
     if (!modal) return;
+    // Pre-fill the Subjects-mode tunables (Endless cycle interval + Fresh
+    // marquee toggle) — they live in localStorage, not in the server
+    // settings payload, so hydrate them directly before the modal opens.
+    try {
+        const interval = parseInt(localStorage.getItem('slopfinity-endless-cycle-s') || '12', 10);
+        const slider = document.getElementById('slop-endless-interval');
+        const lbl = document.getElementById('slop-endless-interval-val');
+        if (slider) slider.value = String(interval);
+        if (lbl) lbl.innerText = String(interval);
+        const fresh = localStorage.getItem('slopfinity-fresh') === '1';
+        const fresEl = document.getElementById('slop-fresh-toggle-modal');
+        if (fresEl) fresEl.checked = fresh;
+    } catch (_) { }
     try {
         const [sr, br] = await Promise.all([
             fetch('/settings').then(r => r.json()),
