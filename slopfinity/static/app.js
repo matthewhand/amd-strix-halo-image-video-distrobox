@@ -826,11 +826,20 @@ function _refreshCardVisibility() {
 }
 window._refreshCardVisibility = _refreshCardVisibility;
 
+// Migration (post-Apr-26): the legacy slopfinity_card_*_hidden flags
+// are obsolete — close ✕ now switches layouts via _closeCardLayout()
+// rather than inline-hiding cards. Old flags from prior sessions would
+// otherwise resurrect themselves on every page load and leave the user
+// staring at an empty layout. Clear them on first load and skip the
+// inline-hide application path entirely.
 document.addEventListener('DOMContentLoaded', () => {
     Object.keys(_CARD_KEYS).forEach(which => {
-        if (_isCardHidden(which)) {
-            const el = document.getElementById(_CARD_KEYS[which].dom);
-            if (el) el.style.display = 'none';
+        try { localStorage.removeItem(_CARD_KEYS[which].storage); } catch (_) {}
+        const el = document.getElementById(_CARD_KEYS[which].dom);
+        // Wipe any inline display:none a previous session may have stuck on.
+        if (el && el.style.display === 'none') {
+            if (which === 'slop') el.style.display = 'block';
+            else el.style.removeProperty('display');
         }
     });
     _refreshCardVisibility();
