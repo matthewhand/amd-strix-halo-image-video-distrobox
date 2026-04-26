@@ -570,39 +570,11 @@
                                     </div>
                                 </div>
 
-                                {# Seeds staging strip — pick from uploads, choose
-                                   per-task (fan out clips) or per-chain (FLF2V keyframes).
-                                   Mode pill is hidden until at least one seed is staged. #}
-                                <div id="seeds-strip" class="flex flex-wrap items-center gap-2 mt-2 text-xs">
-                                    <button type="button" id="btn-seeds-pick"
-                                        class="btn btn-xs btn-outline btn-primary gap-1"
-                                        onclick="_openSeedsPicker()"
-                                        title="Pick from uploaded seed images (drag-drop more anywhere on the page)">
-                                        🌱 <span id="seeds-pick-label">Pick seeds…</span>
-                                    </button>
-                                    <div id="seeds-mode-pill" class="join hidden">
-                                        <button type="button"
-                                            class="join-item btn btn-xs subj-mode-active"
-                                            data-seeds-mode="per-task"
-                                            onclick="_setSeedsMode('per-task')"
-                                            title="Each seed becomes its own clip (same prompt, different starting image)">
-                                            per-task
-                                        </button>
-                                        <button type="button"
-                                            class="join-item btn btn-xs"
-                                            data-seeds-mode="per-chain"
-                                            onclick="_setSeedsMode('per-chain')"
-                                            title="One clip with FLF2V keyframes — N seeds = N-1 chains spanning seed[i] → seed[i+1] for tighter consistency. Needs at least 2 seeds.">
-                                            per-chain (FLF2V)
-                                        </button>
-                                    </div>
-                                    <button type="button" id="btn-seeds-clear"
-                                        class="btn btn-xs btn-ghost text-error hidden"
-                                        onclick="_clearSeeds()"
-                                        title="Unstage all seeds (the uploads stay in the gallery)">
-                                        ✕ clear
-                                    </button>
-                                </div>
+                                {# Seeds staging strip relocated to Settings → Pipeline →
+                                   "Seed images". The picker dialog (#seeds-picker-modal)
+                                   stays mounted at page scope; the JS handlers
+                                   (_refreshSeedsStrip / _openSeedsPicker / _setSeedsMode /
+                                   _clearSeeds) target the same DOM IDs in their new home. #}
 
                                 {# Endless story log — only rendered when mode=endless AND a
                                 story is running. The pre block grows as the user clicks
@@ -824,7 +796,7 @@
                                     conveys "in progress" so no spinner needed. Populated by
                                     the WS handler. Hidden when nothing's running. #}
                                     <span id="queue-header-activity"
-                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-center truncate"
+                                        class="flex items-center gap-1 text-[10px] text-base-content/70 flex-1 justify-start truncate"
                                         style="display:none">
                                         <span data-queue-header-activity-text></span>
                                     </span>
@@ -1979,6 +1951,50 @@
                             <div class="badge badge-ghost font-mono" id="cfg-llm-provider">{{ (config.llm.provider if
                                 config.llm and config.llm.provider else 'lmstudio') }}</div>
                         </div>
+                    </div>
+
+                    {# Seeds (starting frames) — relocated from the Subjects card so
+                       it doesn't crowd the prompt textarea. Same DOM IDs as before
+                       so app.js handlers (_refreshSeedsStrip / _openSeedsPicker /
+                       _setSeedsMode / _clearSeeds) keep working unchanged. #}
+                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Seed images</div>
+                    <p class="text-[11px] text-base-content/60 italic mb-2">
+                        Optional starting frames for image-to-video. Drag-drop images onto
+                        the page to upload them, then stage a selection here. <span class="font-semibold not-italic">per-task</span>
+                        fans each seed out as its own clip (same prompt, different starting
+                        image); <span class="font-semibold not-italic">per-chain (FLF2V)</span>
+                        chains the seeds together as keyframes within a single clip
+                        (needs at least 2 seeds).
+                    </p>
+                    <div id="seeds-strip" class="flex flex-wrap items-center gap-2 mb-3 text-xs">
+                        <button type="button" id="btn-seeds-pick"
+                            class="btn btn-xs btn-outline btn-primary gap-1"
+                            onclick="_openSeedsPicker()"
+                            title="Pick from uploaded seed images (drag-drop more anywhere on the page)">
+                            🌱 <span id="seeds-pick-label">Pick seeds…</span>
+                        </button>
+                        <div id="seeds-mode-pill" class="join hidden">
+                            <button type="button"
+                                class="join-item btn btn-xs subj-mode-active"
+                                data-seeds-mode="per-task"
+                                onclick="_setSeedsMode('per-task')"
+                                title="Each seed becomes its own clip (same prompt, different starting image)">
+                                per-task
+                            </button>
+                            <button type="button"
+                                class="join-item btn btn-xs"
+                                data-seeds-mode="per-chain"
+                                onclick="_setSeedsMode('per-chain')"
+                                title="One clip with FLF2V keyframes — N seeds = N-1 chains spanning seed[i] → seed[i+1] for tighter consistency. Needs at least 2 seeds.">
+                                per-chain (FLF2V)
+                            </button>
+                        </div>
+                        <button type="button" id="btn-seeds-clear"
+                            class="btn btn-xs btn-ghost text-error hidden"
+                            onclick="_clearSeeds()"
+                            title="Unstage all seeds (the uploads stay in the gallery)">
+                            ✕ clear
+                        </button>
                     </div>
 
                     <!-- Video tuning -->
