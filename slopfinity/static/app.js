@@ -5782,6 +5782,11 @@ async function openSettings() {
         $('set-temp-val').innerText = $('set-temp').value;
         $('set-retries').value = llm.max_retries ?? 2;
         $('set-timeout').value = llm.timeout_s ?? 60;
+        // Disk guard thresholds (Settings → General → Disk guard).
+        const dpct = $('set-disk-min-pct');
+        const dgb = $('set-disk-min-gb');
+        if (dpct) dpct.value = String(sr.disk_min_pct ?? 1);
+        if (dgb) dgb.value = String(sr.disk_min_gb ?? 5);
         renderAutoSuspendList(sr.auto_suspend);
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
@@ -6060,6 +6065,8 @@ async function saveSettings() {
         when_idle: parseInt($('set-idle-throttle').value, 10) > 0,
         chaos_mode: parseInt($('set-creativity-score').value, 10) > 5,
         concurrent: parseFloat($('set-concurrent-budget').value) > 0,
+        disk_min_pct: $('set-disk-min-pct') ? parseFloat($('set-disk-min-pct').value || '0') : 1,
+        disk_min_gb: $('set-disk-min-gb') ? parseFloat($('set-disk-min-gb').value || '0') : 5,
     };
     // Prompts tab — collect every textarea verbatim. Empty string is
     // meaningful (server interprets it as "use built-in default").

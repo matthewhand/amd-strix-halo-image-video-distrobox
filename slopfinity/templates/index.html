@@ -1841,6 +1841,27 @@
                                onchange="_setCardWm(this.checked)" />
                     </label>
                     <p class="text-[10px] opacity-60 leading-snug">When OFF (default), the hover overlay close/restore/maximize buttons on each card are hidden. Use the View dropdown to change layout instead.</p>
+
+                    {# Disk-low generation guard. When EITHER threshold trips
+                       (free pct ≤ X OR free GB ≤ Y), /inject is blocked with
+                       a 409 + "disk-low guard" message. Set either to 0 to
+                       disable that check; both at 0 = guard off. #}
+                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-4">Disk guard</div>
+                    <p class="text-[10px] opacity-60 leading-snug mb-2">
+                        Block new clips when the outputs partition runs low. EITHER threshold trips the guard.
+                        Set a value to 0 to disable that side of the check.
+                    </p>
+                    <div class="grid grid-cols-2 gap-3 mb-1">
+                        <label class="form-control">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Min free %</span>
+                            <input type="number" id="set-disk-min-pct" class="input input-bordered input-sm" min="0" max="100" step="0.5" value="1">
+                        </label>
+                        <label class="form-control">
+                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Min free GB</span>
+                            <input type="number" id="set-disk-min-gb" class="input input-bordered input-sm" min="0" step="0.5" value="5">
+                        </label>
+                    </div>
+                    <p class="text-[10px] opacity-60 leading-snug">Defaults: 1% / 5 GB. /inject returns 409 with the reason when blocked.</p>
                 </div>
 
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />

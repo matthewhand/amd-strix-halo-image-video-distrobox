@@ -181,6 +181,13 @@ DEFAULT_CONFIG = {
     "infinity_themes": ["existential crisis of lumpy clay robots", "cyberpunk dragons in neon rain"],
     "infinity_index": 0,
     "chains": 10,
+    # Disk-low generation guard. Blocks /inject (and run_fleet's iter loop)
+    # when EITHER threshold trips on the outputs partition:
+    #   disk_min_pct  — fail when free %  ≤ this (default 1 = 1% free)
+    #   disk_min_gb   — fail when free GB ≤ this (default 5 = 5 GB free)
+    # Set either to 0 to disable that check. Both at 0 = guard off.
+    "disk_min_pct": 1,
+    "disk_min_gb": 5.0,
     # Multi-frame chain handoff — anchors the next chain's first K frames to
     # the previous chain's last K frames via stacked LTXVAddGuide nodes.
     # K=1 reverts to legacy single-last-frame chaining (drifts visibly).
