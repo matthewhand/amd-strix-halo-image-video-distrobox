@@ -489,19 +489,27 @@
                                     so they read as "the toggle"; Slop uses btn-secondary
                                     tint with a gear icon so it visually reads as "open
                                     settings", distinct from mode selection. #}
+                                    {# Suggestions on/off toggle sits to the LEFT of the mode pill.
+                                       When OFF, Endless mode is disabled with an explanatory
+                                       tooltip — Endless drives its story off the suggestion stream
+                                       and has nothing to cycle without it. _updateEndlessEnabled
+                                       keeps both states in sync. #}
+                                    <label id="subjects-suggestions-toggle"
+                                        class="btn btn-primary btn-xs cursor-pointer gap-1.5 mr-1"
+                                        title="Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.">
+                                        <input type="checkbox" id="subjects-suggestions-toggle-input"
+                                            class="hidden peer" onchange="toggleSuggestionsHidden(!this.checked);">
+                                        <span class="es-track inline-block w-6 h-3 rounded-full border border-current relative">
+                                            <span class="es-knob absolute top-[1px] left-[1px] w-2 h-2 rounded-full bg-current"></span>
+                                        </span>
+                                        <span>Suggestions</span>
+                                    </label>
+                                    {# Mode pill order (per UX request): Endless · Simple · Chat · Raw.
+                                       Endless / Simple / Chat all need an LLM; Raw is the only mode
+                                       that can run when LLM is unreachable. _updateLlmAvailability
+                                       (app.js) disables the LLM-dependent buttons when /llm/health
+                                       reports the provider down. #}
                                     <div class="join subjects-mode-pill" role="tablist" aria-label="Slop mode">
-                                        <button type="button" data-subj-mode="simple"
-                                            class="join-item btn btn-xs btn-primary" onclick="_setSubjectsMode('simple')"
-                                            title="Simple — single subject input; LLM rewrites it into per-stage prompts at queue time. The fastest path from idea to clip.">
-                                            <span class="subj-mode-full">Simple</span>
-                                            <span class="subj-mode-short">S</span>
-                                        </button>
-                                        <button type="button" data-subj-mode="raw"
-                                            class="join-item btn btn-xs btn-primary btn-outline" onclick="_setSubjectsMode('raw')"
-                                            title="Raw — single subject + per-stage prompt panel. Use AI Magic on each stage to pre-fill, then queue without further LLM calls.">
-                                            <span class="subj-mode-full">Raw</span>
-                                            <span class="subj-mode-short">R</span>
-                                        </button>
                                         <button type="button" data-subj-mode="endless"
                                             class="join-item btn btn-xs btn-primary btn-outline"
                                             onclick="_setSubjectsMode('endless')"
@@ -509,12 +517,24 @@
                                             <span class="subj-mode-full">Endless</span>
                                             <span class="subj-mode-short">E</span>
                                         </button>
+                                        <button type="button" data-subj-mode="simple"
+                                            class="join-item btn btn-xs btn-primary" onclick="_setSubjectsMode('simple')"
+                                            title="Simple — single subject input; LLM rewrites it into per-stage prompts at queue time. The fastest path from idea to clip.">
+                                            <span class="subj-mode-full">Simple</span>
+                                            <span class="subj-mode-short">S</span>
+                                        </button>
                                         <button type="button" data-subj-mode="chat"
                                             class="join-item btn btn-xs btn-primary btn-outline"
                                             onclick="_setSubjectsMode('chat')"
                                             title="Chat — converse with the LLM; it can call tools to queue clips, check status, cancel jobs, list recent outputs.">
                                             <span class="subj-mode-full">Chat</span>
                                             <span class="subj-mode-short">C</span>
+                                        </button>
+                                        <button type="button" data-subj-mode="raw"
+                                            class="join-item btn btn-xs btn-primary btn-outline" onclick="_setSubjectsMode('raw')"
+                                            title="Raw — single subject + per-stage prompt panel. Use AI Magic on each stage to pre-fill, then queue without further LLM calls. Works even when the LLM provider is unavailable.">
+                                            <span class="subj-mode-full">Raw</span>
+                                            <span class="subj-mode-short">R</span>
                                         </button>
                                     </div>
                                     {# Right-side cluster: live summary pill + pipeline-config button sit together so
@@ -694,18 +714,8 @@
                                 <div id="subjects-need-ideas-row"
                                     class="flex items-center justify-between gap-1 flex-wrap">
                                     <div class="flex items-center gap-1 flex-wrap">
-                                        <label id="subjects-suggestions-toggle"
-                                            class="btn btn-primary btn-xs cursor-pointer gap-1.5"
-                                            title="Suggestions — show/hide auto-suggestion controls.">
-                                            <input type="checkbox" id="subjects-suggestions-toggle-input"
-                                                class="hidden peer" onchange="toggleSuggestionsHidden(!this.checked);">
-                                            <span
-                                                class="es-track inline-block w-6 h-3 rounded-full border border-current relative">
-                                                <span
-                                                    class="es-knob absolute top-[1px] left-[1px] w-2 h-2 rounded-full bg-current"></span>
-                                            </span>
-                                            <span>Suggestions</span>
-                                        </label>
+                                        {# Suggestions toggle relocated above (next to mode pill).
+                                           This row keeps the Suggest / Edit-prompt buttons. #}
                                         <button id="subjects-suggestion-prompt-link" type="button"
                                             class="btn btn-primary btn-xs gap-1.5 w-28"
                                             title="Edit the system prompt used for auto-suggestions"

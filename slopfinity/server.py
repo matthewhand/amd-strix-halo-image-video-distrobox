@@ -2262,6 +2262,31 @@ async def emergency_free_endpoint():
     return {"ok": True, **result}
 
 
+@app.get("/llm/health")
+async def llm_health_endpoint():
+    """Quick reachability probe for the configured LLM provider. Returns
+    {ok: bool, provider, model_id, error?}. Used by the dashboard to gate
+    LLM-dependent Subjects modes (Endless / Simple / Chat) — when the
+    provider is down, only Raw mode remains usable.
+    """
+    config = cfg.load_config()
+    llm = config.get("llm") or {}
+    provider = llm.get("provider") or "lmstudio"
+    base_url = llm.get("base_url") or "http://localhost:1234/v1"
+    model_id = llm.get("model_id") or ""
+    api_key = llm.get("api_key") or None
+    try:
+        result = await asyncio.to_thread(
+            llm_ping, base_url, provider, model_id, api_key, 5
+        )
+        ok = bool(result and result.get("ok"))
+        return {"ok": ok, "provider": provider, "model_id": model_id,
+                "error": (result or {}).get("error") if not ok else None}
+    except Exception as e:
+        return {"ok": False, "provider": provider, "model_id": model_id,
+                "error": str(e)}
+
+
 @app.post("/llm/suspend")
 async def llm_suspend_endpoint():
     """Manually SIGSTOP any running local LLM (LM Studio / Ollama).
