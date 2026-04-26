@@ -640,7 +640,7 @@
                                                 <span
                                                     class="es-knob absolute top-[1px] left-[1px] w-2 h-2 rounded-full bg-current"></span>
                                             </span>
-                                            <span>Suggestions</span>
+                                            <span>🧠 Suggestions</span>
                                         </label>
                                         <button id="subjects-suggestion-prompt-link" type="button"
                                             class="btn btn-primary btn-xs gap-1.5 w-28"
@@ -651,7 +651,7 @@
                                                 stroke-linejoin="round" class="w-3 h-3 flex-none">
                                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                            </svg><span>Suggest Prompt</span></button>
+                                            </svg><span>Prompt settings</span></button>
                                     </div>
                                     {# Regenerate moved to the far right of this row so it
                                     visually mirrors the big Queue button to its left and
@@ -665,7 +665,7 @@
                                             <path d="M3 3v5h5" />
                                             <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" />
                                             <path d="M21 21v-5h-5" />
-                                        </svg><span>Regenerate</span></button>
+                                        </svg><span>🎲 Suggest</span></button>
                                     {# Hidden inputs preserve the IDs that JS handlers reach for
                                     (endless-story-toggle, fresh-toggle). Real toggle UI lives
                                     in Settings → LLM → Auto-suggestion. Both write to
@@ -917,223 +917,239 @@
             <div id="ui-split-handle" class="flex-none cursor-row-resize select-none"
                 title="Drag to resize · double-click to reset"></div>
             <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
-
-                <!-- Unified Slop feed (all assets — FINAL, chain, image, audio) with filter chips -->
-                <section id="output-section" class="mb-12 card bg-base-100 border-2 border-primary shadow-xl p-3"
-                    style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
-                    {# Hover window-controls (Non-OSX style) #}
-                    <div class="card-wm-bar" data-card="slop" aria-label="Card window controls">
-                        <button class="card-wm-btn card-wm-close" title="Hide card"
-                            onclick="event.stopPropagation(); closeCard('slop')" aria-label="Hide Slop"><svg
-                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
-                                stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg></button>
-                        <button class="card-wm-btn card-wm-restore" title="Restore full dashboard"
-                            onclick="event.stopPropagation(); selectLayoutView('default')"
-                            aria-label="Restore dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
-                                <rect x="8" y="4" width="12" height="12" rx="1"></rect>
-                                <path d="M4 8v10a2 2 0 0 0 2 2h10"></path>
-                            </svg></button>
-                        <button class="card-wm-btn card-wm-max" title="Slop gallery full-screen"
-                            onclick="event.stopPropagation(); _cardMaximizeLayout('slop')"
-                            aria-label="Maximize gallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
-                                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                            </svg></button>
-                    </div>
-                    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                        <h1 id="branding"
-                            class="text-2xl font-black uppercase tracking-tighter text-primary flex items-center gap-2 streak-overlay">
-                            {{ branding.labels.gallery_completed }}
-                            <span class="loading loading-ring loading-sm text-accent" id="live-ring"
-                                style="display:none"></span>
-                        </h1>
-                        <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
-                            {# Filter chip colors aligned to PR #58 token map: video=primary, image=info,
-                            audio=secondary #}
-                            {# Chip on/off colors mirror the Need Suggestions toggle:
-                            ON = solid badge-primary (Queue button color);
-                            OFF = badge-outline + badge-secondary at 40% opacity.
-                            The 'assets' chip toggles whether non-final intermediate
-                            assets (chain mp4s, base pngs, bridge frames) are shown.
-                            Default OFF = only FINAL_*.mp4 visible. Filtering is
-                            handled in _applySlopFilters() in app.js. #}
-                            <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                    data-slop-filter="video" checked><span
-                                    class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
-                                    branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70"
-                                        data-chip-count="video">0</span></span></label>
-                            <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                    data-slop-filter="image" checked><span
-                                    class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
-                                    branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70"
-                                        data-chip-count="image">0</span></span></label>
-                            <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                    data-slop-filter="music" checked><span
-                                    class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">music
-                                    <span class="ml-1 font-mono opacity-70"
-                                        data-chip-count="music">0</span></span></label>
-                            <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                    data-slop-filter="speech" checked><span
-                                    class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">speech
-                                    <span class="ml-1 font-mono opacity-70"
-                                        data-chip-count="speech">0</span></span></label>
-                            {# Vertical separator between the kind chips (video / image /
-                            audio — what TYPE of asset) and the meta chip (assets —
-                            whether to show partial intermediates at all). The visual
-                            gap signals "this chip is a different axis of filtering". #}
-                            <span class="inline-block w-px h-4 bg-base-content/30 mx-1 self-center"
-                                aria-hidden="true"></span>
-                            <label class="cursor-pointer"
-                                title="Show intermediate assets (chain mp4s, base pngs, bridge frames). Off = only final products."><input
-                                    type="checkbox" class="peer hidden" data-slop-filter="assets"><span
-                                    class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">assets
-                                    <span class="ml-1 font-mono opacity-70"
-                                        data-chip-count="assets">0</span></span></label>
-                            {# Preview size pill — S / M / L. Persists in localStorage
-                            and flips body[data-slop-size]; CSS rules below resize
-                            #preview-grid columns + each card's figure height.
-                            Default M (matches the original 2/3/4-col layout). #}
-                            <span class="inline-block w-px h-4 bg-base-content/30 mx-1 self-center"
-                                aria-hidden="true"></span>
-                            <div class="join" role="group" aria-label="Preview size">
-                                <button type="button" data-slop-size="s" class="join-item btn btn-xs btn-ghost px-2"
-                                    onclick="_setSlopSize('s')" title="Small previews — denser grid">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                        stroke="currentColor" stroke-width="2" class="w-3 h-3">
-                                        <rect x="3" y="3" width="6" height="6" />
-                                        <rect x="15" y="3" width="6" height="6" />
-                                        <rect x="3" y="15" width="6" height="6" />
-                                        <rect x="15" y="15" width="6" height="6" />
-                                    </svg>
-                                </button>
-                                <button type="button" data-slop-size="m" class="join-item btn btn-xs btn-ghost px-2"
-                                    onclick="_setSlopSize('m')" title="Medium previews">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                        stroke="currentColor" stroke-width="2" class="w-4 h-4">
-                                        <rect x="3" y="3" width="8" height="8" />
-                                        <rect x="13" y="3" width="8" height="8" />
-                                        <rect x="3" y="13" width="8" height="8" />
-                                        <rect x="13" y="13" width="8" height="8" />
-                                    </svg>
-                                </button>
-                                <button type="button" data-slop-size="l" class="join-item btn btn-xs btn-ghost px-2"
-                                    onclick="_setSlopSize('l')" title="Large previews — fewer per row">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                        stroke="currentColor" stroke-width="2" class="w-5 h-5">
-                                        <rect x="3" y="3" width="18" height="18" />
-                                    </svg>
-                                </button>
-                            </div>
+                <details id="slop-collapsible" open
+                    class="bg-base-200/20 rounded-t-lg border-t border-base-300 overflow-hidden">
+                    <summary id="slop-collapsible-summary"
+                        class="cursor-pointer p-2 bg-base-300/40 flex items-center gap-3 text-xs select-none hover:bg-base-300/60 transition-colors">
+                        <span class="slop-indicator opacity-60">▾</span>
+                        <span class="flex-1 font-bold uppercase tracking-widest opacity-70">Slop Gallery</span>
+                        <div id="slop-bar-stats" class="flex items-center gap-3 text-[10px] opacity-60">
+                            <span id="slop-bar-count-video">0 vids</span>
+                            <span id="slop-bar-count-image">0 imgs</span>
                         </div>
-                    </div>
-                    {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
-                    render each with data-slop-kind so filter chips can toggle visibility client-side. #}
-                    {% set _finals_set = vids | default([]) | list %}
-                    {% set all_assets = _finals_set + (live or []) %}
-                    <div id="preview-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {% for f in all_assets[:64] %}
-                        {% set is_mp4 = f.endswith('.mp4') %}
-                        {% set is_wav = f.endswith('.wav') %}
-                        {# Speech vs music heuristic for the new split filter chips:
-                        TTS files live under a `tts/` subdir or end in `_tts.wav`;
-                        music files come from heartmula and start `_tmp_music_`
-                        (or sit in OUTPUT_DIR root with no special prefix). #}
-                        {% set is_speech = is_wav and ('_tts' in f or f.startswith('tts/')) %}
-                        {% set is_music = is_wav and not is_speech %}
-                        {% set is_final = is_mp4 and f.startswith('FINAL_') %}
-                        {# kind drives filter-chip visibility (video / image / audio).
-                        PNG = image regardless of provenance (qwen base, LTX bridge,
-                        etc); MP4 = video; WAV = audio. Filename intuition wins. #}
-                        {% set kind = 'video' if is_mp4 else ('speech' if is_speech else ('music' if is_music else
-                        'image')) %}
-                        {% set model_id = '' %}
-                        {% set part_n = '' %}
-                        {% set final_n = '' %}
-                        {% set _known_models =
-                        ['qwen','ernie','ltx-2.3','ltx-bridge','wan2.2','wan2.5','heartmula','qwen-tts','kokoro'] %}
-                        {% if f.startswith('test_') and f.split('_')[1]|lower in _known_models %}{% set model_id =
-                        f.split('_')[1]|lower %}
-                        {% elif f.startswith('ltx_base_') %}{% set model_id = 'ltx-2.3' %}
-                        {% elif is_final %}
-                        {% set _stem = f[6:].split('.')[0] %}
-                        {% set final_n = _stem %}
-                        {% elif is_mp4 %}{% set model_id = 'ltx-2.3' %}
-                        {% set _m = f.split('_c') %}
-                        {% if _m | length > 1 %}{% set part_n = _m[1].split('.')[0] %}{% endif %}
-                        {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_base.' in f
-                        %}{% set model_id = 'qwen' %}
-                        {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_f' in f %}{%
-                        set model_id = 'ltx-bridge' %}{% endif %}
-                        {% set _model_map = {
-                        'qwen': ('Qwen Image', 'badge-info'),
-                        'ernie': ('Ernie Image', 'badge-error'),
-                        'ltx-2.3': (('LTX-2.3 Video' if is_mp4 else 'LTX-2.3 Image'), 'badge-success'),
-                        'ltx-bridge': ('LTX Bridge', 'badge-success'),
-                        'wan2.2': ('Wan 2.2 Video', 'badge-info'),
-                        'wan2.5': ('Wan 2.5 Video', 'badge-info'),
-                        'heartmula': ('Heartmula Music', 'badge-secondary'),
-                        'qwen-tts': ('Qwen TTS', 'badge-warning'),
-                        'kokoro': ('Kokoro TTS', 'badge-warning'),
-                        } %}
-                        {# Card outer border is uniform across all asset kinds (matches
-                        the parent #output-section's border-primary). The per-asset
-                        colour lives on the inner badge so users still tell videos /
-                        images / audio / FINAL apart at a glance. #}
-                        {% if is_final %}
-                        {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}
-                        {% elif model_id and model_id in _model_map %}
-                        {% set primary_label = _model_map[model_id][0] %}{% set primary_color = _model_map[model_id][1]
-                        %}
-                        {% else %}
-                        {% set _fallback = {'video': ('🎬 video', 'badge-primary'), 'image': ('🖼 image',
-                        'badge-secondary'), 'audio': ('🔊 audio', 'badge-warning')}[kind] %}
-                        {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}
-                        {% endif %}
-                        {# Card border tracks the matching filter chip:
-                        - final products → border-primary (matches video/image/music/speech kind chips)
-                        - intermediate assets → border-accent (matches the 'assets' meta-chip)
-                        So at a glance, a card's outline tells you which filter group it lives in. #}
-                        {% set border_color = 'border-primary' if is_final else 'border-accent' %}
-                        <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden"
-                            data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}">
-                            <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
-                                {% if is_mp4 %}
-                                <video controls muted loop preload="metadata" class="w-full h-full object-contain">
-                                    <source src="/files/{{ f }}">
-                                </video>
-                                {% elif is_wav %}
-                                <audio controls class="w-full mx-2">
-                                    <source src="/files/{{ f }}">
-                                </audio>
-                                {% else %}
-                                <img src="/files/{{ f }}" class="w-full h-full object-contain" loading="lazy">
-                                {% endif %}
-                            </figure>
-                            <div class="card-body !p-2 bg-base-200/60 gap-1">
-                                <div class="flex flex-wrap items-center gap-1">
-                                    <span class="badge badge-xs {{ primary_color }}">{{ primary_label }}</span>
-                                    {% if part_n %}<span class="badge badge-xs badge-ghost">part {{ part_n }}</span>{%
-                                    endif %}
+                    </summary>
+                    <section id="output-section" class="card-body p-4 pt-3"
+                        style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
+                        {# Hover window-controls (Non-OSX style) #}
+                        <div class="card-wm-bar" data-card="slop" aria-label="Card window controls">
+                            <button class="card-wm-btn card-wm-close" title="Hide card"
+                                onclick="event.stopPropagation(); closeCard('slop')" aria-label="Hide Slop"><svg
+                                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+                                    stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg></button>
+                            <button class="card-wm-btn card-wm-restore" title="Restore full dashboard"
+                                onclick="event.stopPropagation(); selectLayoutView('default')"
+                                aria-label="Restore dashboard"><svg viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                                    stroke-linejoin="round" class="w-2.5 h-2.5">
+                                    <rect x="8" y="4" width="12" height="12" rx="1"></rect>
+                                    <path d="M4 8v10a2 2 0 0 0 2 2h10"></path>
+                                </svg></button>
+                            <button class="card-wm-btn card-wm-max" title="Slop gallery full-screen"
+                                onclick="event.stopPropagation(); _cardMaximizeLayout('slop')"
+                                aria-label="Maximize gallery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                </svg></button>
+                        </div>
+                        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                            <h1 id="branding"
+                                class="text-2xl font-black uppercase tracking-tighter text-primary flex items-center gap-2 streak-overlay">
+                                {{ branding.labels.gallery_completed }}
+                                <span class="loading loading-ring loading-sm text-accent" id="live-ring"
+                                    style="display:none"></span>
+                            </h1>
+                            <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
+                                {# Filter chip colors aligned to PR #58 token map: video=primary, image=info,
+                                audio=secondary #}
+                                {# Chip on/off colors mirror the Need Suggestions toggle:
+                                ON = solid badge-primary (Queue button color);
+                                OFF = badge-outline + badge-secondary at 40% opacity.
+                                The 'assets' chip toggles whether non-final intermediate
+                                assets (chain mp4s, base pngs, bridge frames) are shown.
+                                Default OFF = only FINAL_*.mp4 visible. Filtering is
+                                handled in _applySlopFilters() in app.js. #}
+                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
+                                        data-slop-filter="video" checked><span
+                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
+                                        branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="video">0</span></span></label>
+                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
+                                        data-slop-filter="image" checked><span
+                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
+                                        branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="image">0</span></span></label>
+                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
+                                        data-slop-filter="music" checked><span
+                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">music
+                                        <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="music">0</span></span></label>
+                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
+                                        data-slop-filter="speech" checked><span
+                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">speech
+                                        <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="speech">0</span></span></label>
+                                {# Vertical separator between the kind chips (video / image /
+                                audio — what TYPE of asset) and the meta chip (assets —
+                                whether to show partial intermediates at all). The visual
+                                gap signals "this chip is a different axis of filtering". #}
+                                <span class="inline-block w-px h-4 bg-base-content/30 mx-1 self-center"
+                                    aria-hidden="true"></span>
+                                <label class="cursor-pointer"
+                                    title="Show intermediate assets (chain mp4s, base pngs, bridge frames). Off = only final products."><input
+                                        type="checkbox" class="peer hidden" data-slop-filter="assets"><span
+                                        class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">assets
+                                        <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="assets">0</span></span></label>
+                                {# Preview size pill — S / M / L. Persists in localStorage
+                                and flips body[data-slop-size]; CSS rules below resize
+                                #preview-grid columns + each card's figure height.
+                                Default M (matches the original 2/3/4-col layout). #}
+                                <span class="inline-block w-px h-4 bg-base-content/30 mx-1 self-center"
+                                    aria-hidden="true"></span>
+                                <div class="join" role="group" aria-label="Preview size">
+                                    <button type="button" data-slop-size="s" class="join-item btn btn-xs btn-ghost px-2"
+                                        onclick="_setSlopSize('s')" title="Small previews — denser grid">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" class="w-3 h-3">
+                                            <rect x="3" y="3" width="6" height="6" />
+                                            <rect x="15" y="3" width="6" height="6" />
+                                            <rect x="3" y="15" width="6" height="6" />
+                                            <rect x="15" y="15" width="6" height="6" />
+                                        </svg>
+                                    </button>
+                                    <button type="button" data-slop-size="m" class="join-item btn btn-xs btn-ghost px-2"
+                                        onclick="_setSlopSize('m')" title="Medium previews">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" class="w-4 h-4">
+                                            <rect x="3" y="3" width="8" height="8" />
+                                            <rect x="13" y="3" width="8" height="8" />
+                                            <rect x="3" y="13" width="8" height="8" />
+                                            <rect x="13" y="13" width="8" height="8" />
+                                        </svg>
+                                    </button>
+                                    <button type="button" data-slop-size="l" class="join-item btn btn-xs btn-ghost px-2"
+                                        onclick="_setSlopSize('l')" title="Large previews — fewer per row">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" class="w-5 h-5">
+                                            <rect x="3" y="3" width="18" height="18" />
+                                        </svg>
+                                    </button>
                                 </div>
-                                <span class="text-[10px] font-mono text-base-content/60 truncate" title="{{ f }}">{{ f
-                                    }}</span>
                             </div>
                         </div>
-                        {% endfor %}
-                    </div>
-                    {# Sentinel observed by the IntersectionObserver in app.js to drive
-                    infinite-scroll fetches against /assets?offset=N. The h-8 spacer is
-                    enough vertical area for the observer's rootMargin (200 px) to fire
-                    well before the user actually reaches the very bottom. #}
-                    <div id="preview-grid-sentinel" class="h-8" aria-hidden="true"></div>
-                    {# Hidden grids kept so legacy ID references (WS handler back-compat) don't break. #}
-                    <div id="v-grid" class="hidden"></div>
-                    <div id="i-grid" class="hidden"></div>
-                </section>
+                        {# Server-side hydration: merge finals (vids) + live into one mtime-sorted feed,
+                        render each with data-slop-kind so filter chips can toggle visibility client-side. #}
+                        {% set _finals_set = vids | default([]) | list %}
+                        {% set all_assets = _finals_set + (live or []) %}
+                        <div id="preview-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {% for f in all_assets[:64] %}
+                            {% set is_mp4 = f.endswith('.mp4') %}
+                            {% set is_wav = f.endswith('.wav') %}
+                            {# Speech vs music heuristic for the new split filter chips:
+                            TTS files live under a `tts/` subdir or end in `_tts.wav`;
+                            music files come from heartmula and start `_tmp_music_`
+                            (or sit in OUTPUT_DIR root with no special prefix). #}
+                            {% set is_speech = is_wav and ('_tts' in f or f.startswith('tts/')) %}
+                            {% set is_music = is_wav and not is_speech %}
+                            {% set is_final = is_mp4 and f.startswith('FINAL_') %}
+                            {# kind drives filter-chip visibility (video / image / audio).
+                            PNG = image regardless of provenance (qwen base, LTX bridge,
+                            etc); MP4 = video; WAV = audio. Filename intuition wins. #}
+                            {% set kind = 'video' if is_mp4 else ('speech' if is_speech else ('music' if is_music else
+                            'image')) %}
+                            {% set model_id = '' %}
+                            {% set part_n = '' %}
+                            {% set final_n = '' %}
+                            {% set _known_models =
+                            ['qwen','ernie','ltx-2.3','ltx-bridge','wan2.2','wan2.5','heartmula','qwen-tts','kokoro'] %}
+                            {% if f.startswith('test_') and f.split('_')[1]|lower in _known_models %}{% set model_id =
+                            f.split('_')[1]|lower %}
+                            {% elif f.startswith('ltx_base_') %}{% set model_id = 'ltx-2.3' %}
+                            {% elif is_final %}
+                            {% set _stem = f[6:].split('.')[0] %}
+                            {% set final_n = _stem %}
+                            {% elif is_mp4 %}{% set model_id = 'ltx-2.3' %}
+                            {% set _m = f.split('_c') %}
+                            {% if _m | length > 1 %}{% set part_n = _m[1].split('.')[0] %}{% endif %}
+                            {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_base.' in
+                            f
+                            %}{% set model_id = 'qwen' %}
+                            {% elif f.endswith('.png') and (f.startswith('slop_') or f.startswith('v')) and '_f' in f
+                            %}{%
+                            set model_id = 'ltx-bridge' %}{% endif %}
+                            {% set _model_map = {
+                            'qwen': ('Qwen Image', 'badge-info'),
+                            'ernie': ('Ernie Image', 'badge-error'),
+                            'ltx-2.3': (('LTX-2.3 Video' if is_mp4 else 'LTX-2.3 Image'), 'badge-success'),
+                            'ltx-bridge': ('LTX Bridge', 'badge-success'),
+                            'wan2.2': ('Wan 2.2 Video', 'badge-info'),
+                            'wan2.5': ('Wan 2.5 Video', 'badge-info'),
+                            'heartmula': ('Heartmula Music', 'badge-secondary'),
+                            'qwen-tts': ('Qwen TTS', 'badge-warning'),
+                            'kokoro': ('Kokoro TTS', 'badge-warning'),
+                            } %}
+                            {# Card outer border is uniform across all asset kinds (matches
+                            the parent #output-section's border-primary). The per-asset
+                            colour lives on the inner badge so users still tell videos /
+                            images / audio / FINAL apart at a glance. #}
+                            {% if is_final %}
+                            {% set primary_label = 'FINAL · V' ~ final_n %}{% set primary_color = 'badge-accent' %}
+                            {% elif model_id and model_id in _model_map %}
+                            {% set primary_label = _model_map[model_id][0] %}{% set primary_color =
+                            _model_map[model_id][1]
+                            %}
+                            {% else %}
+                            {% set _fallback = {'video': ('🎬 video', 'badge-primary'), 'image': ('🖼 image',
+                            'badge-secondary'), 'audio': ('🔊 audio', 'badge-warning')}[kind] %}
+                            {% set primary_label = _fallback[0] %}{% set primary_color = _fallback[1] %}
+                            {% endif %}
+                            {# Card border tracks the matching filter chip:
+                            - final products → border-primary (matches video/image/music/speech kind chips)
+                            - intermediate assets → border-accent (matches the 'assets' meta-chip)
+                            So at a glance, a card's outline tells you which filter group it lives in. #}
+                            {% set border_color = 'border-primary' if is_final else 'border-accent' %}
+                            <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden"
+                                data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}">
+                                <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
+                                    {% if is_mp4 %}
+                                    <video controls muted loop preload="metadata" class="w-full h-full object-contain">
+                                        <source src="/files/{{ f }}">
+                                    </video>
+                                    {% elif is_wav %}
+                                    <audio controls class="w-full mx-2">
+                                        <source src="/files/{{ f }}">
+                                    </audio>
+                                    {% else %}
+                                    <img src="/files/{{ f }}" class="w-full h-full object-contain" loading="lazy">
+                                    {% endif %}
+                                </figure>
+                                <div class="card-body !p-2 bg-base-200/60 gap-1">
+                                    <div class="flex flex-wrap items-center gap-1">
+                                        <span class="badge badge-xs {{ primary_color }}">{{ primary_label }}</span>
+                                        {% if part_n %}<span class="badge badge-xs badge-ghost">part {{ part_n
+                                            }}</span>{%
+                                        endif %}
+                                    </div>
+                                    <span class="text-[10px] font-mono text-base-content/60 truncate" title="{{ f }}">{{
+                                        f
+                                        }}</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {# Sentinel observed by the IntersectionObserver in app.js to drive
+                        infinite-scroll fetches against /assets?offset=N. The h-8 spacer is
+                        enough vertical area for the observer's rootMargin (200 px) to fire
+                        well before the user actually reaches the very bottom. #}
+                        <div id="preview-grid-sentinel" class="h-8" aria-hidden="true"></div>
+                        {# Hidden grids kept so legacy ID references (WS handler back-compat) don't break. #}
+                        <div id="v-grid" class="hidden"></div>
+                        <div id="i-grid" class="hidden"></div>
+                    </section>
+                </details>
 
                 <!-- Output Empty-state card (shown when all grids empty) -->
                 <div id="output-empty" class="card bg-base-200/30 border border-base-300 mb-12"
