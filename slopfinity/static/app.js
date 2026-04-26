@@ -3437,6 +3437,17 @@ function connect() {
                         ? `${stem}_base.png`
                         : (bridges[i - 1] || `${stem}_f${i - 1}.png`);
                     const _posterAttr = `poster="/files/${encodeURIComponent(_posterName)}"`;
+                    // Per-part time chip — we don't track each chain's
+                    // duration separately on the server side, so we
+                    // approximate by splitting the total Video Chains
+                    // duration evenly across N parts. Marked with a tilde
+                    // ("~3m") so the user knows it's an estimate, not
+                    // measured. Bridge rows get an em-dash since ffmpeg
+                    // extract is sub-second.
+                    const _perPartMs = (roundedMs && _totalChains > 0) ? (roundedMs / _totalChains) : null;
+                    const _perPartChip = _perPartMs
+                        ? `<span class="flex-none w-12 text-right font-mono text-[9px] text-base-content/60" title="estimated (total chain time ÷ part count)">~${_fmtRoundUp(_perPartMs)}</span>`
+                        : `<span class="flex-none w-12" aria-hidden="true"></span>`;
                     partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1" data-chain-row="${v}:${i}">
                         <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
                             <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
@@ -3447,7 +3458,7 @@ function connect() {
                         <span class="flex-none min-w-[7rem] text-right">
                             <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
                         </span>
-                        <span class="flex-none w-12" aria-hidden="true"></span>
+                        ${_perPartChip}
                     </div>`);
                     if (i < _maxPart) {
                         // Bridge i = extracted last frame of chain i, fed as
@@ -3469,7 +3480,7 @@ function connect() {
                             <span class="flex-none min-w-[7rem] text-right">
                                 <span class="badge badge-xs badge-warning opacity-80" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
                             </span>
-                            <span class="flex-none w-12" aria-hidden="true"></span>
+                            <span class="flex-none w-12 text-right font-mono text-[9px] text-base-content/60" title="ffmpeg frame extract is sub-second">&lt;1s</span>
                         </div>`);
                     }
                 }
@@ -3917,7 +3928,7 @@ function connect() {
                                 <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             </span>
                             <span class="flex items-center gap-2 flex-none ml-auto">
-                                <span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect · frames">${_htmlEscape(snap.size || '1:1')}·${snap.frames || 17}f</span>
+                                <span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · frames per video part">aspect ${_htmlEscape(snap.size || '1:1')} · ${snap.frames || 17} frames</span>
                                 <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
                                 ${menuHTML}
                             </span>
