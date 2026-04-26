@@ -503,12 +503,12 @@
                                             <span class="subj-mode-full">Endless</span>
                                             <span class="subj-mode-short">E</span>
                                         </button>
-                                        <button type="button" data-subj-mode="variations"
+                                        <button type="button" data-subj-mode="chat"
                                             class="join-item btn btn-xs btn-primary btn-outline"
-                                            onclick="_setSubjectsMode('variations')"
-                                            title="Variations — one seed subject becomes K LLM-rewritten takes (different style / lens / mood). All K queue together.">
-                                            <span class="subj-mode-full">Variations</span>
-                                            <span class="subj-mode-short">V</span>
+                                            onclick="_setSubjectsMode('chat')"
+                                            title="Chat — converse with the LLM; it can call tools to queue clips, check status, cancel jobs, list recent outputs.">
+                                            <span class="subj-mode-full">Chat</span>
+                                            <span class="subj-mode-short">C</span>
                                         </button>
                                     </div>
                                     {# Right-side cluster: live summary pill + pipeline-config button sit together so
@@ -609,6 +609,40 @@
                                     </div>
                                     <pre id="subjects-story-log"
                                         class="text-xs font-mono whitespace-pre-wrap leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-40 overflow-y-auto m-0"></pre>
+                                </div>
+                                {# Chat pane — visible only when mode=chat. Shows
+                                   conversation history (user / assistant / tool-call
+                                   chips); the input below sends the next message.
+                                   Tool calls render as inline chips with their
+                                   arguments + result so the user can audit what
+                                   the LLM did. #}
+                                <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-1">
+                                    <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
+                                        <span>Conversation</span>
+                                        <button type="button" id="subjects-chat-reset"
+                                            class="btn btn-ghost btn-xs text-error gap-1"
+                                            onclick="_resetChat()"
+                                            title="Clear chat history. Confirms first.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round" class="w-3 h-3">
+                                                <line x1="18" y1="6" x2="6" y2="18" />
+                                                <line x1="6" y1="6" x2="18" y2="18" />
+                                            </svg>
+                                            <span>Reset</span>
+                                        </button>
+                                    </div>
+                                    <div id="subjects-chat-log"
+                                        class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-64 overflow-y-auto flex flex-col gap-2 m-0"></div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="subjects-chat-input"
+                                            class="input input-bordered input-sm flex-1 min-w-0"
+                                            placeholder="Ask the assistant — e.g. 'queue 3 short clips of dragons'"
+                                            onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); _sendChatMessage(); }">
+                                        <button type="button" id="subjects-chat-send"
+                                            class="btn btn-primary btn-sm flex-none"
+                                            onclick="_sendChatMessage()">Send</button>
+                                    </div>
                                 </div>
                                 <div id="subjects-need-ideas-row"
                                     class="flex items-center justify-between gap-1 flex-wrap">
@@ -2164,31 +2198,10 @@
                         <span class="font-semibold">Endless</span> — seed a story (or use I'm Feeling Lucky for a random
                         opener); LLM auto-cycles continuation prompts at the cadence below.
                         <br>
-                        <span class="font-semibold">Variations</span> — one seed becomes K LLM-rewritten takes (style /
-                        lens / mood). All K queue together.
+                        <span class="font-semibold">Chat</span> — converse with the local LLM; it can call tools to queue
+                        clips, check status, cancel jobs, and list recent outputs. No per-mode settings; uses the
+                        configured LLM provider (Settings → LLM).
                     </p>
-                    <label class="form-control mb-2">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
-                            <span>Variations · count K</span>
-                            <span class="font-mono"><span id="settings-variations-k-val">5</span></span>
-                        </span>
-                        <input id="settings-variations-k" type="range" min="2" max="12" step="1" value="5"
-                            class="range range-sm range-primary"
-                            oninput="$('settings-variations-k-val').innerText = this.value"
-                            onchange="(() => { try { localStorage.setItem('slopfinity-variations-k', this.value); } catch(_) {} if (typeof _updateSubjectsActionLabel === 'function') _updateSubjectsActionLabel(); }).call(this)" />
-                        <span class="label-text-alt text-[10px] opacity-60">How many variants to fan out per click (2–12).</span>
-                    </label>
-                    <label class="form-control mb-2">
-                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Variations · spread axis</span>
-                        <select id="settings-variations-axis" class="select select-bordered select-sm"
-                            onchange="(() => { try { localStorage.setItem('slopfinity-variations-axis', this.value); } catch(_) {} }).call(this)">
-                            <option value="all">All — vary every dimension</option>
-                            <option value="style">Style — different visual media (cinematic / illustrated / dreamy / gritty)</option>
-                            <option value="lens">Lens — different camera angles + framings</option>
-                            <option value="mood">Mood — different emotional registers</option>
-                            <option value="time">Time — different time-of-day / weather / lighting</option>
-                        </select>
-                    </label>
                     <label class="form-control mb-2">
                         <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
                             <span>Endless cycle interval</span>

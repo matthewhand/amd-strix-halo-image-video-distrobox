@@ -17,7 +17,7 @@ from typing import List
 from . import config as cfg
 from . import branding as _branding
 from .stats import get_sys_stats, get_storage, get_outputs_disk, get_ram_estimate, get_output_counts
-from .llm import lmstudio_call, DEFAULT_LLM_CONFIG, list_providers
+from .llm import lmstudio_call, lmstudio_chat_raw, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
 from . import scheduler as sched
 from . import fanout as _fanout
@@ -531,70 +531,292 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     return {"suggestions": suggestions, "cached": False}
 
 
-@app.get("/subjects/variations")
-async def subjects_variations(seed: str = "", n: int = 5, axis: str = "all"):
-    """Generate N variant rewrites of a single SEED subject — different
-    angles on the same core idea (style, camera, mood, time-of-day, etc.).
+# Chat mode — tool-using assistant. Replaces the prior Variations mode.
+# The LLM (configured local provider, OpenAI-compat) gets a tools manifest
+# describing actions it can take. When the model emits tool_calls in its
+# response, we execute each one server-side, append the result as a tool
+# message, and re-call the LLM. Loop is bounded so a confused model can't
+# run away. Returns the full updated message list to the client; the
+# client keeps history in localStorage and renders tool-call chips inline.
 
-    Distinct from /subjects/suggest: that endpoint generates *unrelated*
-    new ideas; this one keeps the seed's essential subject intact and
-    explores AROUND it. Powers the Subjects-card Variations mode (one
-    seed → K queue entries each rendering a different take).
+_CHAT_TOOLS_MANIFEST = [
+    {
+        "type": "function",
+        "function": {
+            "name": "queue_clip",
+            "description": "Queue a single video clip with the given prompt. Optional knobs override the global pipeline config for that one task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "What to render. Describe the visual subject in plain text."},
+                    "chains": {"type": "integer", "description": "Number of chained video parts. Default uses the user's pipeline config (typically 10). Pass 1-3 for short smoke clips."},
+                    "frames": {"type": "integer", "description": "Frames per chain. Default 49. Use 17 for very fast smoke clips."},
+                    "tier": {"type": "string", "enum": ["low", "med", "high"], "description": "Quality tier — low=8 steps, med=20, high=50."},
+                    "fast_track": {"type": "boolean", "description": "When true, applies tier=low + chains=2 + frames=17 + skips audio/tts. Targets ~3 min/clip on Strix Halo."},
+                    "infinity": {"type": "boolean", "description": "Auto-requeue this prompt forever (until the user cancels)."},
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_queue",
+            "description": "Return a summary of the queue: counts of pending / running / done / cancelled, plus the prompts of the next 5 pending items.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_status",
+            "description": "Return what the fleet runner is currently doing: mode, current step, current prompt, chain N of M, elapsed seconds.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_item",
+            "description": "Cancel a single pending or running queue item by its timestamp.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ts": {"type": "number", "description": "The queue item's ts (returned by list_queue)."},
+                },
+                "required": ["ts"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recent_finals",
+            "description": "List the most recently completed FINAL_*.mp4 clips with their prompts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "n": {"type": "integer", "description": "How many recent finals to return. Default 5, max 20."},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_config",
+            "description": "Return the active pipeline configuration: base_model, video_model, audio_model, tts_model, size, frames, chains, tier.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
 
-    `axis` biases the spread:
-      all     — vary every dimension freely (default)
-      style   — same scene, different visual style/medium
-      lens    — same scene, different camera angle/framing
-      mood    — same scene, different emotional register
-      time    — same scene, different time-of-day / season / lighting
+
+def _chat_tool_queue_clip(args: dict) -> dict:
+    """Execute the queue_clip tool. Mirrors POST /inject's logic without
+    going through HTTP — direct queue mutation."""
+    prompt = (args.get("prompt") or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "empty prompt"}
+    q = cfg.get_queue()
+    task = {
+        "prompt": prompt,
+        "priority": "next",
+        "status": "pending",
+        "ts": time.time(),
+        "chaos": True,
+        "infinity": bool(args.get("infinity")),
+        "fast_track": bool(args.get("fast_track")),
+    }
+    # Per-task overrides land in config_snapshot so run_fleet's snapshot
+    # readers pick them up for this iter only. Falls through to global
+    # config when keys are absent.
+    snap = {}
+    if args.get("chains"):
+        try: snap["chains"] = max(1, min(30, int(args["chains"])))
+        except (TypeError, ValueError): pass
+    if args.get("frames"):
+        try: snap["frames"] = max(9, min(241, int(args["frames"])))
+        except (TypeError, ValueError): pass
+    if args.get("tier") in ("low", "med", "high"):
+        snap["tier"] = args["tier"]
+    if snap:
+        task["config_snapshot"] = snap
+    pending = [x for x in q if x.get("status") in (None, "pending")]
+    working = [x for x in q if x.get("status") == "working"]
+    done = [x for x in q if x.get("status") == "done"]
+    cancelled = [x for x in q if x.get("status") == "cancelled"]
+    pending.insert(0, task)
+    cfg.save_queue(working + pending + done + cancelled)
+    return {"ok": True, "ts": task["ts"], "prompt": prompt, "overrides": snap}
+
+
+def _chat_tool_list_queue(_args: dict) -> dict:
+    q = cfg.get_queue()
+    pending = [x for x in q if x.get("status") in (None, "pending")]
+    working = [x for x in q if x.get("status") == "working"]
+    done = [x for x in q if x.get("status") == "done"]
+    cancelled = [x for x in q if x.get("status") == "cancelled"]
+    next_5 = [{"ts": x.get("ts"), "prompt": (x.get("prompt") or "")[:80]} for x in pending[:5]]
+    return {
+        "pending": len(pending),
+        "running": len(working),
+        "done": len(done),
+        "cancelled": len(cancelled),
+        "next_5": next_5,
+    }
+
+
+def _chat_tool_get_status(_args: dict) -> dict:
+    s = cfg.get_state()
+    return {
+        "mode": s.get("mode", "Idle"),
+        "step": s.get("step", "Waiting"),
+        "current_prompt": s.get("current_prompt", "") or "",
+        "chain": s.get("chain_index", 0),
+        "total_chains": s.get("total_chains", 0),
+        "video": s.get("video", 0),
+        "started_at": s.get("started_at", 0),
+    }
+
+
+def _chat_tool_cancel_item(args: dict) -> dict:
+    ts = args.get("ts")
+    try: ts_f = float(ts)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "ts must be a number"}
+    q = cfg.get_queue()
+    hit = None
+    for item in q:
+        if abs(float(item.get("ts") or 0) - ts_f) < 0.001:
+            if item.get("status") in (None, "pending", "working"):
+                item["status"] = "cancelled"
+                item["cancelled_ts"] = time.time()
+                hit = item
+                break
+    if not hit:
+        return {"ok": False, "error": "no matching pending/running item"}
+    cfg.save_queue(q)
+    return {"ok": True, "cancelled_prompt": (hit.get("prompt") or "")[:80]}
+
+
+def _chat_tool_recent_finals(args: dict) -> dict:
+    n = max(1, min(20, int(args.get("n") or 5)))
+    items = []
+    try:
+        for f in os.listdir(EXP_DIR):
+            if not f.startswith("FINAL_") or not f.lower().endswith(".mp4"):
+                continue
+            try:
+                mtime = os.path.getmtime(os.path.join(EXP_DIR, f))
+            except OSError:
+                continue
+            # Look up the sidecar for the prompt if present.
+            prompt = ""
+            sidecar = os.path.join(EXP_DIR, f + ".json")
+            if os.path.exists(sidecar):
+                try:
+                    with open(sidecar) as sh:
+                        sd = json.load(sh)
+                        prompt = (sd.get("prompt") or "")[:200]
+                except Exception:
+                    pass
+            items.append({"file": f, "mtime": mtime, "prompt": prompt})
+    except OSError:
+        pass
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"items": items[:n]}
+
+
+def _chat_tool_describe_config(_args: dict) -> dict:
+    c = cfg.load_config()
+    keys = ("base_model", "video_model", "audio_model", "tts_model",
+            "size", "frames", "chains", "tier")
+    return {k: c.get(k) for k in keys}
+
+
+_CHAT_TOOL_HANDLERS = {
+    "queue_clip": _chat_tool_queue_clip,
+    "list_queue": _chat_tool_list_queue,
+    "get_status": _chat_tool_get_status,
+    "cancel_item": _chat_tool_cancel_item,
+    "recent_finals": _chat_tool_recent_finals,
+    "describe_config": _chat_tool_describe_config,
+}
+
+_CHAT_SYSTEM_PROMPT = (
+    "You are the slopfinity assistant — a tool-using helper for a self-hosted "
+    "AMD Strix Halo video generation fleet. The user is in front of a dashboard. "
+    "When they want to render something, call queue_clip. When they ask about "
+    "what's happening, call get_status or list_queue. When they ask about past "
+    "outputs, call recent_finals. Be concise — answer in 1-3 short paragraphs. "
+    "Don't ask for confirmation before calling tools; just do the thing and "
+    "report back. After tool calls, summarize what happened in plain English."
+)
+
+_CHAT_MAX_TURNS = 6  # bounded tool-call recursion
+
+
+@app.post("/chat")
+async def chat_endpoint(payload: dict = Body(...)):
+    """Multi-turn chat with tool-calling. Client sends the conversation
+    history; server prepends the system prompt, calls the LLM with the
+    tools manifest, executes any tool_calls server-side, loops until the
+    model returns a content-only response (or hits the turn cap), and
+    returns the full updated message history.
     """
-    seed_in = (seed or "").strip()
-    if not seed_in:
-        return JSONResponse({"variations": [], "error": "empty seed"}, status_code=400)
-    n = max(2, min(int(n), 12))
-    axis = (axis or "all").strip().lower()
-    if axis not in ("all", "style", "lens", "mood", "time"):
-        axis = "all"
+    history = payload.get("messages") or []
+    if not isinstance(history, list):
+        return JSONResponse({"ok": False, "error": "messages must be a list"}, status_code=400)
+    # Keep server-side history bounded too — the client should already trim.
+    history = history[-50:]
+    messages = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}] + history
 
-    axis_hint = {
-        "all":   "different visual styles, camera angles, moods, and times of day",
-        "style": "different visual styles or media (cinematic, illustrated, dreamlike, gritty, claymation, oil-painted)",
-        "lens":  "different camera angles and framings (wide, closeup, overhead, dutch tilt, tracking shot)",
-        "mood":  "different emotional registers (tense, serene, chaotic, melancholy, triumphant)",
-        "time":  "different times of day or weather (golden hour, blue hour, monsoon, blizzard, neon midnight)",
-    }[axis]
-
-    sys_p = (
-        "You are a concept artist iterating on a single visual idea. "
-        f"Given the SEED below, output exactly {n} VARIATIONS that explore "
-        f"the same core subject through {axis_hint}. Each variation must "
-        "keep the SEED's essential subject intact — no new subjects, no "
-        "story continuation. Output: one variation per line, plain text, "
-        "3-10 words each, no numbering, no bullets, no quotes, no JSON."
-    )
-    user_msg = f"SEED: {seed_in}"
-
+    tool_audit = []  # surfaced to the client for UI rendering
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
-        raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
+        for _ in range(_CHAT_MAX_TURNS):
+            msg = await asyncio.to_thread(
+                lmstudio_chat_raw, messages, _CHAT_TOOLS_MANIFEST,
+            )
+            messages.append(msg)
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                break
+            for call in calls:
+                fn = (call.get("function") or {})
+                name = fn.get("name") or ""
+                raw_args = fn.get("arguments") or "{}"
+                try:
+                    args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                except Exception:
+                    args = {}
+                handler = _CHAT_TOOL_HANDLERS.get(name)
+                if not handler:
+                    result = {"ok": False, "error": f"unknown tool: {name}"}
+                else:
+                    try:
+                        result = handler(args)
+                    except Exception as e:
+                        result = {"ok": False, "error": f"{name} raised: {e!r}"}
+                tool_audit.append({"name": name, "args": args, "result": result})
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id") or "",
+                    "name": name,
+                    "content": json.dumps(result),
+                })
+        else:
+            # Hit the turn cap without a content-only response. Append a
+            # graceful fallback so the client doesn't render an empty turn.
+            messages.append({
+                "role": "assistant",
+                "content": "(stopped: tool-call loop hit the turn cap — try rephrasing.)",
+            })
 
-    variations = []
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-    for line in text.splitlines():
-        t = line.strip()
-        if not t:
-            continue
-        t = re.sub(r"^\s*(?:\d+[\.\)]|[-*•])\s+", "", t)
-        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
-            t = t[1:-1].strip()
-        if t:
-            variations.append(t)
-    variations = [str(v).strip() for v in variations if str(v).strip()][:n]
-    return {"variations": variations, "seed": seed_in, "axis": axis}
+    # Strip the system prompt before returning; client doesn't need to see it.
+    out_messages = [m for m in messages if m.get("role") != "system"]
+    return {"ok": True, "messages": out_messages, "tool_audit": tool_audit}
 
 
 # Real-model candidate pools per role. `__random__` picks uniformly from
