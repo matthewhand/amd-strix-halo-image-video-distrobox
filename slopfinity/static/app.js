@@ -1048,6 +1048,27 @@ async function savePromptsEdit() {
     if (modal) modal.close();
 }
 
+// Hard-terminate the run_fleet.py orchestrator process on the host.
+// Asks confirm() first because this isn't recoverable mid-iter — any
+// in-flight stage gets killed; cancel-flag-based /cancel-all is the
+// gentler option for normal cancellation.
+async function terminateRunner() {
+    if (!confirm("SIGTERM the run_fleet.py orchestrator?\n\nUse this when the runner is stuck (e.g. hung LLM call). The current iteration's in-flight stages will be killed. You'll need to relaunch the runner manually afterwards.")) return;
+    try {
+        const r = await fetch('/runner/terminate', { method: 'POST' });
+        const data = await r.json();
+        if (data.ok) {
+            const pids = (data.killed || []).join(', ');
+            alert(pids ? `Sent SIGTERM to pid ${pids}.` : (data.note || 'No runner process found.'));
+        } else {
+            alert(`Terminate failed: ${data.error || 'unknown error'}`);
+        }
+    } catch (e) {
+        alert(`Terminate failed: ${e}`);
+    }
+}
+window.terminateRunner = terminateRunner;
+
 async function cancelItem(ts) {
     // ts=0 = the synthetic "running" row that doesn't have a queue entry of
     // its own (the fleet popped it before processing). For those, /cancel-all
@@ -2850,8 +2871,14 @@ function connect() {
                             ? `<span class="flex-none flex items-center gap-1 text-right font-mono text-[9px] text-base-content/60">${_metaHtml}${timing ? `<span class="opacity-70">${timing}</span>` : ''}</span>`
                             : '';
                         const _menuSpacer = `<span class="flex-none w-7" aria-hidden="true"></span>`;
+                        // min-w-0 on the LEFT cluster + truncate on the
+                        // filename link clamps the asset column to whatever
+                        // horizontal space remains after meta + model + menu
+                        // claim their flex-none widths. Without this, a
+                        // long filename would push the right-side columns
+                        // off-screen rather than truncating itself.
                         let row = `<div class="flex items-center gap-2 mt-1${animCls}" data-stage-row="${key}">
-                            <span class="flex-1 flex items-center gap-2 min-w-0 overflow-hidden fade-edges-r">${assetBadge}</span>
+                            <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">${assetBadge}</span>
                             ${_metaTimingHtml}
                             <span class="flex-none min-w-[7rem] text-right">${stageLabelHtml}</span>
                             ${_menuSpacer}
