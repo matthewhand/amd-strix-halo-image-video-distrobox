@@ -633,6 +633,18 @@ body[data-layout="gallery"] #gallery-fab {
     content: 'collapse';
 }
 
+/* Subjects mode pill (Raw Slop · Endless). Active segment shows the
+   full label + primary background; inactive segments switch to a
+   single-letter abbreviation when the parent card is narrow so the
+   pill never wraps. The .subj-mode-active class is toggled by JS. */
+.subjects-mode-pill .subj-mode-short { display: none; }
+.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full { display: none; }
+.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short { display: inline; }
+@media (min-width: 768px) {
+    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full { display: inline; }
+    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short { display: none; }
+}
+
 /* Endless Story toggle — the .es-knob slides 10px to the right when
    the hidden checkbox is checked, giving a daisyUI-style on/off
    visual without pulling in a full toggle component (the surrounding

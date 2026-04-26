@@ -931,6 +931,171 @@ function _wireEndlessStoryCycle() {
 }
 document.addEventListener('DOMContentLoaded', _wireEndlessStoryCycle);
 
+// ---------------------------------------------------------------------------
+// Subjects card mode pill: 'raw' (queue verbatim) vs 'endless' (LLM
+// auto-cycles story continuations from a seed). State persists in
+// localStorage. The pill swaps the queue button label between
+// {Queue Slop, Start Story, I'm Feeling Lucky} based on mode + seed
+// presence + running state.
+// ---------------------------------------------------------------------------
+const _SUBJ_MODE_KEY = 'slopfinity-subjects-mode';
+let _endlessRunning = false;
+
+function _getSubjectsMode() {
+    try {
+        const v = localStorage.getItem(_SUBJ_MODE_KEY);
+        return v === 'endless' ? 'endless' : 'raw';
+    } catch (_) { return 'raw'; }
+}
+
+function _setSubjectsMode(mode) {
+    if (mode !== 'raw' && mode !== 'endless') mode = 'raw';
+    try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) {}
+    document.querySelectorAll('.subjects-mode-pill button[data-subj-mode]').forEach(b => {
+        const active = b.getAttribute('data-subj-mode') === mode;
+        b.classList.toggle('subj-mode-active', active);
+        b.classList.toggle('btn-outline', !active);
+        b.setAttribute('aria-pressed', String(active));
+    });
+    // Switching out of endless ends the running story cleanly.
+    if (mode !== 'endless' && _endlessRunning) _endEndlessStory();
+    _updateSubjectsActionLabel();
+    // Story pane only relevant in endless+running. Re-evaluate.
+    const pane = document.getElementById('subjects-story-pane');
+    if (pane) pane.classList.toggle('hidden', !(mode === 'endless' && _endlessRunning));
+}
+window._setSubjectsMode = _setSubjectsMode;
+
+function _updateSubjectsActionLabel() {
+    const btn = document.getElementById('btn-start-stop-inline');
+    if (!btn) return;
+    const mode = _getSubjectsMode();
+    const ta = document.getElementById('p-core');
+    const seed = (ta && ta.value || '').trim();
+    if (mode === 'endless') {
+        if (_endlessRunning) {
+            btn.textContent = 'Story Running…';
+            btn.disabled = true;
+            btn.classList.add('opacity-70');
+        } else {
+            btn.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
+            btn.disabled = false;
+            btn.classList.remove('opacity-70');
+        }
+    } else {
+        // Raw mode — defer to existing label-builder which already
+        // handles "Queue / Queue Infinite Slop / Generate ASAP …".
+        if (typeof _updateStartBtn === 'function') _updateStartBtn();
+        btn.disabled = false;
+        btn.classList.remove('opacity-70');
+    }
+}
+window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
+
+// Single click handler on the big queue button — forks on mode.
+async function _subjectsAction() {
+    const mode = _getSubjectsMode();
+    if (mode !== 'endless') {
+        // Raw Slop = current behaviour.
+        if (typeof toggleInfinity === 'function') return toggleInfinity();
+        return;
+    }
+    // Endless mode — start a story (seeded or "I'm Feeling Lucky").
+    return _startEndlessStory();
+}
+window._subjectsAction = _subjectsAction;
+
+async function _startEndlessStory() {
+    if (_endlessRunning) return;
+    const ta = document.getElementById('p-core');
+    if (!ta) return;
+    let seed = (ta.value || '').trim();
+    if (!seed) {
+        // I'm Feeling Lucky — fetch a single story-opener from the LLM.
+        try {
+            const r = await fetch('/subjects/suggest?n=1&opener=1');
+            const d = await r.json();
+            const arr = (d && d.suggestions) || [];
+            seed = (arr[0] || '').trim();
+        } catch (_) {}
+        if (!seed) {
+            console.warn('I\'m Feeling Lucky: no opener returned');
+            return;
+        }
+        ta.value = seed;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    _endlessRunning = true;
+    ta.readOnly = true;
+    ta.classList.add('opacity-70');
+    // Reset the story log to just the seed.
+    const log = document.getElementById('subjects-story-log');
+    if (log) log.textContent = seed;
+    const pane = document.getElementById('subjects-story-pane');
+    if (pane) pane.classList.remove('hidden');
+    // Kick the existing endless cycle on (it reads the hidden checkbox).
+    const t = document.getElementById('endless-story-toggle');
+    if (t && !t.checked) {
+        t.checked = true;
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    _updateSubjectsActionLabel();
+    // Fire one fresh batch immediately so the user sees movement.
+    if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
+}
+
+function _endEndlessStory() {
+    _endlessRunning = false;
+    const ta = document.getElementById('p-core');
+    if (ta) {
+        ta.readOnly = false;
+        ta.classList.remove('opacity-70');
+    }
+    const pane = document.getElementById('subjects-story-pane');
+    if (pane) pane.classList.add('hidden');
+    const log = document.getElementById('subjects-story-log');
+    if (log) log.textContent = '';
+    // Stop the cycle.
+    const t = document.getElementById('endless-story-toggle');
+    if (t && t.checked) {
+        t.checked = false;
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    _updateSubjectsActionLabel();
+}
+window._endEndlessStory = _endEndlessStory;
+
+function _copyEndlessStory() {
+    const log = document.getElementById('subjects-story-log');
+    const text = (log && log.textContent || '').trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('subjects-story-copy');
+        if (btn) {
+            btn.classList.add('text-success');
+            setTimeout(() => btn.classList.remove('text-success'), 900);
+        }
+    }).catch(err => console.warn('copy story failed', err));
+}
+window._copyEndlessStory = _copyEndlessStory;
+
+// Append a chip's text to the story log when in endless+running mode.
+// Called from the chip click handler in _buildSuggestChip.
+function _appendToEndlessLog(text) {
+    if (!_endlessRunning || _getSubjectsMode() !== 'endless') return;
+    const log = document.getElementById('subjects-story-log');
+    if (!log) return;
+    const cur = log.textContent || '';
+    log.textContent = cur ? cur + '\n' + text : text;
+    log.scrollTop = log.scrollHeight;
+}
+window._appendToEndlessLog = _appendToEndlessLog;
+
+document.addEventListener('DOMContentLoaded', () => {
+    _setSubjectsMode(_getSubjectsMode());
+    _updateSubjectsActionLabel();
+});
+
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
 // Lighter than openAssetInfo (which is for files); this is just text.
 function showPromptPeek(text, stage) {
@@ -4822,6 +4987,10 @@ function _buildSuggestChip(s) {
             f.append('prompt', s);
             f.append('priority', 'next');
             await fetch('/inject', { method: 'POST', body: f });
+            // Endless mode: also append the accepted chip text to the
+            // story-log pane so the user accumulates a high-level
+            // story they can copy out before image/video rewrites.
+            if (typeof _appendToEndlessLog === 'function') _appendToEndlessLog(s);
             // Two-phase exit: pulse-with-success-tint for ~1.4 s so the
             // user gets visual confirmation that this prompt is now in
             // the queue, then collapse over ~0.7 s. Both phases are

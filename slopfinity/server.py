@@ -406,7 +406,7 @@ def _default_suggest_system_prompt(n: int) -> str:
 
 
 @app.get("/subjects/suggest")
-async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0):
+async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, opener: int = 0):
     """Generate N short visual subject ideas via the configured local LLM.
 
     Cache key includes both N and (subjects, settings flags) so toggling the
@@ -430,7 +430,7 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0):
     env_override = (os.environ.get("SLOPFINITY_SUGGEST_CUSTOM_PROMPT") or "").strip()
     custom_prompt = env_override or (config.get("suggest_custom_prompt") or "").strip()
     subjects_in = (subjects or "").strip() if use_subjects else ""
-    cache_key = (n, use_subjects, custom_prompt, subjects_in, bool(endless))
+    cache_key = (n, use_subjects, custom_prompt, subjects_in, bool(endless), bool(opener))
     cache = getattr(subjects_suggest, "_cache", None)
     now = time.time()
     # Cache persists indefinitely while the cache_key is unchanged — page
@@ -440,10 +440,22 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0):
     # past ~30 s to burn an unnecessary LLM call.
     # Exception: endless mode ALWAYS fires fresh — the whole point is to
     # get a new beat each tick, even if the seed text hasn't changed yet.
-    if cache and cache[1] == cache_key and not endless:
+    if cache and cache[1] == cache_key and not endless and not opener:
         return {"suggestions": cache[2], "cached": True}
     sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
-    if endless and subjects_in:
+    # "I'm Feeling Lucky" — a single random story-opener used to seed an
+    # Endless run when the textarea is empty. We override the system
+    # prompt with one that asks for ONE evocative opening scene; the
+    # rest of the cycle then asks for continuations off that seed.
+    if opener:
+        sys_p = (
+            "You are a concept artist for an AI video fleet. "
+            "Output exactly ONE short visual subject — 3-8 words, plain text, "
+            "no numbering, no bullets, no quotes, no JSON, no markdown — "
+            "an evocative opening scene that could anchor a longer story."
+        )
+        user_msg = "Give me one story-opening scene."
+    elif endless and subjects_in:
         # Endless Story mode (Subjects card "Endless Story" toggle on).
         # Treat the existing chips as the story-so-far and ask for the
         # NEXT chapter — explicitly forbid restating earlier scenes.
@@ -512,8 +524,9 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0):
                 except Exception:
                     pass
     suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
-    # Don't store endless results in the cache — we want each tick fresh.
-    if suggestions and not endless:
+    # Don't store endless / opener results in the cache — we want each
+    # tick fresh, and openers are one-shot by design.
+    if suggestions and not endless and not opener:
         subjects_suggest._cache = (now, cache_key, suggestions)
     return {"suggestions": suggestions, "cached": False}
 

@@ -337,7 +337,29 @@
     <section id="split-left" class="ui-split-card card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
         <div class="card-body gap-3 ui-split-cardbody">
             <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-bold uppercase tracking-wider text-primary">Subjects</span>
+                {# Mode pill replaces the static "Subjects" title. Two
+                   segments: Raw Slop (queue what's typed verbatim) and
+                   Endless (seed → auto-cycle story continuations).
+                   Active segment shows the full label + primary tint;
+                   inactive segments fall back to a short abbreviation
+                   when horizontal space gets tight. State persists in
+                   localStorage via _subjectsMode helpers in app.js. #}
+                <div class="join subjects-mode-pill" role="tablist" aria-label="Subjects mode">
+                    <button type="button" data-subj-mode="raw"
+                            class="join-item btn btn-xs btn-primary"
+                            onclick="_setSubjectsMode('raw')"
+                            title="Raw Slop — queue exactly what you type, one subject per line.">
+                        <span class="subj-mode-full">Raw Slop</span>
+                        <span class="subj-mode-short">R</span>
+                    </button>
+                    <button type="button" data-subj-mode="endless"
+                            class="join-item btn btn-xs btn-primary btn-outline"
+                            onclick="_setSubjectsMode('endless')"
+                            title="Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts.">
+                        <span class="subj-mode-full">Endless</span>
+                        <span class="subj-mode-short">E</span>
+                    </button>
+                </div>
                 {# Right-side cluster: live summary pill + pipeline-config button sit together so the
                    header reads "Subjects · [gen-mode-pill][pipeline-button]". The join groups them
                    visually so they look like one control with two halves. #}
@@ -363,10 +385,41 @@
                 <textarea id="p-core" rows="5"
                     class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
                     placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
-                    oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
-                <button class="btn btn-primary btn-lg flex-none w-32 self-stretch h-auto whitespace-normal text-sm leading-tight" id="btn-start-stop-inline" onclick="toggleInfinity()" title="Start/queue generation">
+                    oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
+                <button class="btn btn-primary btn-lg flex-none w-32 self-stretch h-auto whitespace-normal text-sm leading-tight" id="btn-start-stop-inline" onclick="_subjectsAction()" title="Start/queue generation">
                     {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
                 </button>
+            </div>
+
+            {# Endless story log — only rendered when mode=endless AND a
+               story is running. The pre block grows as the user clicks
+               suggestions (each accepted chip is appended as a new
+               line). Copy button grabs textarea seed + log together so
+               the user can capture the whole high-level story before
+               it gets converted into image/video prompts. End-story
+               (✕) unlocks the textarea, clears the log, stops the
+               cycle, and returns to a fresh Endless start state. #}
+            <div id="subjects-story-pane" class="hidden flex flex-col gap-1 mt-1">
+                <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
+                    <span>Story so far</span>
+                    <div class="flex items-center gap-1">
+                        <button type="button" id="subjects-story-copy"
+                                class="btn btn-ghost btn-xs gap-1"
+                                onclick="_copyEndlessStory()"
+                                title="Copy the seed + every accepted suggestion to the clipboard">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            <span>Copy story</span>
+                        </button>
+                        <button type="button" id="subjects-story-end"
+                                class="btn btn-ghost btn-xs text-error gap-1"
+                                onclick="_endEndlessStory()"
+                                title="End this story — unlock the seed textarea, clear the log, stop the auto-cycle.">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            <span>End story</span>
+                        </button>
+                    </div>
+                </div>
+                <pre id="subjects-story-log" class="text-xs font-mono whitespace-pre-wrap leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-40 overflow-y-auto m-0"></pre>
             </div>
             <div id="subjects-need-ideas-row" class="flex items-center justify-between gap-1 flex-wrap">
                 <div class="flex items-center gap-1 flex-wrap">
@@ -1222,23 +1275,8 @@
                         </div>
                     </div>
 
-                    {# Endless + Fresh — relocated here from the Subjects card.
-                       Both write directly to localStorage so the hidden
-                       endless-story-toggle / fresh-toggle inputs in the
-                       Subjects card stay in sync (existing JS reaches
-                       for those IDs). #}
-                    <div class="form-control md:col-span-2">
-                        <label class="label cursor-pointer py-1">
-                            <span class="label-text text-xs">Endless suggestions (story continuation)</span>
-                            <input id="set-endless-toggle" type="checkbox"
-                                class="toggle toggle-primary toggle-sm"
-                                onchange="(() => { try { localStorage.setItem('slopfinity-endless-story', this.checked ? '1' : '0'); } catch(_) {} const t = document.getElementById('endless-story-toggle'); if (t && t.checked !== this.checked) { t.checked = this.checked; t.dispatchEvent(new Event('change', {bubbles:true})); } }).call(this)" />
-                        </label>
-                        <div class="label-text-alt text-[10px] opacity-60 leading-snug">
-                            When ON, the auto-suggest cycle asks the LLM to <em>continue the story</em> from your most recent chips instead of generating fresh subjects.
-                        </div>
-                    </div>
-
+                    {# Fresh marquee — Endless is now the Subjects-card mode
+                       pill, not a settings toggle. #}
                     <div class="form-control md:col-span-2">
                         <label class="label cursor-pointer py-1">
                             <span class="label-text text-xs">Fresh marquee (auto-evict oldest at cap)</span>
