@@ -2172,7 +2172,7 @@ document.addEventListener('toggle', (e) => {
                     if (r.bottom > vh - 8) {
                         li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }
-                } catch (_) {}
+                } catch (_) { }
             }));
         }
     }
@@ -2754,8 +2754,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (localStorage.getItem(_SLOP_COLLAPSED_KEY) === '1') {
             slopCollapsible.open = false;
         }
+        document.body.dataset.slopExpanded = slopCollapsible.open ? '1' : '0';
         slopCollapsible.addEventListener('toggle', () => {
-            localStorage.setItem(_SLOP_COLLAPSED_KEY, slopCollapsible.open ? '0' : '1');
+            const isOpen = slopCollapsible.open;
+            localStorage.setItem(_SLOP_COLLAPSED_KEY, isOpen ? '0' : '1');
+            document.body.dataset.slopExpanded = isOpen ? '1' : '0';
             // Refresh layout/scroll values if needed
             if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
         });
