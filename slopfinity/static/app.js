@@ -2157,6 +2157,24 @@ document.addEventListener('toggle', (e) => {
             if (det.open) _openPendingItems.add(ts);
             else _openPendingItems.delete(ts);
         }
+        // When the user expands a queue item that's near the bottom of
+        // the viewport, the freshly-revealed body extends below the
+        // fold and there's nothing to draw the eye to it. After the
+        // browser finishes painting the new content, scroll the item
+        // into view so the entire reveal is visible — using
+        // block:'nearest' so we only scroll if needed (no jump when
+        // the item is already fully on-screen).
+        if (det.open) {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                try {
+                    const r = li.getBoundingClientRect();
+                    const vh = window.innerHeight || document.documentElement.clientHeight;
+                    if (r.bottom > vh - 8) {
+                        li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                } catch (_) {}
+            }));
+        }
     }
     // Video Chains reveal: persist by v_idx.
     if (det.classList.contains('video-chain-details')) {
