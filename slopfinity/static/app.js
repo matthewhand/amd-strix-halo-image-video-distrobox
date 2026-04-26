@@ -1770,6 +1770,7 @@ async function _startEndlessStory() {
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
     _endlessRunning = true;
+    document.body.classList.add('endless-running');
     ta.readOnly = true;
     ta.classList.add('opacity-70');
     // Reset the story log to just the seed.
@@ -1795,6 +1796,7 @@ async function _startEndlessStory() {
 function _endEndlessStory(clearLog) {
     if (clearLog === undefined) clearLog = true; // legacy callers
     _endlessRunning = false;
+    document.body.classList.remove('endless-running');
     const ta = document.getElementById('p-core');
     if (ta) {
         ta.readOnly = false;
@@ -4600,8 +4602,8 @@ function connect() {
                                     const _label = _ch > 1 ? `${_tot} frames (${_ch} parts)` : `${_fpp} frames`;
                                     return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames across all chained parts">aspect ${_htmlEscape(snap.size || '1:1')} · ${_label}</span>`;
                                 })()}
-                                <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
-                                <span class="flex-none flex justify-end" style="width:1.5rem">${menuHTML}</span>
+                                <span class="flex-none min-w-[7rem] text-right" style="margin-right:1.5rem">${activeBadge}</span>
+                                ${menuHTML}
                             </span>
                         </summary>
                         <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">
