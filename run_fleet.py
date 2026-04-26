@@ -38,11 +38,9 @@ TIER_PROFILES = {
     # 1260s headroom covers loading + 8 × 80s + VAE without black-holing
     # the queue. v_idx still advances on timeout via the main-loop guard.
     #
-    # Aspect ratio fixed at 16:9 across ALL tiers so the base image matches
-    # the default video output (1280*720 = 16:9). Previously low=1:1 / med=4:3
-    # caused a square or 4:3 image to be fed into 16:9 video gen — visible
-    # letterbox / stretch on every Fast Track or early-iter clip. Tier still
-    # gates quality (steps) and frames-per-chain.
+    # The qsize field is a LEGACY default — image gen now derives its
+    # aspect from config.size (so image and video stay locked to the same
+    # shape). Tier still gates quality (steps) and frames-per-chain.
     "low": (8, "16:9", 17, 600, 1260),
     "med": (20, "16:9", 33, 900, 1800),
     "high": (50, "16:9", 49, 1500, 2700),
@@ -445,8 +443,13 @@ def _write_sidecar(out_path, **fields):
         print(f"   ⚠️  sidecar write failed for {out_path}: {e}")
 
 
-def run_image_gen(model, prompt, out_path, tier="high"):
-    qsteps, qsize, _frames, _vto, ito = TIER_PROFILES[tier]
+def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
+    qsteps, _qsize_legacy, _frames, _vto, ito = TIER_PROFILES[tier]
+    # Derive the launcher's aspect string from the user's config.size so
+    # image and video stages render to the same shape. Falls back to the
+    # tier's legacy aspect when config.size isn't passed (e.g. pre-fix
+    # callers).
+    qsize = _extract_aspect(size_str) if size_str else _qsize_legacy
     print(
         f"🖼️  Image Gen [{model}] tier={tier} steps={qsteps} size={qsize} timeout={ito}s"
     )
@@ -800,6 +803,33 @@ def _resolve_size(size_str, default="1280*720"):
         "3:4": "864*1152",
     }
     return aspects.get(size_str.strip(), default)
+
+
+def _extract_aspect(size_str):
+    """Inverse of _resolve_size — given a WIDTH*HEIGHT or aspect string,
+    return the nearest aspect-string preset. Used by image gen launchers
+    that accept aspect strings (1:1, 4:3, 16:9) instead of explicit pixel
+    sizes, so the image and video stages stay locked to the same shape.
+    """
+    if not size_str:
+        return "16:9"
+    s = size_str.strip()
+    # Already an aspect string.
+    if s in ("1:1", "4:3", "16:9", "9:16", "3:4"):
+        return s
+    # WIDTH*HEIGHT — compute ratio + snap to the nearest preset.
+    if "*" in s:
+        try:
+            w, h = (int(x) for x in s.split("*", 1))
+            if h <= 0:
+                return "16:9"
+            r = w / h
+            presets = [("1:1", 1.0), ("4:3", 4 / 3), ("16:9", 16 / 9),
+                       ("9:16", 9 / 16), ("3:4", 3 / 4)]
+            return min(presets, key=lambda p: abs(p[1] - r))[0]
+        except (ValueError, ZeroDivisionError):
+            return "16:9"
+    return "16:9"
 
 
 def generate_base_image_ltx23(prompt, output_path, size_str):
@@ -1553,7 +1583,7 @@ def main():
                     flush=True,
                 )
             elif b_mod in ["qwen", "ernie"]:
-                run_image_gen(b_mod, p, in_img, tier=tier)
+                run_image_gen(b_mod, p, in_img, tier=tier, size_str=config.get("size"))
             else:
                 generate_base_image_ltx23(p, in_img, config["size"])
 
