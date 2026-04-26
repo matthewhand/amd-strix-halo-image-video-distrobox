@@ -1929,8 +1929,13 @@ function _setSubjectsMode(mode) {
     body.classList.add('subj-mode-' + mode);
     const ta = document.getElementById('p-core');
     if (ta) ta.rows = (mode === 'simple' || mode === 'raw') ? 5 : 2;
-    // Render any persisted history on first switch into chat.
-    if (mode === 'chat') _renderChatLog();
+    // Render any persisted history on first switch into chat AND fetch
+    // 4 reply suggestions (starter ideas if history is empty, or
+    // continuations of the last turn).
+    if (mode === 'chat') {
+        _renderChatLog();
+        if (typeof _renderChatReplies === 'function') _renderChatReplies();
+    }
 }
 window._setSubjectsMode = _setSubjectsMode;
 
@@ -1987,6 +1992,9 @@ function _resetChat() {
     if (!confirm('Clear chat history? This wipes the current conversation.')) return;
     _setChatHistory([]);
     _renderChatLog();
+    // History wiped → re-fetch the 4 starter chips so the user has fresh
+    // openers to pick from.
+    if (typeof _renderChatReplies === 'function') _renderChatReplies();
 }
 window._resetChat = _resetChat;
 
@@ -2076,6 +2084,9 @@ async function _sendChatMessage() {
         sendBtn.textContent = 'Send';
     }
     if (input) input.focus();
+    // Refresh reply suggestions against the new latest assistant turn so
+    // the user has 4 contextual continuation chips ready.
+    if (typeof _renderChatReplies === 'function') _renderChatReplies();
 }
 window._sendChatMessage = _sendChatMessage;
 
@@ -6964,30 +6975,56 @@ async function _regenEndlessRow(rowIdx) {
 window._regenEndlessRow = _regenEndlessRow;
 
 // CHAT mode — 4 reply chips beneath the input, no marquee. Each chip is
-// a one-click "send this as your next message" shortcut. Generated against
-// the latest 6 messages of chat history so the suggestions stay contextual.
+// a one-click "send this as your next message" shortcut.
+//   With history:  4 contextual continuations of the conversation
+//   Empty history: 4 conversation-starter prompts the user can pick to
+//                  open a session (e.g. "queue 3 dragons", "what's running?")
 async function _renderChatReplies() {
     const host = document.getElementById('subjects-chat-replies');
     if (!host) return;
     const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
-    if (!history.length) { host.innerHTML = ''; return; }
     host.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
-    // Compose a compact context: last assistant message text + last user message text.
-    const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
-    const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
-    const ctx = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
-    // Reuse /subjects/suggest with a tailored prompt_id 'chat-reply' (added
-    // to defaults in a follow-up; for now fall back to default prompt).
-    // Keep n=4 and use the chat context as the subjects seed.
-    const subjects = ctx;
-    const qs = '?n=4&subjects=' + encodeURIComponent(subjects) + '&fresh=1&_t=' + Date.now();
+
+    let subjects = '';
+    let nudge = '';
+    if (history.length) {
+        // Continuation mode — last user/assistant pair as context.
+        const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
+        const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
+        subjects = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
+        nudge = 'Suggest 4 short reply candidates the user might send next, 3-8 words each, plain text, one per line.';
+    } else {
+        // Starter mode — pick from things this dashboard's chat assistant
+        // can actually do (queue clips, check status, list outputs).
+        subjects = '';
+        nudge = (
+            'You are the slopfinity assistant. Suggest exactly 4 short conversation '
+            + 'starters the user might send first, 3-8 words each, plain text, one per '
+            + 'line, no numbering, no quotes. Examples of valid starters: '
+            + '"queue 3 short dragon clips", "what\'s running?", "list recent finals", '
+            + '"cancel everything pending".'
+        );
+    }
+    const qs = '?n=4&fresh=1&_t=' + Date.now()
+        + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+        + '&custom_prompt_inline=' + encodeURIComponent(nudge);
     let arr = [];
     try {
-        const r = await fetch('/subjects/suggest' + qs);
+        // The server doesn't have a custom_prompt_inline param; fall through
+        // by passing the nudge as the subjects seed when history is empty
+        // (server's "match these existing subjects" template still produces
+        // sensible output for the starter case). For continuation it works
+        // naturally since `subjects` carries the chat context.
+        const seed = subjects || nudge;
+        const r = await fetch('/subjects/suggest?n=4&fresh=1&_t=' + Date.now()
+            + '&subjects=' + encodeURIComponent(seed));
         const d = await r.json();
         arr = (d && d.suggestions) || [];
     } catch (_) {}
-    if (!arr.length) { host.innerHTML = ''; return; }
+    if (!arr.length) {
+        host.innerHTML = '<span class="text-[10px] italic opacity-60">no starter suggestions (LLM unreachable)</span>';
+        return;
+    }
     host.innerHTML = arr.slice(0, 4).map(s =>
         `<button type="button" class="btn btn-ghost btn-xs w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
             onclick="(function(t){const i=document.getElementById('subjects-chat-input');if(i){i.value=t;i.focus();}})(${JSON.stringify(s)})">
