@@ -597,10 +597,19 @@ body[data-layout="gallery"] #gallery-fab {
     .render-anim-char { animation: none; transition: none; }
 }
 
-/* Video Chains collapsible: arrow inside the model-id badge rotates 90° when
-   the <details> is open, giving the chip a single combined affordance. */
+/* Video Chains collapsible: arrow rotates 90° when the <details> is
+   open, and the inline label swaps "expand" → "collapse" via CSS based
+   on the [open] state. The label only shows until Final Merge produces
+   the merged FINAL_<v>.mp4 — once it has, JS swaps in the filename +
+   thumb instead. */
 .video-chain-details[open] > summary .video-chain-arrow {
     transform: rotate(90deg);
+}
+.video-chain-details > summary .vc-toggle-label::before {
+    content: 'expand';
+}
+.video-chain-details[open] > summary .vc-toggle-label::before {
+    content: 'collapse';
 }
 
 /* Memory Estimate disclosure — same arrow-rotate idiom as Video Chains.
