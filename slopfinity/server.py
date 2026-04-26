@@ -1465,6 +1465,163 @@ async def asset_info(filename: str):
     }
 
 
+@app.get("/asset/components/{filename}")
+async def asset_components(filename: str):
+    """For a FINAL_*.mp4, list the source components that were concatenated to
+    produce it (chain mp4s, base png, music wav, optional tts wav).
+
+    Lookup strategy:
+      1. Pattern-match `FINAL_<v_idx>_<slug>.mp4` (and `_audio` variant).
+      2. Prefer the concat list `_concat_<v_idx>.txt` if still on disk
+         (run_fleet removes it post-mux, so usually missing).
+      3. Otherwise glob `slop_<v_idx>_*` to reconstruct components by sidecar
+         + filename pattern (`_c\\d+.mp4`, `_base.png`, `.wav`).
+
+    Each component row includes filename, kind, model, part/of (if known),
+    size + mtime, and a `/files/<name>` URL for direct linking. Sidecar
+    fields are merged in best-effort.
+
+    Returns `{ok: True, v_idx: int, components: [...]}` on success.
+    Graceful: missing sidecars or missing concat list are non-fatal — the
+    endpoint returns whatever components it could reconstruct.
+    """
+    import re
+    import glob
+    if "/" in filename or ".." in filename or filename.startswith("."):
+        return JSONResponse({"ok": False, "error": "invalid filename"}, status_code=400)
+    if not filename.startswith("FINAL_") or not filename.endswith(".mp4"):
+        return JSONResponse(
+            {"ok": False, "error": "components only apply to FINAL_*.mp4"},
+            status_code=400,
+        )
+    m = re.match(r"^FINAL_(\d+)_(.+?)(?:_audio)?\.mp4$", filename)
+    if not m:
+        return JSONResponse(
+            {"ok": False, "error": "could not parse v_idx/slug from filename"},
+            status_code=400,
+        )
+    v_idx = int(m.group(1))
+    slug = m.group(2)
+
+    def _component_row(name: str) -> dict:
+        """Build a single component descriptor from a leaf filename."""
+        p = os.path.join(EXP_DIR, name)
+        try:
+            s = os.stat(p)
+            size = s.st_size
+            mt = s.st_mtime
+        except OSError:
+            size = 0
+            mt = 0.0
+        # Best-effort sidecar merge — sidecars carry kind/model/part/of plus
+        # FLF2V/cont fields like kf_start/kf_end/handoff_k.
+        side = {}
+        sidecar = os.path.join(EXP_DIR, name + ".json")
+        if os.path.isfile(sidecar):
+            try:
+                with open(sidecar) as f:
+                    side = json.load(f) or {}
+            except Exception:
+                side = {}
+        # Derive kind from filename if sidecar didn't say.
+        if name.endswith(".wav"):
+            inferred_kind = "audio"
+        elif name.endswith(".png") or name.endswith(".jpg"):
+            inferred_kind = "image"
+        elif re.search(r"_c\d+\.mp4$", name):
+            inferred_kind = "chain"
+        elif name.endswith(".mp4"):
+            inferred_kind = "video"
+        else:
+            inferred_kind = "other"
+        # Pull part index from filename when sidecar omitted it.
+        part = side.get("part")
+        if part is None:
+            mc = re.search(r"_c(\d+)\.mp4$", name)
+            if mc:
+                part = int(mc.group(1))
+        return {
+            "file": name,
+            "url": f"/files/{name}",
+            "kind": side.get("kind") or inferred_kind,
+            "model": side.get("model"),
+            "prompt": side.get("prompt"),
+            "part": part,
+            "of": side.get("of"),
+            "kf_start": side.get("kf_start"),
+            "kf_end": side.get("kf_end"),
+            "handoff_k": side.get("handoff_k"),
+            "size_bytes": size,
+            "mtime": mt,
+        }
+
+    components: list = []
+    seen: set = set()
+
+    # 1. Prefer concat list if still on disk (rare — run_fleet rm's it).
+    concat_path = os.path.join(EXP_DIR, f"_concat_{v_idx}.txt")
+    if os.path.isfile(concat_path):
+        try:
+            with open(concat_path) as f:
+                for line in f:
+                    line = line.strip()
+                    cm = re.match(r"^file\s+'(.+)'\s*$", line)
+                    if not cm:
+                        continue
+                    nm = os.path.basename(cm.group(1))
+                    if nm in seen:
+                        continue
+                    if not os.path.isfile(os.path.join(EXP_DIR, nm)):
+                        continue
+                    components.append(_component_row(nm))
+                    seen.add(nm)
+        except Exception:
+            pass
+
+    # 2. Glob fallback — picks up chain mp4s in numeric order, plus base/wav.
+    prefix = f"slop_{v_idx}_"
+    candidates = []
+    for p in glob.glob(os.path.join(EXP_DIR, f"{prefix}*")):
+        nm = os.path.basename(p)
+        if nm.endswith(".json"):
+            continue  # sidecars are handled inline
+        # Only count this component if it shares the slug — guards against
+        # accidental v_idx collisions across different prompts.
+        if not nm.startswith(f"{prefix}{slug}"):
+            continue
+        # Skip handoff/bridge frames `_f\d+.png` — they're FLF2V intermediates
+        # consumed during chain assembly, not part of the final concat.
+        if re.search(r"_f\d+\.png$", nm):
+            continue
+        candidates.append(nm)
+
+    # Order: chain segments first (by part), then base.png, then any wavs.
+    def _sort_key(nm: str):
+        mc = re.search(r"_c(\d+)\.mp4$", nm)
+        if mc:
+            return (0, int(mc.group(1)))
+        if nm.endswith("_base.png"):
+            return (1, 0)
+        if nm.endswith(".wav"):
+            return (2, nm)
+        return (3, nm)
+
+    for nm in sorted(candidates, key=_sort_key):
+        if nm in seen:
+            continue
+        components.append(_component_row(nm))
+        seen.add(nm)
+
+    return {
+        "ok": True,
+        "filename": filename,
+        "v_idx": v_idx,
+        "slug": slug,
+        "concat_list_present": os.path.isfile(concat_path),
+        "components": components,
+    }
+
+
 @app.delete("/asset/{filename}")
 async def asset_delete(filename: str):
     """Delete an asset file (and its sidecar JSON if present) from EXP_DIR.
