@@ -109,6 +109,21 @@
 
 <body class="min-h-screen bg-base-300 text-base-content">
 
+    {# Loading splash — full-viewport overlay shown until the WS handshake
+       completes (or after a 2s timeout, whichever comes first). Branding
+       pulled from the same {{ branding.app.name }} the navbar uses; tip
+       picked at random from a short list. JS removes the node on hide so
+       it never re-paints. #}
+    <div id="splash-overlay"
+         class="fixed inset-0 z-[100] flex items-center justify-center bg-base-300 transition-opacity duration-500"
+         style="background: hsl(var(--b3));">
+        <div class="flex flex-col items-center gap-6 px-6 max-w-xl text-center">
+            <h1 class="text-5xl md:text-6xl font-black text-primary uppercase tracking-[0.25em] drop-shadow-lg">{{ branding.app.name }}</h1>
+            <span class="loading loading-bars loading-md text-primary"></span>
+            <p id="splash-tip" class="text-sm md:text-base font-mono text-base-content/70 italic leading-relaxed min-h-[3em]">loading…</p>
+        </div>
+    </div>
+
     <main class="w-full mx-auto p-4 md:p-6">
 
         <!-- Combined header + stats navbar — single sticky strip with brand on left, hardware pills + Latest, conn pill + settings on right. -->

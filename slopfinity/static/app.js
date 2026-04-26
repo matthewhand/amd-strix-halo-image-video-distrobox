@@ -14,6 +14,48 @@ function applyTheme(name) {
 }
 window.applyTheme = applyTheme;
 
+// ---------------------------------------------------------------------------
+// Loading splash — pick a random tip on first paint, fade out once the
+// dashboard is live (first WS state tick, or 2.5s timeout). Self-removing.
+// ---------------------------------------------------------------------------
+const _SPLASH_TIPS = [
+    "Hover the right edge of any suggestion row to reveal a 🗑 — drops just that batch.",
+    "Click 🎲 Suggest for an instant batch; flip ↻ Auto to keep them flowing.",
+    "Endless mode locks the seed and grows a story log — copy it before image/video stages rewrite each line.",
+    "Drag the splitter pill between Subjects/Queue and the Slop gallery to re-balance vertical room.",
+    "S / M / L pill in the Slop card flips preview density — small for skimming, large for scrubbing.",
+    "Click any progress-bar segment to jump straight to that stage's settings.",
+    "Pin a wall display to one layout: append ?layout=queue (or subj-slop, gallery, …) to the URL.",
+    "CPU offload (Settings → Scheduler) lets the LLM + TTS ride CPU while the iGPU stays free for image/video.",
+    "Slop video thumbnails cycle first → middle → last frame as a GIF preview. Toggle off in Diagnostics.",
+    "Tap 'I'm Feeling Lucky' in Endless mode (with empty seed) and the LLM picks a story opener for you.",
+];
+
+(function _splashController() {
+    const splash = () => document.getElementById('splash-overlay');
+    // Pick a tip immediately so the user sees it on first paint, even
+    // before any JS event fires.
+    document.addEventListener('DOMContentLoaded', () => {
+        const tip = _SPLASH_TIPS[Math.floor(Math.random() * _SPLASH_TIPS.length)];
+        const el = document.getElementById('splash-tip');
+        if (el) el.textContent = tip;
+    });
+    let _splashHidden = false;
+    function hideSplash() {
+        if (_splashHidden) return;
+        _splashHidden = true;
+        const el = splash();
+        if (!el) return;
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+        setTimeout(() => { try { el.remove(); } catch (_) {} }, 600);
+    }
+    window._hideSplash = hideSplash;
+    // Belt-and-braces hide: 2.5s after page load, regardless of WS state.
+    // The WS handler in handleTick() also calls _hideSplash on first tick.
+    window.addEventListener('load', () => setTimeout(hideSplash, 2500));
+})();
+
 // Slop preview-size pill — sets body[data-slop-size] so the CSS rules
 // in app.css resize the preview-grid columns + per-card figure height.
 // Default 'm' matches the legacy 2/3/4-col grid; 's' packs more thumbs
@@ -3215,6 +3257,10 @@ function connect() {
             return;
         }
         if (d.type === 'state') {
+            // First successful WS state tick = the dashboard has live
+            // data. Drop the splash now even if the 2.5s timeout
+            // hasn't fired yet — feels snappy on a warm cache.
+            if (typeof _hideSplash === 'function') _hideSplash();
             // Tone the percentage colour with the latest ticker column —
             // text-error above 80 %, otherwise the per-pill tone class. Keeps
             // the number visually in sync with the bar colour.
