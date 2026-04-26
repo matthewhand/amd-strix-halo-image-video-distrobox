@@ -814,17 +814,70 @@ body:not([data-layout]) #slop-collapsible {
     pointer-events: auto; /* container itself stays interactive */
 }
 
-body:not([data-layout]) #slop-collapsible > summary {
+body:not([data-layout]) #slop-collapsible > summary,
+body[data-layout="gallery"] #slop-collapsible > summary {
     cursor: default !important;
     pointer-events: none; /* the summary row no longer toggles */
 }
 
-body:not([data-layout]) #slop-collapsible > summary > * {
+body:not([data-layout]) #slop-collapsible > summary > *,
+body[data-layout="gallery"] #slop-collapsible > summary > * {
     pointer-events: auto; /* but inner buttons (⊕ upload) still click */
 }
 
-body:not([data-layout]) #slop-collapsible .slop-indicator {
+body:not([data-layout]) #slop-collapsible .slop-indicator,
+body[data-layout="gallery"] #slop-collapsible .slop-indicator {
     visibility: hidden;
+}
+
+/* Mobile sheets — when the user edge-swipes on a phone (gallery layout),
+   Subjects (#split-left) and Queue (#split-right) slide in from their
+   respective edges as overlay sheets. Default state: hidden translateX.
+   .mobile-sheet-open-{left,right} on body slides the matching pane in. */
+@media (max-width: 767px) {
+    body[data-layout="gallery"] #split-left,
+    body[data-layout="gallery"] #split-right {
+        position: fixed !important;
+        top: 4rem;            /* below the top stat bar */
+        bottom: 0;
+        width: 86vw;
+        max-width: 28rem;
+        z-index: 50;
+        background: hsl(var(--b1));
+        box-shadow: 0 0 24px hsl(var(--bc) / 0.45);
+        transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+        overflow-y: auto;
+    }
+    body[data-layout="gallery"] #split-left {
+        left: 0;
+        transform: translateX(-105%);
+    }
+    body[data-layout="gallery"] #split-right {
+        right: 0;
+        transform: translateX(105%);
+    }
+    body[data-layout="gallery"].mobile-sheet-open-left #split-left {
+        transform: translateX(0);
+    }
+    body[data-layout="gallery"].mobile-sheet-open-right #split-right {
+        transform: translateX(0);
+    }
+    /* Backdrop dim while a sheet is open. */
+    body[data-layout="gallery"].mobile-sheet-open-left::after,
+    body[data-layout="gallery"].mobile-sheet-open-right::after {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: hsl(var(--bc) / 0.35);
+        z-index: 49;
+        pointer-events: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    body[data-layout="gallery"] #split-left,
+    body[data-layout="gallery"] #split-right {
+        transition: none;
+    }
 }
 
 /* Summary bar is always visible as the toggle row. */
