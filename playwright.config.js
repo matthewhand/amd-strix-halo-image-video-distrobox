@@ -14,6 +14,13 @@ module.exports = defineConfig({
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         viewport: { width: 1440, height: 900 },
+        // Block the Slopfinity service worker — its activate handler
+        // calls clients.navigate(c.url) to force a one-shot reload on
+        // upgrade, which destroys the test's page context mid-evaluate
+        // and produces flaky "Execution context was destroyed" errors.
+        // Tests assert layout / visibility — none of them care about SW
+        // cache behaviour.
+        serviceWorkers: 'block',
     },
     projects: [
         {
