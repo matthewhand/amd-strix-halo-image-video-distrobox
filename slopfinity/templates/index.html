@@ -8,6 +8,20 @@
     <meta name="theme-color" content="{{ branding.colors.primary }}" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+    {# Theme-restore: applied BEFORE any paint so the splash overlay
+       (which uses bg-base-300 / hsl(var(--b3)) / text-primary) renders
+       in the user's chosen theme on first paint, not the dracula
+       default the SSR markup ships with. The same logic re-runs in
+       app.js as a backup, but doing it here avoids the theme-flash
+       window between body-parse and app.js-execute. #}
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('slopfinity-theme');
+                if (t) document.documentElement.dataset.theme = t;
+            } catch (_) {}
+        })();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.1/dist/full.min.css" rel="stylesheet" type="text/css" />
     {# Silence the Tailwind play-CDN production warning. We use the CDN
     intentionally in this self-hosted dashboard — bundling via the
