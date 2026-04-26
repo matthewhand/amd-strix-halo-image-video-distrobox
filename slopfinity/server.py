@@ -411,7 +411,8 @@ def _default_suggest_system_prompt(n: int) -> str:
 
 
 @app.get("/subjects/suggest")
-async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, opener: int = 0):
+async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, opener: int = 0,
+                            fresh: int = 0):
     """Generate N short visual subject ideas via the configured local LLM.
 
     Cache key includes both N and (subjects, settings flags) so toggling the
@@ -424,6 +425,11 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
         content from the client.
       * `suggest_custom_prompt` (default ""): when non-empty, replaces the
         built-in suggestion system prompt verbatim.
+
+    `fresh=1` bypasses the cache AND injects a random salt into the user
+    message so the LLM produces a different batch — used by the marquee
+    drip-feed loop that fills rows 2..N (otherwise rows 2/3/4 hit the
+    same cache_key as row 1 and all show identical chips).
     """
     import time
     config = cfg.load_config()
@@ -443,9 +449,11 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     # actually changed something (Subjects text, custom prompt, n, the
     # use_subjects toggle). The previous 30-second TTL caused every reload
     # past ~30 s to burn an unnecessary LLM call.
-    # Exception: endless mode ALWAYS fires fresh — the whole point is to
-    # get a new beat each tick, even if the seed text hasn't changed yet.
-    if cache and cache[1] == cache_key and not endless and not opener:
+    # Exceptions that always re-fire fresh:
+    #   * endless mode — every tick is a NEW story beat
+    #   * opener — single-shot lucky-dip
+    #   * fresh=1 — caller explicitly asked for variation (marquee drip-feed)
+    if cache and cache[1] == cache_key and not endless and not opener and not fresh:
         return {"suggestions": cache[2], "cached": True}
     sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
     # "I'm Feeling Lucky" — a single random story-opener used to seed an
@@ -480,6 +488,21 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
         )
     else:
         user_msg = f"Give me {n} subject ideas."
+
+    # When fresh=1 we want EACH call to give different ideas (the marquee
+    # drip-feed asks for rows 2..N and they'd otherwise be identical to
+    # row 1 since the system+user prompts are the same). Append a small
+    # randomized salt that the LLM will treat as a free-association nudge.
+    if fresh:
+        salt_themes = [
+            "atmospheric weather", "industrial decay", "biological mutation",
+            "celestial phenomena", "domestic surrealism", "geometric impossibility",
+            "kinetic machinery", "underwater architecture", "nocturnal wildlife",
+            "bureaucratic absurdity", "fungal growth", "crystalline structures",
+            "deep-sea bioluminescence", "post-industrial landscapes", "neon arcades",
+        ]
+        chosen = random.choice(salt_themes)
+        user_msg += f"\n\nNudge: lean toward {chosen}. Avoid repeating any earlier batch."
     # Run the (blocking, network-bound) LLM call in a thread so it doesn't
     # stall FastAPI's event loop — without this, the WS state broadcast and
     # other endpoints (Settings open, etc.) freeze for the duration.
