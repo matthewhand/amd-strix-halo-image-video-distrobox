@@ -917,6 +917,23 @@
                             <span id="slop-bar-count-video">0 vids</span>
                             <span id="slop-bar-count-image">0 imgs</span>
                         </div>
+                        {# Seed-asset upload — opens a multi-file picker. Drag-drop
+                           anywhere on the page and clipboard paste also work,
+                           wired by _wireSeedUpload() in app.js. #}
+                        <button type="button" id="btn-seed-upload"
+                            class="btn btn-xs btn-ghost btn-circle text-primary flex-none"
+                            onclick="event.stopPropagation()"
+                            title="Upload seed images (or drag-drop anywhere on the page, or paste from clipboard)"
+                            aria-label="Upload seed images">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+                                stroke-linejoin="round" class="w-3.5 h-3.5">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
+                        <input type="file" id="seed-upload-input" multiple accept="image/*"
+                            class="hidden" aria-hidden="true">
                     </summary>
                     <section id="output-section" class="card-body p-4 pt-3"
                         style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
