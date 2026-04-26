@@ -539,7 +539,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="flex gap-2 items-stretch">
+                                <div id="subjects-input-row" class="flex gap-2 items-stretch">
                                     <textarea id="p-core" rows="5"
                                         class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
                                         placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
@@ -859,7 +859,7 @@
                                     <li class="bg-base-200 rounded-md{% if q.status == 'cancelled' %} opacity-50{% endif %}{% if is_active %} ring-2 ring-primary{% endif %}"
                                         data-q-ts="{{ q.ts }}"
                                         data-q-status="{{ 'active' if is_active else (q.status or 'pending') }}">
-                                        <details {% if is_active %}open{% endif %}>
+                                        <details>
                                             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs">
                                                 {% if q.status == 'cancelled' %}
                                                 <span class="badge badge-xs badge-ghost">cancelled</span>
