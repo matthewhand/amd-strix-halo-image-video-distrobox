@@ -2188,6 +2188,9 @@ async def settings_get():
         "suggest_auto_disabled": bool(c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)),
         "disk_min_pct": float(c.get("disk_min_pct") if c.get("disk_min_pct") is not None else 1),
         "disk_min_gb": float(c.get("disk_min_gb") if c.get("disk_min_gb") is not None else 5),
+        # Named suggestion prompts. Active entries appear in the unified
+        # Suggestions badge dropdown + drive Endless per-row selectors.
+        "suggest_prompts": list(c.get("suggest_prompts") or cfg.DEFAULT_SUGGEST_PROMPTS),
         "auto_suspend": c.get("auto_suspend") or list(cfg.DEFAULT_AUTO_SUSPEND),
         # Per-model loading prefs (Settings → Scheduler → "Per-model loading
         # preferences"). Both lists default to empty; the hydrator on the
