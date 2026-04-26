@@ -1580,6 +1580,15 @@ function _setSubjectsMode(mode) {
     // the only action). Hide it; restore on mode switch.
     const bigBtn = document.getElementById('btn-start-stop-inline');
     if (bigBtn) bigBtn.classList.toggle('hidden', mode === 'chat');
+    // Per-mode textarea sizing — raw needs space (multi-line subjects),
+    // endless and chat compact down (the seed/prompt is short, the
+    // story-log or chat-bubble pane below it does the heavy lifting).
+    // Body class drives the actual CSS rules in app.css (.subj-mode-*).
+    const body = document.body;
+    body.classList.remove('subj-mode-raw', 'subj-mode-endless', 'subj-mode-chat');
+    body.classList.add('subj-mode-' + mode);
+    const ta = document.getElementById('p-core');
+    if (ta) ta.rows = (mode === 'raw') ? 5 : 2;
     // Render any persisted history on first switch into chat.
     if (mode === 'chat') _renderChatLog();
 }
@@ -1649,10 +1658,13 @@ function _renderChatLog() {
         log.innerHTML = '<div class="text-[10px] opacity-50 italic">no messages yet — try "queue 3 short clips of dragons" or "what\'s running?"</div>';
         return;
     }
+    // DaisyUI chat / chat-bubble for proper bubble styling (avatar slot
+     // omitted; chat-start/end handles left/right layout). Tool calls
+     // render as compact mono chips inside the assistant bubble.
     log.innerHTML = history.map(m => {
         const role = m.role || '';
         if (role === 'user') {
-            return `<div class="flex justify-end"><div class="bg-primary/20 text-base-content rounded-lg px-3 py-1.5 max-w-[85%] whitespace-pre-wrap">${_htmlEscape(m.content || '')}</div></div>`;
+            return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap">${_htmlEscape(m.content || '')}</div></div>`;
         }
         if (role === 'assistant') {
             const content = (m.content || '').trim();
@@ -1668,14 +1680,12 @@ function _renderChatLog() {
                 return `<div class="text-[10px] font-mono opacity-70 bg-base-300/40 rounded px-2 py-1 mt-1">→ ${_htmlEscape(name)}(${_htmlEscape(args)})</div>`;
             }).join('');
             const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
-            return `<div class="flex justify-start"><div class="bg-base-300/40 text-base-content rounded-lg px-3 py-1.5 max-w-[90%]">${body}${callChips}</div></div>`;
+            return `<div class="chat chat-start"><div class="chat-bubble text-xs">${body}${callChips}</div></div>`;
         }
         if (role === 'tool') {
-            // Tool result chip — compact, monospaced. Truncate to keep the
-            // log readable; full payload is still in localStorage.
             let preview = m.content || '';
             if (preview.length > 200) preview = preview.slice(0, 200) + '…';
-            return `<div class="flex justify-start"><div class="text-[10px] font-mono opacity-60 bg-base-200/40 border-l-2 border-info pl-2 py-1">↳ ${_htmlEscape(m.name || 'tool')}: ${_htmlEscape(preview)}</div></div>`;
+            return `<div class="chat chat-start"><div class="chat-bubble chat-bubble-info text-[10px] font-mono">↳ ${_htmlEscape(m.name || 'tool')}: ${_htmlEscape(preview)}</div></div>`;
         }
         return '';
     }).join('');
@@ -3913,7 +3923,7 @@ function connect() {
             // normally, text-error above 80 % so the colour tracks the ticker.
             const loadPct = (typeof d.stats.load_pct === 'number') ? d.stats.load_pct : 0;
             const loadEl = $('l-v');
-            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'info'); }
+            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'primary'); }
             const loadParent = loadEl && loadEl.parentElement;
             if (loadParent && d.stats.load_1m != null) {
                 loadParent.title = `1m: ${d.stats.load_1m.toFixed(2)} · 5m: ${d.stats.load_5m.toFixed(2)} · 15m: ${d.stats.load_15m.toFixed(2)} (load average / cpu count)`;
@@ -4574,7 +4584,7 @@ function connect() {
                 // extra click. The reveal hosts model badges, size·frames meta,
                 // and the live pipeline strip + timers.
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
-                    <details ${(isActive || _openPendingItems.has(q.ts || 0)) ? 'open' : ''}>
+                    <details ${_openPendingItems.has(q.ts || 0) ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
                             <span class="flex items-center gap-1 flex-none">
                                 ${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
@@ -4591,7 +4601,7 @@ function connect() {
                                     return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames across all chained parts">aspect ${_htmlEscape(snap.size || '1:1')} · ${_label}</span>`;
                                 })()}
                                 <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
-                                ${menuHTML}
+                                <span class="flex-none flex justify-end" style="width:1.5rem">${menuHTML}</span>
                             </span>
                         </summary>
                         <div class="px-2 pb-2 pt-0 flex flex-col gap-1 border-t border-base-300/50">

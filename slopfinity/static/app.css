@@ -2232,6 +2232,38 @@ body.no-card-wm .card-wm-bar {
     display: none !important;
 }
 
+/* Subjects-card mode-driven visual states. body.subj-mode-{raw,endless,chat}
+   is set by _setSubjectsMode in app.js whenever the user picks a mode.
+   Raw keeps the original full-textarea layout. Endless and Chat shrink
+   the textarea (rows=2 set in JS) and let the story-log / chat-pane
+   below it flex-grow into the freed space. Chat hides the textarea row
+   entirely since the chat pane has its own input + Send button. */
+body.subj-mode-chat #subjects-input-row {
+    display: none !important;
+}
+
+body.subj-mode-chat #subjects-chat-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+body.subj-mode-chat #subjects-chat-log {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
+body.subj-mode-endless #subjects-story-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+body.subj-mode-endless #subjects-story-log {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
 /* Seed-asset drag-drop overlay — fires when files are dragged anywhere
    over the page. The `seed-drag-active` class is toggled by
    _wireSeedUpload() in app.js based on dragenter/dragleave depth. */
