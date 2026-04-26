@@ -774,20 +774,27 @@
            (those are global, not per-popup choices); the chaos-on /
            when-idle-on / concurrent-on IDs still exist over there so all
            app.js handlers keep working unchanged. #}
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
-            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Scheduler</span>
-            <label class="flex items-center gap-2">
-                <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
-            </label>
+        <div class="flex flex-wrap items-start gap-x-3 gap-y-2 mb-3">
+            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1 mt-1.5">Scheduler</span>
             <label class="flex items-center gap-2">
                 <input type="checkbox" id="inf-on" class="toggle toggle-primary toggle-sm" {% if config.infinity_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateChaosEnabled(); _updateGenModePill()" />
                 <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity" data-off-label="Infinity">Infinity</span>
             </label>
-            <label class="flex items-center gap-2">
-                <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate ASAP" data-off-label="Generate ASAP" title="Inserts your prompt right after the active job in the queue. With Terminate also on, the active job is cancelled first.">Generate ASAP</span>
-            </label>
+            {# Generate ASAP + its dependent Terminate Existing toggle stack
+               vertically. Terminate is meaningless without ASAP (it
+               cancels the in-flight job to make room for the new one),
+               so we disable it when ASAP is off and grey it accordingly.
+               _updateTermEnabled() in app.js wires the dependency. #}
+            <div class="flex flex-col gap-1">
+                <label class="flex items-center gap-2">
+                    <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm" onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill(); _updateTermEnabled && _updateTermEnabled()" />
+                    <span class="text-xs single-label" data-toggle="now-on" data-on-label="Generate ASAP" data-off-label="Generate ASAP" title="Inserts your prompt right after the active job in the queue. With Terminate Existing also on, the active job is cancelled first.">Generate ASAP</span>
+                </label>
+                <label class="flex items-center gap-2 pl-6 opacity-60" id="term-row" title="Cancel the currently running job to make room for the ASAP insert. Only meaningful when Generate ASAP is on.">
+                    <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" disabled onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                    <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing" data-off-label="Terminate Existing">Terminate Existing</span>
+                </label>
+            </div>
         </div>
 
         <!-- ============ Output dims: aspect ratio + frames per part ============ -->
