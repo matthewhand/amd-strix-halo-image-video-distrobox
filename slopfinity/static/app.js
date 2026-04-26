@@ -2944,6 +2944,11 @@ const _gpuPctHistory = []; // each entry: { ts: ms, pct: 0..100 }
 // Returns true when the user has flipped the Settings → LLM → Generation
 // "Disable automatic suggestion fetches" toggle ON. Falls back to false
 // (auto-suggest enabled) until the first WS tick lands.
+// Aliased so older call sites that say _autoSuggestDisabled() keep
+// working — the previous agent renamed the canonical helper without
+// updating every caller, which threw "is not defined" at runtime and
+// silently broke later JS execution (subjects card stopped rendering).
+window._autoSuggestDisabled = function() { return _isAutoSuggestDisabled(); };
 function _isAutoSuggestDisabled() {
     if (!_lastTick || !_lastTick.config) return false;
     const c = _lastTick.config;
