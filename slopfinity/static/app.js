@@ -4349,7 +4349,6 @@ function _updateGenModePill() {
   const poly = document.getElementById('chaos-on');
   const now = document.getElementById('now-on');
   const term = document.getElementById('term-on');
-  const conc = document.getElementById('concurrent-on');
   const parts = [];
   parts.push(inf && inf.checked ? '♾ Infinity' : '▶ Single');
   if (inf && inf.checked && idle && idle.checked) parts.push('+idle');
@@ -4357,7 +4356,9 @@ function _updateGenModePill() {
   if (term && term.checked) parts.push('🛑 terminate');
   else if (now && now.checked) parts.push('⏯ now');
   else parts.push('queue');
-  if (conc && conc.checked) parts.push('+concurrent');
+  // Concurrent dropped from this summary — it's a global Diagnostics
+  // setting now, not a per-popup pipeline choice, so it doesn't belong
+  // alongside the per-iteration mode chips.
   pill.textContent = parts.join(' · ');
 }
 
