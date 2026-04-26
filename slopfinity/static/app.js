@@ -48,7 +48,21 @@ const _SPLASH_TIPS = [
         if (!el) return;
         el.style.opacity = '0';
         el.style.pointerEvents = 'none';
-        setTimeout(() => { try { el.remove(); } catch (_) {} }, 600);
+        // Two-phase reveal: fade splash for 500ms, remove the node, THEN
+        // fade main in over 400ms. Main stays at opacity:0 (set on the
+        // <main> tag) so the dashboard never bleeds through the fading
+        // splash — the user gets a clean handoff with no overlap.
+        setTimeout(() => {
+            try { el.remove(); } catch (_) {}
+            const main = document.querySelector('main');
+            if (main) {
+                // requestAnimationFrame so the browser commits opacity:0
+                // before we kick the transition; without this the same-
+                // frame style change occasionally short-circuits the
+                // transition and main pops in instantly.
+                requestAnimationFrame(() => { main.style.opacity = '1'; });
+            }
+        }, 600);
     }
     window._hideSplash = hideSplash;
     // Belt-and-braces hide: 2.5s after page load, regardless of WS state.
