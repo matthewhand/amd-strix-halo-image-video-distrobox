@@ -178,6 +178,21 @@
     z-index: 1;
 }
 .pipeline-seg-current .pipeline-seg-timing { opacity: 1; }
+/* Bordered chip around each timing value — solid page-bg fill so the
+   number stays legible regardless of which color the segment fill is.
+   Drops the mix-blend-mode trick on these inner chips since they have
+   their own background now. */
+.pipeline-seg-time-chip {
+    display: inline-block;
+    padding: 0 4px;
+    border: 1px solid hsl(var(--bc) / 0.35);
+    border-radius: 3px;
+    background: hsl(var(--b1));
+    color: hsl(var(--bc));
+    mix-blend-mode: normal;
+    line-height: 1.2;
+    margin: 0 1px;
+}
 .pipeline-activity { color: hsl(var(--bc)); font-weight: 500; }
 .pipeline-eta      { color: hsl(var(--bc)); }
 .pipeline-seg.pipeline-seg-overrun .pipeline-seg-fill {
@@ -577,15 +592,14 @@ body[data-layout="gallery"] #gallery-fab {
     border-radius: 2px;
     color: var(--bc, currentColor);
     background-color: transparent;
-    /* The keyframe handles the bouncing assemble-in look. animation-delay
-       is staggered per char via --char-i so the wave ripples left to right.
-       Once data-settled="1" flips on the host, we pause it (below) and let
-       the static fill carry the visual. */
+    /* Default animation is the original assembly-line bounce; the host's
+       data-anim-style attribute (set on a 5s rotation by JS) swaps in
+       different keyframes below so the user sees variety over time. */
     animation: render-char-cycle 1.4s ease-in-out infinite;
     animation-delay: calc(var(--char-i, 0) * 60ms);
-    /* Smooth the fill toggle so chars don't pop in too abruptly. */
     transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
     box-sizing: border-box;
+    transform-origin: center bottom;
 }
 .render-anim-char[data-space="1"] {
     border-color: transparent;
@@ -595,25 +609,87 @@ body[data-layout="gallery"] #gallery-fab {
 }
 /* Filled = "this character's position is <= current stage progress fraction".
    Inverts to a solid block: currentColor (themed via --bc) becomes the
-   background and the surface tone (--b1) becomes the text color. */
+   background and the surface tone (--b1) becomes the text color. The fill
+   keeps growing left-to-right regardless of which animation style is
+   active — the animation is just decorative motion on top. */
 .render-anim-char.filled {
     background-color: var(--bc, currentColor);
     color: var(--b1, #fff);
     border-color: var(--bc, currentColor);
 }
-/* Once the stage is past ~20 % progress the bouncing assembly-line stops
-   so the fill reads as a quiet "rendering" indicator rather than a
-   constantly-resetting jitter. The fill itself remains live. */
-.render-anim[data-settled="1"] .render-anim-char {
-    animation-play-state: paused;
-    transform: none;
+
+/* Per-style keyframes. JS rotates host.dataset.animStyle through
+   {bounce, wobble, pulse, jump, wave, swap} every ~5 s; each style's
+   selector below targets `.render-anim[data-anim-style="X"] .render-anim-char`
+   and overrides the default `animation:` shorthand. */
+.render-anim[data-anim-style="bounce"] .render-anim-char {
+    animation: render-bounce 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 60ms);
 }
+.render-anim[data-anim-style="wobble"] .render-anim-char {
+    animation: render-wobble 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 80ms);
+}
+.render-anim[data-anim-style="pulse"] .render-anim-char {
+    animation: render-pulse 1.0s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 50ms);
+}
+.render-anim[data-anim-style="jump"] .render-anim-char {
+    animation: render-jump 0.8s cubic-bezier(0.5, 0.05, 0.3, 1.4) infinite;
+    animation-delay: calc(var(--char-i, 0) * 90ms);
+}
+.render-anim[data-anim-style="wave"] .render-anim-char {
+    animation: render-wave 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 100ms);
+}
+.render-anim[data-anim-style="swap"] .render-anim-char {
+    animation: render-swap 1.2s ease-in-out infinite;
+    animation-delay: calc(var(--char-i, 0) * 70ms);
+}
+
 @keyframes render-char-cycle {
     0%   { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
     35%  { transform: translateY(-2px); border-color: var(--p, currentColor); opacity: 1; }
     70%  { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.85; }
     100% { transform: translateY(0);    border-color: var(--bc, currentColor); opacity: 0.55; }
 }
+@keyframes render-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+}
+@keyframes render-wobble {
+    0%, 100% { transform: rotate(0deg); }
+    25%      { transform: rotate(-6deg) translateY(-1px); }
+    75%      { transform: rotate(6deg) translateY(-1px); }
+}
+@keyframes render-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.15); border-color: var(--p, currentColor); }
+}
+@keyframes render-jump {
+    0%, 100% { transform: translateY(0) scale(1); }
+    30%      { transform: translateY(-5px) scale(1.05); }
+    50%      { transform: translateY(-5px) scale(1.05); }
+    70%      { transform: translateY(0) scale(0.95); }
+}
+/* Wave: chars rise + fall in sequence (animation-delay does the
+   sequencing). Slight horizontal sway gives a bubble-up feel. */
+@keyframes render-wave {
+    0%, 100% { transform: translateY(0); }
+    25%      { transform: translateY(-3px) translateX(1px); }
+    50%      { transform: translateY(0); }
+    75%      { transform: translateY(-3px) translateX(-1px); }
+}
+/* Swap: each char briefly slides one slot right then snaps back, so
+   the row reads like a bubble-sort pass (visually only — chars don't
+   actually swap positions). */
+@keyframes render-swap {
+    0%, 100% { transform: translateX(0); }
+    40%      { transform: translateX(0.4em); }
+    50%      { transform: translateX(0.4em) scale(1.05); }
+    60%      { transform: translateX(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .render-anim-char { animation: none; transition: none; }
 }

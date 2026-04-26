@@ -344,25 +344,28 @@
                    inactive segments fall back to a short abbreviation
                    when horizontal space gets tight. State persists in
                    localStorage via _subjectsMode helpers in app.js. #}
-                <div class="flex items-center gap-1">
-                    <div class="join subjects-mode-pill" role="tablist" aria-label="Slop mode">
-                        <button type="button" data-subj-mode="raw"
-                                class="join-item btn btn-xs btn-primary"
-                                onclick="_setSubjectsMode('raw')"
-                                title="Raw — queue exactly what you type, one subject per line.">
-                            <span class="subj-mode-full">Raw</span>
-                            <span class="subj-mode-short">R</span>
-                        </button>
-                        <button type="button" data-subj-mode="endless"
-                                class="join-item btn btn-xs btn-primary btn-outline"
-                                onclick="_setSubjectsMode('endless')"
-                                title="Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts.">
-                            <span class="subj-mode-full">Endless</span>
-                            <span class="subj-mode-short">E</span>
-                        </button>
-                    </div>
+                {# Mode pill + Slop config gear, joined into one segmented
+                   bar. Mode buttons (Raw/Endless) use btn-primary tints
+                   so they read as "the toggle"; Slop uses btn-secondary
+                   tint with a gear icon so it visually reads as "open
+                   settings", distinct from mode selection. #}
+                <div class="join subjects-mode-pill" role="tablist" aria-label="Slop mode">
+                    <button type="button" data-subj-mode="raw"
+                            class="join-item btn btn-xs btn-primary"
+                            onclick="_setSubjectsMode('raw')"
+                            title="Raw — queue exactly what you type, one subject per line.">
+                        <span class="subj-mode-full">Raw</span>
+                        <span class="subj-mode-short">R</span>
+                    </button>
+                    <button type="button" data-subj-mode="endless"
+                            class="join-item btn btn-xs btn-primary btn-outline"
+                            onclick="_setSubjectsMode('endless')"
+                            title="Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts.">
+                        <span class="subj-mode-full">Endless</span>
+                        <span class="subj-mode-short">E</span>
+                    </button>
                     <button type="button" id="slop-config-btn"
-                            class="btn btn-ghost btn-xs gap-1"
+                            class="join-item btn btn-xs btn-secondary btn-outline gap-1"
                             onclick="openSlopConfig()"
                             title="Slop — per-mode settings + suggestion controls">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -434,7 +437,7 @@
                 <div class="flex items-center gap-1 flex-wrap">
                     <label id="subjects-suggestions-toggle"
                            class="btn btn-primary btn-xs cursor-pointer gap-1.5"
-                           title="Suggestions — show/hide auto-suggestion controls. Endless + Fresh sub-toggles live in Settings → LLM.">
+                           title="Suggestions — show/hide auto-suggestion controls.">
                         <input type="checkbox" id="subjects-suggestions-toggle-input" class="hidden peer"
                                onchange="toggleSuggestionsHidden(!this.checked);">
                         <span class="es-track inline-block w-6 h-3 rounded-full border border-current relative">
@@ -442,17 +445,20 @@
                         </span>
                         <span>Suggestions</span>
                     </label>
-                    <button id="subjects-suggest-btn"
-                       type="button"
-                       class="btn btn-primary btn-xs gap-1.5"
-                       onclick="regenSuggestions()"
-                       title="Regenerate suggestions"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg><span>Regenerate</span></button>
                     <button id="subjects-suggestion-prompt-link"
                        type="button"
                        class="btn btn-primary btn-xs gap-1.5"
                        title="Edit the system prompt used for auto-suggestions"
                        onclick="openSettingsToSuggestionPrompt()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Suggest Prompt</span></button>
                 </div>
+                {# Regenerate moved to the far right of this row so it
+                   visually mirrors the big Queue button to its left and
+                   doesn't crowd the Suggestions / Suggest Prompt controls. #}
+                <button id="subjects-suggest-btn"
+                   type="button"
+                   class="btn btn-primary btn-xs gap-1.5"
+                   onclick="regenSuggestions()"
+                   title="Regenerate suggestions"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg><span>Regenerate</span></button>
                 {# Hidden inputs preserve the IDs that JS handlers reach for
                    (endless-story-toggle, fresh-toggle). Real toggle UI lives
                    in Settings → LLM → Auto-suggestion. Both write to
