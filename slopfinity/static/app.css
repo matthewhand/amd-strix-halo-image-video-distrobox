@@ -13,8 +13,48 @@
 
 .ticker-col {
     width: 6px;
-    transition: height 0.2s, background-color 0.2s;
+    transition: height 0.2s, background-color 0.2s, opacity 0.2s;
     border-radius: 2px 2px 0 0;
+}
+
+/* Ticker label celebration animations — applied by app.js when a value
+   hits 100 %. One of five styles is picked at random on the transition
+   into 100 % and persists until the value drops back; the next 100 %
+   re-randomizes. Animation duration is a touch longer than the WS-tick
+   cadence so each cycle reads as a single coherent gesture rather than
+   restarting mid-loop. respect prefers-reduced-motion. */
+.celebrate-bounce { animation: celebrate-bounce 1.2s ease-in-out infinite; }
+.celebrate-wobble { animation: celebrate-wobble 1.4s ease-in-out infinite; }
+.celebrate-pulse  { animation: celebrate-pulse 1.0s ease-in-out infinite; }
+.celebrate-jump   { animation: celebrate-jump 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.celebrate-wave   { animation: celebrate-wave 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+    .celebrate-bounce, .celebrate-wobble, .celebrate-pulse,
+    .celebrate-jump, .celebrate-wave { animation: none; }
+}
+@keyframes celebrate-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+}
+@keyframes celebrate-wobble {
+    0%, 100% { transform: rotate(0deg); }
+    25%      { transform: rotate(-4deg); }
+    75%      { transform: rotate(4deg); }
+}
+@keyframes celebrate-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.12); }
+}
+@keyframes celebrate-jump {
+    0%, 100% { transform: translateY(0) scale(1); }
+    40%      { transform: translateY(-4px) scale(1.05); }
+    60%      { transform: translateY(0) scale(0.95); }
+    80%      { transform: translateY(-1px) scale(1); }
+}
+@keyframes celebrate-wave {
+    0%, 100% { transform: skewX(0deg); }
+    25%      { transform: skewX(-6deg); }
+    75%      { transform: skewX(6deg); }
 }
 
 .custom-scrollbar::-webkit-scrollbar {

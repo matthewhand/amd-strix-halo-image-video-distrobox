@@ -2335,6 +2335,19 @@ function updateOutputsDisk(d) {
         d.status === 'danger' ? 'text-error' :
             d.status === 'warn' ? 'text-warning' : 'text-primary'
     );
+    // 100 % celebration — same random-pick treatment as GPU/RAM/Load.
+    // Inline-defined since updateOutputsDisk lives outside the WS-tick scope
+    // where the shared _toneCelebrate helper is closed over.
+    const _DISK_CELEBRATE = ['celebrate-bounce', 'celebrate-wobble',
+        'celebrate-pulse', 'celebrate-jump', 'celebrate-wave'];
+    if (d.pct >= 100) {
+        const has = Array.from(el.classList).some(c => c.startsWith('celebrate-'));
+        if (!has) {
+            el.classList.add(_DISK_CELEBRATE[Math.floor(Math.random() * _DISK_CELEBRATE.length)]);
+        }
+    } else {
+        _DISK_CELEBRATE.forEach(s => el.classList.remove(s));
+    }
     const freeGb = (d.free_gb !== undefined) ? d.free_gb : (d.total_gb - d.used_gb);
     // Update the used/free label beneath the percentage (mirrors RAM r-v line).
     const drEl = document.getElementById('d-r');
@@ -3961,9 +3974,30 @@ function connect() {
                 const isAlarming = invert ? (pct < 20) : (pct > 80);
                 return 'font-mono font-black ' + (isAlarming ? 'text-error' : 'text-' + baseTone);
             };
+            // When a ticker hits 100% (full primary), apply a randomized
+            // celebration animation to the percentage label. The animation
+            // is picked ONCE on transition into 100% and persists until the
+            // value falls back below — re-randomized on each new arrival
+            // at 100% so users don't see the same wiggle every time.
+            const _CELEBRATE_STYLES = ['celebrate-bounce', 'celebrate-wobble',
+                'celebrate-pulse', 'celebrate-jump', 'celebrate-wave'];
+            const _toneCelebrate = (el, pct) => {
+                if (!el) return;
+                if (pct >= 100) {
+                    // Apply a random style only on the transition into 100 % —
+                    // if the element already has a celebrate-* class, leave it.
+                    const has = Array.from(el.classList).some(c => c.startsWith('celebrate-'));
+                    if (!has) {
+                        const pick = _CELEBRATE_STYLES[Math.floor(Math.random() * _CELEBRATE_STYLES.length)];
+                        el.classList.add(pick);
+                    }
+                } else {
+                    _CELEBRATE_STYLES.forEach(s => el.classList.remove(s));
+                }
+            };
             const gpuPct = d.stats.gpu;
             const gpuEl = $('g-v');
-            if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary', { invert: true }); }
+            if (gpuEl) { gpuEl.innerText = gpuPct + '%'; gpuEl.className = _toneClass(gpuPct, 'primary', { invert: true }); _toneCelebrate(gpuEl, gpuPct); }
             // Subtitle rows: GPU marketing name under GPU; CPU marketing name
             // under Load. stats.gpu_name / stats.cpu_name are detected once
             // at module import in stats.py and don't change. Only set when
@@ -3982,7 +4016,7 @@ function connect() {
             // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
             const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
             const ramEl = $('v-v');
-            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'primary'); }
+            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'primary'); _toneCelebrate(ramEl, ramPct); }
             $('r-v').innerText = d.stats.ram_u + ' / ' + Math.round(d.stats.ram_t) + ' GB';
 
             gH.push(d.stats.gpu); vH.push(ramPct);
@@ -4023,7 +4057,7 @@ function connect() {
             // normally, text-error above 80 % so the colour tracks the ticker.
             const loadPct = (typeof d.stats.load_pct === 'number') ? d.stats.load_pct : 0;
             const loadEl = $('l-v');
-            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'primary'); }
+            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'primary'); _toneCelebrate(loadEl, loadPct); }
             const loadParent = loadEl && loadEl.parentElement;
             if (loadParent && d.stats.load_1m != null) {
                 loadParent.title = `1m: ${d.stats.load_1m.toFixed(2)} · 5m: ${d.stats.load_5m.toFixed(2)} · 15m: ${d.stats.load_15m.toFixed(2)} (load average / cpu count)`;
