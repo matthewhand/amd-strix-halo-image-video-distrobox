@@ -4643,6 +4643,29 @@ function _updateStartBtn() {
 
 // Polymorphic + When Idle only make sense when the fleet is looping —
 // gray them out otherwise.
+// Terminate Existing only makes sense as part of a Generate-ASAP
+// insert (it cancels the running job to make room for the new one).
+// When ASAP is off, disable the Terminate input + grey its row, and
+// force-uncheck it so a stale "true" can't bleed into the next click.
+function _updateTermEnabled() {
+    const now = document.getElementById('now-on');
+    const term = document.getElementById('term-on');
+    const row = document.getElementById('term-row');
+    const enabled = !!(now && now.checked);
+    if (term) {
+        term.disabled = !enabled;
+        if (!enabled && term.checked) {
+            term.checked = false;
+            term.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    if (row) row.classList.toggle('opacity-60', !enabled);
+}
+window._updateTermEnabled = _updateTermEnabled;
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof _updateTermEnabled === 'function') _updateTermEnabled();
+});
+
 function _updateChaosEnabled() {
   // Polymorphic + When-Idle used to be force-disabled whenever Infinity
   // Mode was off, on the rationale that they "only make sense in a loop."
