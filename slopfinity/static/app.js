@@ -15,7 +15,11 @@ function applyTheme(name) {
 window.applyTheme = applyTheme;
 
 // UI surface toggles (Settings → Diagnostics → UI surfaces). Default ON.
-const _UI_TOGGLE_KEYS = { topbar: 'slopfinity-ui-topbar', queueBar: 'slopfinity-ui-queue-bar' };
+const _UI_TOGGLE_KEYS = {
+  topbar: 'slopfinity-ui-topbar',
+  queueBar: 'slopfinity-ui-queue-bar',
+  outputThumbs: 'slopfinity-ui-output-thumbs',
+};
 function _isUiToggleOn(name) {
   try { const v = localStorage.getItem(_UI_TOGGLE_KEYS[name]); return v === null ? true : v === '1'; }
   catch (_) { return true; }
@@ -29,13 +33,19 @@ function _applyUiToggle(name, on) {
     const bar = document.getElementById('active-job-progress-bar');
     if (bar) bar.style.display = on ? '' : 'none';
   }
+  // outputThumbs has no DOM mutation here — the cycle interval reads the
+  // pref each tick. Toggling off freezes the thumbs on whatever frame
+  // they were last seeked to (cheap, no flash).
 }
 window._applyUiToggle = _applyUiToggle;
 document.addEventListener('DOMContentLoaded', () => {
-  ['topbar', 'queueBar'].forEach(name => {
+  ['topbar', 'queueBar', 'outputThumbs'].forEach(name => {
     const on = _isUiToggleOn(name);
     _applyUiToggle(name, on);
-    const el = document.getElementById(name === 'topbar' ? 'ui-show-topbar' : 'ui-show-queue-bar');
+    const elId = name === 'topbar' ? 'ui-show-topbar'
+               : name === 'queueBar' ? 'ui-show-queue-bar'
+               : 'ui-output-thumbs';
+    const el = document.getElementById(elId);
     if (el) el.checked = on;
   });
 });
@@ -1659,6 +1669,28 @@ const _openPendingItems = new Set();
 // reveal — keyed by data-video-chain (the v_idx) so each iter's expand
 // state survives WS re-renders.
 const _openVideoChains = new Set();
+
+// Animated thumbnail cycle. Any <video data-anim-thumb> element gets
+// its currentTime stepped through {0, 50%, 95%} of its duration on a
+// shared 800ms timer, yielding a 3-frame GIF-like preview without
+// re-encoding anything. Cheap because we only seek + repaint, never
+// play. Skips elements that haven't loaded metadata yet (duration is
+// still NaN) and elements that are off-screen via getBoundingClientRect.
+setInterval(() => {
+    if (typeof _isUiToggleOn === 'function' && !_isUiToggleOn('outputThumbs')) return;
+    const vs = document.querySelectorAll('video[data-anim-thumb]');
+    if (!vs.length) return;
+    const vh = window.innerHeight || 0;
+    vs.forEach(v => {
+        if (!isFinite(v.duration) || v.duration <= 0) return;
+        const r = v.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > vh) return;  // off-screen
+        const frame = (parseInt(v.dataset.animFrame || '0', 10) + 1) % 3;
+        v.dataset.animFrame = String(frame);
+        const t = frame === 0 ? 0 : (frame === 1 ? v.duration * 0.5 : v.duration * 0.95);
+        try { v.currentTime = t; } catch (_) {}
+    });
+}, 800);
 document.addEventListener('toggle', (e) => {
     const det = e.target;
     if (!(det instanceof HTMLElement)) return;
@@ -2733,7 +2765,7 @@ function connect() {
                     partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1" data-chain-row="${v}:${i}">
                         <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
                             <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
-                                <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video>
+                                <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"></video>
                                 <span class="truncate">${_htmlEscape(chainName)}</span>
                             </a>
                         </span>
@@ -2795,7 +2827,7 @@ function connect() {
                     const _finalHref = `/files/${encodeURIComponent(_final)}`;
                     _vcLeftCluster = `<span class="video-chain-arrow inline-block transition-transform flex-none">▸</span>
                             <a href="${_finalHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0 truncate" onclick="event.stopPropagation()">
-                                <video src="${_finalHref}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
+                                <video src="${_finalHref}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted data-anim-thumb onerror="this.style.display='none'"></video>
                                 <span class="truncate">${_htmlEscape(_final)}</span>
                             </a>`;
                 } else {
@@ -2897,7 +2929,7 @@ function connect() {
                             const _thumbCls = "rounded bg-black object-cover flex-none";
                             const _thumbStyle = "width:32px;height:18px;";
                             const _thumb = asset && _isVid
-                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video></button>`
+                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"></video></button>`
                                 : asset && _isImg
                                 ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
                                 : '';

@@ -1708,6 +1708,16 @@
                            onchange="_applyUiToggle('queueBar', this.checked)" />
                 </label>
 
+                {# Output preview thumbnails — when on, the small video
+                   thumbnails in the per-stage output rows (chain parts,
+                   final-merge summary) cycle through 3 frames every
+                   ~800ms as a lightweight GIF-like preview. Default on. #}
+                <label class="label cursor-pointer py-1">
+                    <span class="label-text text-xs">Animate output preview thumbnails</span>
+                    <input id="ui-output-thumbs" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                           onchange="_applyUiToggle('outputThumbs', this.checked)" />
+                </label>
+
                 {# Concurrent toggle relocated from the Pipeline popup. It's
                    global operational state — affects every job, not per-popup. #}
                 <label class="label cursor-pointer py-1" title="Concurrent mode (Phase 5) — multiple GPU stages may run in parallel when their summed budgets fit under MemAvailable − safety_gb. Backed by GPUReservation. Experimental.">
