@@ -757,20 +757,14 @@
 
             <span class="hidden lg:inline-block w-px h-5 bg-base-300 mx-2"></span>
 
-            <span class="text-[9px] uppercase tracking-widest opacity-50 mr-1">Behavior</span>
-            <label id="chaos-row" class="flex items-center gap-2">
-                <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
-                <span class="text-xs single-label inline-flex items-center gap-1" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic" title="Chaos / shuffle mode — pipeline pulls from random suggestions">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 flex-none" aria-hidden="true">
-                        <path d="M16 3h5v5"/><path d="M4 20l16-16"/>
-                        <path d="M21 16v5h-5"/><path d="M15 15l6 6"/>
-                        <path d="M4 4l5 5"/>
-                    </svg>
-                    <span>Polymorphic</span>
-                </span>
-            </label>
-            {# Concurrent toggle moved to Settings → Diagnostics — it's an
-               operational/global behavior, not a per-pipeline-popup choice. #}
+            {# Polymorphic moved to Settings → Triggers (gear icon, top
+               right). It's a global lifecycle behavior, not a per-popup
+               pipeline choice. The toggle id (chaos-on) and row id
+               (chaos-row) are preserved so existing handlers
+               (_updateChaosEnabled, _updateGenModePill, buildSlopBody)
+               keep working regardless of which DOM hosts the toggle. #}
+            {# Concurrent toggle is also in Settings → Diagnostics for
+               the same reason. #}
         </div>
 
         <!-- ============ Output dims: aspect ratio + frames per part ============ -->
@@ -1530,6 +1524,37 @@
                         </span>
                     </div>
                 </label>
+                {# Polymorphic — moved here from the Pipeline popup. It's a
+                   lifecycle behavior shared across all queued items, not a
+                   per-iteration choice. IDs (chaos-on / chaos-row) preserved
+                   so updatePipeline + the synthetic running-item builder
+                   keep finding it. #}
+                <label id="chaos-row" class="flex items-center gap-3 py-2">
+                    <input type="checkbox" id="chaos-on" class="toggle toggle-primary toggle-sm" {% if config.chaos_mode %}checked{% endif %} onchange="updatePipeline(); _updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
+                    <div class="flex flex-col">
+                        <span class="text-sm font-semibold inline-flex items-center gap-1" data-toggle="chaos-on" data-on-label="Polymorphic" data-off-label="Polymorphic">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 flex-none" aria-hidden="true">
+                                <path d="M16 3h5v5"/><path d="M4 20l16-16"/>
+                                <path d="M21 16v5h-5"/><path d="M15 15l6 6"/>
+                                <path d="M4 4l5 5"/>
+                            </svg>
+                            <span>Polymorphic</span>
+                        </span>
+                        <span class="text-[10px] text-base-content/60 leading-snug">
+                            Each looping iteration's seed prompt is the LLM-rewritten output of the previous one (drift). Pairs with <span class="font-mono">Infinity</span>.
+                        </span>
+                    </div>
+                </label>
+
+                <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Runner control</div>
+                <div class="flex items-center gap-3 py-2">
+                    <button class="btn btn-sm btn-error btn-outline" onclick="terminateRunner()" title="Hard-stop the run_fleet.py orchestrator process. Use when an LLM call has stuck the runner past any in-loop cancel check.">
+                        🛑 Terminate runner
+                    </button>
+                    <span class="text-[10px] text-base-content/60 leading-snug flex-1">
+                        SIGTERMs the run_fleet.py process on the host. Use when the runner has hung (e.g. a stuck LLM request past any in-loop cancel check). Cancel.flag-based <span class="font-mono">/cancel-all</span> is the gentler option for running stages.
+                    </span>
+                </div>
             </div><!-- /Triggers tabpanel -->
 
             <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Scheduler" />

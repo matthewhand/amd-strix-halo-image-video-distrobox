@@ -593,6 +593,49 @@ async def inject(
     return {"status": "ok"}
 
 
+@app.post("/runner/terminate")
+async def runner_terminate():
+    """Hard-stop the run_fleet.py orchestrator on the host.
+
+    Sends SIGTERM (then SIGKILL on a 5 s budget) to every process whose
+    cmdline contains 'run_fleet.py'. For when /cancel-all isn't enough —
+    e.g. the runner is stuck inside a hung LLM HTTP call past any
+    in-loop cancel-flag check. Returns the pids it touched.
+
+    Safety: only matches the run_fleet.py basename; doesn't pkill on
+    arbitrary patterns. The runner is meant to be relaunched manually
+    after a terminate (it isn't supervised by anything yet)."""
+    import signal
+    pids = []
+    try:
+        out = subprocess.run(["pgrep", "-f", "run_fleet.py"],
+                             capture_output=True, text=True, timeout=5).stdout
+        pids = [int(p) for p in out.split() if p.isdigit()]
+    except Exception as e:
+        return {"ok": False, "error": f"pgrep failed: {e}"}
+    if not pids:
+        return {"ok": True, "killed": [], "note": "no run_fleet.py process running"}
+    killed = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return {"ok": False, "error": f"PermissionError sending SIGTERM to {pid}"}
+    # Brief grace + SIGKILL fallback.
+    await asyncio.sleep(2.0)
+    for pid in killed:
+        try:
+            os.kill(pid, 0)
+            # Still alive — escalate.
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return {"ok": True, "killed": killed}
+
+
 @app.post("/cancel-all")
 async def cancel_all():
     """Mark every pending or in-flight queue item as cancelled and
