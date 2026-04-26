@@ -211,11 +211,15 @@ const _selectLayoutViewOrig = typeof selectLayoutView === 'function' ? selectLay
 // (selectLayoutView is defined later in this file; we monkey-patch it after
 //  DOMContentLoaded so we catch the real definition.)
 document.addEventListener('DOMContentLoaded', () => {
-    // Restore lock state on page load.
+    // Restore lock state on page load. The toggle now lives only in
+    // Settings → General (the View dropdown copy was a chicken-and-egg —
+    // the lock gates the dropdown, so the lock can't sit inside it).
     if (_isLayoutLocked()) {
         document.body.classList.add('layout-locked');
-        const toggle = document.getElementById('layout-lock-toggle');
-        if (toggle) toggle.checked = false;
+        ['layout-lock-toggle', 'settings-layout-lock-toggle'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.checked = false;
+        });
     }
 
     // Register initial SSR items for throttled loading.
