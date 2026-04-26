@@ -874,6 +874,26 @@ window.toggleItemPolymorphic = toggleItemPolymorphic;
 // suggestion batch every 12 s and APPEND a new row (don't replace existing).
 // Cap at _SUGGEST_MAX_ROWS (=5); FIFO eviction kicks in beyond that.
 let _endlessStoryTimer = null;
+function _endlessCycleMs() {
+    try {
+        const v = parseInt(localStorage.getItem('slopfinity-endless-cycle-s') || '12', 10);
+        if (isFinite(v) && v >= 4 && v <= 60) return v * 1000;
+    } catch (_) {}
+    return 12000;
+}
+// Allow the Slop Config modal's interval slider to restart the timer
+// in place — without this, a new interval value wouldn't take effect
+// until the next stop/start cycle.
+function _restartEndlessCycle() {
+    const t = document.getElementById('endless-story-toggle');
+    if (!t || !t.checked) return;
+    if (_endlessStoryTimer) {
+        clearInterval(_endlessStoryTimer);
+        _endlessStoryTimer = null;
+    }
+    t.dispatchEvent(new Event('change', { bubbles: true }));
+}
+window._restartEndlessCycle = _restartEndlessCycle;
 function _wireEndlessStoryCycle() {
     const t = document.getElementById('endless-story-toggle');
     if (!t) return;
@@ -911,7 +931,7 @@ function _wireEndlessStoryCycle() {
                     _appendSuggestBatchRow(arr);
                 }
             } catch (_) {}
-        }, 12000);
+        }, _endlessCycleMs());
     };
     const stop = () => {
         if (_endlessStoryTimer) { clearInterval(_endlessStoryTimer); _endlessStoryTimer = null; }
@@ -1095,6 +1115,26 @@ document.addEventListener('DOMContentLoaded', () => {
     _setSubjectsMode(_getSubjectsMode());
     _updateSubjectsActionLabel();
 });
+
+// Slop Config modal — opened by the gear icon next to the mode pill.
+// Pre-fills its three inputs (interval slider, Fresh toggle) from
+// localStorage on each open so it always reflects current state.
+function openSlopConfig() {
+    const d = document.getElementById('slop-config-modal');
+    if (!d) return;
+    try {
+        const interval = parseInt(localStorage.getItem('slopfinity-endless-cycle-s') || '12', 10);
+        const slider = document.getElementById('slop-endless-interval');
+        const lbl = document.getElementById('slop-endless-interval-val');
+        if (slider) slider.value = String(interval);
+        if (lbl) lbl.innerText = String(interval);
+        const fresh = localStorage.getItem('slopfinity-fresh') === '1';
+        const fresEl = document.getElementById('slop-fresh-toggle-modal');
+        if (fresEl) fresEl.checked = fresh;
+    } catch (_) {}
+    if (typeof d.showModal === 'function') d.showModal();
+}
+window.openSlopConfig = openSlopConfig;
 
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
 // Lighter than openAssetInfo (which is for files); this is just text.
@@ -4484,17 +4524,8 @@ async function openSettings() {
         if (planEl) planEl.checked = usePlanner;
         // Per-model loading-prefs grid is in the same Scheduler tab.
         if (typeof _hydrateModelLoadingPrefs === 'function') _hydrateModelLoadingPrefs(sr);
-        // Endless + Fresh checkboxes mirror the localStorage state — the
-        // hidden inputs in the Subjects card are the JS-facing source of
-        // truth; this just keeps the Settings UI in sync on each open.
-        try {
-            const endlessOn = localStorage.getItem('slopfinity-endless-story') === '1';
-            const freshOn = localStorage.getItem('slopfinity-fresh') === '1';
-            const seEl = $('set-endless-toggle');
-            const sfEl = $('set-fresh-toggle');
-            if (seEl) seEl.checked = endlessOn;
-            if (sfEl) sfEl.checked = freshOn;
-        } catch (_) {}
+        // (Endless + Fresh prefs migrated to the Subjects-card Slop
+        // Config modal — see openSlopConfig.)
         // Hydrate theme selector from localStorage (falling back to branding default).
         const themeSel = $('theme-select');
         if (themeSel) {
