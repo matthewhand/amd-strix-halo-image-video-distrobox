@@ -4502,7 +4502,7 @@ function connect() {
                                     const _fpp = snap.frames || 17;
                                     const _ch = parseInt(snap.chains, 10) || 1;
                                     const _tot = _fpp * _ch;
-                                    const _label = _ch > 1 ? `${_tot} frames (${_ch}×${_fpp})` : `${_fpp} frames`;
+                                    const _label = _ch > 1 ? `${_tot} frames (${_ch} parts)` : `${_fpp} frames`;
                                     return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames across all chained parts">aspect ${_htmlEscape(snap.size || '1:1')} · ${_label}</span>`;
                                 })()}
                                 <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
