@@ -2996,6 +2996,90 @@ async function saveSchedUsePlanner(checked) {
 // scheduler.{llm_cpu_only, tts_cpu_only}; the orchestrator + memory
 // planner read these to skip the GPU-idle wait for the relevant stage
 // and exclude the model from GPU budget accounting.
+// VAE-grid detection prefs. Post the partial scheduler payload so the
+// orchestrator + post-pass agree on whether to write sidecars.
+async function saveVaeGridDetect(checked) {
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduler: { vae_grid_detect: !!checked } }),
+        });
+    } catch (e) {
+        console.warn('saveVaeGridDetect failed', e);
+    }
+}
+window.saveVaeGridDetect = saveVaeGridDetect;
+
+async function saveVaeGridMethod(value) {
+    if (value !== 'post-pass' && value !== 'comfyui') return;
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduler: { vae_grid_method: value } }),
+        });
+    } catch (e) {
+        console.warn('saveVaeGridMethod failed', e);
+    }
+}
+window.saveVaeGridMethod = saveVaeGridMethod;
+
+// Lazy VAE-grid badge tagger. Walks the slop preview-grid for cards
+// whose data-slop-file looks decoded (mp4 / png) and asks the server
+// for the (cached) result. Cards with has_grid=true get a ⚠ chip
+// appended to their card-body. Skipped when detect is off in config
+// or when a card is already tagged. Throttled to one in-flight fetch
+// at a time so a hundred cards don't fan out into a hundred GETs.
+let _vaeGridFetchActive = false;
+async function _scanSlopForGridArtefacts() {
+    if (_vaeGridFetchActive) return;
+    const cfg = (_lastTick && _lastTick.config && _lastTick.config.scheduler) || {};
+    if (cfg.vae_grid_detect === false) return;
+    const cards = document.querySelectorAll('#preview-grid > [data-slop-kind]:not([data-vae-grid-checked])');
+    if (!cards.length) return;
+    _vaeGridFetchActive = true;
+    try {
+        for (const card of cards) {
+            const file = card.getAttribute('data-slop-file');
+            const kind = card.getAttribute('data-slop-kind');
+            // Only image + video assets have a meaningful VAE grid; audio
+            // skips. Final mp4s pass — the server samples a frame.
+            if (kind !== 'image' && kind !== 'video') {
+                card.setAttribute('data-vae-grid-checked', '1');
+                continue;
+            }
+            if (!file) {
+                card.setAttribute('data-vae-grid-checked', '1');
+                continue;
+            }
+            try {
+                const r = await fetch('/vae_grid?file=' + encodeURIComponent(file));
+                const d = await r.json();
+                card.setAttribute('data-vae-grid-checked', '1');
+                if (d && d.has_grid) {
+                    const body = card.querySelector('.card-body');
+                    if (body && !body.querySelector('.vae-grid-chip')) {
+                        const chip = document.createElement('span');
+                        chip.className = 'vae-grid-chip badge badge-xs badge-warning';
+                        chip.title = `VAE grid artefact detected (period ${d.peak_freq}px, score ${d.score})`;
+                        chip.textContent = '⚠ vae grid';
+                        body.querySelector('.flex.flex-wrap')?.prepend(chip);
+                    }
+                }
+            } catch (_) {
+                card.setAttribute('data-vae-grid-checked', '1');
+            }
+        }
+    } finally {
+        _vaeGridFetchActive = false;
+    }
+}
+window._scanSlopForGridArtefacts = _scanSlopForGridArtefacts;
+// Trigger scan after each WS tick — cheap because already-checked
+// cards are skipped via the data-attribute guard.
+setInterval(_scanSlopForGridArtefacts, 4000);
+
 async function saveSchedCpuOffload(role, checked) {
     if (role !== 'llm' && role !== 'tts') return;
     const field = role === 'llm' ? 'llm_cpu_only' : 'tts_cpu_only';

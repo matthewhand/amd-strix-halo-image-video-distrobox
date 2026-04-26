@@ -1053,7 +1053,7 @@
                             So at a glance, a card's outline tells you which filter group it lives in. #}
                             {% set border_color = 'border-primary' if is_final else 'border-accent' %}
                             <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden"
-                                data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}">
+                                data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}" data-slop-file="{{ f }}">
                                 <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                                     {% if is_mp4 %}
                                     <video controls muted loop preload="metadata" class="w-full h-full object-contain">
@@ -2340,6 +2340,39 @@
                         <span class="label-text-alt text-[10px] opacity-60 leading-snug">
                             Pairs Qwen-TTS/Kokoro with GPU tasks in a smarter loading plan.
                         </span>
+                    </div>
+
+                    {# VAE-grid detection — flags decoded outputs that show
+                       the characteristic 8 / 16 px block grid (Qwen-Image
+                       at low tier on Strix Halo, occasional LTX/Wan frames).
+                       Post-pass = numpy FFT after the file lands; ComfyUI
+                       inline = detection node injected into video / upscale
+                       workflows (image stages still post-pass since Qwen /
+                       Ernie don't use ComfyUI). Result lives next to the
+                       file as <name>.grid.json. #}
+                    <div class="border border-base-300 rounded-box p-3 mt-3 mb-3">
+                        <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-2">VAE-grid detection</div>
+                        <label class="label cursor-pointer py-1">
+                            <span class="label-text text-xs">Detect VAE grid artefacts</span>
+                            <input id="sched-vae-grid-detect" type="checkbox" class="toggle toggle-primary toggle-sm" checked
+                                   onchange="saveVaeGridDetect(this.checked)" />
+                        </label>
+                        <div class="form-control mt-1">
+                            <span class="label-text-alt text-[10px] opacity-60 mb-1">Detection method</span>
+                            <div class="join">
+                                <input class="join-item btn btn-xs" type="radio" name="vae-grid-method" value="post-pass" aria-label="Post-pass FFT" onchange="saveVaeGridMethod(this.value)" checked
+                                       title="Numpy FFT after each file lands. Detect-only — flags artefacts but doesn't fix them; you'd re-run with higher steps / different VAE." />
+                                <input class="join-item btn btn-xs" type="radio" name="vae-grid-method" value="comfyui" aria-label="ComfyUI inline" onchange="saveVaeGridMethod(this.value)"
+                                       title="Inject the detector into the ComfyUI workflow itself. Tip: this is also the right place to swap in a tiled/overlap-decode VAE node, which can RESOLVE grid lines outright instead of just flagging them. (Image stages still post-pass — Qwen / Ernie don't go through ComfyUI.)" />
+                            </div>
+                            <span class="label-text-alt text-[10px] opacity-60 leading-snug mt-2">
+                                <span class="font-semibold">Post-pass</span>: 30-80ms numpy FFT after each file lands. Works for every stage.<br>
+                                <span class="font-semibold">ComfyUI inline</span>: detection node runs inside the video / upscale workflows; image stages still use post-pass.
+                            </span>
+                        </div>
+                        <p class="text-[10px] opacity-50 italic mt-2 leading-snug">
+                            Flagged assets get a ⚠ chip on their slop card. The detector writes a <code>&lt;file&gt;.grid.json</code> sidecar so re-renders are instant.
+                        </p>
                     </div>
 
                     {# Per-model loading preferences. The planner respects these
