@@ -1725,8 +1725,10 @@
             {# Tab strip — wide screens wrap naturally; narrow screens (mobile)
             get a horizontally-scrollable strip so 8+ tabs stay reachable
             without breaking onto multiple lines. flex-nowrap forces a
-            single row, overflow-x-auto adds the touch-scroll. #}
-            <div role="tablist" class="tabs tabs-lifted mb-4 overflow-x-auto flex-nowrap whitespace-nowrap">
+            single row, overflow-x-auto adds the touch-scroll.
+            settings-tabs adds a tighter padding/font-size override so 9
+            tabs fit without runaway width per .tab — see app.css. #}
+            <div role="tablist" class="tabs tabs-lifted settings-tabs mb-4 overflow-x-auto flex-nowrap whitespace-nowrap">
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="General" checked />
                 <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                     <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Interface</div>
@@ -1760,6 +1762,16 @@
                                onchange="_setShowCardFabs(this.checked)" />
                     </label>
                     <p class="text-[10px] opacity-60 leading-snug">When ON (default), the bottom-right FAB cluster surfaces quick-jump buttons for cards not visible in the current layout (Subjects / Queue / Slop, depending on mode). Off = clean layout, recover via View dropdown.</p>
+
+                    {# Card window-controls — the macOS-style ✕ / restore / maximize
+                       chrome that overlays each card on hover. Default OFF; user
+                       can re-enable here. CSS body.no-card-wm hides .card-wm-bar. #}
+                    <label class="label cursor-pointer py-1 mt-3">
+                        <span class="label-text text-xs">Show card window-controls on hover</span>
+                        <input type="checkbox" id="settings-card-wm-toggle" class="toggle toggle-primary toggle-sm"
+                               onchange="_setCardWm(this.checked)" />
+                    </label>
+                    <p class="text-[10px] opacity-60 leading-snug">When OFF (default), the hover overlay close/restore/maximize buttons on each card are hidden. Use the View dropdown to change layout instead.</p>
                 </div>
 
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />
