@@ -703,12 +703,12 @@ def main():
             # matches audio length.
             audio_wav = None
             audio_duration_s = 0.0
-            _audio_model = (_config_snapshot or config or {}).get("audio_model", "none") or "none"
+            _audio_model = (_task_opts.get("_config_snapshot") or config or {}).get("audio_model", "none") or "none"
             if (_audio_model and _audio_model != "none"
                     and not _task_opts.get("image_only")
                     and not _task_opts.get("skip_video")):
                 update_state(mode="Composing", step="Audio", video=v_idx, total=1000, prompt=p)
-                target_dur = float((_config_snapshot or config or {}).get("audio_duration_s", 30.0))
+                target_dur = float((_task_opts.get("_config_snapshot") or config or {}).get("audio_duration_s", 30.0))
                 if _audio_model == "heartmula":
                     audio_wav = f"{OUTPUT_DIR}/{_stem}_music.wav"
                     try:
@@ -731,7 +731,7 @@ def main():
             # part of the unwired StageWorker pattern). Skip silently for
             # now; the heartbeat still flips through TTS so the UI shows
             # the stage as visited but no asset is produced.
-            _tts_model = (_config_snapshot or config or {}).get("tts_model", "none") or "none"
+            _tts_model = (_task_opts.get("_config_snapshot") or config or {}).get("tts_model", "none") or "none"
             tts_wav = None
             if (_tts_model and _tts_model != "none"
                     and not _task_opts.get("image_only")
@@ -767,15 +767,15 @@ def main():
             # Chain count: when audio_driven_chains is enabled AND we have an
             # audio duration, size the loop so total video duration ≥ audio
             # duration. Otherwise honor config.chains (legacy default 10).
-            _frames_per_chain = int((_config_snapshot or config or {}).get("frames", 49))
-            _audio_driven = bool((_config_snapshot or config or {}).get("audio_driven_chains"))
+            _frames_per_chain = int((_task_opts.get("_config_snapshot") or config or {}).get("frames", 49))
+            _audio_driven = bool((_task_opts.get("_config_snapshot") or config or {}).get("audio_driven_chains"))
             if _audio_driven and audio_duration_s > 0 and _frames_per_chain > 0:
                 _chain_seconds = _frames_per_chain / 24.0
                 _n_chains = max(1, int(math.ceil(audio_duration_s / _chain_seconds)))
                 _n_chains = min(_n_chains, 30)  # safety cap so a long track can't run away
                 print(f"[FLEET] audio_driven_chains: audio={audio_duration_s:.1f}s · chain={_chain_seconds:.2f}s → {_n_chains} chains", flush=True)
             else:
-                _n_chains = int((_config_snapshot or config or {}).get("chains", 10) or 10)
+                _n_chains = int((_task_opts.get("_config_snapshot") or config or {}).get("chains", 10) or 10)
 
             chain_vids = []
             for c_idx in range(1, _n_chains + 1):
