@@ -90,6 +90,7 @@ COPY .heartlib /opt/heartlib
 RUN python -m pip install --no-deps -e /opt/heartlib && \
     pip install --no-deps torchtune==0.4.0 torchao==0.9.0 vector_quantize_pytorch omegaconf 'antlr4-python3-runtime==4.9.*' && \
     pip install pyarrow dill multiprocess xxhash tiktoken sentencepiece blobfile einx && \
+    pip install --no-deps 'datasets>=2.16.0' fsspec aiohttp 'huggingface-hub>=0.20.0' filelock packaging requests tqdm pyyaml typing-extensions && \
     python -c "from heartlib import HeartMuLaGenPipeline" || echo "WARN: heartlib import failed"
 
 # Permissions & trims (keep compilers/headers)
