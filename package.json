@@ -1,0 +1,14 @@
+{
+  "name": "slopfinity-frontend",
+  "private": true,
+  "description": "Lint helpers for the Slopfinity dashboard's static assets. No build pipeline — Tailwind is compiled by the standalone CLI (see Makefile) and JS/CSS are hand-authored.",
+  "scripts": {
+    "lint:css": "stylelint slopfinity/static/app.css",
+    "lint:js": "node --check slopfinity/static/app.js && node --check slopfinity/static/sw.js",
+    "lint": "npm run lint:css && npm run lint:js"
+  },
+  "devDependencies": {
+    "stylelint": "^16.10.0",
+    "stylelint-config-recommended": "^14.0.1"
+  }
+}

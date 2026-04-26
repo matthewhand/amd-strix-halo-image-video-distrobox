@@ -52,13 +52,14 @@ endif
 
 TAILWIND_URL := https://github.com/tailwindlabs/tailwindcss/releases/$(TAILWIND_VERSION)/download/$(TAILWIND_ASSET)
 
-.PHONY: tailwind tailwind-watch tailwind-clean help
+.PHONY: tailwind tailwind-watch tailwind-clean lint help
 
 help:
 	@echo "Targets:"
 	@echo "  tailwind        Build $(TAILWIND_OUTPUT) (downloads CLI on first run)"
 	@echo "  tailwind-watch  Rebuild on change (Ctrl-C to stop)"
 	@echo "  tailwind-clean  Remove the CLI binary + generated CSS"
+	@echo "  lint            stylelint app.css + node --check app.js/sw.js + ast.parse python"
 
 # Download the standalone Tailwind binary on first use, cache in bin/.
 $(TAILWIND_BIN):
@@ -89,3 +90,17 @@ tailwind-watch: $(TAILWIND_BIN) $(TAILWIND_INPUT)
 tailwind-clean:
 	@rm -f $(TAILWIND_BIN) $(TAILWIND_OUTPUT)
 	@echo "→ removed CLI + generated CSS"
+
+# Lint the static assets. stylelint catches structural CSS bugs (the
+# kind that would silently invalidate every rule below an unmatched
+# brace, e.g.); node --check parses the JS without executing; py_compile
+# does the same for the Python entry points. Run before pushing UI/JS
+# changes — also wired into .github/workflows/lint.yml on every PR.
+lint:
+	@command -v npm >/dev/null || { echo "npm required for stylelint"; exit 1; }
+	@test -d node_modules || npm ci --silent || npm install --silent
+	npx stylelint slopfinity/static/app.css
+	node --check slopfinity/static/app.js
+	node --check slopfinity/static/sw.js
+	python3 -m py_compile slopfinity/server.py run_fleet.py
+	@echo "→ lint OK"

@@ -73,3 +73,8 @@ workflow_api.json
 # generated bundle — both are reproducible from src/tailwind.css.
 bin/
 slopfinity/static/tailwind.css
+
+# stylelint deps — installed by `make lint` / CI on demand. The
+# lockfile (package-lock.json) IS committed so CI installs are
+# reproducible; only the resolved tree is gitignored.
+node_modules/

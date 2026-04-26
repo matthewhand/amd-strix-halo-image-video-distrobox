@@ -1,0 +1,46 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'slopfinity/static/**'
+      - 'slopfinity/server.py'
+      - 'run_fleet.py'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.stylelintrc.json'
+      - '.github/workflows/lint.yml'
+  pull_request:
+    paths:
+      - 'slopfinity/static/**'
+      - 'slopfinity/server.py'
+      - 'run_fleet.py'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.stylelintrc.json'
+      - '.github/workflows/lint.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: install npm deps
+        run: npm ci
+      - name: stylelint
+        run: npx stylelint slopfinity/static/app.css
+      - name: node --check JS
+        run: |
+          node --check slopfinity/static/app.js
+          node --check slopfinity/static/sw.js
+      - name: python ast parse
+        run: python3 -m py_compile slopfinity/server.py run_fleet.py
