@@ -475,28 +475,65 @@ body.layout-locked #layout-lock-toggle {
     user-select: none;
 }
 
+/* Each segment is split vertically: the TOP half hosts the step label
+   on a primary-bordered (no-fill) strip so the word reads cleanly
+   regardless of the bar's fill state. The BOTTOM half is the original
+   sweep — where the .pipeline-seg-fill renders the stage progress. */
 .pipeline-seg {
     position: relative;
     overflow: hidden;
     border-right: 1px solid hsl(var(--bc) / 0.10);
     min-width: 0;
     height: 38px;
+    display: flex;
+    flex-direction: column;
 }
 
 .pipeline-seg:last-child {
     border-right: none;
 }
 
-.pipeline-seg-future {
+/* Top half — label band. No fill underneath, just a primary border. */
+.pipeline-seg-top {
+    flex: 0 0 18px;
+    border-bottom: 1px solid hsl(var(--p) / 0.45);
+    position: relative;
+    background: hsl(var(--b2) / 0.4);
+}
+
+/* Bottom half — fill / sweep band. */
+.pipeline-seg-bottom {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+}
+
+.pipeline-seg-future .pipeline-seg-bottom {
     background: hsl(var(--b1) / 0.6);
 }
 
-.pipeline-seg-past {
+.pipeline-seg-past .pipeline-seg-bottom {
     background: hsl(var(--p) / 0.7);
 }
 
-.pipeline-seg-current {
+.pipeline-seg-current .pipeline-seg-bottom {
     background: hsl(var(--p) / 0.15);
+}
+
+/* Future/past/current background tint on the TOP band stays subtle so
+   the label is the dominant visual; the border carries the state. */
+.pipeline-seg-future .pipeline-seg-top {
+    background: hsl(var(--b2) / 0.3);
+}
+
+.pipeline-seg-past .pipeline-seg-top {
+    background: hsl(var(--p) / 0.12);
+    border-bottom-color: hsl(var(--p) / 0.7);
+}
+
+.pipeline-seg-current .pipeline-seg-top {
+    background: hsl(var(--p) / 0.08);
+    border-bottom-color: hsl(var(--p));
 }
 
 .pipeline-seg-fill {
@@ -511,18 +548,12 @@ body.layout-locked #layout-lock-toggle {
 .pipeline-seg-label {
     position: absolute;
     left: 6px;
-    top: 4px;
+    top: 3px;
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    opacity: 0.95;
-    /* Text inversion via mix-blend-mode: difference. White text + difference
-       blending produces the complementary color of whatever sits behind —
-       so as the colored fill sweeps across the segment, the label stays
-       legible without per-theme tuning. */
-    color: white;
-    mix-blend-mode: difference;
+    color: hsl(var(--bc) / 0.85);
     white-space: nowrap;
     pointer-events: none;
     z-index: 1;
@@ -601,9 +632,36 @@ body.layout-locked #layout-lock-toggle {
    fades the leading/trailing 12 px so chips slide in/out gently. */
 .suggest-marquee-row {
     position: relative;
-    overflow: hidden;
     height: 28px;
     flex: 0 0 auto;
+}
+
+/* Pure-marquee rows (no lead cluster — i.e. simple/legacy paths) get the
+   mask + clip directly. Endless rows render their lead OUTSIDE this rule
+   and apply the mask to the inner track wrapper instead, so the lead's
+   prompt-name + refresh + minus buttons don't get edge-faded. */
+.suggest-marquee-row:not(.with-lead) {
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+}
+
+/* Endless variant: lead cluster (flex-none) sits OUTSIDE the masked
+   marquee viewport so its content is fully opaque + interactive.
+   The track wraps in .suggest-marquee-mask which carries the clipping
+   + edge-fade so chips don't overlap the lead buttons. */
+.suggest-marquee-row.with-lead {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.suggest-marquee-row.with-lead .suggest-marquee-mask {
+    position: relative;
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
     -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
     mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
 }
