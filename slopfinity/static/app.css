@@ -693,14 +693,27 @@ textarea.subjects-autogrow {
     flex-direction: column;
 }
 
-/* When the slop gallery is expanded, it takes over the flexible height
-   and the upper panes (Subjects/Queue) shrink to their natural height. */
+/* When the slop gallery is expanded, the parent flex pane is bounded
+   to the viewport so growth pushes UPWARDS into the upper pane's
+   space, not downwards extending the page. Upper pane caps at 35vh
+   (Subjects + Queue stay readable but tight); slop takes everything
+   below. Internal scroll handled by ui-split-lower so the slop grid
+   feeds infinite-scroll naturally. */
+body[data-slop-expanded="1"] #ui-split {
+    height: calc(100dvh - 6.5rem);
+    overflow: hidden;
+}
+
 body[data-slop-expanded="1"] #ui-split-upper {
     flex: 0 0 auto;
+    max-height: 35vh;
+    overflow: hidden;
 }
 
 body[data-slop-expanded="1"] #ui-split-lower {
-    flex: 1;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 #top-collapsible[open] {
