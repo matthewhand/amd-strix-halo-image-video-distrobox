@@ -452,6 +452,13 @@ function _applyLayoutView(view) {
     ]);
     if (valid.has(view)) document.body.dataset.layout = view;
     else delete document.body.dataset.layout;
+    // In the default 3-pane layout, the slop card is the workhorse — force
+    // its <details> element open so the gallery is always expanded. Other
+    // layouts respect whatever state the user clicked it into.
+    const slopDetails = document.getElementById('slop-collapsible');
+    if (slopDetails) {
+        if (!document.body.dataset.layout) slopDetails.open = true;
+    }
 }
 window._applyLayoutView = _applyLayoutView;
 
@@ -4491,7 +4498,13 @@ function connect() {
                                 <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             </span>
                             <span class="flex items-center gap-2 flex-none ml-auto">
-                                <span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · frames per video part">aspect ${_htmlEscape(snap.size || '1:1')} · ${snap.frames || 17} frames</span>
+                                ${(() => {
+                                    const _fpp = snap.frames || 17;
+                                    const _ch = parseInt(snap.chains, 10) || 1;
+                                    const _tot = _fpp * _ch;
+                                    const _label = _ch > 1 ? `${_tot} frames (${_ch}×${_fpp})` : `${_fpp} frames`;
+                                    return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames across all chained parts">aspect ${_htmlEscape(snap.size || '1:1')} · ${_label}</span>`;
+                                })()}
                                 <span class="flex-none min-w-[7rem] text-right">${activeBadge}</span>
                                 ${menuHTML}
                             </span>
