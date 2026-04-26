@@ -892,6 +892,25 @@ async def queue_clear_failed():
     return {"ok": True, "removed": removed}
 
 
+@app.post("/queue/clear-completed")
+async def queue_clear_completed():
+    """Drop all successfully-completed items from the queue history.
+
+    Mirror of /queue/clear-failed. Keeps pending, running, failed, and
+    cancelled items intact — only succeeded-done entries are pruned.
+    """
+    q = cfg.get_queue()
+    before = len(q)
+    kept = [
+        item for item in q
+        if not (item.get("status") == "done" and item.get("succeeded") is not False)
+    ]
+    removed = before - len(kept)
+    if removed:
+        cfg.save_queue(kept)
+    return {"ok": True, "removed": removed}
+
+
 @app.post("/queue/requeue-failed")
 async def queue_requeue_failed():
     """Re-add every done-but-failed item as a fresh pending entry; drop the

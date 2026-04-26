@@ -459,6 +459,7 @@
                 </span>
                 <button id="btn-requeue-failed" class="btn btn-ghost btn-xs text-warning flex-none" title="Re-add all failed items as pending; drop the failed records" onclick="requeueFailedQueue()" style="display:none">↻ requeue failed</button>
                 <button id="btn-clear-failed" class="btn btn-ghost btn-xs text-error flex-none" title="Drop all done-but-failed items from history" onclick="clearFailedQueue()" style="display:none">clear failed</button>
+                <button id="btn-clear-completed" class="btn btn-ghost btn-xs text-base-content/70 flex-none" title="Drop all successfully-completed items from history" onclick="clearCompletedQueue()" style="display:none">clear completed</button>
                 <button class="btn btn-ghost btn-xs flex-none" onclick="openQueueDrawer()">View all →</button>
                 {# Per-card × removed — visibility driven entirely by the View
                    dropdown (see top of page). #}
@@ -807,8 +808,19 @@
             </label>
         </div>
 
-        <!-- ============ Four model selects (image / video / audio / upscale) ============ -->
+        <!-- ============ Model selects (LLM / image / video / audio / voice / upscale) ============ -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+            <label class="form-control sm:col-span-2">
+                <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex items-center justify-between">
+                    <span>LLM (prompt rewriter)</span>
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="reloadModels()" title="Re-fetch model list from the configured provider">reload</button>
+                </span>
+                <select id="cfg-llm" class="select select-bordered select-sm w-full" onchange="onCfgLlmChanged()">
+                    <option value="">(loading…)</option>
+                </select>
+                <input id="cfg-llm-custom" class="input input-bordered input-sm mt-1 hidden" placeholder="model id (free text)…" onchange="onCfgLlmChanged()" />
+                <span class="label-text-alt text-[10px] opacity-60 italic">Provider/host/port + connection details: Settings → LLM.</span>
+            </label>
             <label class="form-control">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image model</span>
                 <select id="cfg-base" class="select select-bordered select-sm w-full" onchange="updatePipeline(); _onPseudoChanged && _onPseudoChanged('base', 'image');">
@@ -816,8 +828,7 @@
                     <option value="qwen" {% if config.base_model == 'qwen' %}selected{% endif %}>Qwen-Image</option>
                     <option value="ltx-2.3" {% if config.base_model == 'ltx-2.3' %}selected{% endif %}>LTX-2.3 Base</option>
                     <option disabled>──────────</option>
-                    <option value="__random__">Random</option>
-                    <option value="__slopped__">Slopped</option>
+                    <option value="__slopped__">Use existing slop…</option>
                 </select>
                 <div id="cfg-base-slopped-wrap" class="hidden mt-1" data-slopped-role="image">
                     <input type="hidden" id="cfg-base-slopped" onchange="updatePipeline()" />
@@ -841,8 +852,7 @@
                     <option value="none" {% if config.audio_model == 'none' %}selected{% endif %}>No Music</option>
                     <option value="heartmula" {% if config.audio_model == 'heartmula' %}selected{% endif %}>Heartmula</option>
                     <option disabled>──────────</option>
-                    <option value="__random__">Random</option>
-                    <option value="__slopped__">Slopped</option>
+                    <option value="__slopped__">Use existing slop…</option>
                 </select>
                 <select id="cfg-audio-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="audio"></select>
             </label>
@@ -853,8 +863,7 @@
                     <option value="qwen-tts" {% if config.tts_model == 'qwen-tts' %}selected{% endif %}>Qwen-TTS</option>
                     <option value="kokoro" {% if config.tts_model == 'kokoro' %}selected{% endif %}>Kokoro-TTS</option>
                     <option disabled>──────────</option>
-                    <option value="__random__">Random</option>
-                    <option value="__slopped__">Slopped</option>
+                    <option value="__slopped__">Use existing slop…</option>
                 </select>
                 <select id="cfg-tts-slopped" class="select select-bordered select-xs w-full mt-1 hidden" onchange="updatePipeline()" data-slopped-role="tts"></select>
             </label>
@@ -1142,18 +1151,8 @@
 
                 <!-- ================== Section 2: Generation ================== -->
                 <div class="divider text-[11px] uppercase tracking-widest text-base-content/60 mt-6">Generation</div>
+                <p class="text-[11px] opacity-60 italic mb-2">Model selection moved to <button type="button" class="link link-primary" onclick="document.getElementById('settings-modal').close(); openPipeline();">Pipeline → LLM</button> so all per-iteration model choices live in one place.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <label class="form-control md:col-span-2">
-                        <span class="label-text text-xs flex justify-between">
-                            <span>Model</span>
-                            <button class="btn btn-ghost btn-xs" type="button" onclick="reloadModels()">reload</button>
-                        </span>
-                        <select id="set-model" class="select select-bordered select-sm" onchange="onModelSelectChanged()">
-                            <option value="">(none loaded)</option>
-                        </select>
-                        <input id="set-model-custom" class="input input-bordered input-sm mt-1 hidden" placeholder="model id..." />
-                    </label>
-
                     <label class="form-control">
                         <span class="label-text text-xs">Temperature: <span id="set-temp-val" class="font-mono">0.7</span></span>
                         <input id="set-temp" type="range" min="0" max="1.5" step="0.05" value="0.7" class="range range-sm range-primary" oninput="$('set-temp-val').innerText = this.value" />

@@ -1649,16 +1649,31 @@ document.addEventListener('toggle', (e) => {
 // re-renders by stashing the queue item's `data-q-ts` in a module-level
 // Set; the renderItem template reads from this set when emitting `open`.
 const _openPendingItems = new Set();
+// Mirror set for the per-iter Video Chains <details> inside the output
+// reveal — keyed by data-video-chain (the v_idx) so each iter's expand
+// state survives WS re-renders.
+const _openVideoChains = new Set();
 document.addEventListener('toggle', (e) => {
     const det = e.target;
     if (!(det instanceof HTMLElement)) return;
     if (det.tagName !== 'DETAILS') return;
+    // Queue item reveal: persist by ts.
     const li = det.closest('li[data-q-ts]');
-    if (!li) return;
-    const ts = parseInt(li.getAttribute('data-q-ts') || '0', 10);
-    if (!ts) return;  // ts=0 is the synthetic running placeholder; skip.
-    if (det.open) _openPendingItems.add(ts);
-    else _openPendingItems.delete(ts);
+    if (li) {
+        const ts = parseInt(li.getAttribute('data-q-ts') || '0', 10);
+        if (ts) {
+            if (det.open) _openPendingItems.add(ts);
+            else _openPendingItems.delete(ts);
+        }
+    }
+    // Video Chains reveal: persist by v_idx.
+    if (det.classList.contains('video-chain-details')) {
+        const v = det.getAttribute('data-video-chain') || '';
+        if (v) {
+            if (det.open) _openVideoChains.add(v);
+            else _openVideoChains.delete(v);
+        }
+    }
 }, true);
 
 // Map a filename → display badge for the model + role that produced it.
@@ -2624,7 +2639,7 @@ function connect() {
             // first frame as a poster). Text is whitespace-nowrap so
             // narrow viewports don't break "extract last frame N →" across
             // two lines.
-            const _buildVideoChainCollapsible = (v, c, q, modelLabel, timingHtml, isStageActive) => {
+            const _buildVideoChainCollapsible = (v, c, q, modelLabel, timingHtml, isStageActive, roundedMs) => {
                 const cached = _assetsByVidx.get(v) || {};
                 const bridges = cached.bridges || {};
                 const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
@@ -2707,21 +2722,44 @@ function connect() {
                 // chain step shows progress inline even when it's the active
                 // (in-flight) stage and there's no completed-row counterpart.
                 const _label = modelLabel || 'Video';
-                const _timing = timingHtml || '';
-                // Expander arrow lives INSIDE the model badge — they're
-                // semantically the same affordance ("expand the chain"), and
-                // collapsing them into one chip drops a stray glyph from the
-                // row. The arrow is wrapped in .video-chain-arrow so a CSS
-                // rule can rotate it 90° when [open] is set on the parent
-                // details (consistent with how disclosure widgets read).
-                return `<details class="mt-1 video-chain-details" data-video-chain="${v}">
-                    <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono opacity-90 whitespace-nowrap">
-                        <span class="badge badge-xs badge-success gap-1"><span class="video-chain-arrow inline-block transition-transform">▸</span>${_htmlEscape(_label)} · ${_totalChains} part${_totalChains === 1 ? '' : 's'}</span>
-                        ${_timing}
-                        <a href="${c1Href}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0" onclick="event.stopPropagation()">
-                            <video src="${c1Href}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
-                            <span class="hidden sm:inline truncate">${_htmlEscape(c1Name)}</span>
-                        </a>
+                // Layout matches the standard per-stage output row:
+                //   [disclosure + thumb + filename (flex-1)] [model badge (right)] [time chip]
+                // The disclosure arrow sits inside the left cluster so the
+                // affordance reads as "click row to expand", same idiom
+                // other rows use for the copy button glyph slot.
+                const _roundedTime = (roundedMs != null) ? _fmtRoundUp(roundedMs) : '';
+                const _timeTitle = (timingHtml || '').replace(/<[^>]+>/g, '');
+                const _vcTimeChip = _roundedTime
+                    ? `<span class="flex-none w-7 text-right font-mono text-[9px] text-base-content/60" title="${_htmlEscape(_timeTitle)}">${_roundedTime}</span>`
+                    : `<span class="flex-none w-7" aria-hidden="true"></span>`;
+                const _vcOpen = _openVideoChains.has(String(v)) ? ' open' : '';
+                // No single playable mp4 exists for the chain stage —
+                // only after Final Merge concatenates the parts. Until
+                // then the summary's left cluster reads "expand" /
+                // "collapse" (an affordance label, no filename). Once
+                // FINAL_<v>.mp4 is on disk, surface its filename + thumb.
+                const _final = cached.final || '';
+                let _vcLeftCluster;
+                if (_final) {
+                    const _finalHref = `/files/${encodeURIComponent(_final)}`;
+                    _vcLeftCluster = `<span class="video-chain-arrow inline-block transition-transform flex-none">▸</span>
+                            <a href="${_finalHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0 truncate" onclick="event.stopPropagation()">
+                                <video src="${_finalHref}" class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted onerror="this.style.display='none'"></video>
+                                <span class="truncate">${_htmlEscape(_final)}</span>
+                            </a>`;
+                } else {
+                    _vcLeftCluster = `<span class="video-chain-arrow inline-block transition-transform flex-none">▸</span>
+                            <span class="opacity-70 italic vc-toggle-label" aria-hidden="true"></span>`;
+                }
+                return `<details class="mt-1 video-chain-details" data-video-chain="${v}"${_vcOpen}>
+                    <summary class="cursor-pointer list-none flex items-center gap-2 text-[9px] font-mono">
+                        <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r">
+                            ${_vcLeftCluster}
+                        </span>
+                        <span class="flex-none min-w-[7rem] text-right">
+                            <span class="badge badge-xs badge-success opacity-70">✓ ${_htmlEscape(_label)} · ${_totalChains}p</span>
+                        </span>
+                        ${_vcTimeChip}
                     </summary>
                     ${partRows.join('')}
                 </details>`;
@@ -2937,13 +2975,20 @@ function connect() {
                         // the menu's slot (w-7). 2× overrun keeps its bold
                         // error tint so wildly-overshooting stages still
                         // jump out at a glance.
+                        // Every completed-stage row renders SOMETHING in the
+                        // time column — actual duration when available, '—'
+                        // otherwise. The placeholder makes LLM/TTS rows
+                        // visually consistent with Image/Video rows even
+                        // when the orchestrator's stage_actuals didn't
+                        // capture a transition (rare; happens when a stage
+                        // completes faster than the 1 Hz heartbeat).
                         const _roundedTime = a ? _fmtRoundUp(a.duration_s * 1000) : '';
                         const _timeCls = _overrun2x
                             ? "flex-none w-7 text-right font-mono text-[9px] font-bold text-error"
                             : "flex-none w-7 text-right font-mono text-[9px] text-base-content/60";
                         const timeChip = _roundedTime
                             ? `<span class="${_timeCls}" title="${_htmlEscape(_fmtElapsed(a.duration_s * 1000))}${a.eta_s ? ' / ETA ' + _fmtElapsed(a.eta_s * 1000) : ''}">${_roundedTime}</span>`
-                            : `<span class="flex-none w-7" aria-hidden="true"></span>`;
+                            : `<span class="${_timeCls} opacity-40" title="duration not recorded">—</span>`;
                         // min-w-0 on the LEFT cluster + truncate on the
                         // filename link clamps the asset column to whatever
                         // horizontal space remains after model + time claim
@@ -2962,7 +3007,7 @@ function connect() {
                         // overarching collapsible title represents the entire
                         // video-generation chain for this iter.
                         if (s === 'Video Chains' && v && c > 0) {
-                            row += _buildVideoChainCollapsible(v, c, q, modelLabel, timing, /* isStageActive */ false);
+                            row += _buildVideoChainCollapsible(v, c, q, modelLabel, timing, /* isStageActive */ false, a ? a.duration_s * 1000 : null);
                         }
                         return row;
                     }).join('');
@@ -2985,7 +3030,7 @@ function connect() {
                         ? "font-mono text-[9px] font-bold text-error"
                         : "font-mono text-[9px]";
                     const _activeTiming = `<span class="${_liveElapsedCls}">${_fmtElapsedHtml(_stageElapsed)}</span>${_stageEta ? `<span class="opacity-50 text-[9px]"> / ETA ${_fmtElapsedHtml(_stageEta * 1000)}</span>` : ''}`;
-                    activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming, /* isStageActive */ true);
+                    activeBridgesHtml = _buildVideoChainCollapsible(v, c, q, _activeLabel, _activeTiming, /* isStageActive */ true, _stageElapsed);
                 }
                 // Strip the .stage-just-completed class after the animation
                 // finishes (600 ms total budget) so the next WS re-render
@@ -3773,15 +3818,34 @@ async function requeueFailedQueue() {
     }
 }
 
-// Toggles BOTH #btn-requeue-failed and #btn-clear-failed in the queue header
-// based on whether at least one done-but-failed item exists. Hidden by default
-// so the header stays clean when there's nothing to act on.
+async function clearCompletedQueue() {
+    const btn = document.getElementById('btn-clear-completed');
+    if (btn) btn.disabled = true;
+    try {
+        const r = await fetch('/queue/clear-completed', { method: 'POST' });
+        const j = await r.json();
+        if (!j.ok) console.warn('clear-completed:', j);
+    } catch (e) {
+        console.warn('clear-completed fetch:', e);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// Toggles the queue-header actions based on what kinds of items the
+// queue contains. Failed items expose Requeue + Clear-Failed; completed
+// items expose Clear-Completed. Hidden by default so the header stays
+// clean when there's nothing to act on.
 function _refreshFailedActionsVisibility(queue) {
-    const anyFailed = (queue || []).some(q => q.status === 'done' && q.succeeded === false);
+    const items = queue || [];
+    const anyFailed = items.some(q => q.status === 'done' && q.succeeded === false);
+    const anyCompleted = items.some(q => q.status === 'done' && q.succeeded !== false);
     for (const id of ['btn-requeue-failed', 'btn-clear-failed']) {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = anyFailed ? '' : 'none';
     }
+    const btnDone = document.getElementById('btn-clear-completed');
+    if (btnDone) btnDone.style.display = anyCompleted ? '' : 'none';
 }
 
 async function generateTts() {
@@ -3868,24 +3932,41 @@ function toggleApiKeyReveal() {
     else { el.type = 'password'; btn.innerText = 'show'; }
 }
 
-function onModelSelectChanged() {
-    const sel = $('set-model');
-    const custom = $('set-model-custom');
-    if (!sel || !custom) return;
-    if (sel.value === '__custom__') {
-        custom.classList.remove('hidden');
-        custom.focus();
-    } else {
+// LLM model selector now lives in the Pipeline popup (cfg-llm) so all
+// per-iteration model choices are co-located. Connection details
+// (provider/host/port/key) stay in Settings → LLM. The handler below
+// shows/hides the free-text custom-id input and persists the choice
+// via partial /settings POST so the orchestrator picks up the new
+// model_id on its next iteration.
+function onCfgLlmChanged() {
+    const sel = $('cfg-llm');
+    const custom = $('cfg-llm-custom');
+    if (!sel) return;
+    let modelId = sel.value;
+    if (modelId === '__custom__') {
+        if (custom) { custom.classList.remove('hidden'); custom.focus(); }
+        modelId = (custom && custom.value || '').trim();
+        if (!modelId) return; // wait for user to type
+    } else if (custom) {
         custom.classList.add('hidden');
     }
+    fetch('/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ llm: { model_id: modelId } }),
+    }).catch(err => console.warn('persist llm model_id failed', err));
 }
 
 async function reloadModels() {
-    const sel = $('set-model');
+    const sel = $('cfg-llm');
     if (!sel) return;
-    const base = computeBaseUrl();
-    const provider = $('set-provider').value;
-    const apiKey = $('set-api-key').value;
+    // Connection details (provider, host, port, key) live in Settings →
+    // LLM and are read from the inputs here. If the Settings modal hasn't
+    // been opened yet this session those inputs may not be populated —
+    // fall back to the values baked into the config snapshot.
+    const base = (typeof computeBaseUrl === 'function') ? computeBaseUrl() : '';
+    const provider = $('set-provider') ? $('set-provider').value : '';
+    const apiKey = $('set-api-key') ? $('set-api-key').value : '';
     const prevSelected = sel.dataset.selected || sel.value || '';
     sel.innerHTML = '<option value="">(loading…)</option>';
     try {
@@ -3952,9 +4033,19 @@ async function testSettings() {
     if (!badge) return;
     badge.className = 'badge badge-warning font-mono text-xs';
     badge.innerText = 'testing…';
-    const sel = $('set-model');
-    let model_id = sel.value;
-    if (model_id === '__custom__') model_id = $('set-model-custom').value.trim();
+    // Model selector is in Pipeline popup now (cfg-llm). Fall back to
+    // the live config snapshot when the Pipeline popup hasn't been opened
+    // this session — connection-test should still work without forcing
+    // the user to open Pipeline first.
+    const sel = $('cfg-llm');
+    let model_id = sel ? sel.value : '';
+    if (model_id === '__custom__') {
+        const c = $('cfg-llm-custom');
+        model_id = c ? c.value.trim() : '';
+    }
+    if (!model_id) {
+        model_id = (_lastTick && _lastTick.config && _lastTick.config.llm && _lastTick.config.llm.model_id) || '';
+    }
     const payload = {
         base_url: computeBaseUrl(),
         provider: $('set-provider').value,
@@ -4053,13 +4144,18 @@ async function openSettings() {
             sr.chaos_suggest_system_prompt, sr.chaos_suggest_system_prompt_default);
         _hydratePromptField('set-prompts-void',
             sr.void_fallback_template, sr.void_fallback_template_default);
-        const modelSel = $('set-model');
-        modelSel.dataset.selected = llm.model_id || '';
-        modelSel.innerHTML = '';
-        if (llm.model_id) {
-            const o = document.createElement('option');
-            o.value = llm.model_id; o.innerText = llm.model_id; o.selected = true;
-            modelSel.appendChild(o);
+        // Pre-stage the model_id on cfg-llm (Pipeline popup) so the
+        // selector reflects the current choice when the popup opens
+        // before reloadModels finishes the /settings/models fetch.
+        const modelSel = $('cfg-llm');
+        if (modelSel) {
+            modelSel.dataset.selected = llm.model_id || '';
+            if (llm.model_id) {
+                modelSel.innerHTML = '';
+                const o = document.createElement('option');
+                o.value = llm.model_id; o.innerText = llm.model_id; o.selected = true;
+                modelSel.appendChild(o);
+            }
         }
         const bsel = $('set-branding');
         bsel.innerHTML = '';
@@ -4216,9 +4312,19 @@ function addAutoSuspendEntry() {
 }
 
 async function saveSettings() {
-    const sel = $('set-model');
-    let model_id = sel.value;
-    if (model_id === '__custom__') model_id = $('set-model-custom').value.trim();
+    // Model selector is in Pipeline popup now (cfg-llm). Fall back to
+    // the live config snapshot when the Pipeline popup hasn't been opened
+    // this session — connection-test should still work without forcing
+    // the user to open Pipeline first.
+    const sel = $('cfg-llm');
+    let model_id = sel ? sel.value : '';
+    if (model_id === '__custom__') {
+        const c = $('cfg-llm-custom');
+        model_id = c ? c.value.trim() : '';
+    }
+    if (!model_id) {
+        model_id = (_lastTick && _lastTick.config && _lastTick.config.llm && _lastTick.config.llm.model_id) || '';
+    }
     const body = {
         llm: {
             provider: $('set-provider').value,
@@ -4333,6 +4439,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function openPipeline() {
   const d = document.getElementById('pipeline-modal');
   if (d && d.showModal) d.showModal();
+  // Pre-select the active model_id so the dropdown reflects current state
+  // before the /settings/models fetch completes.
+  const sel = document.getElementById('cfg-llm');
+  if (sel) {
+    const cur = (_lastTick && _lastTick.config && _lastTick.config.llm && _lastTick.config.llm.model_id) || '';
+    if (cur) sel.dataset.selected = cur;
+  }
+  if (typeof reloadModels === 'function') reloadModels();
 }
 
 function _subjectsFromTextarea() {
