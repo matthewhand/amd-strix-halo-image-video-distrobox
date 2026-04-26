@@ -291,6 +291,18 @@ def generate_prompt(model_id, v_idx):
             # turnaround (~3 min/clip on Strix Halo). Used to verify a
             # model is working before committing to a full-quality run.
             "fast_track": bool(task.get("fast_track")),
+            # Seed images — user-uploaded starting frames staged from the
+            # Subjects-card seed picker. Two consumption modes:
+            #   per-task   → task carries a single ``seed_image`` (string).
+            #                Iter copies the seed to comfy-input/<stem>_base.png
+            #                in place of generate_base_image_*.
+            #   per-chain  → task carries ``seed_images`` (list[str]) of >=2 names.
+            #                Chain c spans seed_images[c-1] → seed_images[c]
+            #                via LTX FLF2V (LTXVAddGuide first+last). N_chains
+            #                forced to len(seed_images) - 1.
+            "seed_image": task.get("seed_image") or "",
+            "seed_images": list(task.get("seed_images") or []),
+            "seeds_mode": (task.get("seeds_mode") or "").strip().lower(),
             # `polymorphic` (UI toggle, also persisted as `chaos` on
             # injected tasks for backwards compat):
             # True  → LLM rewrites the seed afresh on EVERY cycle
@@ -1003,6 +1015,174 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
         raise e
 
 
+def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, size_str, frames):
+    """LTX 2.3 First-Last-Frame to Video.
+
+    Generates a clip whose first frame matches ``start_image_fn`` and
+    last frame matches ``end_image_fn``. Produces dramatically more
+    consistent motion than chained image-to-video extension because LTX
+    interpolates between two anchor frames in latent space rather than
+    drifting via last-frame-handoff.
+
+    Implementation uses two ``LTXVAddGuide`` nodes — one at frame_idx=0
+    pinning the start image, another at the highest valid index pinning
+    the end image. ``frame_idx`` MUST be a multiple of 8 per LTX's
+    temporal token grid; we round the last-frame index down accordingly.
+    """
+    size_str = _resolve_size(size_str)
+    w, h = map(int, size_str.split("*"))
+    print(f"🎬 Video Gen [LTX-2.3 FLF2V] {start_image_fn} → {end_image_fn}")
+    seed = random.randint(1, 1000000)
+    prefix = f"flf2v_{int(time.time())}"
+    # frame_idx must be multiple of 8. For 49 frames last=48; for 17 frames
+    # last=16; for 9 frames last=8. Floor division pins the end frame to
+    # the nearest valid token boundary at-or-before the final frame.
+    last_frame_idx = max(8, ((frames - 1) // 8) * 8)
+    workflow = {
+        "1": {
+            "class_type": "LowVRAMCheckpointLoader",
+            "inputs": {"ckpt_name": "ltx-2.3-22b-distilled-fp8.safetensors"},
+        },
+        "2": {
+            "class_type": "LTXVGemmaCLIPModelLoader",
+            "inputs": {
+                "gemma_path": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
+                "ltxv_path": "ltx-2.3-22b-distilled-fp8.safetensors",
+                "max_length": 1024,
+            },
+        },
+        "3a": {"class_type": "LoadImage", "inputs": {"image": start_image_fn}},
+        "3b": {"class_type": "LoadImage", "inputs": {"image": end_image_fn}},
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": prompt, "clip": ["2", 0]},
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "blurry, low quality", "clip": ["2", 0]},
+        },
+        "10": {
+            "class_type": "EmptyLTXVLatentVideo",
+            "inputs": {"width": w, "height": h, "length": frames, "batch_size": 1},
+        },
+        # First keyframe at t=0
+        "11a": {
+            "class_type": "LTXVAddGuide",
+            "inputs": {
+                "positive": ["4", 0],
+                "negative": ["5", 0],
+                "vae": ["1", 2],
+                "latent": ["10", 0],
+                "image": ["3a", 0],
+                "frame_idx": 0,
+                "strength": 1.0,
+            },
+        },
+        # Last keyframe at the highest valid token-aligned index
+        "11b": {
+            "class_type": "LTXVAddGuide",
+            "inputs": {
+                "positive": ["11a", 0],
+                "negative": ["11a", 1],
+                "vae": ["1", 2],
+                "latent": ["11a", 2],
+                "image": ["3b", 0],
+                "frame_idx": last_frame_idx,
+                "strength": 1.0,
+            },
+        },
+        "6": {
+            "class_type": "CFGGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["11b", 0],
+                "negative": ["11b", 1],
+                "cfg": 1.0,
+            },
+        },
+        "7": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+        "8": {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "model": ["1", 0],
+                "scheduler": "simple",
+                "steps": 8,
+                "denoise": 1.0,
+            },
+        },
+        "9": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+        "12": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["9", 0],
+                "guider": ["6", 0],
+                "sampler": ["7", 0],
+                "sigmas": ["8", 0],
+                "latent_image": ["11b", 2],
+            },
+        },
+        "13": {
+            "class_type": "LTXVVAEDecode",
+            "inputs": {"vae": ["1", 2], "latents": ["12", 0]},
+        },
+        "14": {
+            "class_type": "SaveImage",
+            "inputs": {"filename_prefix": prefix, "images": ["13", 0]},
+        },
+    }
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:8188/prompt",
+            data=json.dumps({"prompt": workflow}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            p_id = json.loads(r.read())["prompt_id"]
+        while True:
+            time.sleep(10)
+            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
+                h = json.loads(r.read())
+                if p_id in h:
+                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
+                    first = imgs[0]
+                    match = re.search(r"(\d+)(?=_\.png)", first)
+                    num = match.group(1) if match else "00001"
+                    parts = first.rsplit(num, 1)
+                    patt = f"%0{len(num)}d".join(parts)
+                    print(f"   🎞️  Encoding...")
+                    repo_root = os.path.abspath(os.path.dirname(__file__))
+                    args = [
+                        "-y",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-framerate",
+                        "24",
+                        "-start_number",
+                        str(int(num)),
+                        "-i",
+                        f"comfy-outputs/{patt}",
+                        "-c:v",
+                        _ffmpeg_h264_encoder(),
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-b:v",
+                        "8M",
+                        out_path,
+                    ]
+                    _ffmpeg_run(args, check=True)
+                    for f in imgs:
+                        try:
+                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
+                        except OSError:
+                            pass
+                    return
+    except urllib.error.HTTPError as e:
+        print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
+        print(f"   Body: {e.read().decode('utf-8')}")
+        raise e
+
+
 # ---- Pipeline matrix --------------------------------------------------------
 # User-requested ramp: first prove Qwen → LTX 2.3, then Ernie → LTX 2.3, then
 # Ernie → LTX 2.3 + Heartmula music. Enabled with FLEET_MATRIX=1. Counts per
@@ -1186,7 +1366,27 @@ def main():
                 mode="Rendering", step="Base Image", video=v_idx, total=1000, prompt=p
             )
             tier = "low" if _task_opts.get("fast_track") else pick_tier(v_idx)
-            if b_mod in ["qwen", "ernie"]:
+            # Seed-image short-circuit: when the task carries a user-supplied
+            # seed (per-task) OR per-chain mode (where chain 0 starts from
+            # seed_images[0]), copy the seed to in_img and skip generate_base_*.
+            _seed_for_base = _task_opts.get("seed_image") or ""
+            if not _seed_for_base and (_task_opts.get("seeds_mode") == "per-chain"):
+                _seed_list = _task_opts.get("seed_images") or []
+                if _seed_list:
+                    _seed_for_base = _seed_list[0]
+            if _seed_for_base:
+                _seed_src = os.path.join(OUTPUT_DIR, _seed_for_base)
+                if not os.path.exists(_seed_src):
+                    raise FileNotFoundError(
+                        f"seed image vanished from outputs dir: {_seed_src}"
+                    )
+                os.makedirs(os.path.dirname(in_img) or ".", exist_ok=True)
+                subprocess.run(["cp", _seed_src, in_img], check=True)
+                print(
+                    f"[FLEET] 🌱 seed-as-base: copied {_seed_for_base} → {in_img} (skipping generate_base)",
+                    flush=True,
+                )
+            elif b_mod in ["qwen", "ernie"]:
                 run_image_gen(b_mod, p, in_img, tier=tier)
             else:
                 generate_base_image_ltx23(p, in_img, config["size"])
@@ -1244,7 +1444,22 @@ def main():
                     or 10
                 )
 
+            # Per-chain seed mode — N seeds force N-1 FLF2V chains spanning
+            # seed[i] → seed[i+1]. Overrides config.chains and audio-driven.
+            _per_chain_seeds = (
+                _task_opts.get("seed_images") or []
+                if _task_opts.get("seeds_mode") == "per-chain" else []
+            )
+            if len(_per_chain_seeds) >= 2:
+                _n_chains = len(_per_chain_seeds) - 1
+                print(
+                    f"[FLEET] 🌱 per-chain FLF2V: {len(_per_chain_seeds)} seeds → "
+                    f"{_n_chains} chains (seed[i]→seed[i+1])",
+                    flush=True,
+                )
+
             chain_vids = []
+            _flf2v_active = len(_per_chain_seeds) >= 2
             for c_idx in range(1, _n_chains + 1):
                 update_state(
                     mode="Rendering",
@@ -1256,19 +1471,52 @@ def main():
                     prompt=p,
                 )
                 seg = f"{OUTPUT_DIR}/{_stem}_c{c_idx}.mp4"
-                generate_video_ltx(
-                    os.path.basename(in_img), p, seg, config["size"], config["frames"]
-                )
-                _write_sidecar(
-                    seg,
-                    prompt=p,
-                    model="ltx-2.3",
-                    kind="video",
-                    part=c_idx,
-                    of=_n_chains,
-                )
+                if _flf2v_active:
+                    # Stage both keyframes into comfy-input. The base-stage
+                    # already copied seed[0] → in_img; for chain c we need
+                    # the END frame = seed_images[c]. The START is seed[c-1]
+                    # — which equals in_img on chain 1, and the previous
+                    # chain's end keyframe on subsequent chains.
+                    _start_seed = _per_chain_seeds[c_idx - 1]
+                    _end_seed = _per_chain_seeds[c_idx]
+                    _start_fn = f"{_stem}_kf_start_c{c_idx}.png"
+                    _end_fn = f"{_stem}_kf_end_c{c_idx}.png"
+                    subprocess.run(
+                        ["cp", os.path.join(OUTPUT_DIR, _start_seed),
+                         f"comfy-input/{_start_fn}"], check=True,
+                    )
+                    subprocess.run(
+                        ["cp", os.path.join(OUTPUT_DIR, _end_seed),
+                         f"comfy-input/{_end_fn}"], check=True,
+                    )
+                    generate_video_ltx_flf2v(
+                        _start_fn, _end_fn, p, seg,
+                        config["size"], config["frames"],
+                    )
+                    _write_sidecar(
+                        seg,
+                        prompt=p,
+                        model="ltx-2.3-flf2v",
+                        kind="video",
+                        part=c_idx,
+                        of=_n_chains,
+                        kf_start=_start_seed,
+                        kf_end=_end_seed,
+                    )
+                else:
+                    generate_video_ltx(
+                        os.path.basename(in_img), p, seg, config["size"], config["frames"]
+                    )
+                    _write_sidecar(
+                        seg,
+                        prompt=p,
+                        model="ltx-2.3",
+                        kind="video",
+                        part=c_idx,
+                        of=_n_chains,
+                    )
                 chain_vids.append(seg)
-                if c_idx < _n_chains:
+                if c_idx < _n_chains and not _flf2v_active:
                     next_in = f"comfy-input/{_stem}_f{c_idx}.png"
                     _ffmpeg_run(
                         [

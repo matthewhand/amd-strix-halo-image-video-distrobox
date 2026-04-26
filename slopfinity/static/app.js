@@ -190,6 +190,135 @@ window._uploadSeedFiles = _uploadSeedFiles;
 })();
 
 // ---------------------------------------------------------------------------
+// Seed staging — picker, mode toggle, persistence. Reads /seeds/list to
+// populate a thumbnail grid in the modal; selection persists in localStorage
+// so the user can stage seeds, navigate around, and queue later. inject()
+// reads _getStagedSeeds() / _getSeedsMode() and forwards as form fields.
+// ---------------------------------------------------------------------------
+const _SEEDS_KEY = 'slopfinity_staged_seeds_v1';
+const _SEEDS_MODE_KEY = 'slopfinity_seeds_mode_v1';
+
+function _getStagedSeeds() {
+    try {
+        const raw = localStorage.getItem(_SEEDS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter(s => typeof s === 'string' && s.startsWith('seed_')) : [];
+    } catch (_) { return []; }
+}
+window._getStagedSeeds = _getStagedSeeds;
+
+function _setStagedSeeds(arr) {
+    const clean = (Array.isArray(arr) ? arr : []).filter(s => typeof s === 'string' && s.startsWith('seed_'));
+    try { localStorage.setItem(_SEEDS_KEY, JSON.stringify(clean)); } catch (_) { }
+    _refreshSeedsStrip();
+}
+
+function _getSeedsMode() {
+    try {
+        const v = localStorage.getItem(_SEEDS_MODE_KEY);
+        return (v === 'per-chain') ? 'per-chain' : 'per-task';
+    } catch (_) { return 'per-task'; }
+}
+window._getSeedsMode = _getSeedsMode;
+
+function _setSeedsMode(mode) {
+    const m = (mode === 'per-chain') ? 'per-chain' : 'per-task';
+    try { localStorage.setItem(_SEEDS_MODE_KEY, m); } catch (_) { }
+    _refreshSeedsStrip();
+}
+window._setSeedsMode = _setSeedsMode;
+
+function _clearSeeds() {
+    _setStagedSeeds([]);
+}
+window._clearSeeds = _clearSeeds;
+
+function _refreshSeedsStrip() {
+    const seeds = _getStagedSeeds();
+    const mode = _getSeedsMode();
+    const lbl = document.getElementById('seeds-pick-label');
+    const pill = document.getElementById('seeds-mode-pill');
+    const clear = document.getElementById('btn-seeds-clear');
+    if (lbl) lbl.textContent = seeds.length ? `🌱 ${seeds.length} seed${seeds.length === 1 ? '' : 's'} · pick` : 'Pick seeds…';
+    if (pill) pill.classList.toggle('hidden', seeds.length === 0);
+    if (clear) clear.classList.toggle('hidden', seeds.length === 0);
+    if (pill) {
+        pill.querySelectorAll('button[data-seeds-mode]').forEach(b => {
+            const isActive = b.getAttribute('data-seeds-mode') === mode;
+            b.classList.toggle('subj-mode-active', isActive);
+            // per-chain needs >=2 seeds — disable visually when not eligible
+            if (b.getAttribute('data-seeds-mode') === 'per-chain') {
+                b.disabled = seeds.length < 2;
+                b.classList.toggle('opacity-40', seeds.length < 2);
+            }
+        });
+    }
+    // Update the picker grid checkboxes if the modal is open
+    document.querySelectorAll('#seeds-picker-grid [data-seed-file]').forEach(card => {
+        const f = card.getAttribute('data-seed-file');
+        const cb = card.querySelector('input[type=checkbox]');
+        if (cb) cb.checked = seeds.indexOf(f) !== -1;
+        card.classList.toggle('ring-2', seeds.indexOf(f) !== -1);
+        card.classList.toggle('ring-primary', seeds.indexOf(f) !== -1);
+    });
+    const cnt = document.getElementById('seeds-picker-count');
+    if (cnt) cnt.textContent = `${seeds.length} selected`;
+}
+window._refreshSeedsStrip = _refreshSeedsStrip;
+
+async function _openSeedsPicker() {
+    const modal = document.getElementById('seeds-picker-modal');
+    const grid = document.getElementById('seeds-picker-grid');
+    const empty = document.getElementById('seeds-picker-empty');
+    if (!modal || !grid) return;
+    grid.innerHTML = '<div class="col-span-full text-center text-xs opacity-60 py-6">Loading…</div>';
+    if (empty) empty.classList.add('hidden');
+    if (typeof modal.showModal === 'function') modal.showModal();
+    let items = [];
+    try {
+        const r = await fetch('/seeds/list');
+        const j = await r.json();
+        items = (j && j.items) || [];
+    } catch (_) { items = []; }
+    if (!items.length) {
+        grid.innerHTML = '';
+        if (empty) empty.classList.remove('hidden');
+        _refreshSeedsStrip();
+        return;
+    }
+    if (empty) empty.classList.add('hidden');
+    const staged = new Set(_getStagedSeeds());
+    grid.innerHTML = items.map(it => {
+        const f = it.file;
+        const checked = staged.has(f);
+        return `
+            <label data-seed-file="${f}"
+                class="cursor-pointer relative block rounded-md overflow-hidden border border-base-300 bg-base-300/40 hover:border-primary transition-colors${checked ? ' ring-2 ring-primary' : ''}">
+                <img src="/files/${encodeURIComponent(f)}" alt="${f}" loading="lazy"
+                    class="w-full aspect-square object-cover" />
+                <input type="checkbox" class="absolute top-1 right-1 checkbox checkbox-sm checkbox-primary bg-base-200"${checked ? ' checked' : ''} />
+                <span class="absolute bottom-0 inset-x-0 bg-base-100/85 text-[10px] truncate px-1.5 py-0.5">${f.replace(/^seed_\d+_\d+_/, '')}</span>
+            </label>`;
+    }).join('');
+    grid.querySelectorAll('[data-seed-file]').forEach(card => {
+        const f = card.getAttribute('data-seed-file');
+        card.addEventListener('click', (e) => {
+            // Toggle. Stop checkbox's own click from double-firing.
+            e.preventDefault();
+            const cur = _getStagedSeeds();
+            const i = cur.indexOf(f);
+            if (i === -1) cur.push(f);
+            else cur.splice(i, 1);
+            _setStagedSeeds(cur);
+        });
+    });
+    _refreshSeedsStrip();
+}
+window._openSeedsPicker = _openSeedsPicker;
+
+document.addEventListener('DOMContentLoaded', _refreshSeedsStrip);
+
+// ---------------------------------------------------------------------------
 // PriorityLoader: Limits concurrent media (img/video/audio) transfers.
 // Prevents browser slamming when many previews enter the viewport at once.
 // ---------------------------------------------------------------------------
@@ -4634,6 +4763,14 @@ async function inject(prio, terminate, concurrent, opts) {
         if (opts && opts.whenIdle) f.append('when_idle', '1');
         if (opts && opts.chaos) f.append('chaos', '1');
         if (opts && opts.fastTrack) f.append('fast_track', '1');
+        // Seeds — staged via the Subjects-card picker. Forward the list +
+        // mode so the server can fan out (per-task) or carry through to the
+        // chain loop (per-chain, FLF2V). Empty list = no-op on backend.
+        const _stagedSeeds = (typeof _getStagedSeeds === 'function') ? _getStagedSeeds() : [];
+        if (_stagedSeeds.length) {
+            f.append('seed_images', JSON.stringify(_stagedSeeds));
+            f.append('seeds_mode', (typeof _getSeedsMode === 'function') ? _getSeedsMode() : 'per-task');
+        }
         if (stageConcat) f.append('stage_prompts', JSON.stringify(stages));
         await fetch('/inject', { method: 'POST', body: f });
     }

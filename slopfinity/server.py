@@ -608,6 +608,8 @@ async def inject(
     chaos: str = Form(default=""),
     image_only: str = Form(default=""),
     fast_track: str = Form(default=""),
+    seed_images: str = Form(default=""),
+    seeds_mode: str = Form(default=""),
 ):
     q = cfg.get_queue()
     if terminate:
@@ -646,6 +648,53 @@ async def inject(
             task["stage_prompts"] = json.loads(stage_prompts)
         except Exception:
             task["stage_prompts_raw"] = stage_prompts
+
+    # Seed-image staging (user uploads via /upload, then picks via the
+    # Subjects-card seed picker). seed_images is a JSON-encoded list of
+    # filenames living in EXP_DIR; seeds_mode picks consumption strategy:
+    #   per-task   → fan out to N tasks, one seed each; each iter copies
+    #                the seed to comfy-input as the chain-0 base image.
+    #   per-chain  → keep one task with all seeds; run_fleet uses LTX FLF2V
+    #                to span seed[i] → seed[i+1] per chain (N-1 chains).
+    seeds = []
+    if seed_images:
+        try:
+            raw = json.loads(seed_images)
+            if isinstance(raw, list):
+                # Sanitize: keep only basename, must start with seed_, must exist.
+                for s in raw:
+                    if not isinstance(s, str):
+                        continue
+                    name = os.path.basename(s)
+                    if not name.startswith("seed_"):
+                        continue
+                    if not os.path.exists(os.path.join(EXP_DIR, name)):
+                        continue
+                    seeds.append(name)
+        except Exception:
+            seeds = []
+    mode = (seeds_mode or "").strip().lower()
+    if mode not in ("per-task", "per-chain"):
+        mode = "per-task"
+
+    tasks_to_queue: list = []
+    if seeds and mode == "per-task":
+        # Fan out: one task per seed, each carrying a single seed_image.
+        # Each spawned task gets a unique ts so the queue UI shows them as
+        # distinct rows. The parent prompt + flags propagate verbatim.
+        for idx, s in enumerate(seeds):
+            t = dict(task)
+            t["ts"] = task["ts"] + idx * 1e-6  # nudge so timestamps stay sortable + unique
+            t["seed_image"] = s
+            t["seeds_mode"] = "per-task"
+            tasks_to_queue.append(t)
+    elif seeds and mode == "per-chain":
+        task["seed_images"] = seeds
+        task["seeds_mode"] = "per-chain"
+        tasks_to_queue.append(task)
+    else:
+        tasks_to_queue.append(task)
+
     pending = [x for x in q if x.get("status") in (None, "pending")]
     working = [x for x in q if x.get("status") == "working"]
     done = [x for x in q if x.get("status") == "done"]
@@ -655,9 +704,12 @@ async def inject(
     # which cancels the active job; pairing terminate + next/now means
     # "kill what's running and start this in its place".
     if priority in ("now", "next"):
-        pending.insert(0, task)
+        # Reverse so first-fanned task ends up at the front.
+        for t in reversed(tasks_to_queue):
+            pending.insert(0, t)
     else:
-        pending.append(task)
+        for t in tasks_to_queue:
+            pending.append(t)
     # Order on disk: working (active job sentinel) → pending (queued work) →
     # done (history) → cancelled. Newly-injected work always sits BEFORE
     # done records so the fleet's pop-from-front consumes pending items first.
@@ -940,6 +992,30 @@ async def queue_requeue(data: dict = Body(...)):
 
 _SEED_IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
 _SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
+
+
+@app.get("/seeds/list")
+async def seeds_list():
+    """Return uploaded seed images (filenames matching ``seed_*``) sorted
+    by mtime desc. Powers the Subjects-card seed picker modal so users
+    can stage one or more uploads as starting frames for the next inject.
+    """
+    items = []
+    try:
+        for f in os.listdir(EXP_DIR):
+            if not f.startswith("seed_"):
+                continue
+            if not f.lower().endswith(_SEED_IMAGE_EXTS):
+                continue
+            try:
+                mtime = os.path.getmtime(os.path.join(EXP_DIR, f))
+            except OSError:
+                continue
+            items.append({"file": f, "mtime": mtime})
+    except OSError:
+        pass
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"items": items}
 
 
 @app.post("/upload")

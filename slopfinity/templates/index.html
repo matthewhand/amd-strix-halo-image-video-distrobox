@@ -570,6 +570,40 @@
                                     </div>
                                 </div>
 
+                                {# Seeds staging strip — pick from uploads, choose
+                                   per-task (fan out clips) or per-chain (FLF2V keyframes).
+                                   Mode pill is hidden until at least one seed is staged. #}
+                                <div id="seeds-strip" class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                                    <button type="button" id="btn-seeds-pick"
+                                        class="btn btn-xs btn-outline btn-primary gap-1"
+                                        onclick="_openSeedsPicker()"
+                                        title="Pick from uploaded seed images (drag-drop more anywhere on the page)">
+                                        🌱 <span id="seeds-pick-label">Pick seeds…</span>
+                                    </button>
+                                    <div id="seeds-mode-pill" class="join hidden">
+                                        <button type="button"
+                                            class="join-item btn btn-xs subj-mode-active"
+                                            data-seeds-mode="per-task"
+                                            onclick="_setSeedsMode('per-task')"
+                                            title="Each seed becomes its own clip (same prompt, different starting image)">
+                                            per-task
+                                        </button>
+                                        <button type="button"
+                                            class="join-item btn btn-xs"
+                                            data-seeds-mode="per-chain"
+                                            onclick="_setSeedsMode('per-chain')"
+                                            title="One clip with FLF2V keyframes — N seeds = N-1 chains spanning seed[i] → seed[i+1] for tighter consistency. Needs at least 2 seeds.">
+                                            per-chain (FLF2V)
+                                        </button>
+                                    </div>
+                                    <button type="button" id="btn-seeds-clear"
+                                        class="btn btn-xs btn-ghost text-error hidden"
+                                        onclick="_clearSeeds()"
+                                        title="Unstage all seeds (the uploads stay in the gallery)">
+                                        ✕ clear
+                                    </button>
+                                </div>
+
                                 {# Endless story log — only rendered when mode=endless AND a
                                 story is running. The pre block grows as the user clicks
                                 suggestions (each accepted chip is appended as a new
@@ -1231,6 +1265,30 @@
                     onclick="document.getElementById('model-settings-modal').close(); openPipeline();">Open
                     Pipeline</button>
                 <form method="dialog"><button class="btn btn-sm">Close</button></form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    {# Seed picker — shows uploaded seed_* files as a thumbnail grid with
+       checkboxes. Selection persists in localStorage and feeds the next
+       /inject as the seed_images JSON-list payload. #}
+    <dialog id="seeds-picker-modal" class="modal">
+        <div class="modal-box bg-base-200 border border-base-100 max-w-3xl">
+            <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-1">🌱 Seed images</h3>
+            <p class="text-xs opacity-70 mb-3">
+                Pick from uploads. Drag images anywhere on the page or paste from
+                clipboard to add more. Selection drives the next Queue Slop.
+                <strong>per-chain (FLF2V)</strong> needs at least 2 seeds.
+            </p>
+            <div id="seeds-picker-grid" class="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[55vh] overflow-y-auto custom-scrollbar"></div>
+            <div id="seeds-picker-empty" class="hidden text-sm opacity-60 italic py-8 text-center">
+                No uploads yet. Drag images onto the dashboard or click the ⊕ in the slop gallery header.
+            </div>
+            <div class="modal-action">
+                <span id="seeds-picker-count" class="mr-auto text-xs opacity-70">0 selected</span>
+                <button type="button" class="btn btn-sm btn-ghost" onclick="_clearSeeds()">Clear</button>
+                <form method="dialog"><button class="btn btn-sm btn-primary">Done</button></form>
             </div>
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
