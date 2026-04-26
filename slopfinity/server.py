@@ -406,7 +406,7 @@ def _default_suggest_system_prompt(n: int) -> str:
 
 
 @app.get("/subjects/suggest")
-async def subjects_suggest(n: int = 6, subjects: str = ""):
+async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0):
     """Generate N short visual subject ideas via the configured local LLM.
 
     Cache key includes both N and (subjects, settings flags) so toggling the
@@ -430,7 +430,7 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     env_override = (os.environ.get("SLOPFINITY_SUGGEST_CUSTOM_PROMPT") or "").strip()
     custom_prompt = env_override or (config.get("suggest_custom_prompt") or "").strip()
     subjects_in = (subjects or "").strip() if use_subjects else ""
-    cache_key = (n, use_subjects, custom_prompt, subjects_in)
+    cache_key = (n, use_subjects, custom_prompt, subjects_in, bool(endless))
     cache = getattr(subjects_suggest, "_cache", None)
     now = time.time()
     # Cache persists indefinitely while the cache_key is unchanged — page
@@ -438,10 +438,24 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
     # actually changed something (Subjects text, custom prompt, n, the
     # use_subjects toggle). The previous 30-second TTL caused every reload
     # past ~30 s to burn an unnecessary LLM call.
-    if cache and cache[1] == cache_key:
+    # Exception: endless mode ALWAYS fires fresh — the whole point is to
+    # get a new beat each tick, even if the seed text hasn't changed yet.
+    if cache and cache[1] == cache_key and not endless:
         return {"suggestions": cache[2], "cached": True}
     sys_p = custom_prompt if custom_prompt else _default_suggest_system_prompt(n)
-    if use_subjects and subjects_in:
+    if endless and subjects_in:
+        # Endless Story mode (Subjects card "Endless Story" toggle on).
+        # Treat the existing chips as the story-so-far and ask for the
+        # NEXT chapter — explicitly forbid restating earlier scenes.
+        user_msg = (
+            "These are the story beats already on screen, in chronological order:\n"
+            f"{subjects_in}\n\n"
+            f"Continue the story from where it leaves off. Generate {n} short "
+            "next-scene subject ideas that build on the trajectory above. "
+            "Each line must move the story forward; do NOT repeat or paraphrase "
+            "any line above. One scene per line, plain text, 3-8 words each."
+        )
+    elif use_subjects and subjects_in:
         user_msg = (
             "Match the style/theme of these existing subjects:\n"
             f"{subjects_in}\n\n"
@@ -498,7 +512,8 @@ async def subjects_suggest(n: int = 6, subjects: str = ""):
                 except Exception:
                     pass
     suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
-    if suggestions:
+    # Don't store endless results in the cache — we want each tick fresh.
+    if suggestions and not endless:
         subjects_suggest._cache = (now, cache_key, suggestions)
     return {"suggestions": suggestions, "cached": False}
 
