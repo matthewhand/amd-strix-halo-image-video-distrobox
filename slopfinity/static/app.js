@@ -1336,6 +1336,19 @@ function _updateSubjectsActionLabel() {
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 
 // Single click handler on the big queue button — forks on mode.
+// Fast Track — one-shot inject with per-iter overrides for fastest
+// possible turnaround. Lands a flag on the queued task; run_fleet's
+// opts builder reads task.fast_track and overrides chains=2,
+// frames=17, tier=low, audio=none, tts=none for THAT iter only.
+// Global Pipeline config is untouched. Doesn't honor mode pill —
+// always queues whatever's in the textarea verbatim.
+async function _queueFastTrack() {
+    if (typeof inject === 'function') {
+        await inject('next', false, false, { fastTrack: true });
+    }
+}
+window._queueFastTrack = _queueFastTrack;
+
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
     if (mode !== 'endless') {
@@ -3990,6 +4003,9 @@ function connect() {
                 const polyBadge = q.chaos
                     ? `<span class="text-secondary flex-none" title="Polymorphic — randomized model selections per cycle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="M16 3h5v5"/><path d="M4 20l16-16"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>`
                     : '';
+                const fastBadge = q.fast_track
+                    ? `<span class="text-warning flex-none" title="Fast Track — chains=2 frames=17 tier=low, audio/tts/upscale skipped (~3 min/clip)">🏃</span>`
+                    : '';
                 // Surface "random" / "slopped" model selections as their own
                 // status icons in the summary, alongside infinity/polymorphic.
                 // Single icon per kind regardless of how many roles use it —
@@ -4060,7 +4076,7 @@ function connect() {
                     <details ${(isActive || _openPendingItems.has(q.ts || 0)) ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
                             <span class="flex items-center gap-1 flex-none">
-                                ${statusChip}${infBadge}${polyBadge}${randomBadge}${sloppedBadge}
+                                ${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
                             </span>
                             <span class="flex-1 min-w-0">
                                 <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
@@ -4520,6 +4536,7 @@ async function inject(prio, terminate, concurrent, opts) {
         if (opts && opts.infinity) f.append('infinity', '1');
         if (opts && opts.whenIdle) f.append('when_idle', '1');
         if (opts && opts.chaos) f.append('chaos', '1');
+        if (opts && opts.fastTrack) f.append('fast_track', '1');
         if (stageConcat) f.append('stage_prompts', JSON.stringify(stages));
         await fetch('/inject', { method: 'POST', body: f });
     }

@@ -607,6 +607,7 @@ async def inject(
     when_idle: str = Form(default=""),
     chaos: str = Form(default=""),
     image_only: str = Form(default=""),
+    fast_track: str = Form(default=""),
 ):
     q = cfg.get_queue()
     if terminate:
@@ -635,6 +636,10 @@ async def inject(
         "when_idle": bool(when_idle),
         "chaos": bool(chaos),
         "image_only": bool(image_only),
+        # Fast Track — orchestrator overrides chains/frames/tier and
+        # skips audio/tts for THIS iter only when set. Use the dashboard's
+        # 🏃 button (Subjects card) to flip this on per-injection.
+        "fast_track": bool(fast_track),
     }
     if stage_prompts:
         try:

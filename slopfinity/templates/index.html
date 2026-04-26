@@ -549,12 +549,25 @@
                                         class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
                                         placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
                                         oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
-                                    <button
-                                        class="btn btn-primary btn-lg flex-none w-32 self-stretch h-auto whitespace-normal text-sm leading-tight"
-                                        id="btn-start-stop-inline" onclick="_subjectsAction()"
-                                        title="Start/queue generation">
-                                        {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
-                                    </button>
+                                    <div class="flex flex-col gap-2 flex-none w-32">
+                                        <button
+                                            class="btn btn-primary btn-lg flex-1 self-stretch h-auto whitespace-normal text-sm leading-tight"
+                                            id="btn-start-stop-inline" onclick="_subjectsAction()"
+                                            title="Start/queue generation">
+                                            {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
+                                        </button>
+                                        {# Fast Track — queues with per-iter overrides:
+                                           chains=2, frames=17, tier=low, audio/tts skipped.
+                                           Targets ~3 min end-to-end on Strix Halo so the
+                                           user can prove a model is working before
+                                           committing to a full-quality run. #}
+                                        <button type="button"
+                                                class="btn btn-warning btn-sm flex-none whitespace-normal text-xs leading-tight gap-1"
+                                                id="btn-fast-track" onclick="_queueFastTrack()"
+                                                title="Fast Track — queue this prompt with chains=2, frames=17, tier=low, audio+TTS skipped. ~3 min/clip on Strix Halo. Best for verifying a model works before a full run.">
+                                            🏃 Fast Track
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {# Endless story log — only rendered when mode=endless AND a
