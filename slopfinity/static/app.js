@@ -404,8 +404,8 @@ function _refreshCardVisibility() {
     // "default mode layout hides queue, but shows queue if queue exists"
     if (isDefaultLayout) {
         const qList = document.getElementById('q-list');
-        const hasWork = qList && qList.querySelector('li[data-q-status="active"], li[data-q-status="pending"]');
-        if (!hasWork) queueHidden = true;
+        const hasItems = qList && qList.querySelector('li[data-q-ts]');
+        if (!hasItems) queueHidden = true;
     }
     if (ph) {
         // In gallery mode, Subjects + Queue are still reachable via FABs, so
@@ -3867,6 +3867,8 @@ function connect() {
                         items.push(_renderDoneItem(q));
                     });
                     qList.innerHTML = items.join('');
+                    qList.querySelectorAll('li[data-q-ts]').forEach(li => PriorityLoader.register(li));
+                    _refreshCardVisibility();
                 }
             }
             // Top-of-card segmented progress bar — single instance, hosted at
