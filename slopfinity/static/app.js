@@ -1554,12 +1554,13 @@ function _getSubjectsMode() {
         const v = localStorage.getItem(_SUBJ_MODE_KEY);
         if (v === 'endless') return 'endless';
         if (v === 'chat') return 'chat';
-        return 'raw';
-    } catch (_) { return 'raw'; }
+        if (v === 'raw') return 'raw';
+        return 'simple';  // default: single textarea, LLM rewrites at queue time
+    } catch (_) { return 'simple'; }
 }
 
 function _setSubjectsMode(mode) {
-    if (mode !== 'raw' && mode !== 'endless' && mode !== 'chat') mode = 'raw';
+    if (mode !== 'simple' && mode !== 'raw' && mode !== 'endless' && mode !== 'chat') mode = 'simple';
     try { localStorage.setItem(_SUBJ_MODE_KEY, mode); } catch (_) { }
     document.querySelectorAll('.subjects-mode-pill button[data-subj-mode]').forEach(b => {
         const active = b.getAttribute('data-subj-mode') === mode;
@@ -1585,10 +1586,10 @@ function _setSubjectsMode(mode) {
     // story-log or chat-bubble pane below it does the heavy lifting).
     // Body class drives the actual CSS rules in app.css (.subj-mode-*).
     const body = document.body;
-    body.classList.remove('subj-mode-raw', 'subj-mode-endless', 'subj-mode-chat');
+    body.classList.remove('subj-mode-simple', 'subj-mode-raw', 'subj-mode-endless', 'subj-mode-chat');
     body.classList.add('subj-mode-' + mode);
     const ta = document.getElementById('p-core');
-    if (ta) ta.rows = (mode === 'raw') ? 5 : 2;
+    if (ta) ta.rows = (mode === 'simple' || mode === 'raw') ? 5 : 2;
     // Render any persisted history on first switch into chat.
     if (mode === 'chat') _renderChatLog();
 }
@@ -1744,7 +1745,11 @@ async function _subjectsAction() {
     const mode = _getSubjectsMode();
     if (mode === 'endless') return _startEndlessStory();
     if (mode === 'chat') return; // chat input is the only action; big button is hidden
-    // Raw — current behaviour.
+    // Simple + Raw both use the legacy queue path. The only difference is
+    // visual (Raw exposes the per-stage prompt panel for power users to
+    // pre-fill via AI Magic; Simple keeps the textarea as the only input).
+    // Both honor whatever's in p-image / p-video / etc. when present, so a
+    // Raw user who pre-filled all stages skips LLM rewrites at queue time.
     if (typeof toggleInfinity === 'function') return toggleInfinity();
 }
 window._subjectsAction = _subjectsAction;

@@ -490,9 +490,15 @@
                                     tint with a gear icon so it visually reads as "open
                                     settings", distinct from mode selection. #}
                                     <div class="join subjects-mode-pill" role="tablist" aria-label="Slop mode">
+                                        <button type="button" data-subj-mode="simple"
+                                            class="join-item btn btn-xs btn-primary" onclick="_setSubjectsMode('simple')"
+                                            title="Simple — single subject input; LLM rewrites it into per-stage prompts at queue time. The fastest path from idea to clip.">
+                                            <span class="subj-mode-full">Simple</span>
+                                            <span class="subj-mode-short">S</span>
+                                        </button>
                                         <button type="button" data-subj-mode="raw"
-                                            class="join-item btn btn-xs btn-primary" onclick="_setSubjectsMode('raw')"
-                                            title="Raw — queue exactly what you type, one subject per line.">
+                                            class="join-item btn btn-xs btn-primary btn-outline" onclick="_setSubjectsMode('raw')"
+                                            title="Raw — single subject + per-stage prompt panel. Use AI Magic on each stage to pre-fill, then queue without further LLM calls.">
                                             <span class="subj-mode-full">Raw</span>
                                             <span class="subj-mode-short">R</span>
                                         </button>
@@ -539,6 +545,47 @@
                                         </div>
                                     </div>
                                 </div>
+                                {# Per-stage prompt overrides — visible only in raw mode (CSS gates
+                                   via body.subj-mode-raw). Each stage has an "✨ AI Magic" button
+                                   that calls /enhance with the seed from #p-core; the result lands
+                                   in this stage's textarea and is forwarded verbatim by /inject —
+                                   so when all 4 are filled the queued task ships zero LLM calls.
+                                   Image/video/music/tts inputs are the canonical p-image/p-video/
+                                   p-music/p-tts (relocated from Settings → Pipeline + Speech). #}
+                                <details id="subjects-per-stage" class="collapse collapse-arrow bg-base-300/30 border border-base-300/60 rounded-md">
+                                    <summary class="collapse-title text-[10px] uppercase tracking-widest text-base-content/60 py-2 px-3 min-h-0 cursor-pointer">
+                                        Per-stage prompts (skip LLM rewrite when filled)
+                                    </summary>
+                                    <div class="collapse-content text-xs space-y-2 pb-3">
+                                        {% for stage, label, placeholder in [
+                                            ('image', 'Image prompt', 'Auto from subject…'),
+                                            ('video', 'Video prompt', 'Auto motion / camera from subject…'),
+                                            ('music', 'Music prompt', 'Auto mood / genre from subject…'),
+                                            ('tts', 'Voice line', 'Auto voiceover from subject…'),
+                                        ] %}
+                                        <div>
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
+                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
+                                                    onclick="enhanceStage('{{ stage }}')"
+                                                    title="Rewrite this prompt with the LLM using the seed from the subject field above">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
+                                                    </svg>
+                                                    AI Magic
+                                                </button>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
+                                                    placeholder="{{ placeholder }}"></textarea>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </details>
                                 <div id="subjects-input-row" class="flex gap-2 items-stretch">
                                     <textarea id="p-core" rows="5"
                                         class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
@@ -2127,56 +2174,10 @@
                         </div>
                     </fieldset>
 
-                    <!-- Per-stage prompt overrides -->
-                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Per-stage prompts
-                    </div>
-                    <div class="space-y-3 mb-3">
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Image prompt
-                                    override</span>
-                                <button type="button" class="btn btn-xs btn-primary btn-outline"
-                                    onclick="enhanceStage('image')" title="Rewrite this prompt with the LLM">✨ AI
-                                    Magic</button>
-                            </div>
-                            <div class="flex items-center gap-1">
-                                <span id="lock-image" class="badge badge-sm badge-ghost font-mono cursor-default"
-                                    title="Unlocked">🔓</span>
-                                <textarea id="p-image" class="textarea textarea-bordered text-xs h-16 flex-1"
-                                    placeholder="Auto from subject..."></textarea>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Video prompt
-                                    override</span>
-                                <button type="button" class="btn btn-xs btn-primary btn-outline"
-                                    onclick="enhanceStage('video')" title="Rewrite this prompt with the LLM">✨ AI
-                                    Magic</button>
-                            </div>
-                            <div class="flex items-center gap-1">
-                                <span id="lock-video" class="badge badge-sm badge-ghost font-mono cursor-default"
-                                    title="Unlocked">🔓</span>
-                                <textarea id="p-video" class="textarea textarea-bordered text-xs h-16 flex-1"
-                                    placeholder="Auto from subject..."></textarea>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Music prompt
-                                    override</span>
-                                <button type="button" class="btn btn-xs btn-primary btn-outline"
-                                    onclick="enhanceStage('music')" title="Rewrite this prompt with the LLM">✨ AI
-                                    Magic</button>
-                            </div>
-                            <div class="flex items-center gap-1">
-                                <span id="lock-music" class="badge badge-sm badge-ghost font-mono cursor-default"
-                                    title="Unlocked">🔓</span>
-                                <textarea id="p-music" class="textarea textarea-bordered text-xs h-16 flex-1"
-                                    placeholder="Auto mood from subject..."></textarea>
-                            </div>
-                        </div>
-                    </div>
+                    {# Per-stage prompt overrides relocated to the Subjects card
+                       in raw mode (canonical IDs p-image / p-video / p-music
+                       live there now). The block here used to host them; now
+                       removed to avoid ID duplication. #}
 
                     <!-- Mux & Post-process -->
                     <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Mux &amp;
@@ -2249,24 +2250,9 @@
                         </div>
                     </fieldset>
 
-                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Voiceover line</div>
-                    <div class="space-y-3 mb-3">
-                        <div>
-                            <div class="flex items-center justify-between mb-1">
-                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">Voiceover
-                                    prompt override</span>
-                                <button type="button" class="btn btn-xs btn-primary btn-outline"
-                                    onclick="enhanceStage('tts')" title="Rewrite this prompt with the LLM">✨ AI
-                                    Magic</button>
-                            </div>
-                            <div class="flex items-center gap-1 mb-2">
-                                <span id="lock-tts" class="badge badge-sm badge-ghost font-mono cursor-default"
-                                    title="Unlocked">🔓</span>
-                                <textarea id="p-tts" class="textarea textarea-bordered text-xs h-16 flex-1"
-                                    placeholder="Auto from subject..."></textarea>
-                            </div>
-                        </div>
-                    </div>
+                    {# Voiceover prompt override (#p-tts) relocated to the Subjects
+                       card "Per-stage prompts" collapsible alongside image / video /
+                       music. The Speech tab keeps the voice-preset + preview controls. #}
 
                     <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Preview</div>
                     <div class="space-y-2">

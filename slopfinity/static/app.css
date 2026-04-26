@@ -2242,6 +2242,21 @@ body.subj-mode-chat #subjects-input-row {
     display: none !important;
 }
 
+/* Endless + story running — hide the seed textarea row; the seed lives
+   in the story log above, and the textarea isn't editable in this state
+   anyway. Frees the textarea's vertical real estate for the story log. */
+body.subj-mode-endless.endless-running #subjects-input-row {
+    display: none !important;
+}
+
+/* The per-stage prompt panel (image / video / music / tts with AI Magic
+   buttons) is only meaningful in Raw mode. Hide everywhere else.
+   Simple mode lets the LLM auto-rewrite on queue; Endless cycles a story;
+   Chat doesn't queue manually. */
+body:not(.subj-mode-raw) #subjects-per-stage {
+    display: none !important;
+}
+
 body.subj-mode-chat #subjects-chat-pane {
     flex: 1 1 auto;
     min-height: 0;
