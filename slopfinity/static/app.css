@@ -709,6 +709,65 @@ body[data-layout="gallery"] #gallery-fab {
     content: 'collapse';
 }
 
+/* Slop preview-size pill — body[data-slop-size] flips column counts +
+   per-card figure height. Default 'm' matches the legacy
+   2 / 3 / 4-col grid. 's' packs more thumbs per row; 'l' shows fewer
+   but bigger so the user can scrub a video without squinting. The
+   pill also tints the active button (subj-mode-active borrowed) to
+   match the same visual language as the Raw/Endless mode pill. */
+body[data-slop-size="s"] #preview-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+@media (min-width: 640px) {
+    body[data-slop-size="s"] #preview-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    }
+}
+@media (min-width: 768px) {
+    body[data-slop-size="s"] #preview-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    }
+}
+@media (min-width: 1024px) {
+    body[data-slop-size="s"] #preview-grid {
+        grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+    }
+}
+body[data-slop-size="s"] #preview-grid > [data-slop-kind] figure {
+    aspect-ratio: 16 / 9;
+    min-height: 0;
+}
+body[data-slop-size="s"] #preview-grid > [data-slop-kind] .card-body {
+    padding: 0.25rem !important;
+    font-size: 0.625rem;
+}
+
+/* Large mode — fewer columns, taller figures so the video player has
+   real estate to scrub. */
+body[data-slop-size="l"] #preview-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+}
+@media (min-width: 768px) {
+    body[data-slop-size="l"] #preview-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+@media (min-width: 1280px) {
+    body[data-slop-size="l"] #preview-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+body[data-slop-size="l"] #preview-grid > [data-slop-kind] figure {
+    min-height: 320px;
+}
+
+/* Active size button gets a primary tint — borrows the existing tone
+   without inventing new daisy classes. */
+.join button[data-slop-size].subj-mode-active {
+    background: hsl(var(--p) / 0.18);
+    color: hsl(var(--p));
+}
+
 /* Subjects mode pill (Raw Slop · Endless). Active segment shows the
    full label + primary background; inactive segments switch to a
    single-letter abbreviation when the parent card is narrow so the

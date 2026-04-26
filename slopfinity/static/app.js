@@ -14,6 +14,28 @@ function applyTheme(name) {
 }
 window.applyTheme = applyTheme;
 
+// Slop preview-size pill — sets body[data-slop-size] so the CSS rules
+// in app.css resize the preview-grid columns + per-card figure height.
+// Default 'm' matches the legacy 2/3/4-col grid; 's' packs more thumbs
+// per row for skimming, 'l' shows fewer/bigger for scrubbing video.
+const _SLOP_SIZE_KEY = 'slopfinity-slop-size';
+function _getSlopSize() {
+    try {
+        const v = localStorage.getItem(_SLOP_SIZE_KEY);
+        return (v === 's' || v === 'l') ? v : 'm';
+    } catch (_) { return 'm'; }
+}
+function _setSlopSize(size) {
+    if (size !== 's' && size !== 'm' && size !== 'l') size = 'm';
+    try { localStorage.setItem(_SLOP_SIZE_KEY, size); } catch (_) {}
+    document.body.dataset.slopSize = size;
+    document.querySelectorAll('button[data-slop-size]').forEach(b => {
+        b.classList.toggle('subj-mode-active', b.getAttribute('data-slop-size') === size);
+    });
+}
+window._setSlopSize = _setSlopSize;
+document.addEventListener('DOMContentLoaded', () => _setSlopSize(_getSlopSize()));
+
 // UI surface toggles (Settings → Diagnostics → UI surfaces). Default ON.
 const _UI_TOGGLE_KEYS = {
   topbar: 'slopfinity-ui-topbar',
