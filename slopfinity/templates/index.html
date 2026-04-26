@@ -1141,8 +1141,11 @@
                         {# Use the server's mixed-by-mtime list so a FINAL clip's
                            component pieces (its base.png, chain mp4s) sit right
                            next to it in the grid instead of being banished to a
-                           "below all finals" tail when the assets filter is on. #}
-                        {% set all_assets = mixed | default([]) | list %}
+                           "below all finals" tail. Falls back to the legacy
+                           finals-then-live concat if the server hasn't been
+                           bounced to pick up the `mixed` context yet. #}
+                        {% set _finals_set = vids | default([]) | list %}
+                        {% set all_assets = (mixed | default([]) | list) or (_finals_set + (live or [])) %}
                         <div id="preview-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                             {% for f in all_assets[:64] %}
                             {% set is_mp4 = f.endswith('.mp4') %}
