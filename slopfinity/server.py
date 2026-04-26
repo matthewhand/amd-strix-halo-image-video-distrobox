@@ -856,21 +856,52 @@ async def queue_paginated(offset: int = 0, limit: int = 25, filter: str = "all")
 
 @app.post("/queue/requeue")
 async def queue_requeue(data: dict = Body(...)):
-    """Flip a cancelled queue item back to pending. Identified by ts."""
+    """Re-pend a queue item identified by ts.
+
+    Accepts BOTH cancelled items AND done-but-failed items — the
+    per-row ↻ Re-queue button is a generic "try this again" affordance.
+    Cancelled items get flipped back in place. Failed items get a fresh
+    pending entry appended (mirroring /queue/requeue-failed) and the
+    original failed record is dropped so the queue doesn't grow stale
+    duplicates over time.
+    """
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
     q = cfg.get_queue()
-    found = False
+    new_q = []
+    requeued = False
+    base_ts = time.time()
     for item in q:
-        if item.get("ts") == target_ts and item.get("status") == "cancelled":
-            item["status"] = "pending"
-            item.pop("cancelled_ts", None)
-            found = True
-            break
-    if not found:
-        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    cfg.save_queue(q)
+        if item.get("ts") == target_ts:
+            if item.get("status") == "cancelled":
+                item["status"] = "pending"
+                item.pop("cancelled_ts", None)
+                new_q.append(item)
+                requeued = True
+                continue
+            if item.get("status") == "done" and item.get("succeeded") is False:
+                # Drop the failed record; append a fresh pending entry.
+                fresh = {
+                    "prompt": item.get("prompt", ""),
+                    "priority": item.get("priority", "next"),
+                    "status": "pending",
+                    "ts": base_ts,
+                    "concurrent": item.get("concurrent", False),
+                    "infinity": item.get("infinity", False),
+                    "when_idle": item.get("when_idle", False),
+                    "chaos": item.get("chaos", False),
+                    "image_only": item.get("image_only", False),
+                    "config_snapshot": item.get("config_snapshot"),
+                    "requeued_from_ts": item.get("ts"),
+                }
+                new_q.append(fresh)
+                requeued = True
+                continue
+        new_q.append(item)
+    if not requeued:
+        return JSONResponse({"ok": False, "error": "not requeueable (must be cancelled or done-failed)"}, status_code=404)
+    cfg.save_queue(new_q)
     return {"ok": True}
 
 
@@ -1385,6 +1416,17 @@ async def settings_get():
         "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
         "suggest_auto_disabled": bool(c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)),
         "auto_suspend": c.get("auto_suspend") or list(cfg.DEFAULT_AUTO_SUSPEND),
+        # Per-model loading prefs (Settings → Scheduler → "Per-model loading
+        # preferences"). Both lists default to empty; the hydrator on the
+        # client toggles checkboxes based on membership.
+        "model_loading": {
+            "sticky": list((c.get("model_loading") or {}).get("sticky") or []),
+            "eager_unload": list((c.get("model_loading") or {}).get("eager_unload") or []),
+        },
+        "scheduler": {
+            "memory_safety_gb": (c.get("scheduler") or {}).get("memory_safety_gb", 10),
+            "use_planner": bool((c.get("scheduler") or {}).get("use_planner", False)),
+        },
     }
 
 
@@ -1423,8 +1465,11 @@ async def settings_post(data: dict = Body(...)):
             current_llm["timeout_s"] = 60
         current_llm["auto_suspend"] = bool(current_llm.get("auto_suspend", False))
         c["llm"] = current_llm
-    # Allow pass-through updates for a few other top-level buckets (e.g. scheduler)
-    for bucket in ("scheduler",):
+    # Allow pass-through updates for a few other top-level buckets (e.g.
+    # scheduler, model_loading). model_loading.{sticky,eager_unload} are
+    # consumed by the memory_planner / scheduler to bias which model
+    # checkpoints are evicted/retained across stages.
+    for bucket in ("scheduler", "model_loading"):
         if bucket in data and isinstance(data[bucket], dict):
             existing = c.get(bucket) or {}
             existing.update(data[bucket])

@@ -1626,6 +1626,40 @@
                     OFF (default) = load one model at a time, unload before next. ON = the planner consults model usage across upcoming queue items and keeps models resident across stages when budget allows. See docs/memory-stage-planner-design.md.
                 </span>
 
+                {# Per-model loading preferences. The planner respects these
+                   when picking eviction victims (sticky = evict last) and
+                   when finishing a step (eager-unload = drop right away).
+                   Persisted in config.model_loading. Each row maps to one
+                   entry in scheduler.STAGE_BUDGETS. #}
+                <div class="border border-base-300 rounded-box p-3 mt-3 mb-3">
+                    <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-2">Per-model loading preferences</div>
+                    <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1 text-xs items-center">
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/40">model</span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/40 text-center" title="Planner avoids evicting these — keeps loaded across steps when budget allows">keep loaded</span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/40 text-center" title="Planner force-evicts these immediately after the step that uses them — even if budget would allow keeping resident">unload after use</span>
+                        {% for mid, mlabel, mrole in [
+                            ('qwen', 'Qwen-Image', 'image'),
+                            ('ernie', 'Ernie-Image', 'image'),
+                            ('ltx-2.3', 'LTX-2.3', 'video'),
+                            ('wan2.2', 'Wan2.2', 'video'),
+                            ('wan2.5', 'Wan2.5', 'video'),
+                            ('heartmula', 'Heartmula', 'audio'),
+                            ('qwen-tts', 'Qwen-TTS', 'tts'),
+                            ('kokoro', 'Kokoro-TTS', 'tts'),
+                            ('ltx-spatial', 'LTX Spatial', 'upscale'),
+                        ] %}
+                        <span class="font-mono text-[11px]">{{ mlabel }} <span class="opacity-40">· {{ mrole }}</span></span>
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-primary justify-self-center"
+                               data-loadpref-sticky="{{ mid }}" onchange="saveModelLoadingPrefs()" />
+                        <input type="checkbox" class="checkbox checkbox-xs checkbox-warning justify-self-center"
+                               data-loadpref-eager="{{ mid }}" onchange="saveModelLoadingPrefs()" />
+                        {% endfor %}
+                    </div>
+                    <div class="text-[10px] text-base-content/50 italic mt-2">
+                        Both columns work whether the dynamic load plan is on or off — the toggles persist to config.model_loading and the scheduler reads them on each acquire.
+                    </div>
+                </div>
+
                 <div>
                     <div class="text-[11px] uppercase tracking-widest text-base-content/60 mb-1">Recent events</div>
                     <div id="sched-recent" class="flex flex-wrap gap-1 min-h-[2rem]">
