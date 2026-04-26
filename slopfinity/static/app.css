@@ -678,10 +678,21 @@ textarea.subjects-autogrow {
    When CLOSED we render only the one-line summary and the splitter handle
    becomes irrelevant — hide it so the slop gallery flows directly under the
    summary line and fills the viewport. */
-#top-collapsible {
+#ui-split-upper {
+    flex: 1;
+    min-height: 200px;
     display: flex;
     flex-direction: column;
-    min-height: 0;
+}
+
+/* When the slop gallery is expanded, it takes over the flexible height 
+   and the upper panes (Subjects/Queue) shrink to their natural height. */
+body[data-slop-expanded="1"] #ui-split-upper {
+    flex: 0 0 auto;
+}
+
+body[data-slop-expanded="1"] #ui-split-lower {
+    flex: 1;
 }
 
 #top-collapsible[open] {
@@ -763,16 +774,14 @@ textarea.subjects-autogrow {
     transition: transform 0.2s;
 }
 
-/* Hide the slop summary bar in focused modes so the gallery fills 100% space */
-body[data-layout="gallery"] #slop-collapsible summary,
-body[data-layout="slop"] #slop-collapsible summary {
-    display: none;
+/* The slop summary bar is always visible as the toggle/summary row */
+#slop-collapsible summary {
+    list-style: none;
+    outline: none;
 }
 
-body[data-layout="gallery"] #slop-collapsible[open],
-body[data-layout="slop"] #slop-collapsible[open] {
+#slop-collapsible[open] {
     border-top: none;
-    background: transparent;
 }
 
 /* Legacy class kept for any inner descendants that still reference it. */
