@@ -36,6 +36,72 @@ function _setSlopSize(size) {
 window._setSlopSize = _setSlopSize;
 document.addEventListener('DOMContentLoaded', () => _setSlopSize(_getSlopSize()));
 
+// ---------------------------------------------------------------------------
+// PriorityLoader: Limits concurrent media (img/video/audio) transfers.
+// Prevents browser slamming when many previews enter the viewport at once.
+// ---------------------------------------------------------------------------
+const PriorityLoader = (function () {
+    const MAX_CONCURRENT = 3;
+    let activeCount = 0;
+    const queue = [];
+
+    function process() {
+        while (activeCount < MAX_CONCURRENT && queue.length > 0) {
+            const el = queue.shift();
+            activeCount++;
+            _doLoad(el);
+        }
+    }
+
+    function _doLoad(el) {
+        const src = el.dataset.src;
+        if (!src) { activeCount--; process(); return; }
+
+        const onDone = () => {
+            el.removeEventListener('load', onDone);
+            el.removeEventListener('canplaythrough', onDone);
+            el.removeEventListener('error', onDone);
+            activeCount--;
+            process();
+        };
+
+        el.addEventListener('load', onDone);
+        el.addEventListener('canplaythrough', onDone);
+        el.addEventListener('error', onDone);
+
+        // Check if it's a <source> inside <video>/<audio> or just <img>
+        const target = el.tagName === 'SOURCE' ? el.parentElement : el;
+
+        if (el.tagName === 'SOURCE') {
+            el.src = src;
+            target.load();
+        } else {
+            el.src = src;
+        }
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const targetEl = entry.target;
+                // If the container itself has a data-src, or any children do.
+                if (targetEl.dataset.src && !targetEl.src) {
+                    queue.push(targetEl);
+                }
+                targetEl.querySelectorAll('[data-src]').forEach(el => {
+                    if (!el.src) queue.push(el);
+                });
+                process();
+                observer.unobserve(targetEl);
+            }
+        });
+    }, { rootMargin: '200px' });
+
+    return {
+        register: (container) => observer.observe(container)
+    };
+})();
+
 // UI surface toggles (Settings → Diagnostics → UI surfaces). Default ON.
 const _UI_TOGGLE_KEYS = {
     topbar: 'slopfinity-ui-topbar',
@@ -149,6 +215,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const toggle = document.getElementById('layout-lock-toggle');
         if (toggle) toggle.checked = false;
     }
+
+    // Register initial SSR items for throttled loading.
+    // Gallery cards
+    document.querySelectorAll('#preview-grid > [data-slop-kind]').forEach(card => {
+        PriorityLoader.register(card);
+    });
+    // Queue items (thumbnails)
+    document.querySelectorAll('#q-list > li').forEach(li => {
+        PriorityLoader.register(li);
+    });
+
     // Patch selectLayoutView to respect lock.
     const orig = window.selectLayoutView;
     if (orig) {
@@ -3375,9 +3452,9 @@ function connect() {
                             const _thumbCls = "rounded bg-black object-cover flex-none";
                             const _thumbStyle = "width:32px;height:18px;";
                             const _thumb = asset && _isVid
-                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"></video></button>`
+                                ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><video class="${_thumbCls}" style="${_thumbStyle}" preload="metadata" muted playsinline data-anim-thumb onerror="this.style.display='none'"><source data-src="${_href}"></video></button>`
                                 : asset && _isImg
-                                    ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
+                                    ? `<button type="button" class="flex-none" onclick='event.stopPropagation(); openAssetInfo(${JSON.stringify(asset)})' title="Open ${asset} in info modal"><img data-src="${_href}" class="${_thumbCls}" style="${_thumbStyle}" loading="lazy" onerror="this.style.display='none'"></button>`
                                     : '';
                             // Tiny copy-button glyph that sits next to the
                             // filename. Reads its target from data-copy-text
@@ -5783,11 +5860,11 @@ function _buildSlopCard(file, opts = {}) {
     const autoplayAttr = opts.autoplay ? 'autoplay' : '';
     let media;
     if (isV) {
-        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls ${autoplayAttr} muted loop preload="metadata" class="w-full h-full object-contain"><source src="/files/${file}"></video></figure>`;
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls ${autoplayAttr} muted loop preload="metadata" class="w-full h-full object-contain"><source data-src="/files/${file}"></video></figure>`;
     } else if (isWav) {
-        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source src="/files/${file}"></audio></figure>`;
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source data-src="/files/${file}"></audio></figure>`;
     } else {
-        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img data-src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
     }
     c.innerHTML = `${media}
         <div class="card-body !p-2 bg-base-200/60 gap-1">
@@ -5797,6 +5874,10 @@ function _buildSlopCard(file, opts = {}) {
             </div>
             <span class="text-[10px] font-mono text-base-content/60 truncate" title="${file}">${file}</span>
         </div>`;
+
+    // Throttle loading
+    PriorityLoader.register(c);
+
     return c;
 }
 
