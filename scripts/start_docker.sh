@@ -28,7 +28,9 @@ fi
 if [[ "$COMFYUI_PORT" != "0" && "$COMFYUI_PORT" != "false" ]]; then
   echo "🖼️  Starting ComfyUI on port $COMFYUI_PORT..."
   cd /opt/ComfyUI
-  python3 main.py --listen 0.0.0.0 --port "$COMFYUI_PORT" --output-directory /opt/ComfyUI/output &
+  # --fp32-vae kills the bf16 VAE-decode block-grid on Strix Halo (gfx1151).
+  # See docker-compose.yaml's ComfyUI command for the full rationale.
+  python3 main.py --listen 0.0.0.0 --port "$COMFYUI_PORT" --output-directory /opt/ComfyUI/output --fp32-vae &
   COMFYUI_PID=$!
 else
   echo '🖼️  ComfyUI: DISABLED'
@@ -58,7 +60,9 @@ while true; do
     if ! kill -0 "$COMFYUI_PID" 2>/dev/null; then
       echo '⚠️  ComfyUI service died, restarting...'
       cd /opt/ComfyUI
-      python3 main.py --listen 0.0.0.0 --port "$COMFYUI_PORT" --output-directory /opt/ComfyUI/output &
+      # --fp32-vae kills the bf16 VAE-decode block-grid on Strix Halo (gfx1151).
+  # See docker-compose.yaml's ComfyUI command for the full rationale.
+  python3 main.py --listen 0.0.0.0 --port "$COMFYUI_PORT" --output-directory /opt/ComfyUI/output --fp32-vae &
       COMFYUI_PID=$!
     fi
   fi
