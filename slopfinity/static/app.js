@@ -989,12 +989,20 @@ document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
 // Pings /llm/health on load and every 60s — quick probe, low overhead.
 let _llmAvailableCached = null;
 async function _updateLlmAvailability() {
-    let ok = false;
+    // Default to "available" when the endpoint isn't there — older
+    // slopfinity builds (pre-bounce) don't expose /llm/health, and a
+    // 404 should NOT lock the user out of LLM-using modes. We only
+    // disable when /llm/health responds with explicit ok:false.
+    let ok = true;
     try {
         const r = await fetch('/llm/health');
-        const d = await r.json();
-        ok = !!(d && d.ok);
-    } catch (_) { ok = false; }
+        if (r.status === 404) {
+            ok = true; // endpoint missing — fail open
+        } else {
+            const d = await r.json();
+            ok = !!(d && d.ok);
+        }
+    } catch (_) { ok = true; /* network/parse error — fail open */ }
     _llmAvailableCached = ok;
     document.body.classList.toggle('llm-down', !ok);
     const llmGated = ['endless', 'simple', 'chat'];
