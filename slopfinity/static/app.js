@@ -4179,9 +4179,18 @@ function connect() {
                 if (curStep === 'Video Chains' && v && c > 0) {
                     const cfgSnap = (q && q.config_snapshot) || (_lastTick && _lastTick.config) || {};
                     const _vid = cfgSnap.video_model;
-                    const _activeLabel = (_vid && _vid !== 'none' && typeof _modelDisplayName === 'function')
+                    let _activeLabel = (_vid && _vid !== 'none' && typeof _modelDisplayName === 'function')
                         ? (_modelDisplayName(_vid, 'video') || _vid)
                         : 'Video';
+                    // Annotate with the active chain-handoff strategy so the user
+                    // can see whether multi-frame keyframing is in play. FLF2V
+                    // mode (per-chain seeds) wins over plain handoff K.
+                    if (q && q.seeds_mode === 'per-chain' && Array.isArray(q.seed_images) && q.seed_images.length >= 2) {
+                        _activeLabel += ` · FLF2V (${q.seed_images.length} kf)`;
+                    } else if (c > 1) {
+                        const _k = Math.max(1, Math.min(8, parseInt(cfgSnap.chain_handoff_keyframes ?? 4, 10) || 4));
+                        if (_k > 1) _activeLabel += ` · K=${_k}`;
+                    }
                     const _stageElapsed = _stageStartTs ? (Date.now() - _stageStartTs) : 0;
                     const _stageEta = _stageAvgSeconds('Video Chains') || 0;
                     // Mid-flight 2× overrun → bold + error so the user spots
