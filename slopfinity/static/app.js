@@ -1155,12 +1155,18 @@ function _updateConnPill(isRendering, modeStr, step) {
 async function requeueItem(ts) {
     if (!ts) return;
     try {
-        await fetch('/queue/requeue', {
+        const r = await fetch('/queue/requeue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ts }),
         });
-    } catch (e) { console.warn('requeue failed', e); }
+        // Read the body so a 404 / "not requeueable" surfaces in the
+        // console with a real reason instead of a generic "requeue failed".
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !(j && j.ok)) {
+            console.warn('requeue not applied:', j || `HTTP ${r.status}`);
+        }
+    } catch (e) { console.warn('requeue fetch failed', e); }
 }
 
 // Tick stage + total elapsed once a second so they don't jump only on WS ticks.
@@ -2394,6 +2400,42 @@ async function saveSchedUsePlanner(checked) {
     }
 }
 
+// Per-model loading preferences. Reads every checkbox in the
+// "Per-model loading preferences" grid and POSTs the union as
+// model_loading.{sticky,eager_unload}: [model_ids].
+async function saveModelLoadingPrefs() {
+    const sticky = Array.from(document.querySelectorAll('[data-loadpref-sticky]'))
+        .filter(el => el.checked)
+        .map(el => el.getAttribute('data-loadpref-sticky'));
+    const eager = Array.from(document.querySelectorAll('[data-loadpref-eager]'))
+        .filter(el => el.checked)
+        .map(el => el.getAttribute('data-loadpref-eager'));
+    try {
+        await fetch('/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_loading: { sticky, eager_unload: eager } }),
+        });
+    } catch (e) {
+        console.warn('saveModelLoadingPrefs failed', e);
+    }
+}
+
+// Pre-tick the per-model loading checkboxes from the persisted config.
+// Called from openSettings() so the grid reflects the current state
+// every time the modal opens.
+function _hydrateModelLoadingPrefs(cfg) {
+    const ml = (cfg && cfg.model_loading) || {};
+    const sticky = new Set(ml.sticky || []);
+    const eager = new Set(ml.eager_unload || []);
+    document.querySelectorAll('[data-loadpref-sticky]').forEach(el => {
+        el.checked = sticky.has(el.getAttribute('data-loadpref-sticky'));
+    });
+    document.querySelectorAll('[data-loadpref-eager]').forEach(el => {
+        el.checked = eager.has(el.getAttribute('data-loadpref-eager'));
+    });
+}
+
 function updateDiagnostics(d) {
     const g = $('diag-gpu'); if (g && d.stats) g.innerText = d.stats.gpu + '%';
     const v = $('diag-vram'); if (v && d.stats) v.innerText = d.stats.vram + '%';
@@ -2688,12 +2730,17 @@ function connect() {
                         ? `${stem}_base.png`
                         : (bridges[i - 1] || `${stem}_f${i - 1}.png`);
                     const _posterAttr = `poster="/files/${encodeURIComponent(_posterName)}"`;
-                    partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-chain-row="${v}:${i}">
-                        <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
-                        <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0">
-                            <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video>
-                            <span class="hidden sm:inline truncate">${_htmlEscape(chainName)}</span>
-                        </a>
+                    partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono ${isActivePart ? '' : 'opacity-80'} pl-4 border-l border-base-300/50 ml-1" data-chain-row="${v}:${i}">
+                        <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
+                            <a href="${chainHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
+                                <video src="${chainHref}" ${_posterAttr} class="${thumbCls}" style="${thumbStyle}" preload="metadata" muted playsinline onerror="this.style.display='none'"></video>
+                                <span class="truncate">${_htmlEscape(chainName)}</span>
+                            </a>
+                        </span>
+                        <span class="flex-none min-w-[7rem] text-right">
+                            <span class="badge badge-xs ${_badgeTone}">${_spinner}${_htmlEscape(_partLabel)} · part ${i}</span>
+                        </span>
+                        <span class="flex-none w-7" aria-hidden="true"></span>
                     </div>`);
                     if (i < _maxPart) {
                         // Bridge i = extracted last frame of chain i, fed as
@@ -2705,13 +2752,17 @@ function connect() {
                         // chain and the in-flight one.
                         const bridgeName = bridges[i] || `${stem}_f${i}.png`;
                         const bridgeHref = `/files/${encodeURIComponent(bridgeName)}`;
-                        partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1 whitespace-nowrap" data-ffmpeg-bridge="${v}:${i}">
-                            <span class="badge badge-xs badge-ghost">ffmpeg</span>
-                            <span class="opacity-70">extract last frame ${i} →</span>
-                            <a href="${bridgeHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-auto min-w-0">
-                                <img src="${bridgeHref}" class="${thumbCls}" style="${thumbStyle}" loading="lazy" onerror="this.style.display='none'">
-                                <span class="hidden sm:inline truncate">${_htmlEscape(bridgeName)}</span>
-                            </a>
+                        partRows.push(`<div class="flex items-center gap-2 mt-1 text-[9px] font-mono opacity-60 pl-4 border-l border-base-300/50 ml-1" data-ffmpeg-bridge="${v}:${i}">
+                            <span class="flex-1 min-w-0 flex items-center gap-2 overflow-hidden fade-edges-r [&>a]:truncate [&>a]:min-w-0">
+                                <a href="${bridgeHref}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 min-w-0">
+                                    <img src="${bridgeHref}" class="${thumbCls}" style="${thumbStyle}" loading="lazy" onerror="this.style.display='none'">
+                                    <span class="truncate">${_htmlEscape(bridgeName)}</span>
+                                </a>
+                            </span>
+                            <span class="flex-none min-w-[7rem] text-right">
+                                <span class="badge badge-xs badge-ghost" title="ffmpeg extracts the last frame of chain ${i} as the input image for chain ${i + 1}">✓ ffmpeg · bridge ${i}</span>
+                            </span>
+                            <span class="flex-none w-7" aria-hidden="true"></span>
                         </div>`);
                     }
                 }
@@ -4178,6 +4229,8 @@ async function openSettings() {
         const usePlanner = !!(sr.scheduler && sr.scheduler.use_planner);
         const planEl = $('sched-use-planner');
         if (planEl) planEl.checked = usePlanner;
+        // Per-model loading-prefs grid is in the same Scheduler tab.
+        if (typeof _hydrateModelLoadingPrefs === 'function') _hydrateModelLoadingPrefs(sr);
         // Hydrate theme selector from localStorage (falling back to branding default).
         const themeSel = $('theme-select');
         if (themeSel) {
