@@ -467,13 +467,34 @@ textarea.subjects-autogrow {
    the gap; the marquee's translateX(-50%) loop keeps running over the
    remaining content. Both copies (the chip + its duplicate-for-loop mirror)
    are matched by data-suggest so the seamless wraparound stays seamless. */
+/* Two-phase exit animation for a chip the user just queued. The
+   PULSE phase keeps the chip visible for ~1.4 s in success-green
+   tint, gently scaling 1.0→1.08→1.0 three times so the user gets
+   visual confirmation that "this one is now in the queue". The
+   COLLAPSE phase then shrinks + fades it to nothing so the marquee
+   re-flows. The two animations are chained on the same element via
+   shorthand `animation:` so we don't need a setTimeout to swap
+   classes between phases. */
+@keyframes slop-chip-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.08); }
+}
 @keyframes slop-chip-disappear {
     0%   { opacity: 1; transform: scale(1); max-width: 320px; padding-left: 0.5rem; padding-right: 0.5rem; margin-right: 0; }
     50%  { opacity: 0.4; transform: scale(0.85); }
     100% { opacity: 0; transform: scale(0); max-width: 0; padding-left: 0; padding-right: 0; margin-right: -0.375rem; border-width: 0; }
 }
 .chip-disappear {
-    animation: slop-chip-disappear 300ms ease-out forwards;
+    /* Pulse 3x over 1.4s, then collapse over 0.7s. Total = 2.1s. */
+    animation:
+        slop-chip-pulse 466ms ease-in-out 0s 3 both,
+        slop-chip-disappear 700ms ease-out 1.4s forwards;
+    /* Tint flips to success on entry of the queued state and stays
+       there through the pulse + collapse so the swap reads as "moved
+       to the queue, now leaving". */
+    background-color: hsl(var(--su) / 0.85) !important;
+    border-color: hsl(var(--su)) !important;
+    color: hsl(var(--suc, var(--b1))) !important;
     pointer-events: none;
     overflow: hidden;
     white-space: nowrap;

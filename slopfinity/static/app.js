@@ -4732,12 +4732,14 @@ function _buildSuggestChip(s) {
             f.append('prompt', s);
             f.append('priority', 'next');
             await fetch('/inject', { method: 'POST', body: f });
-            // Animate the clicked chip (and its duplicate mirror in the
-            // marquee track) so it shrinks + fades out, then remove from DOM.
-            // The trailing chips re-flow leftward filling the gap; the
-            // marquee animation continues uninterrupted because the track is
-            // still flex-row and translateX(-50%) still loops the remaining
-            // content.
+            // Two-phase exit: pulse-with-success-tint for ~1.4 s so the
+            // user gets visual confirmation that this prompt is now in
+            // the queue, then collapse over ~0.7 s. Both phases are
+            // driven by CSS keyframes on the .chip-disappear class.
+            // Trailing chips re-flow leftward filling the gap; the
+            // marquee animation continues uninterrupted because the
+            // track is still flex-row and translateX(-50%) still loops
+            // the remaining content.
             const matches = document.querySelectorAll(`#subject-chips-stack button[data-suggest="${CSS.escape(s)}"]`);
             matches.forEach(el => el.classList.add('chip-disappear'));
             // Snapshot which tracks need re-measuring AFTER removal — the
@@ -4749,6 +4751,9 @@ function _buildSuggestChip(s) {
                 const tr = el.closest('.suggest-marquee-track');
                 if (tr) tracksToReMeasure.add(tr);
             });
+            // Match the CSS animation total (1.4 s pulse + 0.7 s collapse
+            // = 2.1 s; +100 ms slack so the collapse completes visually
+            // before we yank the node).
             setTimeout(() => {
                 matches.forEach(el => el.remove());
                 tracksToReMeasure.forEach(track => {
@@ -4766,7 +4771,7 @@ function _buildSuggestChip(s) {
                         track.style.setProperty('--marquee-duration', seconds + 's');
                     }
                 });
-            }, 320);
+            }, 2200);
         } catch (err) {
             console.warn('chip inject failed', err);
         }
