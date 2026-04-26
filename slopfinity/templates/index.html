@@ -575,17 +575,28 @@
                                                 </svg>
                                                 <span>Copy story</span>
                                             </button>
-                                            <button type="button" id="subjects-story-end"
+                                            <button type="button" id="subjects-story-submit"
+                                                class="btn btn-ghost btn-xs text-success gap-1"
+                                                onclick="_submitEndlessStory()"
+                                                title="Submit story — stop the auto-cycle but keep the log visible. Already-queued clips keep running.">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                    stroke-linejoin="round" class="w-3 h-3">
+                                                    <polyline points="20 6 9 17 4 12" />
+                                                </svg>
+                                                <span>Submit</span>
+                                            </button>
+                                            <button type="button" id="subjects-story-reset"
                                                 class="btn btn-ghost btn-xs text-error gap-1"
-                                                onclick="_endEndlessStory()"
-                                                title="End this story — unlock the seed textarea, clear the log, stop the auto-cycle.">
+                                                onclick="_resetEndlessStory()"
+                                                title="Reset story — clears the log and stops the cycle. Asks for confirmation. Already-queued clips keep running.">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                                                     stroke="currentColor" stroke-width="2" stroke-linecap="round"
                                                     stroke-linejoin="round" class="w-3 h-3">
                                                     <line x1="18" y1="6" x2="6" y2="18" />
                                                     <line x1="6" y1="6" x2="18" y2="18" />
                                                 </svg>
-                                                <span>End story</span>
+                                                <span>Reset</span>
                                             </button>
                                         </div>
                                     </div>
