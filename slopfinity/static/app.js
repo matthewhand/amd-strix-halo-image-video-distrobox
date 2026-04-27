@@ -2204,7 +2204,7 @@ function _setSubjectsMode(mode) {
     const stackBox = document.getElementById('subject-chips-stack');
     if (mode === 'endless' && !_endlessRunning) {
         if (stackBox) stackBox.innerHTML =
-            '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+            '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
     } else if (mode === 'simple') {
         if (stackBox && stackBox.querySelector('.suggest-marquee-row') === null
             && typeof _renderCachedSuggestions === 'function') {
@@ -4196,7 +4196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const _endlessIdle = (_curMode === 'endless' && !_endlessRunning);
     if (_endlessIdle) {
         const box = document.getElementById('subject-chips-stack');
-        if (box) box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+        if (box) box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
     } else {
         _renderCachedSuggestions(); // simple-mode-only; no-op for raw/chat
     }
@@ -7220,7 +7220,18 @@ function _appendSuggestBatchRow(items, opts) {
     } else {
         row.appendChild(track);
     }
-    stack.appendChild(row);
+    // Honor opts.insertAtIdx — used by _regenEndlessRow to put the
+    // refreshed row back in its ORIGINAL position rather than appending
+    // it at the end of the stack. Without this, swapping a row's
+    // suggestion-prompt via the picker silently moved that row to the
+    // bottom, which read as "the dropdown change didn't take effect".
+    if (opts && typeof opts.insertAtIdx === 'number') {
+        const existing = stack.querySelectorAll('.suggest-marquee-row');
+        const before = existing[opts.insertAtIdx] || null;
+        stack.insertBefore(row, before);
+    } else {
+        stack.appendChild(row);
+    }
     // Drop the .entering class once the slide-in completes so future
     // hover/focus rules apply normally and the transform doesn't linger
     // as inline animation state.
@@ -7310,7 +7321,29 @@ async function _fetchSuggestBatch(opts) {
     try {
         const r = await fetch('/subjects/suggest' + qs);
         const data = await r.json();
-        return (data && data.suggestions) || [];
+        const arr = (data && data.suggestions) || [];
+        // Filter out anything that looks like an error string from the
+        // LLM / HTTP layer leaking through as a "suggestion". Errors
+        // are NOT suggestions — they shouldn't render as clickable
+        // chips. Pattern: leading "Error", "HTTP <code>", "timeout",
+        // "timed out", "internal server error", or strings that are
+        // wholly enclosed in <error>…</error>-like markers.
+        const looksLikeError = (s) => {
+            if (typeof s !== 'string') return true;
+            const t = s.trim();
+            if (!t) return true;
+            return (
+                /^error[:\s]/i.test(t) ||
+                /^http\s*[34][0-9]{2}/i.test(t) ||
+                /\btimed\s*out\b/i.test(t) ||
+                /\btimeout\b/i.test(t) ||
+                /^internal\s*server\s*error/i.test(t) ||
+                /^<error/i.test(t) ||
+                /^\(empty\)$/i.test(t) ||
+                t.length > 400  /* runaway responses — chips this long are unreadable */
+            );
+        };
+        return arr.filter(s => !looksLikeError(s));
     } catch (_) { return []; }
 }
 window._fetchSuggestBatch = _fetchSuggestBatch;
@@ -7394,7 +7427,7 @@ async function _renderEndlessRows(n) {
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
     if (!_endlessRunning) {
-        box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+        box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
         return;
     }
     box.innerHTML = '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>';
