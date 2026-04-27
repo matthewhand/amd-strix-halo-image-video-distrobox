@@ -2035,7 +2035,20 @@ function _setSubjectsMode(mode) {
     body.classList.remove('subj-mode-simple', 'subj-mode-raw', 'subj-mode-endless', 'subj-mode-chat');
     body.classList.add('subj-mode-' + mode);
     const ta = document.getElementById('p-core');
-    if (ta) ta.rows = (mode === 'simple' || mode === 'raw') ? 5 : 2;
+    if (ta) {
+        ta.rows = (mode === 'simple' || mode === 'raw') ? 5 : 2;
+        // Per-mode placeholder hint — the textarea means something different
+        // in each mode (subject list vs. story seed vs. single idea), so the
+        // hint text needs to match. Without this the raw "one subject per
+        // line" placeholder bleeds into endless/simple where it's wrong.
+        const placeholders = {
+            endless: 'Write your first beat of the story, then choose your own adventure from suggestions below',
+            simple:  'Your idea… write it here and click generate',
+            chat:    'Ask the assistant — e.g. "queue 3 short clips of dragons"',
+            raw:     'One subject per line.\ne.g.\nlumpy clay robots\ncyberpunk dragons\nhermit crab lawyers',
+        };
+        ta.placeholder = placeholders[mode] || placeholders.raw;
+    }
     // Render any persisted history on first switch into chat AND fetch
     // 4 reply suggestions (starter ideas if history is empty, or
     // continuations of the last turn).
@@ -2311,6 +2324,22 @@ async function _startEndlessStory() {
     if (log) log.textContent = seed;
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.remove('hidden');
+    // Force the first endless row to use the currently-selected default
+    // suggestion prompt. Without this, a user who tweaked the dropdown
+    // before pressing Start Story would still see whatever prompt was
+    // saved at the head of _ENDLESS_ROW_PROMPTS_KEY from a prior session.
+    try {
+        const defaultId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : null;
+        if (defaultId) {
+            const arr = _getEndlessRowPrompts();
+            if (!arr.length || arr[0] !== defaultId) {
+                arr.unshift(defaultId);
+                // Cap to a sensible upper bound so unshift doesn't grow
+                // the list unbounded across many Start Story presses.
+                _setEndlessRowPrompts(arr.slice(0, 6));
+            }
+        }
+    } catch (_) {}
     // Kick the existing endless cycle on (it reads the hidden checkbox).
     const t = document.getElementById('endless-story-toggle');
     if (t && !t.checked) {
@@ -2351,10 +2380,21 @@ function _endEndlessStory(clearLog) {
 }
 window._endEndlessStory = _endEndlessStory;
 
-// Submit — stop the auto-cycle, keep the story log visible so the user can
-// review what was queued. Doesn't clear, doesn't ask for confirmation.
+// Submit — stop the auto-cycle and tear down the story UI. Same destructive
+// teardown as Reset (story log + pane go away), just without the confirm
+// prompt: pressing Submit is itself the user's "I'm done" intent. Already-
+// queued clips keep running on the worker side; this only clears the
+// composer surface so the user can move on to the next thing.
 function _submitEndlessStory() {
-    _endEndlessStory(false);
+    _endEndlessStory(true);
+    // Also empty the seed textarea so the next Start Story doesn't inherit
+    // the just-submitted seed — mirrors what the user expects after a
+    // successful submit ("the story stuff disappears").
+    const ta = document.getElementById('p-core');
+    if (ta) {
+        ta.value = '';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
 }
 window._submitEndlessStory = _submitEndlessStory;
 
@@ -7198,10 +7238,26 @@ async function _regenEndlessRow(rowIdx) {
     if (!promptId) return;
     const rows = stack.querySelectorAll('.suggest-marquee-row');
     const row = rows[rowIdx];
-    if (row) row.innerHTML = '<span class="loading loading-dots loading-xs px-2"></span>';
-    const arr = await _fetchSuggestBatch({ n: 6, promptId, fresh: true });
+    // Spin the row's refresh icon + swap chips for a loading shimmer
+    // INSIDE the marquee mask so the lead cluster (subject/refresh/minus)
+    // stays interactive and visible while the new batch loads.
+    const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
+    if (refreshBtn) refreshBtn.classList.add('row-refresh-spinning');
+    const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
+    if (mask) {
+        mask.innerHTML = '<div class="flex items-center gap-2 px-2 text-[11px] text-base-content/60"><span class="loading loading-dots loading-xs"></span><span>regenerating…</span></div>';
+    } else if (row) {
+        row.innerHTML = '<span class="loading loading-dots loading-xs px-2"></span>';
+    }
+    let arr = [];
+    try {
+        arr = await _fetchSuggestBatch({ n: 6, promptId, fresh: true });
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('row-refresh-spinning');
+    }
     if (!arr.length) {
-        if (row) row.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
+        if (mask) mask.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
+        else if (row) row.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
         return;
     }
     // Re-render the row by removing it + appending fresh; preserves order
@@ -7213,14 +7269,45 @@ window._regenEndlessRow = _regenEndlessRow;
 
 // Add a new endless row using the currently-selected default prompt id.
 // Wired from the unified badge's "+" button when in endless mode.
+//
+// UX: render the row scaffold (subject chip + refresh + minus) IMMEDIATELY
+// with a spinning refresh button so the user gets instant feedback that
+// the click landed. Then await the batch and swap the chips in. Without
+// this the badge appears to do nothing for 2-10 s while the LLM thinks.
 async function _addEndlessRow() {
     const arr = _getEndlessRowPrompts();
     const newId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : 'yes-and';
     arr.push(newId);
     _setEndlessRowPrompts(arr);
     const idx = arr.length - 1;
-    const batch = await _fetchSuggestBatch({ n: 6, promptId: newId, fresh: true });
-    if (batch && batch.length) _appendSuggestBatchRow(batch, { promptId: newId, rowIdx: idx });
+    // Append a placeholder row with the lead cluster + a single "loading"
+    // chip so the row exists in the DOM before the fetch resolves.
+    _appendSuggestBatchRow([{ text: '…', loading: true }], { promptId: newId, rowIdx: idx });
+    const stack = document.getElementById('subject-chips-stack');
+    const row = stack ? stack.querySelectorAll('.suggest-marquee-row')[idx] : null;
+    const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
+    if (refreshBtn) refreshBtn.classList.add('row-refresh-spinning');
+    try {
+        const batch = await _fetchSuggestBatch({ n: 6, promptId: newId, fresh: true });
+        if (batch && batch.length) {
+            // Swap the placeholder content in-place: rebuild the marquee
+            // track with the real chips, leaving the lead cluster intact.
+            const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
+            const oldTrack = mask ? mask.querySelector('.suggest-marquee-track') : null;
+            if (mask && oldTrack) {
+                const newTrack = document.createElement('div');
+                newTrack.className = 'suggest-marquee-track';
+                [...batch, ...batch].forEach(s => newTrack.appendChild(_buildSuggestChip(s)));
+                mask.replaceChild(newTrack, oldTrack);
+            } else {
+                // Fallback: row scaffold missing — drop & re-append fresh.
+                if (row) row.remove();
+                _appendSuggestBatchRow(batch, { promptId: newId, rowIdx: idx });
+            }
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.classList.remove('row-refresh-spinning');
+    }
 }
 window._addEndlessRow = _addEndlessRow;
 
