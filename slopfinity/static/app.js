@@ -491,8 +491,86 @@ function _applyLayoutView(view) {
     // always renders open. Nothing to force here. data-layout still
     // drives which split-pane is visible, but the gallery itself never
     // collapses any more.
+    // Mobile nav bar reflects current layout — repaint arrows + label
+    // any time the layout changes.
+    if (typeof _mobileNavRefresh === 'function') _mobileNavRefresh();
 }
 window._applyLayoutView = _applyLayoutView;
+
+// ---------------------------------------------------------------------------
+// Mobile bottom-nav bar — linear left/right navigation through the three
+// single-card layouts. Visible only on mobile widths (CSS @media); hidden
+// on desktop where the FAB cluster + View dropdown serve. Order:
+//   prompt (subjects)  ←→  queue  ←→  slop (gallery)
+// ---------------------------------------------------------------------------
+const _MOBILE_NAV_ORDER = [
+    { layout: 'subjects', label: 'Prompt' },
+    { layout: 'queue',    label: 'Queue'  },
+    { layout: 'gallery',  label: 'Slop'   },
+];
+function _mobileNavCurrentIdx() {
+    const cur = document.body.dataset.layout || '';
+    const i = _MOBILE_NAV_ORDER.findIndex(s => s.layout === cur);
+    return i >= 0 ? i : 0;  // default to prompt when desktop layout active
+}
+function _mobileNavGo(idx) {
+    const clamped = Math.max(0, Math.min(_MOBILE_NAV_ORDER.length - 1, idx));
+    const target = _MOBILE_NAV_ORDER[clamped];
+    if (typeof selectLayoutView === 'function') {
+        selectLayoutView(target.layout);
+    } else {
+        _applyLayoutView(target.layout);
+    }
+    _mobileNavRefresh();
+}
+function _mobileNavStep(delta) {
+    _mobileNavGo(_mobileNavCurrentIdx() + delta);
+}
+function _mobileNavRefresh() {
+    const nav = document.getElementById('mobile-nav-bar');
+    if (!nav) return;
+    const i = _mobileNavCurrentIdx();
+    const cur = _MOBILE_NAV_ORDER[i];
+    const prev = _MOBILE_NAV_ORDER[i - 1];
+    const next = _MOBILE_NAV_ORDER[i + 1];
+    const prevBtn = document.getElementById('mobile-nav-prev');
+    const nextBtn = document.getElementById('mobile-nav-next');
+    const prevLbl = document.getElementById('mobile-nav-prev-label');
+    const nextLbl = document.getElementById('mobile-nav-next-label');
+    const curLbl = document.getElementById('mobile-nav-current');
+    if (curLbl) curLbl.textContent = cur ? cur.label : '';
+    if (prevBtn) {
+        prevBtn.disabled = !prev;
+        prevBtn.classList.toggle('invisible', !prev);
+    }
+    if (nextBtn) {
+        nextBtn.disabled = !next;
+        nextBtn.classList.toggle('invisible', !next);
+    }
+    if (prevLbl) prevLbl.textContent = prev ? prev.label : '';
+    if (nextLbl) nextLbl.textContent = next ? next.label : '';
+}
+window._mobileNavStep = _mobileNavStep;
+window._mobileNavRefresh = _mobileNavRefresh;
+document.addEventListener('DOMContentLoaded', () => {
+    // On mobile, multi-pane layouts (default, subj-slop, queue-slop,
+    // subj-queue) are unusable — the side-by-side splits collapse to
+    // unreadable widths. If we land on one (saved layout from a desktop
+    // session, or no layout at all), redirect to the prompt-only
+    // single-card layout. User can then navigate via the bottom nav.
+    const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+    if (isMobile) {
+        const cur = document.body.dataset.layout || '';
+        const singleCardLayouts = new Set(['subjects', 'queue', 'gallery']);
+        if (!singleCardLayouts.has(cur)) {
+            // Use _applyLayoutView directly so we don't go through
+            // selectLayoutView's lock check — this redirect should
+            // always win on mobile.
+            _applyLayoutView('subjects');
+        }
+    }
+    _mobileNavRefresh();
+});
 
 // ---------------------------------------------------------------------------
 // Card maximize — maps each card to the layout that gives it the most space.
