@@ -131,8 +131,14 @@
     <div id="splash-overlay"
          class="fixed inset-0 z-[100] flex items-center justify-center bg-base-300 transition-opacity duration-500"
          style="background: hsl(var(--b3));">
-        <div class="flex flex-col items-center gap-6 px-6 max-w-xl text-center">
-            <h1 class="text-5xl md:text-6xl font-black text-primary uppercase tracking-[0.25em] drop-shadow-lg">{{ branding.app.name }}</h1>
+        <div class="flex flex-col items-center gap-6 px-4 max-w-xl text-center w-full">
+            {# Brand name. tracking stepped down on mobile + text size
+               clamps so 'SLOPFINITY' fits a 390 px viewport without
+               overflowing. Inline white-space:nowrap keeps it on one
+               line; the responsive font-size + letter-spacing do the
+               actual fitting. #}
+            <h1 class="font-black text-primary uppercase drop-shadow-lg whitespace-nowrap"
+                style="font-size: clamp(1.75rem, 9vw, 3.75rem); letter-spacing: clamp(0.05em, 1vw, 0.25em);">{{ branding.app.name }}</h1>
             <span class="loading loading-bars loading-md text-primary"></span>
             <p id="splash-tip" class="text-sm md:text-base font-mono text-base-content/70 italic leading-relaxed min-h-[3em]">loading…</p>
         </div>
@@ -2985,6 +2991,34 @@
     two cards: in queue mode → Subjects + Slop; in subjects mode → Queue +
     Slop. Each button is hidden by CSS when its target layout matches the
     active layout (so the button for "where I already am" disappears). #}
+    {# Mobile bottom navigation bar — visible only on small viewports
+       (CSS @media max-width: 767px). Linear left/right navigation
+       through the three single-card layouts in this order:
+         prompt (subjects)  ←→  queue  ←→  slop (gallery)
+       Each layout shows the appropriate arrow buttons + a center
+       label so the user knows where they are. _mobileNavGo handles
+       the layout switch + button-state refresh. Hidden on desktop —
+       the existing FAB cluster + View dropdown serve there. #}
+    <nav id="mobile-nav-bar" aria-hidden="true">
+        <button id="mobile-nav-prev" type="button" class="mobile-nav-btn" onclick="_mobileNavStep(-1)" aria-label="Previous card">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+                stroke-linejoin="round" class="w-5 h-5">
+                <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            <span id="mobile-nav-prev-label" class="text-xs ml-1"></span>
+        </button>
+        <span id="mobile-nav-current" class="font-bold uppercase tracking-widest text-xs text-primary"></span>
+        <button id="mobile-nav-next" type="button" class="mobile-nav-btn justify-end" onclick="_mobileNavStep(1)" aria-label="Next card">
+            <span id="mobile-nav-next-label" class="text-xs mr-1"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+                stroke-linejoin="round" class="w-5 h-5">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </button>
+    </nav>
+
     <div id="focus-slop-fab" aria-hidden="true">
         <button data-fab-target="subjects" class="btn btn-circle btn-primary shadow-xl" title="Prompt"
             aria-label="Open Prompt" onclick="openGalleryFabDialog('subjects')">

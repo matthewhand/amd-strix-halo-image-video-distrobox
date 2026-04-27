@@ -2537,6 +2537,70 @@ body.subj-mode-raw #btn-start-stop-inline {
     animation: refresh-tap-spin 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
 }
 
+/* ───── Mobile bottom-nav bar ─────
+   Linear left/right navigation through prompt → queue → slop on
+   small viewports. Hidden on desktop where the View dropdown +
+   FAB cluster serve the same role. The bar is position:fixed so
+   it stays anchored to the bottom edge regardless of scroll, with
+   z-index above the slop card chrome but below modals.
+   On mobile we ALSO add bottom-padding to <body> so the nav bar
+   doesn't permanently obscure the bottom of card content. */
+#mobile-nav-bar {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    #mobile-nav-bar {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 35;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 12px;
+        background: hsl(var(--b2));
+        border-top: 1px solid hsl(var(--p) / 0.4);
+        box-shadow: 0 -4px 16px hsl(var(--bc) / 0.25);
+        min-height: 52px;
+    }
+    body {
+        padding-bottom: 60px;
+    }
+    /* Hide the desktop FAB cluster on mobile — the bottom nav serves
+       the same purpose and the FABs would just clutter the corner. */
+    #focus-slop-fab,
+    #gallery-fab {
+        display: none !important;
+    }
+}
+
+.mobile-nav-btn {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    background: transparent;
+    color: hsl(var(--bc));
+    padding: 6px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+}
+
+.mobile-nav-btn:not(:disabled):hover,
+.mobile-nav-btn:not(:disabled):active {
+    background: hsl(var(--p) / 0.15);
+}
+
+.mobile-nav-btn:disabled,
+.mobile-nav-btn.invisible {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 /* Per-row refresh-button "loading" state — applied to a row's
    [data-row-refresh] button while its batch is in flight (endless mode
    add-row + per-row regen). Spins the inner SVG continuously, distinct
