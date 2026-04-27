@@ -5520,17 +5520,36 @@ async function enhanceStage(stage) {
     const orig = ta.value;
     ta.value = '✨ thinking...';
     ta.disabled = true;
+    // 180-s ceiling — reasoning models (qwen3.5-claude-distill etc.) can
+    // burn 60-120 s on a single rewrite. AbortController cuts the fetch
+    // cleanly so the textarea unfreezes; the catch surfaces the timeout.
+    const controller = new AbortController();
+    const t0 = Date.now();
+    const timer = setTimeout(() => controller.abort(), 180_000);
     try {
         const res = await fetch('/enhance', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: `${sys}\n\nSubject: ${seed}` }),
+            signal: controller.signal,
         });
         const r = await res.json();
         ta.value = (r.suggestion || orig).trim();
     } catch (e) {
-        ta.value = orig;
+        const elapsed = Math.round((Date.now() - t0) / 1000);
+        if (e && e.name === 'AbortError') {
+            ta.value = orig;
+            if (typeof _seedToast === 'function') {
+                _seedToast(`Rewrite timed out after ${elapsed}s — LLM is slow`, 'warning');
+            }
+        } else {
+            ta.value = orig;
+            if (typeof _seedToast === 'function') {
+                _seedToast(`Rewrite failed: ${e && e.message || e}`, 'error');
+            }
+        }
     } finally {
+        clearTimeout(timer);
         ta.disabled = false;
     }
 }

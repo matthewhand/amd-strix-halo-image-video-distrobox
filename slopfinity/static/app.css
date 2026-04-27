@@ -797,21 +797,40 @@ textarea.subjects-autogrow {
    (Subjects + Queue stay readable but tight); slop takes everything
    below. Internal scroll handled by ui-split-lower so the slop grid
    feeds infinite-scroll naturally. */
+/* Expanded slop pane is HOISTED to its own layer (position: fixed at the
+   bottom of the viewport with high z-index). The upper pane keeps its
+   natural height + Subjects/Queue cards aren't crowded. The slop pane
+   overlays the bottom 65vh with its own internal scroll. Click the
+   summary's collapse chevron to dismiss the overlay back to a thin
+   bottom strip. */
 body[data-slop-expanded="1"] #ui-split {
-    height: calc(100dvh - 6.5rem);
-    overflow: hidden;
+    height: auto;
+    overflow: visible;
 }
 
 body[data-slop-expanded="1"] #ui-split-upper {
-    flex: 0 0 auto;
-    max-height: 35vh;
-    overflow: hidden;
+    /* Upper stays at natural size — no cap, no overflow clipping. */
+    flex: 1 1 auto;
 }
 
 body[data-slop-expanded="1"] #ui-split-lower {
-    flex: 1 1 auto;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 65vh;
+    z-index: 30;
+    background: hsl(var(--b2));
+    box-shadow: 0 -8px 24px hsl(var(--bc) / 0.25);
     overflow-y: auto;
-    min-height: 0;
+    border-top: 1px solid hsl(var(--p) / 0.4);
+}
+
+/* Push the page bottom-padding while the slop overlay is visible so the
+   user can still scroll the upper cards without having the slop overlay
+   permanently obscuring the bottom of any extended content. */
+body[data-slop-expanded="1"] {
+    padding-bottom: calc(65vh + 8px);
 }
 
 #top-collapsible[open] {
