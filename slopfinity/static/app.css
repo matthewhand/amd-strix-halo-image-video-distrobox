@@ -2231,6 +2231,47 @@ body[data-layout="subj-slop"] #split-left {
     max-width: 100% !important;
 }
 
+/* Focused-only layouts (no slop pane visible) — hide the lower split and
+   let the upper pane fill the full viewport vertically. Pairs with the
+   horizontal-fill rule above so single-card focus modes truly fill the
+   page instead of stranding empty space below. */
+body[data-layout="subjects"] #ui-split-lower,
+body[data-layout="queue"] #ui-split-lower,
+body[data-layout="subj-queue"] #ui-split-lower,
+body[data-layout="subjects"] #ui-split-handle,
+body[data-layout="queue"] #ui-split-handle,
+body[data-layout="subj-queue"] #ui-split-handle {
+    display: none !important;
+}
+
+body[data-layout="subjects"] #ui-split-upper,
+body[data-layout="queue"] #ui-split-upper,
+body[data-layout="subj-queue"] #ui-split-upper {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: calc(100vh - 88px);
+}
+
+/* And the surviving card body inside the upper pane should fill its
+   parent's height so the textarea / queue list / chip stack all grow
+   instead of clustering at the top. */
+body[data-layout="subjects"] #split-left,
+body[data-layout="queue"] #split-right,
+body[data-layout="subj-queue"] #split-left,
+body[data-layout="subj-queue"] #split-right {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+body[data-layout="subjects"] #split-left > .card-body,
+body[data-layout="queue"] #split-right > .card-body,
+body[data-layout="subj-queue"] #split-left > .card-body,
+body[data-layout="subj-queue"] #split-right > .card-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 /* Right-edge fade: when an asset-link badge is too wide for the row,
    fade the rightmost ~24 px to transparent so the badge dissolves
    behind the time/ETA column on its right instead of overlapping it.

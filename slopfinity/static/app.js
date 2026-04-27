@@ -3914,7 +3914,16 @@ document.addEventListener('DOMContentLoaded', () => {
     //      empty during the first second.
     //   2. If no cache AND queue is idle, fire one fetch to populate cache.
     //   3. The 🎲 Suggest button always fetches fresh + overwrites cache.
-    const hadCache = _renderCachedSuggestions();
+    // EXCEPT in endless mode without a running story — endless suggestions
+    // are story-beat continuations and shouldn't render until the user
+    // commits to a seed via Start Story / I'm Feeling Lucky.
+    const _curMode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    const _endlessIdle = (_curMode === 'endless' && !_endlessRunning);
+    const hadCache = _endlessIdle ? false : _renderCachedSuggestions();
+    if (_endlessIdle) {
+        const box = document.getElementById('subject-chips-stack');
+        if (box) box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+    }
     if (!hadCache && typeof regenSuggestions === 'function') {
         const tryAutoSuggest = () => {
             if (_isSuggestionsHidden()) return;
