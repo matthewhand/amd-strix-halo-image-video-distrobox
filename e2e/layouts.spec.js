@@ -170,10 +170,19 @@ for (const [layout, expected] of Object.entries(SCENARIOS)) {
         expect(horizontalSplitterVisible, `${layout}: horizontal ui-split-handle`)
             .toBe(expected.showHorizontalSplitter);
 
-        // Focus-mode FAB ---------------------------------------------
-        const fabVisible = await isVisible(page, '#focus-slop-fab');
-        expect(fabVisible, `${layout}: #focus-slop-fab`)
-            .toBe(expected.showFocusFab);
+        // Focus-mode flanking nav FABs (#focus-fab-prev / #focus-fab-next)
+        // replaced the old #focus-slop-fab cluster. The spec's
+        // showFocusFab boolean now means "is the user IN a single-card
+        // focus layout where flanking-nav makes sense" — true for
+        // subjects / queue / gallery (one of the prev/next buttons
+        // shows depending on linear position), false for default,
+        // subj-slop, queue-slop, subj-queue (multi-pane layouts).
+        const fabPrevVisible = await isVisible(page, '#focus-fab-prev');
+        const fabNextVisible = await isVisible(page, '#focus-fab-next');
+        const focusFabActive = fabPrevVisible || fabNextVisible;
+        const expectedFabActive = ['subjects', 'queue', 'gallery'].includes(layout);
+        expect(focusFabActive, `${layout}: focus-fab visibility`)
+            .toBe(expectedFabActive);
 
         // No JS pageerror during layout switch.
         expect(errors, `${layout}: pageerror — ${errors.join('|')}`).toEqual([]);
