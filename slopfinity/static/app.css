@@ -2159,31 +2159,27 @@ body.no-card-fabs #gallery-fab {
     }
 }
 
-/* Subjects mode pill (Raw Slop · Endless). Active segment shows the
-   full label + primary background; inactive segments switch to a
-   single-letter abbreviation when the parent card is narrow so the
-   pill never wraps. The .subj-mode-active class is toggled by JS. */
-.subjects-mode-pill .subj-mode-short {
-    display: none;
+/* Subjects mode pill — each button shows a theme-tinted icon plus a
+   text label. At narrow widths the LABEL collapses but the icon stays
+   visible (icon-only mode). The .subj-mode-active class is toggled
+   by JS to mark the current mode. Inactive segments hide their label
+   below 768 px so the pill stays single-line. */
+.subjects-mode-pill .subj-mode-icon {
+    flex: none;
 }
 
 .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full {
     display: none;
 }
 
-.subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short {
-    display: inline;
-}
-
 @media (min-width: 768px) {
     .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full {
         display: inline;
     }
-
-    .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-short {
-        display: none;
-    }
 }
+
+/* Active button keeps its icon visible too — small touch of colour
+   alongside the highlighted label. */
 
 /* Endless Story toggle — the .es-knob slides 10px to the right when
    the hidden checkbox is checked, giving a daisyUI-style on/off
@@ -2848,12 +2844,42 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
    process rather than direct speech. Pairs with the 💭 / ↳ glyphs in
    the rendered HTML. */
 .chat-thought {
+    position: relative;
     background: hsl(var(--b2) / 0.6);
     border: 1px dashed hsl(var(--bc) / 0.35);
-    border-radius: 0.75rem;
-    padding: 0.4rem 0.75rem;
+    /* Asymmetric border-radius gives a cloudy / lobed silhouette
+       so it reads as a THOUGHT bubble, not a flat speech rectangle.
+       Pairs with the two trailing dots below for the classic
+       comic-book "this is internal monologue" feel. */
+    border-radius: 1.25rem 1.25rem 1.25rem 0.4rem;
+    padding: 0.5rem 0.85rem;
     max-width: 90%;
+    margin-left: 14px;
     color: hsl(var(--bc) / 0.85);
+}
+/* Two trailing dots leading from the bubble back toward the
+   speaker (the chat-start side / left edge), shrinking as they
+   go — the visual cue for an internal monologue. Sized + spaced
+   to read at 1×, render even when the bubble has zero margin. */
+.chat-thought::before,
+.chat-thought::after {
+    content: '';
+    position: absolute;
+    background: hsl(var(--b2) / 0.6);
+    border: 1px dashed hsl(var(--bc) / 0.35);
+    border-radius: 50%;
+}
+.chat-thought::before {
+    width: 8px;
+    height: 8px;
+    left: -10px;
+    bottom: 4px;
+}
+.chat-thought::after {
+    width: 4px;
+    height: 4px;
+    left: -16px;
+    bottom: -2px;
 }
 
 .chat-thought details summary::-webkit-details-marker {

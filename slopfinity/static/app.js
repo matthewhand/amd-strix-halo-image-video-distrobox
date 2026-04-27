@@ -2469,6 +2469,22 @@ function _updateQueueStatusChip(d) {
         el.classList.toggle('text-warning', status === 'Paused');
         el.classList.toggle('text-success', status === 'Generating');
     });
+    // Focus-mode FAB-next badge: when the NEXT layout in the linear
+    // sequence is 'queue' AND there's work queued, paint the count
+    // on the right-arrow button as a daisyUI indicator badge so the
+    // user sees "things are queued, click here to see them" without
+    // leaving the current focused layout.
+    const fabBadge = document.getElementById('focus-fab-next-badge');
+    if (fabBadge) {
+        const total = pending + working;
+        const curMode = (typeof _mobileNavCurrentIdx === 'function')
+            ? _mobileNavCurrentIdx() : -1;
+        const next = (typeof _MOBILE_NAV_ORDER !== 'undefined' && curMode >= 0)
+            ? _MOBILE_NAV_ORDER[curMode + 1] : null;
+        const showBadge = total > 0 && next && next.layout === 'queue';
+        fabBadge.classList.toggle('hidden', !showBadge);
+        if (showBadge) fabBadge.textContent = total > 99 ? '99+' : String(total);
+    }
 }
 window._updateQueueStatusChip = _updateQueueStatusChip;
 
