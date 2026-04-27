@@ -2204,7 +2204,7 @@ function _setSubjectsMode(mode) {
     const stackBox = document.getElementById('subject-chips-stack');
     if (mode === 'endless' && !_endlessRunning) {
         if (stackBox) stackBox.innerHTML =
-            '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
+            "<span class=\"text-[10px] italic text-base-content/50\">Press Start Story or I'm Feeling Lucky — suggestions unlock once the story is running.</span>";
     } else if (mode === 'simple') {
         if (stackBox && stackBox.querySelector('.suggest-marquee-row') === null
             && typeof _renderCachedSuggestions === 'function') {
@@ -4196,7 +4196,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const _endlessIdle = (_curMode === 'endless' && !_endlessRunning);
     if (_endlessIdle) {
         const box = document.getElementById('subject-chips-stack');
-        if (box) box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
+        if (box) box.innerHTML = "<span class=\"text-[10px] italic text-base-content/50\">Press Start Story or I'm Feeling Lucky — suggestions unlock once the story is running.</span>";
     } else {
         _renderCachedSuggestions(); // simple-mode-only; no-op for raw/chat
     }
@@ -7427,7 +7427,7 @@ async function _renderEndlessRows(n) {
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
     if (!_endlessRunning) {
-        box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or I'\''m Feeling Lucky — suggestions unlock once the story is running.</span>';
+        box.innerHTML = "<span class=\"text-[10px] italic text-base-content/50\">Press Start Story or I'm Feeling Lucky — suggestions unlock once the story is running.</span>";
         return;
     }
     box.innerHTML = '<div class="flex items-center gap-2 text-[11px] text-base-content/70"><span class="loading loading-spinner loading-sm text-primary"></span><span>Generating story beats…</span></div>';
