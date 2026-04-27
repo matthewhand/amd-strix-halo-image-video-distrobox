@@ -1025,23 +1025,23 @@ function _updateEndlessEnabled() {
         host.classList.toggle('opacity-50', !enabled);
         host.classList.toggle('pointer-events-none', !enabled);
     }
-    // Mode-pill Endless button — disabled when Suggestions is off, with a
-    // tooltip explaining why. Endless mode drives its story off the
-    // suggestion stream, so without suggestions there's nothing to cycle.
+    // Mode-pill Endless button stays ENABLED regardless of Suggestions
+    // toggle — picking endless is fine; what's gated is the actual
+    // Start Story click. _updateSubjectsActionLabel handles the disable
+    // on the big queue button (with the explanatory tooltip there).
     const endlessBtn = document.querySelector('.subjects-mode-pill button[data-subj-mode="endless"]');
     if (endlessBtn) {
-        endlessBtn.disabled = !enabled;
-        endlessBtn.classList.toggle('opacity-50', !enabled);
-        endlessBtn.classList.toggle('cursor-not-allowed', !enabled);
-        endlessBtn.title = enabled
-            ? "Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts."
-            : 'Endless mode requires Suggestions to be ON — turn it on next to the mode pill to enable.';
-        // If user is currently in endless mode and disables suggestions,
-        // bounce them back to Simple so the UI doesn't get stuck.
-        if (!enabled && _getSubjectsMode() === 'endless' && typeof _setSubjectsMode === 'function') {
-            _setSubjectsMode('simple');
-        }
+        endlessBtn.disabled = false;
+        endlessBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        endlessBtn.title = "Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts.";
     }
+    // If user is currently in endless mode AND a story is already running,
+    // turning off suggestions kills the cycle (since there's nothing to
+    // continue). Surface that by ending the story; mode stays endless.
+    if (!enabled && _endlessRunning && typeof _endEndlessStory === 'function') {
+        _endEndlessStory();
+    }
+    if (typeof _updateSubjectsActionLabel === 'function') _updateSubjectsActionLabel();
 }
 window._updateEndlessEnabled = _updateEndlessEnabled;
 document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
@@ -1285,55 +1285,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Pings /llm/health on load and every 60s — quick probe, low overhead.
 let _llmAvailableCached = null;
 async function _updateLlmAvailability() {
-    // Default to "available" when the endpoint isn't there — older
-    // slopfinity builds (pre-bounce) don't expose /llm/health, and a
-    // 404 should NOT lock the user out of LLM-using modes. We only
-    // disable when /llm/health responds with explicit ok:false.
+    // /llm/health is a passive indicator only. The pipeline auto-suspends
+    // the LLM (SIGSTOP) during GPU-heavy stages, so 'unreachable' is the
+    // NORMAL state mid-iter — disabling LLM-using modes during suspend
+    // would lock users out for 90 % of the runtime. We just track it on
+    // body.llm-down so CSS / future indicators can react if wanted; the
+    // mode buttons stay enabled regardless.
     let ok = true;
     try {
         const r = await fetch('/llm/health');
         if (r.status === 404) {
-            ok = true; // endpoint missing — fail open
+            ok = true;
         } else {
             const d = await r.json();
             ok = !!(d && d.ok);
         }
-    } catch (_) { ok = true; /* network/parse error — fail open */ }
+    } catch (_) { ok = true; }
     _llmAvailableCached = ok;
     document.body.classList.toggle('llm-down', !ok);
-    const llmGated = ['endless', 'simple', 'chat'];
-    llmGated.forEach(mode => {
+    // Make sure no leftover disable from earlier builds is sticky.
+    ['endless', 'simple', 'chat'].forEach(mode => {
         const btn = document.querySelector(`.subjects-mode-pill button[data-subj-mode="${mode}"]`);
         if (!btn) return;
-        if (!ok) {
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-            const orig = btn.getAttribute('data-orig-title') || btn.title;
-            if (!btn.getAttribute('data-orig-title')) btn.setAttribute('data-orig-title', orig);
-            btn.title = `${mode.charAt(0).toUpperCase() + mode.slice(1)} mode requires the LLM provider — currently unreachable. Switch to Raw mode or check Settings → LLM.`;
-        } else {
-            // Restore (unless another gate — like _updateEndlessEnabled —
-            // disabled this specific button for its own reason).
-            const orig = btn.getAttribute('data-orig-title');
-            if (orig) {
-                btn.title = orig;
-                btn.removeAttribute('data-orig-title');
-            }
-            // Don't blanket-enable: _updateEndlessEnabled may still want
-            // endless disabled if Suggestions is off. Re-run it.
-            btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        const orig = btn.getAttribute('data-orig-title');
+        if (orig) {
+            btn.title = orig;
+            btn.removeAttribute('data-orig-title');
         }
     });
-    // Re-run the suggestions/endless gate on top so its rules win.
     if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
-    // Bounce out of an LLM-gated mode if the LLM just went down.
-    if (!ok) {
-        const cur = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
-        if (llmGated.includes(cur) && typeof _setSubjectsMode === 'function') {
-            _setSubjectsMode('raw');
-        }
-    }
 }
 window._updateLlmAvailability = _updateLlmAvailability;
 document.addEventListener('DOMContentLoaded', () => {
@@ -2077,23 +2059,44 @@ function _updateSubjectsActionLabel() {
     const ta = document.getElementById('p-core');
     const seed = (ta && ta.value || '').trim();
     if (mode === 'endless') {
+        // Endless requires Suggestions to be ON — that's the cycle source.
+        // We KEEP the button rendered (the user picked endless on purpose)
+        // but disable + tooltip explains why when Suggestions is off, so
+        // toggling Suggestions on flips it back to clickable.
+        const sugInput = document.getElementById('subjects-suggestions-toggle-input');
+        const suggestOn = !!(sugInput && sugInput.checked);
         if (_endlessRunning) {
             btn.textContent = 'Story Running…';
             btn.disabled = true;
             btn.classList.add('opacity-70');
+            btn.title = 'Endless story is cycling — use Submit / Reset above to stop';
+        } else if (!suggestOn) {
+            btn.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            btn.title = 'Endless mode requires Suggestions — toggle Suggestions ON to start';
         } else {
             btn.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
             btn.disabled = false;
-            btn.classList.remove('opacity-70');
+            btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed');
+            btn.title = seed
+                ? 'Lock the seed in and start the auto-cycle'
+                : "Pick a random opener and start a story";
         }
     } else if (mode === 'chat') {
         // Big button is hidden in chat mode; nothing to update.
     } else {
-        // Raw mode — defer to existing label-builder which already
-        // handles "Queue / Queue Infinite Slop / Generate ASAP …".
-        if (typeof _updateStartBtn === 'function') _updateStartBtn();
+        // Simple / Raw — both defer to the legacy label-builder which
+        // handles "Queue Slop / Queue Infinite Slop / Generate ASAP …".
+        // Reset any sticky endless-mode state (Start Story / Story Running)
+        // on the way back so the button label tracks the new mode.
         btn.disabled = false;
-        btn.classList.remove('opacity-70');
+        btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed');
+        btn.title = 'Start/queue generation';
+        // Set a sensible default text BEFORE _updateStartBtn runs so even
+        // if that helper is missing or no-ops, the label isn't a leftover.
+        btn.textContent = (window.__SLOPFINITY_DEFAULT_QUEUE_LABEL__ || 'Queue Slop');
+        if (typeof _updateStartBtn === 'function') _updateStartBtn();
     }
 }
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
