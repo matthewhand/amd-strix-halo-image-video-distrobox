@@ -1277,16 +1277,17 @@ function _refreshSuggestBadge() {
     const nameBtn = document.getElementById('subjects-suggest-prompt-name');
     const refreshBtn = document.getElementById('subjects-suggest-btn');
     const lbl = document.getElementById('subjects-suggest-prompt-name-label');
-    // The prompt-name button stays visible even when Suggestions is OFF —
-    // it doubles as a quick "edit suggestion prompts" affordance via the
-    // popover's "Manage prompts in Settings" footer link. Hiding it would
-    // strand users who want to edit prompts before turning suggestions on.
+    // The prompt-name button hides when Suggestions toggle is OFF — the
+    // dropdown picker has no purpose without a chip stack to feed.
+    // Settings → Prompts is still the canonical edit surface for the
+    // registry, so users who want to manage prompts pre-toggle-on go
+    // there directly. body.suggest-cluster-collapsed lets CSS round
+    // the toggle's right edge so it visually stands alone.
     if (nameBtn) {
-        nameBtn.classList.remove('hidden');
-        nameBtn.title = isOn
-            ? "Active suggestion prompt — click to swap"
-            : "Suggestion prompts — click to manage in Settings";
+        nameBtn.classList.toggle('hidden', !isOn);
+        nameBtn.title = "Active suggestion prompt — click to swap";
     }
+    document.body.classList.toggle('suggest-cluster-collapsed', !isOn);
     // Swap which action button is visible based on mode. Two distinct
     // buttons — refresh (#subjects-suggest-btn) and add (#subjects-suggest-add-btn)
     // — share the joined badge slot so the refresh-tap-spin handler only

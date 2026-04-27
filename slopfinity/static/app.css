@@ -2717,6 +2717,16 @@ body.subj-mode-simple #subjects-suggest-btn.join-item {
     border-bottom-right-radius: 9999px;
 }
 
+/* Suggestions toggle stands alone when the cluster is collapsed
+   (Suggestions OFF — prompt-name + refresh + add are all hidden).
+   Round both sides so it reads as a standalone pill instead of an
+   amputated segment of a join group. body.suggest-cluster-collapsed
+   is set by _refreshSuggestBadge based on toggle state. */
+body.suggest-cluster-collapsed #subjects-suggestions-toggle.join-item {
+    border-top-right-radius: 9999px;
+    border-bottom-right-radius: 9999px;
+}
+
 /* Suggestions stack — auto-scroll internally when too many rows pile
    up (endless mode lets the user keep adding). Without this the rows
    either overflow the card silently or push the upper pane past its
