@@ -2146,6 +2146,16 @@ function _renderChatLog() {
     // DaisyUI chat / chat-bubble for proper bubble styling (avatar slot
      // omitted; chat-start/end handles left/right layout). Tool calls
      // render as compact mono chips inside the assistant bubble.
+    // Helper: pretty-print a string the LLM/server returned. If it parses
+    // as JSON, indent it; otherwise return as-is. Used inside <details>
+    // expanders for assistant tool_calls + tool result messages.
+    const _prettyJson = (s) => {
+        if (typeof s !== 'string' || !s.trim()) return '';
+        try {
+            const obj = JSON.parse(s);
+            return JSON.stringify(obj, null, 2);
+        } catch (_) { return s; }
+    };
     log.innerHTML = history.map(m => {
         const role = m.role || '';
         if (role === 'user') {
@@ -2154,23 +2164,50 @@ function _renderChatLog() {
         if (role === 'assistant') {
             const content = (m.content || '').trim();
             const calls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
-            const callChips = calls.map(c => {
-                const fn = (c.function || {});
-                const name = fn.name || 'unknown';
-                let args = '';
-                try {
-                    const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
-                    args = Object.entries(parsed).map(([k, v]) => `${k}=${typeof v === 'string' ? '"' + v.slice(0, 40) + (v.length > 40 ? '…' : '') + '"' : JSON.stringify(v)}`).join(' ');
-                } catch (_) {}
-                return `<div class="text-[10px] font-mono opacity-70 bg-base-300/40 rounded px-2 py-1 mt-1">→ ${_htmlEscape(name)}(${_htmlEscape(args)})</div>`;
-            }).join('');
+            // When the assistant is CALLING tools (tool_calls present),
+            // render as a thought bubble (dashed-border, "💭" prefix) with
+            // expandable per-call <details> showing pretty-rendered args.
+            // When it's just speaking (no tool_calls), keep the regular
+            // chat bubble.
+            if (calls.length) {
+                const callBlocks = calls.map(c => {
+                    const fn = (c.function || {});
+                    const name = fn.name || 'unknown';
+                    let pretty = '';
+                    let summary = name + '(…)';
+                    try {
+                        const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
+                        pretty = JSON.stringify(parsed, null, 2);
+                        const argShort = Object.entries(parsed).map(([k, v]) =>
+                            `${k}=${typeof v === 'string' ? '"' + v.slice(0, 30) + (v.length > 30 ? '…' : '') + '"' : JSON.stringify(v)}`
+                        ).join(' ');
+                        summary = `${name}(${argShort})`;
+                    } catch (_) { pretty = String(fn.arguments || ''); }
+                    return `<details class="text-[10px] font-mono mt-1">
+                        <summary class="cursor-pointer opacity-80 hover:opacity-100">→ ${_htmlEscape(summary)}</summary>
+                        <pre class="mt-1 p-2 bg-base-300/40 rounded text-[10px] whitespace-pre-wrap break-all">${_htmlEscape(pretty)}</pre>
+                    </details>`;
+                }).join('');
+                const body = content ? `<div class="whitespace-pre-wrap mb-1 italic opacity-90">${_htmlEscape(content)}</div>` : '';
+                return `<div class="chat chat-start"><div class="chat-thought text-xs"><span class="opacity-60 text-[11px]">💭</span> ${body}${callBlocks}</div></div>`;
+            }
             const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
-            return `<div class="chat chat-start"><div class="chat-bubble text-xs">${body}${callChips}</div></div>`;
+            return `<div class="chat chat-start"><div class="chat-bubble text-xs">${body}</div></div>`;
         }
         if (role === 'tool') {
-            let preview = m.content || '';
-            if (preview.length > 200) preview = preview.slice(0, 200) + '…';
-            return `<div class="chat chat-start"><div class="chat-bubble chat-bubble-info text-[10px] font-mono">↳ ${_htmlEscape(m.name || 'tool')}: ${_htmlEscape(preview)}</div></div>`;
+            // Tool RESULT — also rendered as a thought bubble (continuation
+            // of the assistant's thinking), with expandable JSON pretty-print.
+            const raw = m.content || '';
+            const pretty = _prettyJson(raw);
+            const oneLine = (raw || '').split('\n')[0] || '';
+            const preview = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine;
+            const name = m.name || 'tool';
+            return `<div class="chat chat-start"><div class="chat-thought text-xs">
+                <details>
+                    <summary class="cursor-pointer text-[10px] font-mono opacity-80 hover:opacity-100">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</summary>
+                    <pre class="mt-1 p-2 bg-base-300/40 rounded text-[10px] whitespace-pre-wrap break-all">${_htmlEscape(pretty || raw)}</pre>
+                </details>
+            </div></div>`;
         }
         return '';
     }).join('');
