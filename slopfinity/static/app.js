@@ -15,6 +15,36 @@ function applyTheme(name) {
 window.applyTheme = applyTheme;
 
 // ---------------------------------------------------------------------------
+// 100% celebration animations — when a stat ticker (GPU/RAM/Load/Disk)
+// hits 100, its percentage label gets a random animation class for a
+// little visual reward. The user can pin a specific style (or keep
+// 'random' for the rotate-on-each-arrival behaviour) via Settings →
+// Display. Persisted in localStorage; default 'random'.
+// ---------------------------------------------------------------------------
+const CELEBRATE_STYLES = ['celebrate-bounce', 'celebrate-wobble',
+    'celebrate-pulse', 'celebrate-jump', 'celebrate-wave'];
+const _CELEBRATE_KEY = 'slopfinity-celebrate-style';
+function _getCelebrateChoice() {
+    try {
+        const v = localStorage.getItem(_CELEBRATE_KEY);
+        if (v && (v === 'random' || CELEBRATE_STYLES.includes(v))) return v;
+    } catch (_) {}
+    return 'random';
+}
+function _pickCelebrateClass() {
+    const choice = _getCelebrateChoice();
+    if (choice !== 'random') return choice;
+    return CELEBRATE_STYLES[Math.floor(Math.random() * CELEBRATE_STYLES.length)];
+}
+function setCelebrateChoice(v) {
+    try { localStorage.setItem(_CELEBRATE_KEY, v || 'random'); } catch (_) {}
+}
+window._pickCelebrateClass = _pickCelebrateClass;
+window._getCelebrateChoice = _getCelebrateChoice;
+window.setCelebrateChoice = setCelebrateChoice;
+window.CELEBRATE_STYLES = CELEBRATE_STYLES;
+
+// ---------------------------------------------------------------------------
 // Loading splash — pick a random tip on first paint, fade out once the
 // dashboard is live (first WS state tick, or 2.5s timeout). Self-removing.
 // ---------------------------------------------------------------------------
@@ -823,6 +853,12 @@ function _setCardWm(on) {
 window._setCardWm = _setCardWm;
 document.addEventListener('DOMContentLoaded', () => {
     _setCardWm(_isCardWmOn());
+    // Hydrate the celebrate-style dropdown (Settings → General) with the
+    // saved choice so the user sees their previous selection on open.
+    const cel = document.getElementById('settings-celebrate-style');
+    if (cel && typeof _getCelebrateChoice === 'function') {
+        cel.value = _getCelebrateChoice();
+    }
 });
 
 // One-click "show every card" — clears all three hidden flags at once.
@@ -2885,18 +2921,16 @@ function updateOutputsDisk(d) {
         d.status === 'danger' ? 'text-error' :
             d.status === 'warn' ? 'text-warning' : 'text-primary'
     );
-    // 100 % celebration — same random-pick treatment as GPU/RAM/Load.
-    // Inline-defined since updateOutputsDisk lives outside the WS-tick scope
-    // where the shared _toneCelebrate helper is closed over.
-    const _DISK_CELEBRATE = ['celebrate-bounce', 'celebrate-wobble',
-        'celebrate-pulse', 'celebrate-jump', 'celebrate-wave'];
+    // 100 % celebration — uses the shared _pickCelebrateClass helper
+    // so this honours the user's Settings → Display animation choice
+    // (or rotates randomly when 'random' is selected).
     if (d.pct >= 100) {
         const has = Array.from(el.classList).some(c => c.startsWith('celebrate-'));
         if (!has) {
-            el.classList.add(_DISK_CELEBRATE[Math.floor(Math.random() * _DISK_CELEBRATE.length)]);
+            el.classList.add(_pickCelebrateClass());
         }
     } else {
-        _DISK_CELEBRATE.forEach(s => el.classList.remove(s));
+        CELEBRATE_STYLES.forEach(s => el.classList.remove(s));
     }
     const freeGb = (d.free_gb !== undefined) ? d.free_gb : (d.total_gb - d.used_gb);
     // Update the used/free label beneath the percentage (mirrors RAM r-v line).
@@ -3036,9 +3070,29 @@ async function loadPlanRender() {
         `(saved ${sv.saved_loads || 0} ≈ ${savedMin}m${savedTail}s)</div>`
     );
     rows.push('<div class="opacity-50">────────────────────────────</div>');
-    // Per-step decision rows.
+    // Per-step decision rows. The plan flattens active+queued jobs into
+    // ONE sequence of stage steps — without job boundaries, repeated
+    // model loads across jobs read as if the planner is duplicating
+    // work. Detect job boundaries via stage-cycle wrap (each job
+    // proceeds image → video → audio → tts → upscale; when the next
+    // stage's index is <= current's, we've started a new job) and
+    // insert a divider so the user can read 3 jobs as 3 jobs.
+    const _STAGE_CYCLE = ['image', 'video', 'audio', 'tts', 'upscale'];
+    const _stageIdx = (s) => {
+        const i = _STAGE_CYCLE.indexOf(s);
+        return i < 0 ? 99 : i;
+    };
+    let jobNum = 1;
+    let prevStageIdx = -1;
+    rows.push(`<div class="text-primary font-bold mt-1">— Job ${jobNum} (active) —</div>`);
     for (let i = 0; i < plan.decisions.length; i++) {
         const d = plan.decisions[i];
+        const curIdx = _stageIdx(d.step.stage);
+        if (i > 0 && curIdx <= prevStageIdx) {
+            jobNum += 1;
+            rows.push(`<div class="text-primary font-bold mt-2">— Job ${jobNum} (queued) —</div>`);
+        }
+        prevStageIdx = curIdx;
         const tag = d.load && d.load.length ? 'LOAD ' : 'HIT  ';
         const cls = d.load && d.load.length ? '' : 'text-success';
         const stage = (d.step.stage || '').padEnd(11);
@@ -3060,6 +3114,13 @@ async function loadPlanRender() {
         }
     }
     rows.push('<div class="opacity-50">────────────────────────────</div>');
+    rows.push(
+        `<div class="opacity-60 italic text-[10px] mt-1">` +
+        `Each job needs its own image / video / audio model loaded. ` +
+        `Repeated model names across jobs are correct — Belady's MIN ` +
+        `keeps a model resident across jobs only when the unified ` +
+        `memory budget allows.</div>`
+    );
     rows.push(
         `<div class="opacity-60 italic">` +
         `Advisory only — scheduler still cold-loads on every stage. ` +
@@ -4533,20 +4594,19 @@ function connect() {
             // is picked ONCE on transition into 100% and persists until the
             // value falls back below — re-randomized on each new arrival
             // at 100% so users don't see the same wiggle every time.
-            const _CELEBRATE_STYLES = ['celebrate-bounce', 'celebrate-wobble',
-                'celebrate-pulse', 'celebrate-jump', 'celebrate-wave'];
             const _toneCelebrate = (el, pct) => {
                 if (!el) return;
                 if (pct >= 100) {
-                    // Apply a random style only on the transition into 100 % —
-                    // if the element already has a celebrate-* class, leave it.
+                    // Apply via _pickCelebrateClass so the user's Settings →
+                    // Display choice is honoured (or random rotation if
+                    // 'random'). Sticky once applied — only re-pick on the
+                    // transition into 100 % (no celebrate-* class yet).
                     const has = Array.from(el.classList).some(c => c.startsWith('celebrate-'));
                     if (!has) {
-                        const pick = _CELEBRATE_STYLES[Math.floor(Math.random() * _CELEBRATE_STYLES.length)];
-                        el.classList.add(pick);
+                        el.classList.add(_pickCelebrateClass());
                     }
                 } else {
-                    _CELEBRATE_STYLES.forEach(s => el.classList.remove(s));
+                    CELEBRATE_STYLES.forEach(s => el.classList.remove(s));
                 }
             };
             const gpuPct = d.stats.gpu;
@@ -7231,11 +7291,21 @@ async function regenSuggestions(n = 6) {
         return;
     }
     if (stackArea) stackArea.classList.remove('hidden');
-    if (mode === 'chat') return _renderChatReplies();
-    const box = document.getElementById('subject-chips-stack');
-    if (!box) return;
-    if (mode === 'endless') return _renderEndlessRows(n);
-    return _renderSimpleRows(n);
+    // Spin the unified-badge refresh icon CONTINUOUSLY while the fetch
+    // is in flight — matches the per-row refresh treatment in endless.
+    // The 700 ms tap-spin from the click delegate is just the click
+    // ack; this is the actual loading affordance for simple/chat modes.
+    const refreshSvg = document.querySelector('#subjects-suggest-btn svg');
+    if (refreshSvg) refreshSvg.classList.add('refresh-spinning');
+    try {
+        if (mode === 'chat') return await _renderChatReplies();
+        const box = document.getElementById('subject-chips-stack');
+        if (!box) return;
+        if (mode === 'endless') return await _renderEndlessRows(n);
+        return await _renderSimpleRows(n);
+    } finally {
+        if (refreshSvg) refreshSvg.classList.remove('refresh-spinning');
+    }
 }
 window.regenSuggestions = regenSuggestions;
 

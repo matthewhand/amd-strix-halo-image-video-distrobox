@@ -2496,6 +2496,16 @@ body.subj-mode-endless #subjects-story-log {
     transform-origin: 50% 50%;
 }
 
+/* Same continuous-spin treatment for the unified Suggestions badge
+   refresh button (#subjects-suggest-btn svg). Wrapped on the SVG
+   directly so it composes with the daisyUI button paint. Lives
+   while regenSuggestions() is in flight (simple/chat); 700 ms
+   .refresh-tapping click-ack still fires on click. */
+.refresh-spinning {
+    animation: refresh-tap-spin 900ms linear infinite;
+    transform-origin: 50% 50%;
+}
+
 /* Row body "loading" state — sibling to .row-refresh-spinning, applied
    to the marquee mask while a regen is in flight. Dims the existing
    chips so they read as "stale, new ones coming" without yanking the
