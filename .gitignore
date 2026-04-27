@@ -20,6 +20,7 @@ __pycache__/
 *.local
 *.private
 secrets/
+concat.txt
 
 # Private prompt overrides (sensitive moderation-category templates that
 # shouldn't be in public commits). Loaded at runtime via env var
@@ -53,6 +54,7 @@ ComfyUI-LTXVideo/
 
 # Integration work products (not shipped)
 ui-rebuild/
+.heartlib/
 
 # Branding profiles — users copy <name>.json.example to <name>.json
 # (per-install, not shared via the repo)
