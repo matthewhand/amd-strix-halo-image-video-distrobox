@@ -1167,30 +1167,21 @@ function _refreshSuggestBadge() {
             ? "Active suggestion prompt — click to swap"
             : "Suggestion prompts — click to manage in Settings";
     }
-    // The right-edge action button is dual-purpose:
-    //   endless mode  → "+" (add a new row using the currently-selected
-    //                   default prompt). Per-row minus + per-row refresh
-    //                   handle the rest. onclick rebound below.
-    //   other modes   → "↻" refresh-all (regenerate every row).
-    // Visible regardless of toggle state — clicking it auto-enables the
-    // toggle when off so the user isn't trapped.
+    // Swap which action button is visible based on mode. Two distinct
+    // buttons — refresh (#subjects-suggest-btn) and add (#subjects-suggest-add-btn)
+    // — share the joined badge slot so the refresh-tap-spin handler only
+    // ever matches the actual refresh control.
+    const addBtn = document.getElementById('subjects-suggest-add-btn');
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    const isEndless = mode === 'endless';
     if (refreshBtn) {
-        refreshBtn.classList.remove('hidden');
-        const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
-        const isEndless = mode === 'endless';
-        if (isEndless) {
-            refreshBtn.innerHTML =
-                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
-            refreshBtn.onclick = (typeof _addEndlessRow === 'function') ? _addEndlessRow : null;
-            refreshBtn.title = 'Add a row using the currently-selected suggestion prompt';
-        } else {
-            refreshBtn.innerHTML =
-                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 flex-none"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M21 21v-5h-5"/></svg>';
-            refreshBtn.onclick = () => regenSuggestions();
-            refreshBtn.title = isOn
-                ? 'Regenerate suggestions for the active prompt'
-                : 'Suggestions are off — click to enable + fetch a fresh batch';
-        }
+        refreshBtn.classList.toggle('hidden', isEndless);
+        refreshBtn.title = isOn
+            ? 'Regenerate suggestions for the active prompt'
+            : 'Suggestions are off — click to enable + fetch a fresh batch';
+    }
+    if (addBtn) {
+        addBtn.classList.toggle('hidden', !isEndless);
     }
     if (lbl) {
         const p = _getPromptById(_getDefaultPromptId());
