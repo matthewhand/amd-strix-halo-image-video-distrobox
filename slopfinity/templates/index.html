@@ -591,43 +591,60 @@
                                 </div>
 
                                 <div class="subjects-pane" data-pane-mode="raw">
-                                    {# Per-stage prompt overrides (canonical p-image /
-                                       p-video / p-music / p-tts). Mode-specific hint
-                                       lives in the #p-core placeholder below. Compact
-                                       padding (p-2 + space-y-1) so the four stages
-                                       leave enough room for the subject textarea
-                                       below to be readable too. #}
-                                    <div id="subjects-per-stage"
-                                        class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-1 mt-2">
-                                        {% for stage, label, placeholder in [
-                                            ('image', 'Image prompt', 'Prompt for image model — describe lighting, texture, mood…'),
-                                            ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
-                                            ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
-                                            ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover sentences…'),
-                                        ] %}
-                                        {# Stage label sits ABOVE the input row; lock badge,
-                                           textarea, and Rewrite button sit on the SAME
-                                           horizontal line so the action button reads as
-                                           operating on the field directly to its left. #}
-                                        <div>
-                                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60 block mb-1">{{ label }}</span>
-                                            <div class="flex items-center gap-1">
-                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default flex-none" title="Unlocked">🔓</span>
-                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1 min-w-0"
-                                                    placeholder="{{ placeholder }}"></textarea>
-                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1 flex-none self-stretch"
-                                                    onclick="enhanceStage('{{ stage }}')"
-                                                    title="Rewrite this prompt with the LLM using the seed from the subject field below">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                        stroke-linejoin="round" class="w-3 h-3">
-                                                        <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
-                                                    </svg>
-                                                    Rewrite
-                                                </button>
+                                    {# Raw mode body: per-stage panel on the LEFT, Queue
+                                       Slop button + status chip on the RIGHT. Mirrors the
+                                       textarea+button layout simple/endless modes use, so
+                                       the Queue action sits visually on the right of the
+                                       input regardless of mode. The shared #subjects-
+                                       input-row below is hidden in raw via CSS — this
+                                       in-pane button is the canonical raw-mode Queue
+                                       affordance. #}
+                                    <div class="flex gap-2 items-stretch mt-2">
+                                        <div id="subjects-per-stage"
+                                            class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-1 flex-1 min-w-0">
+                                            {% for stage, label, placeholder in [
+                                                ('image', 'Image prompt', 'Prompt for image model — describe lighting, texture, mood…'),
+                                                ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
+                                                ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
+                                                ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover sentences…'),
+                                            ] %}
+                                            <div>
+                                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60 block mb-1">{{ label }}</span>
+                                                <div class="flex items-center gap-1">
+                                                    <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1 min-w-0"
+                                                        placeholder="{{ placeholder }}"></textarea>
+                                                    <button type="button" class="btn btn-xs btn-primary btn-outline gap-1 flex-none self-stretch"
+                                                        onclick="enhanceStage('{{ stage }}')"
+                                                        title="Rewrite this prompt with the LLM using the seed from the subject field below">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" class="w-3 h-3">
+                                                            <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
+                                                        </svg>
+                                                        Rewrite
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        {# Raw-mode-only Queue cluster — pinned to the right of
+                                           the per-stage panel. Shares the action handler
+                                           (_subjectsAction) and the queue-info chip pattern
+                                           with the simple/endless input-row button so the
+                                           UX reads consistently across modes. #}
+                                        <div class="flex flex-col flex-none w-40 gap-1 self-stretch">
+                                            <button class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight flex-1"
+                                                id="btn-start-stop-raw" onclick="_subjectsAction()"
+                                                title="Queue the per-stage prompts above (no LLM rewrite)">
+                                                Queue Slop
+                                            </button>
+                                            <div id="btn-queue-info-raw"
+                                                 class="text-[10px] text-base-content/60 text-center font-mono leading-snug min-h-[1.5rem] px-1">
+                                                <span id="btn-queue-info-depth-raw" class="font-bold">—</span>
+                                                <span class="opacity-40"> · </span>
+                                                <span id="btn-queue-info-status-raw">idle</span>
                                             </div>
                                         </div>
-                                        {% endfor %}
                                     </div>
                                 </div>
 
@@ -700,9 +717,18 @@
                                        text input — the shared #subjects-input-row below is
                                        hidden in chat mode. Mode hint lives in the chat
                                        input's placeholder. #}
+                                    {# Chat pane order: header (with Reset) → reply
+                                       suggestions → chat history (flex-grow, scrolls) →
+                                       input + Send pinned at bottom. Replies sit ABOVE
+                                       the history so the user's eye flows: "what should
+                                       I send next?" suggestions visible immediately, then
+                                       the conversation context, then the input where they
+                                       commit a message. History fills leftover vertical
+                                       space so a long conversation scrolls inside its
+                                       own bounds without pushing the input off-screen. #}
                                     <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-2">
                                         <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
-                                            <span>History</span>
+                                            <span>Conversation</span>
                                             <button type="button" id="subjects-chat-reset"
                                                 class="btn btn-ghost btn-xs text-error gap-1"
                                                 onclick="_resetChat()"
@@ -716,9 +742,14 @@
                                                 <span>Reset</span>
                                             </button>
                                         </div>
+                                        {# Reply suggestions — populated by _renderChatReplies
+                                           after each assistant turn. 4 chips max. Click to
+                                           copy into the chat input. Above the log per UX. #}
+                                        <div id="subjects-chat-replies"
+                                            class="flex flex-col gap-1 text-xs flex-none"></div>
                                         <div id="subjects-chat-log"
-                                            class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-64 overflow-y-auto flex flex-col gap-2 m-0"></div>
-                                        <div class="flex gap-2">
+                                            class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 overflow-y-auto flex flex-col gap-2 m-0 flex-1 min-h-0"></div>
+                                        <div class="flex gap-2 flex-none">
                                             <input type="text" id="subjects-chat-input"
                                                 class="input input-bordered input-sm flex-1 min-w-0"
                                                 placeholder="Ask the assistant — e.g. 'queue 3 short clips of dragons'"
@@ -727,11 +758,6 @@
                                                 class="btn btn-primary btn-sm flex-none"
                                                 onclick="_sendChatMessage()">Send</button>
                                         </div>
-                                        {# Reply suggestions — populated by _renderChatReplies after
-                                           each assistant turn. 4 chips max, no marquee. Click a chip
-                                           to copy its text into the chat input. #}
-                                        <div id="subjects-chat-replies"
-                                            class="flex flex-col gap-1 mt-1 text-xs"></div>
                                     </div>
                                 </div>
 

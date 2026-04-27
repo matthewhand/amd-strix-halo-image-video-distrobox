@@ -2561,7 +2561,8 @@ body.subj-mode-endless.endless-running #subjects-input-row {
    and now stretches to fill the row since the textarea is gone. */
 body.subj-mode-raw #subjects-need-ideas-row,
 body.subj-mode-raw #subjects-suggestions-area,
-body.subj-mode-raw #p-core {
+body.subj-mode-raw #p-core,
+body.subj-mode-raw #subjects-input-row {
     display: none !important;
 }
 
