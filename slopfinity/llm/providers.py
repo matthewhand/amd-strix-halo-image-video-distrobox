@@ -91,7 +91,17 @@ class _OpenAICompatBase:
             timeout=timeout,
         )
         try:
-            return data["choices"][0]["message"]["content"].strip()
+            msg = data["choices"][0]["message"]
+            # Reasoning models (qwen3.5-claude-distill, deepseek-r1, etc.)
+            # split output into `content` (final answer) + `reasoning_content`
+            # (chain-of-thought). When the response is truncated mid-thought
+            # `content` can be empty while `reasoning_content` carries the
+            # actual text. Fall through to reasoning_content so callers
+            # don't get an empty string back.
+            content = (msg.get("content") or "").strip()
+            if not content:
+                content = (msg.get("reasoning_content") or "").strip()
+            return content
         except Exception as e:
             raise RuntimeError(f"Malformed chat response: {e}: {data}")
 
