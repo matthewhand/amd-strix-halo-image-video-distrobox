@@ -7916,6 +7916,13 @@ function _consumePrefetchedBatch() {
 
 function _maybePrefetch() {
     if (_isSuggestionsHidden()) return;
+    // SIMPLE MODE ONLY. Endless story-beats need their own per-row
+    // prompt context (lead cluster); chat replies render into a
+    // different DOM target; raw doesn't use suggestions at all.
+    // Speculative prefetch into a generic batch buffer doesn't
+    // make sense for any of those.
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode !== 'simple') return;
     _prefetchStats.triggered += 1;
     // Settings toggle — no auto-fetches when disabled. Manual 🎲 unaffected.
     if (_autoSuggestDisabled()) return;
@@ -7953,12 +7960,21 @@ function _resetPrefetchIdleTimer() {
     if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
     if (document.hidden) return;
     _prefetchIdleTimer = setTimeout(() => {
-        // First try to drain a buffered batch into a new marquee row.
-        // Only when the buffer is empty do we kick another prefetch.
+        // SIMPLE MODE ONLY. The drain previously fired regardless of
+        // mode and called _appendSuggestBatchRow(pre) with no opts —
+        // which in endless mode appended naked rows (no subject /
+        // refresh / minus lead cluster), reading as 'simple-mode
+        // rows leaking into endless'. The user explicitly asked
+        // for the old auto-load behaviour to go: "we got rid of
+        // the initial default load suggestions row right? that was
+        // old design". So endless / chat / raw skip both drain
+        // AND the speculative prefetch.
+        const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+        if (mode !== 'simple') return;
         const pre = _consumePrefetchedBatch();
         if (pre) {
             _appendSuggestBatchRow(pre);
-            _maybePrefetch(); // top-up (gated)
+            _maybePrefetch();
         } else {
             _maybePrefetch();
         }
