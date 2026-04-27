@@ -452,13 +452,10 @@ function _applyLayoutView(view) {
     ]);
     if (valid.has(view)) document.body.dataset.layout = view;
     else delete document.body.dataset.layout;
-    // In the default 3-pane layout, the slop card is the workhorse — force
-    // its <details> element open so the gallery is always expanded. Other
-    // layouts respect whatever state the user clicked it into.
-    const slopDetails = document.getElementById('slop-collapsible');
-    if (slopDetails) {
-        if (!document.body.dataset.layout) slopDetails.open = true;
-    }
+    // Slop section is no longer a <details> — it's a plain <div> that
+    // always renders open. Nothing to force here. data-layout still
+    // drives which split-pane is visible, but the gallery itself never
+    // collapses any more.
 }
 window._applyLayoutView = _applyLayoutView;
 
@@ -1766,6 +1763,19 @@ function _stageDoneBefore(curStage, candidate) {
     return ci > -1 && xi > -1 && xi < ci;
 }
 
+// Map a canonical stage name (e.g. "Base Image", "Video Chains") to its
+// user-friendly short label ("Image", "Video"). Unknown stages fall
+// through unchanged. Mirrors _STAGES_META[i][2] without forcing every
+// caller to dig through the table by hand. Use this everywhere a stage
+// name is rendered to the user — labels, tooltips, badges, status
+// strings — so nothing leaks the internal "Base Image"/"Video Chains"
+// terminology.
+function _stageDisplayName(canonical) {
+    const row = _STAGES_META.find(r => r[0] === canonical);
+    return (row && row[2]) || canonical || '';
+}
+window._stageDisplayName = _stageDisplayName;
+
 // Build the top-of-card segmented progress bar markup. Pulls all timing data
 // from the same _lastTick / _stageStartTs / _jobActuals globals as the
 // per-item renderPipelineStrip did before — but emits ONE bar at the
@@ -2069,12 +2079,17 @@ function _setSubjectsMode(mode) {
         };
         ta.placeholder = placeholders[mode] || placeholders.raw;
     }
-    // Render any persisted history on first switch into chat AND fetch
-    // 4 reply suggestions (starter ideas if history is empty, or
-    // continuations of the last turn).
+    // Render any persisted history on first switch into chat. Reply
+    // suggestions ONLY auto-fire when the assistant has already
+    // responded in the conversation — pre-first-turn we wait for the
+    // user to send something, so we don't burn LLM cycles on
+    // "starter chips" the user didn't ask for. Manual regen via the
+    // refresh button still works (regenSuggestions → _renderChatReplies).
     if (mode === 'chat') {
         _renderChatLog();
-        if (typeof _renderChatReplies === 'function') _renderChatReplies();
+        const hist = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
+        const hasAsst = hist.some(m => m && m.role === 'assistant' && (m.content || '').trim());
+        if (hasAsst && typeof _renderChatReplies === 'function') _renderChatReplies();
     }
     // Switching INTO endless while no story is running: wipe whatever
     // chips the previous mode left behind and show the "press Start
@@ -2183,9 +2198,12 @@ function _resetChat() {
     if (!confirm('Clear chat history? This wipes the current conversation.')) return;
     _setChatHistory([]);
     _renderChatLog();
-    // History wiped → re-fetch the 4 starter chips so the user has fresh
-    // openers to pick from.
-    if (typeof _renderChatReplies === 'function') _renderChatReplies();
+    // History wiped → don't auto-fetch starter chips. Reply suggestions
+    // are reserved for "after the assistant responds" (per the chat
+    // suggestion-cache scoping rule). User can manually regen via the
+    // refresh button if they want chips before sending.
+    const host = document.getElementById('subjects-chat-replies');
+    if (host) host.innerHTML = '';
 }
 window._resetChat = _resetChat;
 
@@ -2574,7 +2592,7 @@ function _buildPromptRow(stage, role, value, { locked, status, currentPrompt }) 
         <div class="form-control" data-prompt-stage="${stage}" data-prompt-role="${role}">
             <label class="label py-0.5">
                 <span class="label-text text-[10px] uppercase tracking-widest opacity-70">
-                    ${stage} (${role})
+                    ${_stageDisplayName(stage)} (${role})
                 </span>
                 <span class="flex items-center">
                     ${lockNote}
@@ -4027,22 +4045,11 @@ document.addEventListener('DOMContentLoaded', () => {
     _applySlopFilters();
     _initSplitDivider();
 
-    // Slop Bottom Bar persistence
-    const slopCollapsible = document.getElementById('slop-collapsible');
-    if (slopCollapsible) {
-        const _SLOP_COLLAPSED_KEY = 'slopfinity_slop_collapsed';
-        if (localStorage.getItem(_SLOP_COLLAPSED_KEY) === '1') {
-            slopCollapsible.open = false;
-        }
-        document.body.dataset.slopExpanded = slopCollapsible.open ? '1' : '0';
-        slopCollapsible.addEventListener('toggle', () => {
-            const isOpen = slopCollapsible.open;
-            localStorage.setItem(_SLOP_COLLAPSED_KEY, isOpen ? '0' : '1');
-            document.body.dataset.slopExpanded = isOpen ? '1' : '0';
-            // Refresh layout/scroll values if needed
-            if (typeof _refreshCardVisibility === 'function') _refreshCardVisibility();
-        });
-    }
+    // Slop section is always expanded now (collapsible <details> wrapper
+    // removed in the layout-revert). Pin the body flag for any CSS or
+    // legacy code that still reads data-slop-expanded so they continue
+    // to render the "expanded" branch.
+    document.body.dataset.slopExpanded = '1';
     if (typeof _updateSingleLabels === 'function') _updateSingleLabels();
     if (typeof _updateChaosEnabled === 'function') _updateChaosEnabled();
     if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
@@ -5082,8 +5089,8 @@ function connect() {
                             _cpuBadge = `<span class="inline-flex items-center align-middle mr-0.5 opacity-70" title="Running on CPU"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg></span>`;
                         }
                         const stageLabelHtml = _settingsRole
-                            ? `<button type="button" class="${_stageBadgeCls}" title="${s} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</button>`
-                            : `<span class="badge badge-xs badge-${tone} opacity-70" title="${s} — ${modelLabel}">${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</span>`;
+                            ? `<button type="button" class="${_stageBadgeCls}" title="${_stageDisplayName(s)} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</button>`
+                            : `<span class="badge badge-xs badge-${tone} opacity-70" title="${_stageDisplayName(s)} — ${modelLabel}">${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</span>`;
                         // Right-edge cluster mirrors the summary row's
                         //   [model-badge] [menu]
                         // by sitting the model in the same min-w-[7rem]
@@ -7159,7 +7166,17 @@ function _renderSuggestChips(arr) {
 
 // Render cached suggestions from localStorage if any exist. Returns true
 // if it rendered, false if cache was empty.
+//
+// Caching is SIMPLE-MODE ONLY. Endless beats are story-state-dependent
+// (the seed and prior beats matter); chat replies are conversation-
+// state-dependent (the assistant's last turn matters); raw doesn't use
+// suggestions at all. Serving a stale cached batch in any of those
+// modes would render confusingly out-of-context chips. Only simple
+// mode — where suggestions are evergreen "ideas matching your
+// subject text" — benefits from cross-session persistence.
 function _renderCachedSuggestions() {
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode !== 'simple') return false;
     try {
         const raw = localStorage.getItem(_SUGGEST_CACHE_KEY);
         if (!raw) return false;
@@ -7276,7 +7293,11 @@ async function _renderEndlessRows(n) {
         const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
         if (i > 0 && ((t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80)) break;
         const promptId = rowPrompts[i];
-        const arr = await _fetchSuggestBatch({ n, promptId, fresh: i > 0 });
+        // ALL endless rows pass fresh:true. Story beats depend on the
+        // current seed + prior beats, so a server-cache hit from an
+        // earlier session would be off-context. Cache is reserved for
+        // simple mode (see _renderCachedSuggestions doc).
+        const arr = await _fetchSuggestBatch({ n, promptId, fresh: true });
         if (arr && arr.length) _appendSuggestBatchRow(arr, { promptId, rowIdx: i });
         if (i < rowPrompts.length - 1) await new Promise(r => setTimeout(r, 700));
     }
