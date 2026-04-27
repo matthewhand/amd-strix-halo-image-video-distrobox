@@ -2511,6 +2511,38 @@ body.subj-mode-endless #subjects-story-log {
     max-height: none;
 }
 
+/* Chat "thought bubble" — used when the assistant is calling tools or
+   when a tool result lands. Distinct from the regular .chat-bubble:
+   dashed border + softer fill so it reads as inner monologue / inner
+   process rather than direct speech. Pairs with the 💭 / ↳ glyphs in
+   the rendered HTML. */
+.chat-thought {
+    background: hsl(var(--b2) / 0.6);
+    border: 1px dashed hsl(var(--bc) / 0.35);
+    border-radius: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    max-width: 90%;
+    color: hsl(var(--bc) / 0.85);
+}
+
+.chat-thought details summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-thought details summary {
+    list-style: none;
+}
+
+.chat-thought details[open] summary::after {
+    content: '  ▾';
+    opacity: 0.5;
+}
+
+.chat-thought details:not([open]) summary::after {
+    content: '  ▸';
+    opacity: 0.5;
+}
+
 /* Seed-asset drag-drop overlay — fires when files are dragged anywhere
    over the page. The `seed-drag-active` class is toggled by
    _wireSeedUpload() in app.js based on dragenter/dragleave depth. */
