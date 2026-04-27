@@ -2402,11 +2402,18 @@ async def emergency_free_endpoint():
 
 @app.get("/llm/health")
 async def llm_health_endpoint():
-    """Quick reachability probe for the configured LLM provider. Returns
-    {ok: bool, provider, model_id, error?}. Used by the dashboard to gate
-    LLM-dependent Subjects modes (Endless / Simple / Chat) — when the
-    provider is down, only Raw mode remains usable.
+    """Cheap reachability probe for the configured LLM provider.
+
+    HTTP-only: hits the provider's `/v1/models` (or native equivalent) and
+    treats a successful response as "alive". Deliberately does NOT run an
+    inference — the dashboard polls this every 60 s, and burning a token
+    each time would force the model to stay resident even while the GPU
+    is busy with diffusion stages (the auto-suspend dance would constantly
+    fight a synthetic ping). A reachable HTTP server is all the UI needs
+    to decide whether LLM-dependent modes (Endless / Simple / Chat) are
+    available; Raw mode is the fallback when this returns ok=false.
     """
+    from .llm.providers import get_provider
     config = cfg.load_config()
     llm = config.get("llm") or {}
     provider = llm.get("provider") or "lmstudio"
@@ -2414,12 +2421,13 @@ async def llm_health_endpoint():
     model_id = llm.get("model_id") or ""
     api_key = llm.get("api_key") or None
     try:
-        result = await asyncio.to_thread(
-            llm_ping, base_url, provider, model_id, api_key, 5
+        models = await asyncio.to_thread(
+            get_provider(provider).list_models, base_url, api_key, 5
         )
-        ok = bool(result and result.get("ok"))
+        ok = isinstance(models, list)
         return {"ok": ok, "provider": provider, "model_id": model_id,
-                "error": (result or {}).get("error") if not ok else None}
+                "model_count": len(models) if ok else 0,
+                "error": None if ok else "no models endpoint"}
     except Exception as e:
         return {"ok": False, "provider": provider, "model_id": model_id,
                 "error": str(e)}

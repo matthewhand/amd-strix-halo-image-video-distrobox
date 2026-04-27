@@ -2525,6 +2525,15 @@ body.subj-mode-endless #subjects-story-log {
     animation: refresh-tap-spin 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
 }
 
+/* Per-row refresh-button "loading" state — applied to a row's
+   [data-row-refresh] button while its batch is in flight (endless mode
+   add-row + per-row regen). Spins the inner SVG continuously, distinct
+   from .refresh-tapping (one-shot click acknowledgement). */
+.row-refresh-spinning > svg {
+    animation: refresh-tap-spin 900ms linear infinite;
+    transform-origin: 50% 50%;
+}
+
 /* Suggestions stack — auto-scroll internally when too many rows pile
    up (endless mode lets the user keep adding). Without this the rows
    either overflow the card silently or push the upper pane past its
