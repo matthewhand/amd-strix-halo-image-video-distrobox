@@ -2247,12 +2247,15 @@ body[data-layout="subj-slop"] #split-left {
    let the upper pane fill the full viewport vertically. Pairs with the
    horizontal-fill rule above so single-card focus modes truly fill the
    page instead of stranding empty space below. */
+/* Hide the slop pane only in TRUE single-card focus layouts.
+   subj-queue keeps slop as a horizontal filmstrip (the layout's
+   defining feature) so it must NOT be in this list — putting it
+   here breaks the layouts.spec.js subj-queue assertion that
+   #output-section is visible. */
 body[data-layout="subjects"] #ui-split-lower,
 body[data-layout="queue"] #ui-split-lower,
-body[data-layout="subj-queue"] #ui-split-lower,
 body[data-layout="subjects"] #ui-split-handle,
-body[data-layout="queue"] #ui-split-handle,
-body[data-layout="subj-queue"] #ui-split-handle {
+body[data-layout="queue"] #ui-split-handle {
     display: none !important;
 }
 

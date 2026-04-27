@@ -58,10 +58,18 @@ test.describe('slopfinity dashboard smoke', () => {
             page.locator('.subjects-mode-pill button[data-subj-mode]'),
             'mode pill segments'
         ).toHaveCount(4);
-        await expect(
-            page.locator('#subjects-suggest-btn'),
-            'Suggest / Regenerate button'
-        ).toBeVisible();
+        // Either the ↻ refresh button (#subjects-suggest-btn) OR the +
+        // add button (#subjects-suggest-add-btn) should be visible at
+        // any given time — never both. The badge swaps between them
+        // based on mode + state (simple pre-first-batch shows +;
+        // simple post-batch shows ↻; endless always shows +; raw/chat
+        // hide both). On a fresh load with no cached suggestions the
+        // simple mode is active and + shows.
+        const refreshOrAdd = page.locator(
+            '#subjects-suggest-btn:not(.hidden), #subjects-suggest-add-btn:not(.hidden)'
+        );
+        await expect(refreshOrAdd, 'Suggest refresh OR add button').toHaveCount(1);
+        await expect(refreshOrAdd.first(), 'Suggest refresh/add visible').toBeVisible();
 
         // Top-bar nav: settings cog + view dropdown should be reachable.
         await expect(page.locator('#btn-settings'), 'settings cog button').toBeVisible();
