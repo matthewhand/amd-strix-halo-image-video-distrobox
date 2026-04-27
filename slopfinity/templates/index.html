@@ -500,32 +500,67 @@
                                        that can run when LLM is unreachable. _updateLlmAvailability
                                        (app.js) disables the LLM-dependent buttons when /llm/health
                                        reports the provider down. #}
+                                    {# Each mode pill gets a theme-tinted icon next to its
+                                       label. At narrow widths (CSS .subj-mode-full hidden,
+                                       .subj-mode-short shown) the LABEL collapses to JUST
+                                       the icon — not the first letter — for a more
+                                       legible compact state. Icon SVGs:
+                                         endless = ∞ (infinity)        text-info
+                                         simple  = ⚡ (lightbulb)       text-primary
+                                         chat    = 💬 (speech bubble)   text-warning
+                                         raw     = ⚙ (sliders)          text-success
+                                    #}
                                     <div class="join subjects-mode-pill" role="tablist" aria-label="Prompt mode">
                                         <button type="button" data-subj-mode="endless"
-                                            class="join-item btn btn-xs btn-primary btn-outline"
+                                            class="join-item btn btn-xs btn-primary btn-outline gap-1"
                                             onclick="_setSubjectsMode('endless')"
                                             title="Endless — seed a story (or use 'I'm Feeling Lucky') and the LLM auto-cycles continuation prompts.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                                class="subj-mode-icon w-3.5 h-3.5 text-info flex-none">
+                                                <path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"/>
+                                            </svg>
                                             <span class="subj-mode-full">Endless</span>
-                                            <span class="subj-mode-short">E</span>
                                         </button>
                                         <button type="button" data-subj-mode="simple"
-                                            class="join-item btn btn-xs btn-primary" onclick="_setSubjectsMode('simple')"
+                                            class="join-item btn btn-xs btn-primary gap-1" onclick="_setSubjectsMode('simple')"
                                             title="Simple — single subject input; LLM rewrites it into per-stage prompts at queue time. The fastest path from idea to clip.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                                class="subj-mode-icon w-3.5 h-3.5 text-primary flex-none">
+                                                <path d="M12 2v2M5.6 5.6l1.4 1.4M2 12h2M5.6 18.4l1.4-1.4M12 22v-2M18.4 18.4l-1.4-1.4M22 12h-2M18.4 5.6l-1.4 1.4"/>
+                                                <circle cx="12" cy="12" r="4"/>
+                                            </svg>
                                             <span class="subj-mode-full">Simple</span>
-                                            <span class="subj-mode-short">S</span>
                                         </button>
                                         <button type="button" data-subj-mode="chat"
-                                            class="join-item btn btn-xs btn-primary btn-outline"
+                                            class="join-item btn btn-xs btn-primary btn-outline gap-1"
                                             onclick="_setSubjectsMode('chat')"
                                             title="Chat — converse with the LLM; it can call tools to queue clips, check status, cancel jobs, list recent outputs.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                                class="subj-mode-icon w-3.5 h-3.5 text-warning flex-none">
+                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                            </svg>
                                             <span class="subj-mode-full">Chat</span>
-                                            <span class="subj-mode-short">C</span>
                                         </button>
                                         <button type="button" data-subj-mode="raw"
-                                            class="join-item btn btn-xs btn-primary btn-outline" onclick="_setSubjectsMode('raw')"
+                                            class="join-item btn btn-xs btn-primary btn-outline gap-1" onclick="_setSubjectsMode('raw')"
                                             title="Raw — single subject + per-stage prompt panel. Use AI Magic on each stage to pre-fill, then queue without further LLM calls. Works even when the LLM provider is unavailable.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                                class="subj-mode-icon w-3.5 h-3.5 text-success flex-none">
+                                                <line x1="4" y1="21" x2="4" y2="14"/>
+                                                <line x1="4" y1="10" x2="4" y2="3"/>
+                                                <line x1="12" y1="21" x2="12" y2="12"/>
+                                                <line x1="12" y1="8" x2="12" y2="3"/>
+                                                <line x1="20" y1="21" x2="20" y2="16"/>
+                                                <line x1="20" y1="12" x2="20" y2="3"/>
+                                                <line x1="1" y1="14" x2="7" y2="14"/>
+                                                <line x1="9" y1="8" x2="15" y2="8"/>
+                                                <line x1="17" y1="16" x2="23" y2="16"/>
+                                            </svg>
                                             <span class="subj-mode-full">Raw</span>
-                                            <span class="subj-mode-short">R</span>
                                         </button>
                                     </div>
                                     {# Right-side cluster: live summary pill + pipeline-config button sit together so
@@ -1578,12 +1613,15 @@
                     <span class="text-xs single-label" data-toggle="inf-on" data-on-label="Infinity"
                         data-off-label="Infinity">Infinity</span>
                 </label>
-                {# Generate ASAP + its dependent Terminate Existing toggle stack
-                vertically. Terminate is meaningless without ASAP (it
-                cancels the in-flight job to make room for the new one),
-                so we disable it when ASAP is off and grey it accordingly.
-                _updateTermEnabled() in app.js wires the dependency. #}
-                <div class="flex flex-col gap-1">
+                {# Generate ASAP + Terminate Existing toggle pair. Terminate is
+                   meaningless without ASAP (cancels in-flight job to make room
+                   for the new one) — disabled until ASAP is on. The pair sits
+                   inside a fieldset/group box so the dependency reads
+                   visually: 'these two are linked', toggles vertically
+                   aligned at the same indent. _updateTermEnabled() in app.js
+                   handles enable/disable dependency. #}
+                <fieldset class="border border-base-content/15 rounded-md px-3 pt-1 pb-2">
+                    <legend class="text-[9px] uppercase tracking-widest opacity-50 px-1">Insert priority</legend>
                     <label class="flex items-center gap-2">
                         <input type="checkbox" id="now-on" class="toggle toggle-primary toggle-sm"
                             onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill(); _updateTermEnabled && _updateTermEnabled()" />
@@ -1592,14 +1630,14 @@
                             title="Inserts your prompt right after the active job in the queue. With Terminate Existing also on, the active job is cancelled first.">Generate
                             ASAP</span>
                     </label>
-                    <label class="flex items-center gap-2 pl-6 opacity-60" id="term-row"
+                    <label class="flex items-center gap-2 mt-1 opacity-60" id="term-row"
                         title="Cancel the currently running job to make room for the ASAP insert. Only meaningful when Generate ASAP is on.">
                         <input type="checkbox" id="term-on" class="toggle toggle-error toggle-sm" disabled
                             onchange="_updateSingleLabels(); _updateStartBtn(); _updateGenModePill()" />
                         <span class="text-xs single-label" data-toggle="term-on" data-on-label="Terminate Existing"
                             data-off-label="Terminate Existing">Terminate Existing</span>
                     </label>
-                </div>
+                </fieldset>
             </div>
 
             <!-- ============ Output dims: aspect ratio + frames per part ============ -->
@@ -3108,9 +3146,16 @@
         </svg>
     </button>
     <button id="focus-fab-next" type="button" aria-hidden="true"
-            class="btn btn-circle btn-primary shadow-xl"
+            class="btn btn-circle btn-primary shadow-xl indicator"
             onclick="_focusFabNav(1)"
             title="Next layout">
+        {# Queue-count badge — visible only when next-layout is queue
+           AND the queue has work pending. Updated by
+           _updateQueueStatusChip on every WS tick. The .indicator
+           class on the parent + .indicator-item lets daisyUI position
+           the badge over the top-right corner of the button. #}
+        <span id="focus-fab-next-badge"
+              class="indicator-item badge badge-secondary badge-sm hidden">0</span>
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"/>
