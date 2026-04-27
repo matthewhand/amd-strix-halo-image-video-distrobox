@@ -1150,7 +1150,16 @@ function _refreshSuggestBadge() {
     const nameBtn = document.getElementById('subjects-suggest-prompt-name');
     const refreshBtn = document.getElementById('subjects-suggest-btn');
     const lbl = document.getElementById('subjects-suggest-prompt-name-label');
-    if (nameBtn) nameBtn.classList.toggle('hidden', !isOn);
+    // The prompt-name button stays visible even when Suggestions is OFF —
+    // it doubles as a quick "edit suggestion prompts" affordance via the
+    // popover's "Manage prompts in Settings" footer link. Hiding it would
+    // strand users who want to edit prompts before turning suggestions on.
+    if (nameBtn) {
+        nameBtn.classList.remove('hidden');
+        nameBtn.title = isOn
+            ? "Active suggestion prompt — click to swap"
+            : "Suggestion prompts — click to manage in Settings";
+    }
     // The right-edge action button is dual-purpose:
     //   endless mode  → "+" (add a new row using the currently-selected
     //                   default prompt). Per-row minus + per-row refresh
