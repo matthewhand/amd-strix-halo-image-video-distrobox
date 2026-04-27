@@ -1237,15 +1237,20 @@ window._setDefaultPromptId = _setDefaultPromptId;
 function _getEndlessRowPrompts() {
     try {
         const raw = localStorage.getItem(_ENDLESS_ROW_PROMPTS_KEY);
-        const arr = raw ? JSON.parse(raw) : null;
-        if (Array.isArray(arr) && arr.length) {
-            const valid = arr.filter(id => typeof id === 'string' && _getPromptById(id));
-            // If the saved list collapsed to a single repeated id (common
-            // after a stale upgrade where every prompt mapped to the
-            // default), reset to the active-prompts diversity. Otherwise
-            // every endless row would render identical chips.
-            const unique = new Set(valid);
-            if (valid.length && unique.size > 1) return valid;
+        // Key set at all = user has explicit state we should respect
+        // (including the empty-array case after − removed every row).
+        // Only fall through to defaults when the key has never been
+        // touched. Filter to resolvable ids but otherwise trust the
+        // saved value. The previous "diversity check" (require
+        // unique.size > 1) silently swapped the saved array for the
+        // 4-prompt default whenever it collapsed to a single repeated
+        // id — which broke Start-Story-saves-[defaultId], + click-
+        // saves-[same,same], and the explicit-empty-after-remove case.
+        if (raw !== null) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+                return arr.filter(id => typeof id === 'string' && _getPromptById(id));
+            }
         }
     } catch (_) { }
     // Build the default endless-row sequence: the user's currently-selected
