@@ -2055,8 +2055,13 @@ function _setSubjectsMode(mode) {
                 sugInput.checked = true;
                 sugInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            sugLabel.classList.add('pointer-events-none', 'opacity-70');
-            sugLabel.title = 'Endless mode requires Suggestions ON — disabled to protect the cycle';
+            // Lock just the click-target — DON'T grey out the label so the
+            // 'Suggestions' word stays at full readability. The user sees a
+            // normal-looking toggle that doesn't respond to clicks; tooltip
+            // explains why.
+            sugLabel.classList.add('pointer-events-none');
+            sugLabel.classList.remove('opacity-70');
+            sugLabel.title = 'Endless mode requires Suggestions ON — toggle locked while in endless';
         } else {
             sugLabel.classList.remove('pointer-events-none', 'opacity-70');
             sugLabel.title = 'Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.';
