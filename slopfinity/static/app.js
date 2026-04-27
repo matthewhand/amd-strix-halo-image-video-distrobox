@@ -1099,8 +1099,12 @@ function _getDefaultPromptId() {
 function _setDefaultPromptId(id) {
     try { localStorage.setItem(_DEFAULT_SUGGEST_PROMPT_ID_KEY, id); } catch (_) {}
     _refreshSuggestBadge();
-    // Visual feedback: spin the badge's refresh icon while the regen call
-    // is in flight so the user knows the dropdown change is taking effect.
+    // Endless mode treats the dropdown as "the prompt the NEXT added row
+    // will use" — existing rows have their own per-row prompts and should
+    // NOT be wiped. Other modes (simple/chat) regenerate to reflect the
+    // new default immediately.
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode === 'endless') return;
     if (typeof _spinRefreshBriefly === 'function') _spinRefreshBriefly(1500);
     if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
 }
@@ -6981,7 +6985,7 @@ function _appendSuggestBatchRow(items, opts) {
                     <path d="M21 21v-5h-5"/>
                 </svg>
             </button>
-            <button type="button" class="btn btn-ghost btn-xs btn-square text-error"
+            <button type="button" class="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100 hover:text-error"
                 data-row-remove
                 title="Remove this row" onclick="_removeEndlessRow(${opts.rowIdx})">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
