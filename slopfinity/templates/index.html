@@ -275,7 +275,7 @@
                                     <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
                                         opacity="0.7" />
                                 </svg>
-                                <span class="flex-1 text-xs">Subjects focused</span>
+                                <span class="flex-1 text-xs">Prompt focused</span>
                                 <span class="text-[10px] text-primary hidden" data-view-check="subjects">●</span>
                             </button>
                         </li>
@@ -318,7 +318,7 @@
                                     <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
                                         opacity="0.7" />
                                 </svg>
-                                <span class="flex-1 text-xs">Subjects + Slop</span>
+                                <span class="flex-1 text-xs">Prompt + Slop</span>
                                 <span class="text-[10px] text-primary hidden" data-view-check="subj-slop">●</span>
                             </button>
                         </li>
@@ -346,7 +346,7 @@
                                     <rect x="42" y="2" width="36" height="46" rx="2" fill="currentColor"
                                         opacity="0.5" />
                                 </svg>
-                                <span class="flex-1 text-xs">Subjects + Queue</span>
+                                <span class="flex-1 text-xs">Prompt + Queue</span>
                                 <span class="text-[10px] text-primary hidden" data-view-check="subj-queue">●</span>
                             </button>
                         </li>
@@ -420,7 +420,7 @@
             <div class="flex flex-col items-center gap-3">
                 <span class="text-sm uppercase tracking-widest opacity-70">No panels visible — add one back</span>
                 <div class="flex flex-wrap items-center justify-center gap-2">
-                    <button class="btn btn-sm btn-primary" onclick="restoreCard('subjects')">Subjects</button>
+                    <button class="btn btn-sm btn-primary" onclick="restoreCard('subjects')">Prompt</button>
                     <button class="btn btn-sm btn-accent" onclick="restoreCard('queue')">Queue</button>
                     <button class="btn btn-sm btn-secondary" onclick="restoreCard('slop')">Slop</button>
                 </div>
@@ -453,7 +453,7 @@
                             <div class="card-wm-bar" data-card="subjects" aria-label="Card window controls">
                                 <button class="card-wm-btn card-wm-close" title="Hide card"
                                     onclick="event.stopPropagation(); _closeCardLayout('subjects')"
-                                    aria-label="Hide Subjects"><svg viewBox="0 0 24 24" fill="none"
+                                    aria-label="Hide Prompt"><svg viewBox="0 0 24 24" fill="none"
                                         stroke="currentColor" stroke-width="3" stroke-linecap="round"
                                         stroke-linejoin="round" class="w-2.5 h-2.5">
                                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -467,9 +467,9 @@
                                         <rect x="8" y="4" width="12" height="12" rx="1"></rect>
                                         <path d="M4 8v10a2 2 0 0 0 2 2h10"></path>
                                     </svg></button>
-                                <button class="card-wm-btn card-wm-max" title="Subjects full-screen"
+                                <button class="card-wm-btn card-wm-max" title="Prompt full-screen"
                                     onclick="event.stopPropagation(); _cardMaximizeLayout('subjects')"
-                                    aria-label="Maximize Subjects"><svg viewBox="0 0 24 24" fill="none"
+                                    aria-label="Maximize Prompt"><svg viewBox="0 0 24 24" fill="none"
                                         stroke="currentColor" stroke-width="3" stroke-linecap="round"
                                         stroke-linejoin="round" class="w-2.5 h-2.5">
                                         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
@@ -494,7 +494,7 @@
                                        that can run when LLM is unreachable. _updateLlmAvailability
                                        (app.js) disables the LLM-dependent buttons when /llm/health
                                        reports the provider down. #}
-                                    <div class="join subjects-mode-pill" role="tablist" aria-label="Slop mode">
+                                    <div class="join subjects-mode-pill" role="tablist" aria-label="Prompt mode">
                                         <button type="button" data-subj-mode="endless"
                                             class="join-item btn btn-xs btn-primary btn-outline"
                                             onclick="_setSubjectsMode('endless')"
@@ -1863,11 +1863,11 @@
                         <span class="label-text text-xs">Reset card visibility</span>
                         <button type="button" class="btn btn-xs btn-outline btn-primary"
                                 onclick="restoreAllCards()"
-                                title="Show every card (Subjects + Queue + Slop). Use this if you accidentally closed one and don't see it after switching layouts.">
+                                title="Show every card (Prompt + Queue + Slop). Use this if you accidentally closed one and don't see it after switching layouts.">
                             Show all cards
                         </button>
                     </div>
-                    <p class="text-[10px] opacity-60 leading-snug">Clears the per-card "hidden" flag for Subjects, Queue, and Slop. The View dropdown still controls which layout is active.</p>
+                    <p class="text-[10px] opacity-60 leading-snug">Clears the per-card "hidden" flag for Prompt, Queue, and Slop. The View dropdown still controls which layout is active.</p>
 
                     {# Restore-FAB toggle. The focused-mode FAB cluster
                        (bottom-right floating buttons) surfaces quick-jump
@@ -1880,7 +1880,7 @@
                         <input type="checkbox" id="settings-show-card-fabs" class="toggle toggle-primary toggle-sm" checked
                                onchange="_setShowCardFabs(this.checked)" />
                     </label>
-                    <p class="text-[10px] opacity-60 leading-snug">When ON (default), the bottom-right FAB cluster surfaces quick-jump buttons for cards not visible in the current layout (Subjects / Queue / Slop, depending on mode). Off = clean layout, recover via View dropdown.</p>
+                    <p class="text-[10px] opacity-60 leading-snug">When ON (default), the bottom-right FAB cluster surfaces quick-jump buttons for cards not visible in the current layout (Prompt / Queue / Slop, depending on mode). Off = clean layout, recover via View dropdown.</p>
 
                     {# Card window-controls — the macOS-style ✕ / restore / maximize
                        chrome that overlays each card on hover. Default OFF; user
@@ -2052,13 +2052,13 @@
 
                         <div class="form-control md:col-span-2">
                             <label class="label cursor-pointer py-1">
-                                <span class="label-text text-xs">Derive suggestions from current Subjects</span>
+                                <span class="label-text text-xs">Derive suggestions from current Prompt</span>
                                 <input id="set-suggest-use-subjects" type="checkbox"
                                     class="toggle toggle-primary toggle-sm" checked />
                             </label>
                             <div class="label-text-alt text-[10px] opacity-60 leading-snug">
                                 When on, the auto-suggest LLM is asked to match the style/theme of whatever you've typed
-                                in Subjects. Off = generic subjects with no context.
+                                in the Prompt card. Off = generic suggestions with no context.
                             </div>
 
                             <label class="label py-1 mt-2">
@@ -2274,7 +2274,7 @@
                     {# Subjects-mode tunables — moved here from the standalone
                        Slop config popup. Endless cycle interval + suggestion
                        marquee behaviour. Raw mode has no settings of its own. #}
-                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Subjects modes</div>
+                    <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Prompt modes</div>
                     <p class="text-[10px] opacity-60 leading-snug mb-2">
                         <span class="font-semibold">Raw</span> — queue exactly what you type, one subject per line. No
                         per-mode settings; defers to global pipeline config above.
@@ -2478,7 +2478,7 @@
                                     (<code>philosophical_prompt</code>) &mdash; <a href="#" class="link link-primary"
                                         onclick="document.querySelector('input[name=settings_tabs][aria-label=LLM]').checked=true; setTimeout(()=>{const el=document.getElementById('set-fleet-prompt'); if(el){el.scrollIntoView({block:'center'}); el.focus();}},50); return false;">open
                                         in LLM tab</a></li>
-                                <li><span class="font-semibold">Subjects-suggest system prompt</span>
+                                <li><span class="font-semibold">Prompt-suggest system prompt</span>
                                     (<code>suggest_custom_prompt</code>) &mdash; <a href="#" class="link link-primary"
                                         onclick="document.querySelector('input[name=settings_tabs][aria-label=LLM]').checked=true; setTimeout(()=>{const el=document.getElementById('set-suggest-custom-prompt'); if(el){el.scrollIntoView({block:'center'}); el.focus();}},50); return false;">open
                                         in LLM tab</a></li>
@@ -2811,7 +2811,7 @@
                 <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-[11px] opacity-60 italic leading-snug">Switch between full-dashboard and
-                            gallery-focused views. The gallery view hides the Subjects + Queue cards and exposes them as
+                            gallery-focused views. The gallery view hides the Prompt + Queue cards and exposes them as
                             floating buttons that open in modals.</p>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2820,7 +2820,7 @@
                             <div
                                 class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
                                 <div class="text-xs font-bold mb-1">Default</div>
-                                <div class="text-[10px] opacity-60 mb-2">Subjects + Queue + Slop. Splitter-resizable.
+                                <div class="text-[10px] opacity-60 mb-2">Prompt + Queue + Slop. Splitter-resizable.
                                 </div>
                                 <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
                                     xmlns="http://www.w3.org/2000/svg">
@@ -2837,7 +2837,7 @@
                             <div
                                 class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
                                 <div class="text-xs font-bold mb-1">Gallery-focused</div>
-                                <div class="text-[10px] opacity-60 mb-2">Slop fills viewport. Subjects + Queue open via
+                                <div class="text-[10px] opacity-60 mb-2">Slop fills viewport. Prompt + Queue open via
                                     floating buttons.</div>
                                 <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
                                     xmlns="http://www.w3.org/2000/svg">
@@ -2864,7 +2864,7 @@
     relocation targets — when opened, the existing #split-left / #split-right
     cards are MOVED into them so handlers + state stay intact. #}
     <div id="gallery-fab" aria-hidden="true">
-        <button class="btn btn-circle btn-primary shadow-xl" title="Subjects" aria-label="Open Subjects"
+        <button class="btn btn-circle btn-primary shadow-xl" title="Prompt" aria-label="Open Prompt"
             onclick="openGalleryFabDialog('subjects')">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2894,7 +2894,7 @@
     their default narrow width. #}
     <dialog id="gallery-subjects-modal" class="modal">
         <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
-            <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Subjects</h3>
+            <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Prompt</h3>
             <div id="gallery-subjects-mount" class="w-full flex-1 overflow-y-auto"></div>
             <div class="modal-action flex-none">
                 <form method="dialog"><button class="btn btn-sm">Close</button></form>
@@ -2919,8 +2919,8 @@
     Slop. Each button is hidden by CSS when its target layout matches the
     active layout (so the button for "where I already am" disappears). #}
     <div id="focus-slop-fab" aria-hidden="true">
-        <button data-fab-target="subjects" class="btn btn-circle btn-primary shadow-xl" title="Subjects"
-            aria-label="Open Subjects" onclick="openGalleryFabDialog('subjects')">
+        <button data-fab-target="subjects" class="btn btn-circle btn-primary shadow-xl" title="Prompt"
+            aria-label="Open Prompt" onclick="openGalleryFabDialog('subjects')">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

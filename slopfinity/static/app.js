@@ -22,7 +22,7 @@ const _SPLASH_TIPS = [
     "Hover the right edge of any suggestion row to reveal a 🗑 — drops just that batch.",
     "Click 🎲 Suggest for an instant batch; flip ↻ Auto to keep them flowing.",
     "Endless mode locks the seed and grows a story log — copy it before image/video stages rewrite each line.",
-    "Drag the splitter pill between Subjects/Queue and the Slop gallery to re-balance vertical room.",
+    "Drag the splitter pill between Prompt/Queue and the Slop gallery to re-balance vertical room.",
     "S / M / L pill in the Slop card flips preview density — small for skimming, large for scrubbing.",
     "Click any progress-bar segment to jump straight to that stage's settings.",
     "Pin a wall display to one layout: append ?layout=queue (or subj-slop, gallery, …) to the URL.",
@@ -5795,7 +5795,7 @@ async function inject(prio, terminate, concurrent, opts) {
     // subject line if the user is driving from the Subjects textarea.
     const prompts = stageConcat ? [stageConcat] : (subjects.length ? subjects : []);
     if (!prompts.length) {
-        console.warn('inject: no prompt available — Subjects textarea empty and no stage overrides set');
+        console.warn('inject: no prompt available — Prompt textarea empty and no stage overrides set');
         return;
     }
     // Send one /inject per prompt. Multiple subjects (newline-separated)
@@ -6934,7 +6934,7 @@ function _buildSuggestChip(s) {
     b.type = 'button';
     b.className = 'btn btn-outline btn-primary btn-xs normal-case';
     b.textContent = s;
-    b.title = 'Click: queue this prompt as a one-shot · Shift+click: append to Subjects';
+    b.title = 'Click: queue this prompt as a one-shot · Shift+click: append to the Prompt textarea';
     b.dataset.suggest = s;
     b.addEventListener('click', async (e) => {
         // Default click: inject the chip text as a single queue item — does
