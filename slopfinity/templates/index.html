@@ -605,7 +605,7 @@
                                         placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
                                         oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
                                     <button
-                                        class="btn btn-primary btn-lg flex-none w-32 self-stretch h-auto whitespace-normal text-sm leading-tight"
+                                        class="btn btn-primary btn-lg flex-none w-32 ml-auto self-stretch h-auto whitespace-normal text-sm leading-tight"
                                         id="btn-start-stop-inline" onclick="_subjectsAction()"
                                         title="Start/queue generation">
                                         {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
