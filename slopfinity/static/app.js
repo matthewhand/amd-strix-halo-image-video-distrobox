@@ -2394,19 +2394,32 @@ window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 //   #btn-queue-info-depth   — pending count or 'queue empty'
 //   #btn-queue-info-status  — current step OR mode OR 'idle' / 'paused'
 function _updateQueueStatusChip(d) {
-    const depthEl = document.getElementById('btn-queue-info-depth');
-    const statusEl = document.getElementById('btn-queue-info-status');
-    if (!depthEl || !statusEl) return;
+    // Two copies of the chip: the shared one under #subjects-input-row
+    // (visible in simple/endless) and the raw-mode in-pane copy.
+    // Update both — whichever is in the active pane will be visible;
+    // the other stays hidden but synchronised in case the user mode-
+    // swaps before the next tick.
+    const depthEls = [
+        document.getElementById('btn-queue-info-depth'),
+        document.getElementById('btn-queue-info-depth-raw'),
+    ].filter(Boolean);
+    const statusEls = [
+        document.getElementById('btn-queue-info-status'),
+        document.getElementById('btn-queue-info-status-raw'),
+    ].filter(Boolean);
+    if (!depthEls.length || !statusEls.length) return;
+    const depthEl = depthEls[0];   // for class toggle below; both same content
+    const statusEl = statusEls[0];
     const queue = (d && d.queue) || [];
     const pending = queue.filter(x => x && (x.status === 'pending' || x.status == null)).length;
     const working = queue.filter(x => x && x.status === 'working').length;
-    if (pending === 0 && working === 0) {
-        depthEl.textContent = 'queue empty';
-        depthEl.classList.remove('text-primary');
-    } else {
-        depthEl.textContent = `${working}+${pending} queued`;
-        depthEl.classList.toggle('text-primary', working > 0);
-    }
+    const depthText = (pending === 0 && working === 0)
+        ? 'queue empty'
+        : `${working}+${pending} queued`;
+    depthEls.forEach(el => {
+        el.textContent = depthText;
+        el.classList.toggle('text-primary', working > 0);
+    });
     // Simplified status: just Idle / Generating / Paused. Earlier the
     // chip leaked the internal stage name ('base image' / 'video chains')
     // which read like jargon. Three-state is enough for "is the box
@@ -2419,9 +2432,11 @@ function _updateQueueStatusChip(d) {
         status = 'Generating';
     }
     if (d && d.paused) status = 'Paused';
-    statusEl.textContent = status;
-    statusEl.classList.toggle('text-warning', status === 'Paused');
-    statusEl.classList.toggle('text-success', status === 'Generating');
+    statusEls.forEach(el => {
+        el.textContent = status;
+        el.classList.toggle('text-warning', status === 'Paused');
+        el.classList.toggle('text-success', status === 'Generating');
+    });
 }
 window._updateQueueStatusChip = _updateQueueStatusChip;
 
