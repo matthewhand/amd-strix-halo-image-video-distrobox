@@ -55,6 +55,7 @@ ComfyUI-LTXVideo/
 # Integration work products (not shipped)
 ui-rebuild/
 .heartlib/
+concat.txt
 
 # Branding profiles — users copy <name>.json.example to <name>.json
 # (per-install, not shared via the repo)
