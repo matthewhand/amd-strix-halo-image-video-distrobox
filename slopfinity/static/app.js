@@ -136,6 +136,11 @@ function _seedToast(msg, kind) {
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 3500);
 }
+// Generic alias — _seedToast started life as the seed-upload notifier
+// but the body is fully mode-agnostic. Expose as window._toast so any
+// caller (queue submit, chat send confirm, etc.) can surface a quick
+// "we did the thing" message without having to know the seed origin.
+window._toast = _seedToast;
 
 async function _uploadSeedFiles(fileList) {
     const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith('image/'));
@@ -2027,6 +2032,16 @@ function _wireEndlessStoryCycle() {
             // Skip if user has hidden suggestions or globally disabled auto.
             if (typeof _isSuggestionsHidden === 'function' && _isSuggestionsHidden()) return;
             if (typeof _autoSuggestDisabled === 'function' && _autoSuggestDisabled()) return;
+            // HARD GATE: only append cycle rows while a story is actually
+            // running. Without this, a stale localStorage flag (left over
+            // from a prior session that pressed Start Story) would resurrect
+            // the cycle on page load and silently spam suggestion rows
+            // before the user has even started a story. _endlessRunning
+            // is the source of truth — the localStorage toggle hydration
+            // is just for restoring UI checkbox state.
+            if (!_endlessRunning) return;
+            // Also bail when not in endless mode (mode swap mid-cycle).
+            if (typeof _getSubjectsMode === 'function' && _getSubjectsMode() !== 'endless') return;
             // Direct fetch + APPEND (vs regenSuggestions which clears the stack)
             // so existing rows stay visible while new ones queue below them.
             try {
@@ -5917,6 +5932,16 @@ async function inject(prio, terminate, concurrent, opts) {
     // Only blank the per-stage overrides — leave the Subjects textarea alone
     // so the user can re-queue the same set quickly if they want to.
     ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
+    // Toast confirmation so the user knows the submit landed even when
+    // the Queue card isn't on screen (focused layouts, mobile, etc).
+    if (typeof _toast === 'function') {
+        const n = prompts.length;
+        const first = (prompts[0] || '').slice(0, 60).replace(/\s+/g, ' ').trim();
+        const msg = n === 1
+            ? `Queued: ${first}${(prompts[0] || '').length > 60 ? '…' : ''}`
+            : `Queued ${n} jobs · first: ${first}${(prompts[0] || '').length > 60 ? '…' : ''}`;
+        _toast(msg, 'success');
+    }
 }
 
 // Deprecated: the standalone "Will use" badge row was removed; the RAM

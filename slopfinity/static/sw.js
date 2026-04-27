@@ -3,7 +3,7 @@
 // Bump whenever shell assets (app.js, app.css, templates/index.html) change
 // in a way that must invalidate users' caches. Browsers delete any cache
 // whose name differs on next activate.
-const CACHE = 'slopfinity-shell-v249';
+const CACHE = 'slopfinity-shell-v250';
 const SHELL = [
   '/',
   '/static/app.css',
