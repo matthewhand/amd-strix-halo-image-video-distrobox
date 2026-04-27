@@ -4996,7 +4996,7 @@ function connect() {
                         // settings/snapshot for that stage.
                         const _promptEditTarget = (s === 'Concept') ? 'Base Image' : s;
                         const promptBadge = promptForStage
-                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px]" title="${_htmlEscape(s)} prompt — click to edit" onclick='event.stopPropagation(); openPromptsEdit(${JSON.stringify(_promptEditTarget)})'>📝 prompt →</button>`
+                            ? `<button type="button" class="badge badge-xs badge-primary cursor-pointer font-mono text-[9px]" title="${_stageDisplayName(s)} prompts — click to view + edit" onclick='event.stopPropagation(); openPromptsEdit(${JSON.stringify(_promptEditTarget)})'>📝 prompts →</button>`
                             : '';
                         if (s === 'Concept') {
                             assetBadge = promptBadge;

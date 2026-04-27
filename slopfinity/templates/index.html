@@ -550,47 +550,11 @@
                                         </div>
                                     </div>
                                 </div>
-                                {# Per-stage prompt overrides — visible directly (no expander) in
-                                   raw mode (CSS body.subj-mode-raw). Each stage has a "Rewrite"
-                                   button that calls /enhance with the seed from #p-core; the
-                                   result lands in this stage's textarea and is forwarded
-                                   verbatim by /inject. Image/video/music/tts inputs are the
-                                   canonical p-image/p-video/p-music/p-tts. #}
-                                <div id="subjects-per-stage"
-                                    class="bg-base-300/30 border border-base-300/60 rounded-md p-3 text-xs space-y-2">
-                                    {% for stage, label, placeholder in [
-                                        ('image', 'Image prompt', 'Prompt for image model — describe lighting, texture, mood…'),
-                                        ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
-                                        ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
-                                        ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover sentences…'),
-                                    ] %}
-                                    <div>
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
-                                            <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
-                                                onclick="enhanceStage('{{ stage }}')"
-                                                title="Rewrite this prompt with the LLM using the seed from the subject field above">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                    stroke-linejoin="round" class="w-3 h-3">
-                                                    <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
-                                                </svg>
-                                                Rewrite
-                                            </button>
-                                        </div>
-                                        <div class="flex items-center gap-1">
-                                            <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                                            <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
-                                                placeholder="{{ placeholder }}"></textarea>
-                                        </div>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                                {# Disk-low guard banner. Hidden by default; shown when
-                                   /disk/guard returns ok:false. Click → opens Settings →
-                                   General → Disk guard so the user can adjust thresholds
-                                   if the reading is wrong. _refreshDiskGuardUI in app.js
-                                   polls /disk/guard and toggles this + the Queue button. #}
+                                {# Disk-low guard banner (shared across modes). Hidden by
+                                   default; shown when /disk/guard returns ok:false. Click
+                                   → opens Settings → General → Disk guard. Sits ABOVE
+                                   the per-mode panes so it's always visible regardless
+                                   of which mode is active. #}
                                 <div id="subjects-disk-warn"
                                     class="hidden text-[11px] cursor-pointer rounded-md bg-error/15 border border-error/40 text-error px-3 py-2 mt-1 hover:bg-error/25 transition-colors"
                                     onclick="openSettings(); setTimeout(() => { const el = document.querySelector('#settings-modal input[type=radio][aria-label=&quot;General&quot;]'); if (el) { el.checked = true; el.dispatchEvent(new Event('change', {bubbles:true})); } const dpct = document.getElementById('set-disk-min-pct'); if (dpct) dpct.scrollIntoView({behavior:'smooth', block:'center'}); }, 400);"
@@ -599,6 +563,166 @@
                                     <span id="subjects-disk-warn-detail" class="opacity-80"></span>
                                     <span class="opacity-60"> · click to adjust threshold</span>
                                 </div>
+
+                                {# ───── Per-mode panes ─────
+                                   Phase-1 layout split: each of the four modes (simple /
+                                   raw / endless / chat) gets its own .subjects-pane with
+                                   a dedicated heading + mode-specific content. Only the
+                                   pane matching body.subj-mode-* is rendered (CSS rule).
+                                   Shared elements (input row, suggestions cluster, chip
+                                   stack) live BELOW all panes and get hidden via CSS in
+                                   modes that don't use them. The mode-pill, gen-mode pill,
+                                   and disk-warn banner stay shared at the top.
+                                   Each pane heading uses the same .subjects-pane-heading
+                                   markup so headings stay visually consistent across
+                                   modes — copy varies, structure doesn't. #}
+
+                                <div class="subjects-pane" data-pane-mode="simple">
+                                    <div class="subjects-pane-heading">
+                                        <span class="subjects-pane-title">Your idea</span>
+                                        <span class="subjects-pane-sub">Type one idea below — the LLM will rewrite it into per-stage prompts when you queue. Pick from the suggestions below if you want a starter.</span>
+                                    </div>
+                                </div>
+
+                                <div class="subjects-pane" data-pane-mode="raw">
+                                    <div class="subjects-pane-heading">
+                                        <span class="subjects-pane-title">Per-stage prompts</span>
+                                        <span class="subjects-pane-sub">Edit each stage's prompt directly, or click Rewrite to draft it with the LLM. The subject textarea below feeds the queue, one job per line. No LLM rewriting at queue time — what you type is what runs.</span>
+                                    </div>
+                                    {# Per-stage prompt overrides (canonical p-image / p-video / p-music / p-tts). #}
+                                    <div id="subjects-per-stage"
+                                        class="bg-base-300/30 border border-base-300/60 rounded-md p-3 text-xs space-y-2 mt-2">
+                                        {% for stage, label, placeholder in [
+                                            ('image', 'Image prompt', 'Prompt for image model — describe lighting, texture, mood…'),
+                                            ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
+                                            ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
+                                            ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover sentences…'),
+                                        ] %}
+                                        <div>
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
+                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
+                                                    onclick="enhanceStage('{{ stage }}')"
+                                                    title="Rewrite this prompt with the LLM using the seed from the subject field below">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
+                                                    </svg>
+                                                    Rewrite
+                                                </button>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
+                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
+                                                    placeholder="{{ placeholder }}"></textarea>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <div class="subjects-pane" data-pane-mode="endless">
+                                    <div class="subjects-pane-heading">
+                                        <span class="subjects-pane-title">Story seed</span>
+                                        <span class="subjects-pane-sub">Write your first beat below, then click Start Story (or I'm Feeling Lucky for a random opener). The LLM keeps the story going via suggestion rows; click any chip to commit that beat. Submit when you're done.</span>
+                                    </div>
+                                    {# Endless story log — only rendered when a story is running.
+                                       The <pre> grows as the user clicks suggestion chips. #}
+                                    <div id="subjects-story-pane" class="hidden flex flex-col gap-1 mt-2">
+                                        <div
+                                            class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
+                                            <span>Story so far</span>
+                                            <div class="flex items-center gap-1">
+                                                <button type="button" id="subjects-story-copy"
+                                                    class="btn btn-ghost btn-xs gap-1" onclick="_copyEndlessStory()"
+                                                    title="Copy the seed + every accepted suggestion to the clipboard">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                                    </svg>
+                                                    <span>Copy story</span>
+                                                </button>
+                                                <button type="button" id="subjects-story-submit"
+                                                    class="btn btn-ghost btn-xs text-success gap-1"
+                                                    onclick="_submitEndlessStory()"
+                                                    title="Submit story — stop the auto-cycle and clear the composer. Already-queued clips keep running.">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <polyline points="20 6 9 17 4 12" />
+                                                    </svg>
+                                                    <span>Submit</span>
+                                                </button>
+                                                <button type="button" id="subjects-story-reset"
+                                                    class="btn btn-ghost btn-xs text-error gap-1"
+                                                    onclick="_resetEndlessStory()"
+                                                    title="Reset story — clears the log and stops the cycle. Asks for confirmation. Already-queued clips keep running.">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                                    </svg>
+                                                    <span>Reset</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <pre id="subjects-story-log"
+                                            class="text-xs font-mono whitespace-pre-wrap leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-40 overflow-y-auto m-0"></pre>
+                                    </div>
+                                </div>
+
+                                <div class="subjects-pane" data-pane-mode="chat">
+                                    <div class="subjects-pane-heading">
+                                        <span class="subjects-pane-title">Conversation</span>
+                                        <span class="subjects-pane-sub">Ask the assistant in plain English. It can call tools to queue clips, check status, list outputs, cancel jobs. Reply suggestions appear below after each assistant turn.</span>
+                                    </div>
+                                    {# Chat pane (log + input + send + replies). Owns its own
+                                       text input — the shared #subjects-input-row below is
+                                       hidden in chat mode. #}
+                                    <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-2">
+                                        <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
+                                            <span>History</span>
+                                            <button type="button" id="subjects-chat-reset"
+                                                class="btn btn-ghost btn-xs text-error gap-1"
+                                                onclick="_resetChat()"
+                                                title="Clear chat history. Confirms first.">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                    stroke-linejoin="round" class="w-3 h-3">
+                                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                                </svg>
+                                                <span>Reset</span>
+                                            </button>
+                                        </div>
+                                        <div id="subjects-chat-log"
+                                            class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-64 overflow-y-auto flex flex-col gap-2 m-0"></div>
+                                        <div class="flex gap-2">
+                                            <input type="text" id="subjects-chat-input"
+                                                class="input input-bordered input-sm flex-1 min-w-0"
+                                                placeholder="Ask the assistant — e.g. 'queue 3 short clips of dragons'"
+                                                onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); _sendChatMessage(); }">
+                                            <button type="button" id="subjects-chat-send"
+                                                class="btn btn-primary btn-sm flex-none"
+                                                onclick="_sendChatMessage()">Send</button>
+                                        </div>
+                                        {# Reply suggestions — populated by _renderChatReplies after
+                                           each assistant turn. 4 chips max, no marquee. Click a chip
+                                           to copy its text into the chat input. #}
+                                        <div id="subjects-chat-replies"
+                                            class="flex flex-col gap-1 mt-1 text-xs"></div>
+                                    </div>
+                                </div>
+
+                                {# Shared input row — sits BELOW the per-mode pane. Same
+                                   #p-core textarea + queue/Start-Story button across
+                                   simple / raw / endless. Hidden in chat (chat has its
+                                   own input inside its pane) and in endless+running
+                                   (seed locked once the story starts). #}
                                 <div id="subjects-input-row" class="flex gap-2 items-stretch">
                                     <textarea id="p-core" rows="5"
                                         class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
@@ -610,104 +734,6 @@
                                         title="Start/queue generation">
                                         {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
                                     </button>
-                                </div>
-
-                                {# Seeds staging strip relocated to Settings → Pipeline →
-                                   "Seed images". The picker dialog (#seeds-picker-modal)
-                                   stays mounted at page scope; the JS handlers
-                                   (_refreshSeedsStrip / _openSeedsPicker / _setSeedsMode /
-                                   _clearSeeds) target the same DOM IDs in their new home. #}
-
-                                {# Endless story log — only rendered when mode=endless AND a
-                                story is running. The pre block grows as the user clicks
-                                suggestions (each accepted chip is appended as a new
-                                line). Copy button grabs textarea seed + log together so
-                                the user can capture the whole high-level story before
-                                it gets converted into image/video prompts. End-story
-                                (✕) unlocks the textarea, clears the log, stops the
-                                cycle, and returns to a fresh Endless start state. #}
-                                <div id="subjects-story-pane" class="hidden flex flex-col gap-1 mt-1">
-                                    <div
-                                        class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
-                                        <span>Story so far</span>
-                                        <div class="flex items-center gap-1">
-                                            <button type="button" id="subjects-story-copy"
-                                                class="btn btn-ghost btn-xs gap-1" onclick="_copyEndlessStory()"
-                                                title="Copy the seed + every accepted suggestion to the clipboard">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                    stroke-linejoin="round" class="w-3 h-3">
-                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                                </svg>
-                                                <span>Copy story</span>
-                                            </button>
-                                            <button type="button" id="subjects-story-submit"
-                                                class="btn btn-ghost btn-xs text-success gap-1"
-                                                onclick="_submitEndlessStory()"
-                                                title="Submit story — stop the auto-cycle but keep the log visible. Already-queued clips keep running.">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                    stroke-linejoin="round" class="w-3 h-3">
-                                                    <polyline points="20 6 9 17 4 12" />
-                                                </svg>
-                                                <span>Submit</span>
-                                            </button>
-                                            <button type="button" id="subjects-story-reset"
-                                                class="btn btn-ghost btn-xs text-error gap-1"
-                                                onclick="_resetEndlessStory()"
-                                                title="Reset story — clears the log and stops the cycle. Asks for confirmation. Already-queued clips keep running.">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                    stroke-linejoin="round" class="w-3 h-3">
-                                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                                </svg>
-                                                <span>Reset</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <pre id="subjects-story-log"
-                                        class="text-xs font-mono whitespace-pre-wrap leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-40 overflow-y-auto m-0"></pre>
-                                </div>
-                                {# Chat pane — visible only when mode=chat. Shows
-                                   conversation history (user / assistant / tool-call
-                                   chips); the input below sends the next message.
-                                   Tool calls render as inline chips with their
-                                   arguments + result so the user can audit what
-                                   the LLM did. #}
-                                <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-1">
-                                    <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
-                                        <span>Conversation</span>
-                                        <button type="button" id="subjects-chat-reset"
-                                            class="btn btn-ghost btn-xs text-error gap-1"
-                                            onclick="_resetChat()"
-                                            title="Clear chat history. Confirms first.">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                stroke-linejoin="round" class="w-3 h-3">
-                                                <line x1="18" y1="6" x2="6" y2="18" />
-                                                <line x1="6" y1="6" x2="18" y2="18" />
-                                            </svg>
-                                            <span>Reset</span>
-                                        </button>
-                                    </div>
-                                    <div id="subjects-chat-log"
-                                        class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-64 overflow-y-auto flex flex-col gap-2 m-0"></div>
-                                    <div class="flex gap-2">
-                                        <input type="text" id="subjects-chat-input"
-                                            class="input input-bordered input-sm flex-1 min-w-0"
-                                            placeholder="Ask the assistant — e.g. 'queue 3 short clips of dragons'"
-                                            onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); _sendChatMessage(); }">
-                                        <button type="button" id="subjects-chat-send"
-                                            class="btn btn-primary btn-sm flex-none"
-                                            onclick="_sendChatMessage()">Send</button>
-                                    </div>
-                                    {# Reply suggestions — populated by _renderChatReplies after
-                                       each assistant turn. 4 chips max, no marquee. Click a chip
-                                       to copy its text into the chat input. #}
-                                    <div id="subjects-chat-replies"
-                                        class="flex flex-col gap-1 mt-1 text-xs"></div>
                                 </div>
                                 {# Unified Suggestions badge — replaces the previous trio of
                                    (toggle · prompt-link · refresh) buttons with a single
