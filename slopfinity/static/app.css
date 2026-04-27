@@ -2534,6 +2534,19 @@ body.subj-mode-endless #subjects-story-log {
     transform-origin: 50% 50%;
 }
 
+/* Row body "loading" state — sibling to .row-refresh-spinning, applied
+   to the marquee mask while a regen is in flight. Dims the existing
+   chips so they read as "stale, new ones coming" without yanking the
+   row's height away from the user. The spinning refresh button is
+   the actual loading affordance — this just communicates "yes, that
+   button you just pressed is for these chips". The min-height keeps
+   the row visible even if it had no chips to begin with. */
+.row-loading {
+    opacity: 0.45;
+    min-height: 22px;
+    transition: opacity 120ms ease-out;
+}
+
 /* Suggestions stack — auto-scroll internally when too many rows pile
    up (endless mode lets the user keep adding). Without this the rows
    either overflow the card silently or push the upper pane past its

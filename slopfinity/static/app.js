@@ -4629,7 +4629,11 @@ function connect() {
                 else dH.push(d.outputs_disk.pct);
                 if (dH.length > 15) dH.shift();
                 const dt = $('d-t');
-                if (dt) dt.innerHTML = _tickerHTML(dH, 'primary', { invert: true });
+                // Disk is the ONE ticker that keeps non-inverted (pressure)
+                // semantics — unlike GPU/RAM/Load, a full disk is a real
+                // problem (no headroom for outputs, /disk/guard kicks in
+                // and blocks the queue). High% = bad here.
+                if (dt) dt.innerHTML = _tickerHTML(dH, 'primary');
             }
 
             $('h-m').innerText = d.state.mode;
@@ -7295,10 +7299,16 @@ async function _regenEndlessRow(rowIdx) {
     const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
     if (refreshBtn) refreshBtn.classList.add('row-refresh-spinning');
     const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
+    // The spinning refresh button is the loading affordance — don't double
+    // up with a "regenerating…" label inside the mask. Just dim the
+    // existing chips so they read as "stale" without yanking the row's
+    // visual structure away from the user. If there are no existing
+    // chips (shouldn't happen on regen but be safe), the .row-loading
+    // class lets CSS hold a min-height.
     if (mask) {
-        mask.innerHTML = '<div class="flex items-center gap-2 px-2 text-[11px] text-base-content/60"><span class="loading loading-dots loading-xs"></span><span>regenerating…</span></div>';
+        mask.classList.add('row-loading');
     } else if (row) {
-        row.innerHTML = '<span class="loading loading-dots loading-xs px-2"></span>';
+        row.classList.add('row-loading');
     }
     let arr = [];
     try {
@@ -7306,6 +7316,8 @@ async function _regenEndlessRow(rowIdx) {
     } finally {
         if (refreshBtn) refreshBtn.classList.remove('row-refresh-spinning');
     }
+    if (mask) mask.classList.remove('row-loading');
+    if (row) row.classList.remove('row-loading');
     if (!arr.length) {
         if (mask) mask.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
         else if (row) row.innerHTML = '<span class="text-[10px] italic text-warning px-2">empty batch</span>';
@@ -7331,19 +7343,22 @@ async function _addEndlessRow() {
     arr.push(newId);
     _setEndlessRowPrompts(arr);
     const idx = arr.length - 1;
-    // Append a placeholder row with the lead cluster + a single "loading"
-    // chip so the row exists in the DOM before the fetch resolves.
-    _appendSuggestBatchRow([{ text: '…', loading: true }], { promptId: newId, rowIdx: idx });
+    // Append a placeholder row with the lead cluster + an empty (but
+    // height-preserving) mask so the row exists in the DOM before the
+    // fetch resolves. .row-loading dims it; the spinning refresh icon
+    // is the actual loading affordance.
+    _appendSuggestBatchRow([' '], { promptId: newId, rowIdx: idx });
     const stack = document.getElementById('subject-chips-stack');
     const row = stack ? stack.querySelectorAll('.suggest-marquee-row')[idx] : null;
     const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
+    const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
     if (refreshBtn) refreshBtn.classList.add('row-refresh-spinning');
+    if (mask) mask.classList.add('row-loading');
     try {
         const batch = await _fetchSuggestBatch({ n: 6, promptId: newId, fresh: true });
         if (batch && batch.length) {
             // Swap the placeholder content in-place: rebuild the marquee
             // track with the real chips, leaving the lead cluster intact.
-            const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
             const oldTrack = mask ? mask.querySelector('.suggest-marquee-track') : null;
             if (mask && oldTrack) {
                 const newTrack = document.createElement('div');
@@ -7358,6 +7373,7 @@ async function _addEndlessRow() {
         }
     } finally {
         if (refreshBtn) refreshBtn.classList.remove('row-refresh-spinning');
+        if (mask) mask.classList.remove('row-loading');
     }
 }
 window._addEndlessRow = _addEndlessRow;
