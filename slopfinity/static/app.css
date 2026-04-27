@@ -2525,6 +2525,27 @@ body.subj-mode-endless #subjects-story-log {
     animation: refresh-tap-spin 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
 }
 
+/* Suggestions stack — auto-scroll internally when too many rows pile
+   up (endless mode lets the user keep adding). Without this the rows
+   either overflow the card silently or push the upper pane past its
+   max-height. flex-1 + min-height:0 lets it claim leftover vertical
+   space inside the Subjects card body before scrolling kicks in. */
+#subject-chips-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: min(40vh, 320px);
+    overflow-y: auto;
+}
+
+#subject-chips-stack::-webkit-scrollbar {
+    width: 6px;
+}
+
+#subject-chips-stack::-webkit-scrollbar-thumb {
+    background: hsl(var(--bc) / 0.25);
+    border-radius: 3px;
+}
+
 /* Chat "thought bubble" — used when the assistant is calling tools or
    when a tool result lands. Distinct from the regular .chat-bubble:
    dashed border + softer fill so it reads as inner monologue / inner
