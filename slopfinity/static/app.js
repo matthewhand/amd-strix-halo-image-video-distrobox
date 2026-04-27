@@ -7479,22 +7479,45 @@ async function _fetchSuggestBatch(opts) {
         // chips. Pattern: leading "Error", "HTTP <code>", "timeout",
         // "timed out", "internal server error", or strings that are
         // wholly enclosed in <error>…</error>-like markers.
-        const looksLikeError = (s) => {
+        // Suggestion chips should be SHORT, evergreen prompts the user
+        // can click to queue. Anything that looks like an error response,
+        // an LLM scaffolding leak (markdown headers, system-prompt
+        // restatements, numbered list intros), or a generic instruction
+        // gets filtered. Errors are not suggestions.
+        const looksLikeJunk = (s) => {
             if (typeof s !== 'string') return true;
             const t = s.trim();
             if (!t) return true;
-            return (
-                /^error[:\s]/i.test(t) ||
-                /^http\s*[34][0-9]{2}/i.test(t) ||
-                /\btimed\s*out\b/i.test(t) ||
-                /\btimeout\b/i.test(t) ||
-                /^internal\s*server\s*error/i.test(t) ||
-                /^<error/i.test(t) ||
-                /^\(empty\)$/i.test(t) ||
-                t.length > 400  /* runaway responses — chips this long are unreadable */
-            );
+            // Length sanity — real suggestions are ≤ 120 chars.
+            if (t.length > 200) return true;
+            // Obvious error markers.
+            if (/^error[:\s]/i.test(t)) return true;
+            if (/^http\s*[34][0-9]{2}/i.test(t)) return true;
+            if (/\btimed?\s*out\b/i.test(t)) return true;
+            if (/^internal\s*server\s*error/i.test(t)) return true;
+            if (/^<error/i.test(t)) return true;
+            if (/^\(empty\)$/i.test(t)) return true;
+            // Markdown / formatting leaks — LLM is repeating its own
+            // scaffolding instead of giving us a chip.
+            if (/^\*\*/.test(t)) return true;            // **bold header**
+            if (/^#{1,6}\s/.test(t)) return true;         // # markdown heading
+            if (/^[-*]\s+\*\*/.test(t)) return true;      // - **bold list item
+            if (/^\d+[.)]\s+\*\*/.test(t)) return true;   // 1. **bold numbered**
+            // System-prompt restatements — the LLM is echoing the
+            // instructions back. These are giveaways.
+            if (/\bconstraint\s*check/i.test(t)) return true;
+            if (/^generated\s+concepts/i.test(t)) return true;
+            if (/^need\s+\d+\s+(short|visual|prompt)/i.test(t)) return true;
+            if (/^plain\s+text\s+only/i.test(t)) return true;
+            if (/\bsystem\s*prompt\b/i.test(t)) return true;
+            if (/\beach\s+idea\s+must\b/i.test(t)) return true;
+            if (/\bideas?\s+for\s+(ai|llm)\b/i.test(t)) return true;
+            if (/\bfleet\s*concepts?\b/i.test(t)) return true;
+            if (/^output:?\s*$/i.test(t)) return true;
+            if (/^(here\s+(are|is)|i'?ll|i\s+will|let\s+me)\s+/i.test(t)) return true;
+            return false;
         };
-        return arr.filter(s => !looksLikeError(s));
+        return arr.filter(s => !looksLikeJunk(s));
     } catch (_) { return []; }
 }
 window._fetchSuggestBatch = _fetchSuggestBatch;

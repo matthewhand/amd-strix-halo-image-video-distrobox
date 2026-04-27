@@ -28,6 +28,54 @@ const MOCK_HISTORY = [
     { role: 'assistant', content: '76.5 GB free of 386 GB total — disk-low guard threshold is 5 GB / 1 %. Plenty of headroom.' },
 ];
 
+// Mobile chat — verify the bottom nav bar doesn't push input off-screen
+// and chat still scrolls internally on a phone viewport.
+test.describe('mobile chat', () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+    test('mobile chat with mocked history', async ({ page }) => {
+        await page.addInitScript((hist) => {
+            try {
+                localStorage.clear();
+                localStorage.setItem('slopfinity-chat-history-v1', JSON.stringify(hist));
+            } catch (_) {}
+        }, MOCK_HISTORY);
+        await page.goto(`${BASE}/?layout=subjects`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => {
+            const splash = document.getElementById('splash-overlay');
+            return !splash;
+        }, null, { timeout: 5000 });
+        await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: '/tmp/pane-chat-mocked-mobile.png', fullPage: false });
+
+        // Sanity: mobile-nav-bar shouldn't overlap the chat input.
+        const navBox = await page.locator('#mobile-nav-bar').boundingBox();
+        const inputBox = await page.locator('#subjects-chat-input').boundingBox();
+        if (navBox && inputBox && (inputBox.y + inputBox.height) > navBox.y) {
+            console.warn(`[chat-mobile] input bottom (${inputBox.y + inputBox.height}) overlaps nav top (${navBox.y})`);
+        }
+        // Diagnostic: dump heights of every level in the constraint chain.
+        const chain = await page.evaluate(() => {
+            const sel = (s) => {
+                const el = document.querySelector(s);
+                if (!el) return { sel: s, missing: true };
+                const r = el.getBoundingClientRect();
+                const cs = getComputedStyle(el);
+                return { sel: s, top: Math.round(r.top), height: Math.round(r.height), display: cs.display, overflow: cs.overflow, position: cs.position };
+            };
+            return [
+                sel('#split-left'),
+                sel('#split-left > .card-body'),
+                sel('.subjects-pane[data-pane-mode="chat"]'),
+                sel('#subjects-chat-pane'),
+                sel('#subjects-chat-log'),
+                sel('#subjects-chat-input'),
+            ];
+        });
+        console.log('[chat-mobile-chain]', JSON.stringify(chain, null, 2));
+    });
+});
+
 for (const layout of ['default', 'subjects']) {
     test(`chat with mocked history (${layout} layout)`, async ({ page }) => {
         await page.addInitScript((hist) => {

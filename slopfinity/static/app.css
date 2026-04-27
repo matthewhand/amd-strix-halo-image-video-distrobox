@@ -902,6 +902,69 @@ textarea.subjects-autogrow {
     }
 }
 
+/* Mobile single-card layouts: constrain every ancestor in the chain
+   from <main> down to the chat-pane so the chat-log scrolls
+   internally instead of letting content flow past the bottom of
+   the viewport. Without this, a long chat log on mobile pushed
+   the input + Send button below the bottom nav bar (and below
+   the viewport entirely). Chain:
+     main → #ui-split → #ui-split-upper → #split-row → #split-left
+     → card → card-body → .subjects-pane → #subjects-chat-pane
+   Each level needs height + min-height:0 + overflow:hidden so
+   the flex:1 / overflow:auto rules on the inner chat-log
+   (#subjects-chat-log) actually clip and scroll. */
+/* Mobile single-card layouts: rather than try to thread a flex
+   constraint through ~7 ancestor levels (each with its own
+   Tailwind-generated styles), we anchor the active card DIRECTLY
+   to the viewport via position:fixed. This bypasses the parent
+   chain entirely — the card occupies the rect between the top
+   stat bar and the bottom nav bar regardless of what its DOM
+   ancestors say about height. Inner chat-log / story-log scroll
+   internally as designed. */
+@media (max-width: 767px) {
+    body[data-layout="subjects"] #split-left,
+    body[data-layout="queue"] #split-right,
+    body[data-layout="gallery"] #ui-split-lower {
+        position: fixed !important;
+        top: 88px !important;             /* clear of the top stat bar */
+        bottom: 60px !important;          /* clear of the bottom nav bar */
+        left: 8px !important;
+        right: 8px !important;
+        height: calc(100vh - 88px - 60px) !important;
+        max-height: calc(100vh - 88px - 60px) !important;
+        width: auto !important;
+        margin: 0 !important;
+        z-index: 10;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+    /* Card-body inside the fixed pane fills its parent so the
+       inner flex children (panes, input row, chat-log) can
+       claim their share via flex:1 + min-height:0. */
+    body[data-layout="subjects"] #split-left > .card-body,
+    body[data-layout="queue"] #split-right > .card-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+    /* Slop section in gallery-only layout — the slop-collapsible
+       div + #output-section need to fill the fixed pane too. */
+    body[data-layout="gallery"] #ui-split-lower #slop-collapsible,
+    body[data-layout="gallery"] #ui-split-lower #output-section {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+    /* Hide the now-hidden pane's leftover content so it doesn't
+       paint behind the fixed one. */
+    body[data-layout="subjects"] #split-right,
+    body[data-layout="queue"] #split-left,
+    body[data-layout="gallery"] #ui-split-upper {
+        display: none !important;
+    }
+}
+
 /* The old <summary>/<details> selectors lived here and toggled the
    collapsible's chevron + click affordance. Removed with the wrapper
    revert — slop is always expanded now. */
@@ -2447,15 +2510,19 @@ body.subj-mode-endless .subjects-pane[data-pane-mode="endless"] {
    pane so input + send + replies stay pinned at the bottom of the
    visible card. Without flex:1 on the pane itself, chat-pane has
    no growable parent to fill, and the input row falls off the
-   bottom of the splitter-constrained card. overflow-y:auto is the
-   safety net for when even chat-log + input + replies together
-   exceed the card height (e.g. tiny upper pane). */
+   bottom of the splitter-constrained card.
+   IMPORTANT: NO overflow-y:auto on the outer pane — that scrolls
+   the whole pane (including the input + Send button), so a long
+   conversation pushes the input below the viewport edge. The
+   inner chat-log handles its own scroll (via flex:1 + min-height:0
+   + the rule below). overflow:hidden here clips overflow without
+   creating an outer scrollbar. */
 body.subj-mode-chat .subjects-pane[data-pane-mode="chat"] {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 /* Per-mode descriptive copy lives as the textarea PLACEHOLDER
@@ -2566,9 +2633,12 @@ body.subj-mode-raw #btn-start-stop-inline {
         box-shadow: 0 -4px 16px hsl(var(--bc) / 0.25);
         min-height: 52px;
     }
-    body {
-        padding-bottom: 60px;
-    }
+    /* Body: removed the padding-bottom hack that pushed every page
+       up by 60 px. The mobile single-card constraint chain (above
+       in the @media block for body[data-layout=*]) handles the
+       60 px gap by capping <main> at calc(100vh - 60px). The bottom
+       nav bar (position:fixed) overlays the bottom 60 px of the
+       viewport directly. */
     /* Hide the desktop FAB cluster on mobile — the bottom nav serves
        the same purpose and the FABs would just clutter the corner. */
     #focus-slop-fab,
