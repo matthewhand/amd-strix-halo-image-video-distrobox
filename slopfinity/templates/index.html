@@ -587,9 +587,12 @@
                                 <div class="subjects-pane" data-pane-mode="raw">
                                     {# Per-stage prompt overrides (canonical p-image /
                                        p-video / p-music / p-tts). Mode-specific hint
-                                       lives in the #p-core placeholder below. #}
+                                       lives in the #p-core placeholder below. Compact
+                                       padding (p-2 + space-y-1) so the four stages
+                                       leave enough room for the subject textarea
+                                       below to be readable too. #}
                                     <div id="subjects-per-stage"
-                                        class="bg-base-300/30 border border-base-300/60 rounded-md p-3 text-xs space-y-2 mt-2">
+                                        class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-1 mt-2">
                                         {% for stage, label, placeholder in [
                                             ('image', 'Image prompt', 'Prompt for image model — describe lighting, texture, mood…'),
                                             ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
@@ -612,7 +615,7 @@
                                             </div>
                                             <div class="flex items-center gap-1">
                                                 <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-12 flex-1"
+                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1"
                                                     placeholder="{{ placeholder }}"></textarea>
                                             </div>
                                         </div>
@@ -722,7 +725,7 @@
                                         placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
                                         oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
                                     <button
-                                        class="btn btn-primary btn-lg flex-none w-32 ml-auto self-stretch h-auto whitespace-normal text-sm leading-tight"
+                                        class="btn btn-primary btn-lg flex-none w-40 ml-auto self-stretch h-auto whitespace-normal text-sm leading-tight"
                                         id="btn-start-stop-inline" onclick="_subjectsAction()"
                                         title="Start/queue generation">
                                         {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
@@ -734,8 +737,13 @@
                                    right with the active prompt's name (clickable → popup
                                    picker) and a refresh icon. _refreshSuggestBadge keeps
                                    it in sync with localStorage state. #}
+                                {# Visual separator above the Suggestions cluster — pushes
+                                   it down so it reads as the bottom of the Prompt card,
+                                   not as a continuation of the Slop card's filter chip
+                                   row directly below it. The mt-3 margin creates a
+                                   clear "this belongs to Prompt" boundary. #}
                                 <div id="subjects-need-ideas-row"
-                                    class="flex items-center gap-1 flex-wrap">
+                                    class="flex items-center gap-1 flex-wrap mt-3 pt-2 border-t border-base-300/40">
                                     <div id="subjects-suggest-cluster" class="join">
                                         <label id="subjects-suggestions-toggle"
                                             class="join-item btn btn-primary btn-outline btn-xs cursor-pointer gap-1.5"
