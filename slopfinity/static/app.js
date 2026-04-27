@@ -7295,7 +7295,15 @@ function _isFreshMode() {
 // 40..180 s for the full track. Hover/focus-within pauses via CSS.
 function _appendSuggestBatchRow(items, opts) {
     const stack = document.getElementById('subject-chips-stack');
-    if (!stack || !items || !items.length) return;
+    if (!stack || !items) return;
+    // Empty items is allowed when opts has a promptId/rowIdx (endless
+    // mode placeholder row — render the lead cluster + empty mask so
+    // the row scaffold exists while the fetch is in flight; chips
+    // arrive later via _addEndlessRow's swap). Without this branch we
+    // had to pass [' '] to dodge the guard, which the marquee
+    // duplicator turned into [' ', ' '] = two visible empty chips.
+    const hasLeadOpts = opts && typeof opts.rowIdx === 'number' && opts.promptId;
+    if (!items.length && !hasLeadOpts) return;
     // First batch — drop the placeholder span if present.
     const placeholder = document.getElementById('subject-chips-empty');
     if (placeholder) placeholder.remove();
@@ -7688,11 +7696,15 @@ async function _addEndlessRow() {
     arr.push(newId);
     _setEndlessRowPrompts(arr);
     const idx = arr.length - 1;
-    // Append a placeholder row with the lead cluster + an empty (but
-    // height-preserving) mask so the row exists in the DOM before the
-    // fetch resolves. .row-loading dims it; the spinning refresh icon
-    // is the actual loading affordance.
-    _appendSuggestBatchRow([' '], { promptId: newId, rowIdx: idx });
+    // Append a placeholder row with the lead cluster + an EMPTY mask
+    // (no chips — _appendSuggestBatchRow allows items=[] when opts
+    // has promptId/rowIdx). The row scaffold exists in the DOM before
+    // the fetch resolves; .row-loading on the mask preserves height
+    // and dims the (empty) area; the spinning refresh icon is the
+    // actual loading affordance. Previously passed [' '] which the
+    // marquee duplicator turned into [' ', ' '] = two visible empty
+    // chips next to the lead cluster.
+    _appendSuggestBatchRow([], { promptId: newId, rowIdx: idx });
     const stack = document.getElementById('subject-chips-stack');
     const row = stack ? stack.querySelectorAll('.suggest-marquee-row')[idx] : null;
     const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
