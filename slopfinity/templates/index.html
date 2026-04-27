@@ -578,18 +578,16 @@
                                    modes — copy varies, structure doesn't. #}
 
                                 <div class="subjects-pane" data-pane-mode="simple">
-                                    <div class="subjects-pane-heading">
-                                        <span class="subjects-pane-title">Your idea</span>
-                                        <span class="subjects-pane-sub">Type one idea below — the LLM will rewrite it into per-stage prompts when you queue. Pick from the suggestions below if you want a starter.</span>
-                                    </div>
+                                    {# No heading — mode-specific hints live in the
+                                       textarea placeholder (set by _setSubjectsMode in
+                                       app.js). Pane is empty in simple mode; the
+                                       shared #p-core textarea below is the whole UI. #}
                                 </div>
 
                                 <div class="subjects-pane" data-pane-mode="raw">
-                                    <div class="subjects-pane-heading">
-                                        <span class="subjects-pane-title">Per-stage prompts</span>
-                                        <span class="subjects-pane-sub">Edit each stage's prompt directly, or click Rewrite to draft it with the LLM. The subject textarea below feeds the queue, one job per line. No LLM rewriting at queue time — what you type is what runs.</span>
-                                    </div>
-                                    {# Per-stage prompt overrides (canonical p-image / p-video / p-music / p-tts). #}
+                                    {# Per-stage prompt overrides (canonical p-image /
+                                       p-video / p-music / p-tts). Mode-specific hint
+                                       lives in the #p-core placeholder below. #}
                                     <div id="subjects-per-stage"
                                         class="bg-base-300/30 border border-base-300/60 rounded-md p-3 text-xs space-y-2 mt-2">
                                         {% for stage, label, placeholder in [
@@ -623,12 +621,10 @@
                                 </div>
 
                                 <div class="subjects-pane" data-pane-mode="endless">
-                                    <div class="subjects-pane-heading">
-                                        <span class="subjects-pane-title">Story seed</span>
-                                        <span class="subjects-pane-sub">Write your first beat below, then click Start Story (or I'm Feeling Lucky for a random opener). The LLM keeps the story going via suggestion rows; click any chip to commit that beat. Submit when you're done.</span>
-                                    </div>
-                                    {# Endless story log — only rendered when a story is running.
-                                       The <pre> grows as the user clicks suggestion chips. #}
+                                    {# Endless story log — only rendered when a story is
+                                       running. The <pre> grows as the user clicks
+                                       suggestion chips. Mode hint lives in #p-core
+                                       placeholder. #}
                                     <div id="subjects-story-pane" class="hidden flex flex-col gap-1 mt-2">
                                         <div
                                             class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
@@ -676,13 +672,10 @@
                                 </div>
 
                                 <div class="subjects-pane" data-pane-mode="chat">
-                                    <div class="subjects-pane-heading">
-                                        <span class="subjects-pane-title">Conversation</span>
-                                        <span class="subjects-pane-sub">Ask the assistant in plain English. It can call tools to queue clips, check status, list outputs, cancel jobs. Reply suggestions appear below after each assistant turn.</span>
-                                    </div>
                                     {# Chat pane (log + input + send + replies). Owns its own
                                        text input — the shared #subjects-input-row below is
-                                       hidden in chat mode. #}
+                                       hidden in chat mode. Mode hint lives in the chat
+                                       input's placeholder. #}
                                     <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-2">
                                         <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
                                             <span>History</span>

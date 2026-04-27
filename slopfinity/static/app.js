@@ -2103,17 +2103,25 @@ function _setSubjectsMode(mode) {
     const ta = document.getElementById('p-core');
     if (ta) {
         ta.rows = (mode === 'simple' || mode === 'raw') ? 5 : 2;
-        // Per-mode placeholder hint — the textarea means something different
-        // in each mode (subject list vs. story seed vs. single idea), so the
-        // hint text needs to match. Without this the raw "one subject per
-        // line" placeholder bleeds into endless/simple where it's wrong.
+        // Per-mode placeholder is the canonical mode-hint surface —
+        // shows when the textarea is empty and gets out of the way
+        // the moment the user types. NO separate heading-above-the-
+        // input; the placeholder IS the heading. Keep each one
+        // self-contained: tells the user (a) what this field is
+        // for in this mode and (b) what action to take next.
         const placeholders = {
-            endless: 'Write your first beat of the story, then choose your own adventure from suggestions below',
-            simple:  'Your idea… write it here and click generate',
+            simple:  'Your idea — type it here.\n\nThe LLM rewrites your idea into per-stage prompts when you click Queue Slop. Pick from the suggestions below if you want a starter.',
+            raw:     'One subject per line — what you type is what runs.\n\ne.g.\nlumpy clay robots\ncyberpunk dragons\nhermit crab lawyers\n\nNo LLM rewriting. Edit each per-stage prompt above directly, or click Rewrite to draft with the LLM.',
+            endless: 'Write your first beat — then click Start Story.\n\nThe LLM cycles continuation suggestions below; click any chip to extend the story. Submit when you\'re done.',
             chat:    'Ask the assistant — e.g. "queue 3 short clips of dragons"',
-            raw:     'One subject per line.\ne.g.\nlumpy clay robots\ncyberpunk dragons\nhermit crab lawyers',
         };
         ta.placeholder = placeholders[mode] || placeholders.raw;
+    }
+    // Chat mode owns its own input (#subjects-chat-input) — sync its
+    // placeholder too so the same descriptive-copy convention applies.
+    const chatInput = document.getElementById('subjects-chat-input');
+    if (chatInput) {
+        chatInput.placeholder = 'Ask the assistant — e.g. "queue 3 short clips of dragons", "what\'s running?", "cancel job 4"';
     }
     // Render any persisted history on first switch into chat. Reply
     // suggestions ONLY auto-fire when the assistant has already
