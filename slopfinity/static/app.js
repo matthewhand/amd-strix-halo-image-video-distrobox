@@ -553,19 +553,26 @@ function _mobileNavRefresh() {
 window._mobileNavStep = _mobileNavStep;
 window._mobileNavRefresh = _mobileNavRefresh;
 document.addEventListener('DOMContentLoaded', () => {
-    // On mobile, multi-pane layouts (default, subj-slop, queue-slop,
-    // subj-queue) are unusable — the side-by-side splits collapse to
-    // unreadable widths. If we land on one (saved layout from a desktop
-    // session, or no layout at all), redirect to the prompt-only
-    // single-card layout. User can then navigate via the bottom nav.
-    const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-    if (isMobile) {
+    // On viewports too narrow for the desktop multi-pane layout, redirect
+    // to the prompt-only single-card layout. The side-by-side Prompt+Queue
+    // split needs ~1280 px to be usable; below that the cards collapse to
+    // unreadable widths and the layout looks broken. 1024 px (tablet
+    // portrait) is the threshold — below that, force single-card and let
+    // the user navigate via the bottom nav. The 767 px @media still
+    // controls when the mobile-nav-bar SHOWS, so tablets in this 768-1023
+    // band fall through to the same redirect without the bottom nav
+    // (their viewport is wide enough that the mode pill + cards work
+    // standalone). NOTE: only redirect if we landed on a multi-pane
+    // layout — explicit ?layout=subj-queue from a desktop user wins
+    // unless they're sub-1024.
+    const isNarrow = window.matchMedia && window.matchMedia('(max-width: 1023px)').matches;
+    if (isNarrow) {
         const cur = document.body.dataset.layout || '';
         const singleCardLayouts = new Set(['subjects', 'queue', 'gallery']);
         if (!singleCardLayouts.has(cur)) {
             // Use _applyLayoutView directly so we don't go through
             // selectLayoutView's lock check — this redirect should
-            // always win on mobile.
+            // always win on narrow screens.
             _applyLayoutView('subjects');
         }
     }
@@ -2387,19 +2394,21 @@ function _updateQueueStatusChip(d) {
         depthEl.textContent = `${working}+${pending} queued`;
         depthEl.classList.toggle('text-primary', working > 0);
     }
+    // Simplified status: just Idle / Generating / Paused. Earlier the
+    // chip leaked the internal stage name ('base image' / 'video chains')
+    // which read like jargon. Three-state is enough for "is the box
+    // doing work" at a glance — Queue card has the per-stage detail.
     const state = (d && d.state) || {};
-    let status = 'idle';
+    let status = 'Idle';
     if (state.step) {
-        status = state.step.toLowerCase();
+        status = 'Generating';
     } else if (state.mode && state.mode !== 'Idle') {
-        status = state.mode.toLowerCase();
+        status = 'Generating';
     }
-    // Pause flag (broadcast in d.paused or via a separate poll); when
-    // present, override the activity label.
-    if (d && d.paused) status = 'paused';
+    if (d && d.paused) status = 'Paused';
     statusEl.textContent = status;
-    statusEl.classList.toggle('text-warning', status === 'paused');
-    statusEl.classList.toggle('text-success', !!state.step);
+    statusEl.classList.toggle('text-warning', status === 'Paused');
+    statusEl.classList.toggle('text-success', status === 'Generating');
 }
 window._updateQueueStatusChip = _updateQueueStatusChip;
 

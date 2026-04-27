@@ -2728,16 +2728,20 @@ body.suggest-cluster-collapsed #subjects-suggestions-toggle.join-item {
 }
 
 /* Endless mode + no story running: dim + disable the entire
-   Suggestions pill. The cluster is meaningless before Start Story —
-   toggling on doesn't fetch anything, and the + is already disabled
-   for the same reason. Locking the WHOLE row (not just +) makes the
-   "this whole control is asleep until you start" state unambiguous.
-   Re-enables when _endlessRunning flips true (Start Story handler
-   repaints the badge → strips this class). */
+   Suggestions pill. Re-enables when _endlessRunning flips true.
+   Override the per-button .opacity-40 stack so the + icon doesn't
+   compound to ~0.16 opacity (0.4 row × 0.4 button) and become
+   nearly invisible — every child within the locked row gets full
+   opacity:1 internally, and the row's opacity:0.4 dims everything
+   uniformly. */
 body.endless-pill-locked #subjects-need-ideas-row {
     opacity: 0.4;
     pointer-events: none;
     transition: opacity 150ms ease-out;
+}
+body.endless-pill-locked #subjects-need-ideas-row .opacity-40,
+body.endless-pill-locked #subjects-need-ideas-row [disabled] {
+    opacity: 1 !important;
 }
 
 /* Suggestions stack — auto-scroll internally when too many rows pile
