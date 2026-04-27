@@ -2405,69 +2405,86 @@ body.no-card-wm .card-wm-bar {
     display: none !important;
 }
 
-/* Subjects-card mode-driven visual states. body.subj-mode-{raw,endless,chat}
-   is set by _setSubjectsMode in app.js whenever the user picks a mode.
-   Raw keeps the original full-textarea layout. Endless and Chat shrink
-   the textarea (rows=2 set in JS) and let the story-log / chat-pane
-   below it flex-grow into the freed space. Chat hides the textarea row
-   entirely since the chat pane has its own input + Send button. */
-body.subj-mode-chat #subjects-input-row {
+/* ───── Phase-1 per-mode panes ─────
+   The Prompt card body now contains four sibling .subjects-pane
+   wrappers, one per mode (data-pane-mode="simple|raw|endless|chat").
+   Only the pane matching the active body.subj-mode-* is visible.
+   Each pane owns its mode-specific heading + content (per-stage
+   prompts in raw, story log in endless, chat pane in chat, just a
+   heading in simple). Shared elements (#subjects-input-row, the
+   suggestions cluster, the chip stack) live OUTSIDE the panes and
+   get hidden via the secondary rules below for modes that don't
+   want them. */
+.subjects-pane {
+    display: none;
+}
+
+body.subj-mode-simple  .subjects-pane[data-pane-mode="simple"],
+body.subj-mode-raw     .subjects-pane[data-pane-mode="raw"],
+body.subj-mode-endless .subjects-pane[data-pane-mode="endless"],
+body.subj-mode-chat    .subjects-pane[data-pane-mode="chat"] {
+    display: block;
+}
+
+/* Shared per-pane heading. Matches across all four panes so the
+   four modes feel like variations of the same surface, not four
+   different cards. Title + subtitle stack vertically; copy varies
+   per pane, structure stays identical. */
+.subjects-pane-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 4px;
+}
+.subjects-pane-title {
+    font-size: 0.6875rem;        /* 11px */
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: hsl(var(--p));
+}
+.subjects-pane-sub {
+    font-size: 0.625rem;          /* 10px */
+    line-height: 1.45;
+    color: hsl(var(--bc) / 0.6);
+    font-style: italic;
+}
+
+/* Chat mode — the shared input row + suggestions cluster + chip
+   stack are all hidden. Chat owns its own input inside its pane,
+   and its own 4-reply strip replaces the marquee. */
+body.subj-mode-chat #subjects-input-row,
+body.subj-mode-chat #subjects-need-ideas-row,
+body.subj-mode-chat #subjects-suggestions-area {
     display: none !important;
 }
 
-/* Endless + story running — hide the seed textarea row; the seed lives
-   in the story log above, and the textarea isn't editable in this state
-   anyway. Frees the textarea's vertical real estate for the story log. */
+/* Endless + story running — hide the seed textarea row; the seed
+   lives in the story log inside the endless pane, and the textarea
+   isn't editable in this state anyway. */
 body.subj-mode-endless.endless-running #subjects-input-row {
     display: none !important;
 }
 
-/* Raw mode — hide every suggestions-related UI element. Raw is the
-   LLM-free workflow: per-stage prompts are filled directly (or via AI
-   Magic on each stage), and the subject seed is irrelevant. We hide:
-     #p-core                         — the subject textarea
-     #subjects-need-ideas-row        — the unified Suggestions badge
-     #subjects-suggestions-area      — the marquee chip stack
-   Queue button stays visible (still inside #subjects-input-row). */
-body.subj-mode-raw #p-core,
+/* Raw mode — LLM-free, suggestions don't apply. Hide the unified
+   Suggestions badge + the chip-stack marquee. The shared input row
+   stays visible (Queue button is the action). */
 body.subj-mode-raw #subjects-need-ideas-row,
 body.subj-mode-raw #subjects-suggestions-area {
     display: none !important;
 }
 
-/* Chat mode — the marquee chip stack is replaced by the chat pane's own
-   4-reply strip, so hide the marquee area to avoid showing both at once.
-   The unified badge stays visible (the prompt-name dropdown there drives
-   what style the chat-reply prompts use). */
-body.subj-mode-chat #subjects-suggestions-area {
-    display: none !important;
-}
-
-/* The per-stage prompt panel (image / video / music / tts with AI Magic
-   buttons) is only meaningful in Raw mode. Hide everywhere else.
-   Simple mode lets the LLM auto-rewrite on queue; Endless cycles a story;
-   Chat doesn't queue manually. */
-body:not(.subj-mode-raw) #subjects-per-stage {
-    display: none !important;
-}
-
-body.subj-mode-chat #subjects-chat-pane {
+/* Endless story log + chat log + chat pane — let them flex-grow
+   so the inner scroll-area claims leftover vertical room rather
+   than capping at max-height. Now keyed off the pane wrapper so
+   the rules apply only when their owning pane is visible. */
+.subjects-pane[data-pane-mode="endless"] #subjects-story-pane,
+.subjects-pane[data-pane-mode="chat"]    #subjects-chat-pane {
     flex: 1 1 auto;
     min-height: 0;
 }
-
-body.subj-mode-chat #subjects-chat-log {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: none;
-}
-
-body.subj-mode-endless #subjects-story-pane {
-    flex: 1 1 auto;
-    min-height: 0;
-}
-
-body.subj-mode-endless #subjects-story-log {
+.subjects-pane[data-pane-mode="endless"] #subjects-story-log,
+.subjects-pane[data-pane-mode="chat"]    #subjects-chat-log {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
