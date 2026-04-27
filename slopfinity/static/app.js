@@ -2056,6 +2056,23 @@ function _setSubjectsMode(mode) {
         _renderChatLog();
         if (typeof _renderChatReplies === 'function') _renderChatReplies();
     }
+    // Switching INTO endless while no story is running: wipe whatever
+    // chips the previous mode left behind and show the "press Start
+    // Story" hint. Without this the simple/chat marquee rows remain
+    // visible after a mode swap, which contradicts the rule that
+    // endless suggestions only exist while a story is in flight.
+    // Switching OUT of endless: re-render the cached chips so simple
+    // mode isn't stuck with an empty stack until the user clicks ↻.
+    const stackBox = document.getElementById('subject-chips-stack');
+    if (mode === 'endless' && !_endlessRunning) {
+        if (stackBox) stackBox.innerHTML =
+            '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
+    } else if (mode === 'simple') {
+        if (stackBox && stackBox.querySelector('.suggest-marquee-row') === null
+            && typeof _renderCachedSuggestions === 'function') {
+            _renderCachedSuggestions();
+        }
+    }
     // The Suggestions toggle stays freely user-controlled in every mode.
     // Endless's Suggestions-required constraint is enforced at the
     // Start-Story button (disabled until Suggestions is on) — not by
