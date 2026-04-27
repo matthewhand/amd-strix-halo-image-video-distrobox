@@ -1288,6 +1288,14 @@ function _refreshSuggestBadge() {
         nameBtn.title = "Active suggestion prompt — click to swap";
     }
     document.body.classList.toggle('suggest-cluster-collapsed', !isOn);
+    // Endless mode pre-Start-Story: lock the ENTIRE Suggestions pill
+    // (toggle, prompt-name, +) — not just the + button. The cluster
+    // is meaningless until a story is running (no chips will fetch,
+    // toggling Suggestions on does nothing visible). Re-enable when
+    // _endlessRunning flips true; re-lock when story ends.
+    const endlessIdle = (typeof _getSubjectsMode === 'function')
+        && _getSubjectsMode() === 'endless' && !_endlessRunning;
+    document.body.classList.toggle('endless-pill-locked', endlessIdle);
     // Swap which action button is visible based on mode. Two distinct
     // buttons — refresh (#subjects-suggest-btn) and add (#subjects-suggest-add-btn)
     // — share the joined badge slot so the refresh-tap-spin handler only

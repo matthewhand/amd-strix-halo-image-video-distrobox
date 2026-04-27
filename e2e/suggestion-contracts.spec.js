@@ -313,6 +313,42 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
 });
 
 // ---------------------------------------------------------------------------
+// CONTRACT: endless-pill-locked — in endless mode pre-Start-Story, the
+// entire Suggestions pill (toggle + prompt-name + +) is dimmed and
+// non-interactive. Story start unlocks it; Submit/Reset re-locks.
+// ---------------------------------------------------------------------------
+
+test('endless: pill is locked pre-start, unlocked while running', async ({ page }) => {
+    await stubSuggestionResponse(page, ['a', 'b']);
+    await bootstrap(page);
+    await setMode(page, 'endless');
+    // Before Start Story — body has the locked class.
+    let locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
+    expect(locked).toBe(true);
+    // Pointer-events:none — clicking the toggle is a no-op (its state
+    // shouldn't flip). We assert via computed style rather than trying
+    // to click + check state.
+    const pillPointerEvents = await page.evaluate(() => {
+        const el = document.getElementById('subjects-need-ideas-row');
+        return el ? getComputedStyle(el).pointerEvents : '';
+    });
+    expect(pillPointerEvents).toBe('none');
+
+    // Start the story.
+    await page.fill('#p-core', 'A seed');
+    await page.click('#btn-start-stop-inline');
+    await page.waitForTimeout(500);
+    locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
+    expect(locked).toBe(false);
+
+    // Submit ends the story → re-lock.
+    await page.click('#subjects-story-submit');
+    await page.waitForTimeout(300);
+    locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
+    expect(locked).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
 // CONTRACT: in raw mode, the suggestion cluster + chip stack are hidden.
 // No fetch should ever fire from a raw-mode interaction.
 // ---------------------------------------------------------------------------
