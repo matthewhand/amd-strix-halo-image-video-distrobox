@@ -1374,9 +1374,10 @@
             </div> {# /ui-split-lower #}
         </div> {# /ui-split #}
 
-        <div class="mt-20 mb-8 text-center text-xs text-base-content/30 font-mono tracking-widest">
-            {{ branding.footer.tagline }}
-        </div>
+        {# Footer tagline removed — added visual noise without informational
+           value. branding.footer.tagline still ships in branding.py for
+           any future ribbon / about-modal use; just not rendered in the
+           main viewport. #}
     </main>
 
     <!-- Queue Drawer (shows full queue) -->
