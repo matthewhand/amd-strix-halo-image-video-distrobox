@@ -1322,6 +1322,19 @@ function _refreshSuggestBadge() {
     // modes (chat/raw) don't apply.
     const stackHasRows = !!(document.querySelector('#subject-chips-stack .suggest-marquee-row'));
     const simpleNeedsAdd = (mode === 'simple') && !stackHasRows;
+    // Simple mode +/- row-stack pill — visible only in simple mode WITH
+    // existing rows (you can't − a row that doesn't exist; the
+    // first-batch + bootstrap is the dedicated badge button).
+    const rowCtl = document.getElementById('subjects-simple-rowctl');
+    if (rowCtl) {
+        const showRowCtl = (mode === 'simple') && stackHasRows && isOn;
+        rowCtl.classList.toggle('hidden', !showRowCtl);
+        const removeBtn = document.getElementById('subjects-simple-remove-row');
+        if (removeBtn) {
+            removeBtn.disabled = !stackHasRows;
+            removeBtn.classList.toggle('opacity-40', !stackHasRows);
+        }
+    }
     if (refreshBtn) {
         // Hide refresh in: endless (+ owns the slot), simple-pre-first-batch.
         refreshBtn.classList.toggle('hidden', isEndless || simpleNeedsAdd);
@@ -7650,11 +7663,32 @@ async function _renderSimpleRows(n) {
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
     const promptId = _getDefaultPromptId();
-    box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
-    const arr = await _fetchSuggestBatch({ n, promptId, fresh: false });
-    if (!stillSimple()) return;
+    // SWAP-ON-SUCCESS: only clear the existing chips AFTER the new
+    // batch lands. Previously we dropped a spinner into the box first,
+    // so a slow refresh erased the user's current chips for several
+    // seconds. Spinner now lives only when the box is empty (first
+    // load); existing chips persist + get a dim-while-loading class
+    // so the user knows they're stale.
+    const hasExistingChips = !!box.querySelector('.suggest-marquee-row');
+    if (!hasExistingChips) {
+        box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
+    } else {
+        box.classList.add('row-loading');
+    }
+    // fresh:true on the FIRST batch too — clicking ↻ refresh should
+    // get a genuinely new batch from the LLM, not a server-cache hit
+    // from minutes ago. Server cache fired between consecutive ↻
+    // clicks because we passed fresh:false here, so the user saw
+    // identical chips no matter how many times they refreshed.
+    const arr = await _fetchSuggestBatch({ n, promptId, fresh: true });
+    if (!stillSimple()) { box.classList.remove('row-loading'); return; }
+    box.classList.remove('row-loading');
     if (!arr.length) {
-        box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
+        if (!hasExistingChips) {
+            box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
+        }
+        // If we DID have chips before, keep them — empty fetch shouldn't
+        // wipe the user's current view.
         return;
     }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch { }
@@ -7847,6 +7881,28 @@ window._addEndlessRow = _addEndlessRow;
         }
     }
     window._addOrFirstSuggestion = _addOrFirstSuggestion;
+
+// Simple mode row-stack controls (separate from the Suggestions ↻
+// refresh button). + adds one fresh row to the BOTTOM of the stack;
+// − removes the bottom row. Both honor the current default prompt id.
+// _refreshSuggestBadge toggles the cluster's visibility based on mode.
+async function _addSimpleRow() {
+    const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : 'yes-and';
+    const arr = await _fetchSuggestBatch({ n: 6, promptId, fresh: true });
+    if (arr && arr.length && typeof _appendSuggestBatchRow === 'function') {
+        _appendSuggestBatchRow(arr);
+    }
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
+}
+function _removeSimpleRow() {
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    const rows = stack.querySelectorAll('.suggest-marquee-row');
+    if (rows.length) rows[rows.length - 1].remove();
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
+}
+window._addSimpleRow = _addSimpleRow;
+window._removeSimpleRow = _removeSimpleRow;
 
     // Remove the row at rowIdx — drops its prompt from the persisted array
     // and removes its DOM node. Subsequent rows shift indices; we re-render
