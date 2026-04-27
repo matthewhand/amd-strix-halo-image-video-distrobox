@@ -1042,6 +1042,10 @@ function _updateEndlessEnabled() {
         _endEndlessStory();
     }
     if (typeof _updateSubjectsActionLabel === 'function') _updateSubjectsActionLabel();
+    // Suggestions toggle drives the + button's enabled state too — repaint
+    // the badge so the disabled/opaque/tooltip flips immediately rather
+    // than lingering until the next mode swap or refresh.
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 }
 window._updateEndlessEnabled = _updateEndlessEnabled;
 document.addEventListener('DOMContentLoaded', _updateEndlessEnabled);
@@ -1182,6 +1186,22 @@ function _refreshSuggestBadge() {
     }
     if (addBtn) {
         addBtn.classList.toggle('hidden', !isEndless);
+        // Adding a row only makes sense when Suggestions is on AND a story
+        // is running. Off = nothing to seed the new row from; idle = the
+        // whole stack is already a single "press Start Story" hint, so
+        // appending an extra empty row would just visually confuse.
+        const storyRunning = !!window._endlessRunning;
+        const allow = isOn && storyRunning;
+        addBtn.disabled = !allow;
+        addBtn.classList.toggle('opacity-40', !allow);
+        addBtn.classList.toggle('cursor-not-allowed', !allow);
+        if (!isOn) {
+            addBtn.title = 'Suggestions are off — turn them on to add a story-beat row';
+        } else if (!storyRunning) {
+            addBtn.title = 'Start a story first — then + adds another beat row';
+        } else {
+            addBtn.title = 'Add another story-beat row using the default prompt';
+        }
     }
     if (lbl) {
         const p = _getPromptById(_getDefaultPromptId());
@@ -2364,6 +2384,9 @@ async function _startEndlessStory() {
         t.dispatchEvent(new Event('change', { bubbles: true }));
     }
     _updateSubjectsActionLabel();
+    // + button gates on _endlessRunning — repaint so it un-disables now
+    // that the story is live.
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
     // Fire one fresh batch immediately so the user sees movement.
     if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => { });
 }
@@ -2394,6 +2417,9 @@ function _endEndlessStory(clearLog) {
         t.dispatchEvent(new Event('change', { bubbles: true }));
     }
     _updateSubjectsActionLabel();
+    // + button gates on _endlessRunning — repaint so it re-disables now
+    // that the story has ended.
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 }
 window._endEndlessStory = _endEndlessStory;
 
@@ -4479,11 +4505,17 @@ function connect() {
             // hasn't fired yet — feels snappy on a warm cache.
             if (typeof _hideSplash === 'function') _hideSplash();
             // Tone the percentage colour with the latest ticker column —
-            // text-error above 80 %, otherwise the per-pill tone class. Keeps
-            // the number visually in sync with the bar colour.
-            // GPU is INVERTED (low = idle = bad); RAM/Disk/Load are normal
-            // pressure metrics (high = bad). See _tickerHTML below for the
-            // matching ticker-column logic and rationale.
+            // text-error in the ALARM band, otherwise the per-pill tone
+            // class. Keeps the number visually in sync with the bar colour.
+            //
+            // ALL tickers in this dashboard are INVERTED (low = bad). For an
+            // AI workload the desired state is "the box is being used" —
+            // high GPU, high RAM (model resident), high CPU load (workers
+            // running), high disk usage (results being saved). A near-zero
+            // reading means the fleet has stalled or starved, which is
+            // exactly the alarming case. So every ticker passes
+            // {invert:true} and the alarm threshold is `pct < 20`. (See
+            // _tickerHTML below for the matching ticker-column logic.)
             const _toneClass = (pct, baseTone, opts) => {
                 const invert = !!(opts && opts.invert);
                 const isAlarming = invert ? (pct < 20) : (pct > 80);
@@ -4531,7 +4563,7 @@ function connect() {
             // so derive RAM% from the host meminfo numbers (ram_u / ram_t).
             const ramPct = d.stats.ram_t > 0 ? Math.round((d.stats.ram_u / d.stats.ram_t) * 100) : 0;
             const ramEl = $('v-v');
-            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'primary'); _toneCelebrate(ramEl, ramPct); }
+            if (ramEl) { ramEl.innerText = ramPct + '%'; ramEl.className = _toneClass(ramPct, 'primary', { invert: true }); _toneCelebrate(ramEl, ramPct); }
             $('r-v').innerText = d.stats.ram_u + ' / ' + Math.round(d.stats.ram_t) + ' GB';
 
             gH.push(d.stats.gpu); vH.push(ramPct);
@@ -4566,13 +4598,15 @@ function connect() {
                 }).join('');
             };
             $('g-t').innerHTML = _tickerHTML(gH, 'primary', { invert: true });
-            $('v-t').innerHTML = _tickerHTML(vH, 'primary');
+            $('v-t').innerHTML = _tickerHTML(vH, 'primary', { invert: true });
 
-            // Load average (1m) — same tone-flip pattern as GPU/RAM: text-info
-            // normally, text-error above 80 % so the colour tracks the ticker.
+            // Load average (1m) — same INVERTED tone pattern as GPU/RAM:
+            // primary normally, text-error when low (< 20 %) since a
+            // sleeping CPU during an AI session usually means the workers
+            // have stalled rather than "great, plenty of headroom".
             const loadPct = (typeof d.stats.load_pct === 'number') ? d.stats.load_pct : 0;
             const loadEl = $('l-v');
-            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'primary'); _toneCelebrate(loadEl, loadPct); }
+            if (loadEl) { loadEl.innerText = loadPct + '%'; loadEl.className = _toneClass(loadPct, 'primary', { invert: true }); _toneCelebrate(loadEl, loadPct); }
             const loadParent = loadEl && loadEl.parentElement;
             if (loadParent && d.stats.load_1m != null) {
                 loadParent.title = `1m: ${d.stats.load_1m.toFixed(2)} · 5m: ${d.stats.load_5m.toFixed(2)} · 15m: ${d.stats.load_15m.toFixed(2)} (load average / cpu count)`;
@@ -4580,7 +4614,7 @@ function connect() {
             lH.push(loadPct);
             if (lH.length > 15) lH.shift();
             const lt = $('l-t');
-            if (lt) lt.innerHTML = _tickerHTML(lH, 'primary');
+            if (lt) lt.innerHTML = _tickerHTML(lH, 'primary', { invert: true });
 
             // Disk ticker: usage barely moves, so sample at 1/120 the rate of
             // GPU/RAM. With WS broadcasting every 2 s that's one new column
@@ -4595,7 +4629,7 @@ function connect() {
                 else dH.push(d.outputs_disk.pct);
                 if (dH.length > 15) dH.shift();
                 const dt = $('d-t');
-                if (dt) dt.innerHTML = _tickerHTML(dH, 'primary');
+                if (dt) dt.innerHTML = _tickerHTML(dH, 'primary', { invert: true });
             }
 
             $('h-m').innerText = d.state.mode;
