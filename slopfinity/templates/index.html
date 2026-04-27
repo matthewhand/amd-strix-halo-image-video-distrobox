@@ -599,10 +599,17 @@
                                             ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
                                             ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover sentences…'),
                                         ] %}
+                                        {# Stage label sits ABOVE the input row; lock badge,
+                                           textarea, and Rewrite button sit on the SAME
+                                           horizontal line so the action button reads as
+                                           operating on the field directly to its left. #}
                                         <div>
-                                            <div class="flex items-center justify-between mb-1">
-                                                <span class="label-text text-[10px] uppercase tracking-widest opacity-60">{{ label }}</span>
-                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1"
+                                            <span class="label-text text-[10px] uppercase tracking-widest opacity-60 block mb-1">{{ label }}</span>
+                                            <div class="flex items-center gap-1">
+                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default flex-none" title="Unlocked">🔓</span>
+                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1 min-w-0"
+                                                    placeholder="{{ placeholder }}"></textarea>
+                                                <button type="button" class="btn btn-xs btn-primary btn-outline gap-1 flex-none self-stretch"
                                                     onclick="enhanceStage('{{ stage }}')"
                                                     title="Rewrite this prompt with the LLM using the seed from the subject field below">
                                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -612,11 +619,6 @@
                                                     </svg>
                                                     Rewrite
                                                 </button>
-                                            </div>
-                                            <div class="flex items-center gap-1">
-                                                <span id="lock-{{ stage }}" class="badge badge-sm badge-ghost font-mono cursor-default" title="Unlocked">🔓</span>
-                                                <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1"
-                                                    placeholder="{{ placeholder }}"></textarea>
                                             </div>
                                         </div>
                                         {% endfor %}
