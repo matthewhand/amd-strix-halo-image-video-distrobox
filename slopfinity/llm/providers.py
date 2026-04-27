@@ -47,6 +47,7 @@ class Provider(Protocol):
         timeout: int = DEFAULT_TIMEOUT,
         extra_headers: Optional[dict] = None,
         max_tokens: Optional[int] = None,
+        response_format: Optional[dict] = None,
     ) -> str: ...
 
 
@@ -76,7 +77,8 @@ class _OpenAICompatBase:
         return [m for m in out if m["id"]]
 
     def chat(self, base_url, model_id, messages, temperature, api_key=None,
-             timeout=DEFAULT_TIMEOUT, extra_headers=None, max_tokens=None):
+             timeout=DEFAULT_TIMEOUT, extra_headers=None, max_tokens=None,
+             response_format=None):
         url = base_url.rstrip("/") + "/chat/completions"
         payload = {
             "model": model_id,
@@ -85,6 +87,15 @@ class _OpenAICompatBase:
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        # OpenAI / LM Studio / llama.cpp structured-output support.
+        # Pass-through dict like
+        #   {"type": "json_schema", "json_schema": {"name": "...",
+        #    "schema": {...}, "strict": true}}
+        # constrains the LLM to emit a JSON document matching the
+        # schema. Used by suggestion fetches so the model can't leak
+        # markdown headers / scaffolding text into chips.
+        if response_format is not None:
+            payload["response_format"] = response_format
         data = _http_json(
             "POST", url, body=payload,
             headers=_auth_headers(api_key, extra_headers),
@@ -159,11 +170,12 @@ class OllamaProvider:
         return [{"id": m.get("name", ""), "raw": m} for m in (data.get("models") or []) if m.get("name")]
 
     def chat(self, base_url, model_id, messages, temperature, api_key=None,
-             timeout=DEFAULT_TIMEOUT, extra_headers=None, max_tokens=None):
+             timeout=DEFAULT_TIMEOUT, extra_headers=None, max_tokens=None,
+             response_format=None):
         if self._openai_ok(base_url, api_key, timeout):
             return _OpenAICompatBase().chat(
                 self._compat_base(base_url), model_id, messages, temperature,
-                api_key, timeout, extra_headers, max_tokens,
+                api_key, timeout, extra_headers, max_tokens, response_format,
             )
         url = self._native_base(base_url) + "/api/chat"
         payload = {
@@ -172,6 +184,11 @@ class OllamaProvider:
             "stream": False,
             "options": {"temperature": temperature},
         }
+        # Ollama native API supports `format: "json"` for free-form JSON
+        # constraint (no schema). Best-effort: if response_format asks
+        # for JSON, request JSON mode; the schema details are dropped.
+        if response_format and response_format.get("type", "").startswith("json"):
+            payload["format"] = "json"
         data = _http_json("POST", url, body=payload,
                           headers=_auth_headers(None, extra_headers), timeout=timeout)
         msg = (data.get("message") or {}).get("content", "")

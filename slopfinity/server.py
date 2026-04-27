@@ -516,6 +516,43 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
         ]
         chosen = random.choice(salt_themes)
         user_msg += f"\n\nNudge: lean toward {chosen}. Avoid repeating any earlier batch."
+    # JSON-schema constraint: force the LLM to return ONLY a strict
+    # {"suggestions": ["chip1", "chip2", ...]} document. LM Studio /
+    # llama.cpp / vLLM honour OpenAI-style response_format. The schema
+    # eliminates the entire class of bugs where the model emits
+    # markdown headers ("**Constraint check**", "**Generated:**"),
+    # numbered lists, code fences, scaffolding restatements, or
+    # apologetic preludes ("Here are 6 ideas:") — all of which
+    # required defensive client-side filters before. With the schema,
+    # the LLM physically cannot produce non-JSON output. Each chip
+    # capped at 120 chars; whole array between 1 and n items.
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "suggestions",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "suggestions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": int(n) * 2,  # tolerate small overshoot
+                        "items": {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 120,
+                        },
+                    },
+                },
+                "required": ["suggestions"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    # Append a one-line schema reminder to the user message so models
+    # that ignore response_format still try to format correctly.
+    user_msg += '\n\nReturn ONLY a JSON object: {"suggestions": ["...", "..."]}'
     # Run the (blocking, network-bound) LLM call in a thread so it doesn't
     # stall FastAPI's event loop — without this, the WS state broadcast and
     # other endpoints (Settings open, etc.) freeze for the duration.
@@ -523,7 +560,7 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     # (resumes LM Studio if a fleet stage paused it). safety_gb=4 since
     # this is just an LLM ping, not a multi-GB diffusion stage.
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
-        raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg)
+        raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg, response_format)
     # Parse plain-text, newline-separated lines. Strip common LLM
     # decorations the prompt asks it not to use but sometimes still
     # produces — leading numbers, bullets, quotes, surrounding markdown
@@ -532,38 +569,59 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     # clients still works).
     suggestions = []
     text = (raw or "").strip()
-    # Strip ``` fences if present.
+    # Strip ``` fences if present (some models still wrap JSON in code blocks).
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
-    # Plain-text path: line-by-line.
-    if text and not text.startswith("[") and not text.startswith("{"):
+    # Schema-constrained path: expect {"suggestions": [...]}. The
+    # response_format json_schema set above forces this shape on
+    # compliant models (LM Studio / llama.cpp / vLLM all honour it).
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and isinstance(obj.get("suggestions"), list):
+            suggestions = obj["suggestions"]
+    except Exception:
+        pass
+    # Fallback A: bare JSON array (older clients, model regression).
+    if not suggestions:
+        try:
+            s = json.loads(text)
+            if isinstance(s, list):
+                suggestions = s
+        except Exception:
+            pass
+    # Fallback B: extract the first {...} or [...] substring if the
+    # model wrapped its JSON in prose despite the schema constraint.
+    if not suggestions:
+        for opener_chr, closer_chr in (("{", "}"), ("[", "]")):
+            start = text.find(opener_chr)
+            end = text.rfind(closer_chr)
+            if start != -1 and end > start:
+                try:
+                    obj = json.loads(text[start:end + 1])
+                    if isinstance(obj, dict) and isinstance(obj.get("suggestions"), list):
+                        suggestions = obj["suggestions"]
+                        break
+                    if isinstance(obj, list):
+                        suggestions = obj
+                        break
+                except Exception:
+                    pass
+    # Fallback C: plain-text line-by-line. Schema should make this
+    # unreachable on compliant models, but kept as a safety net for
+    # broken / misconfigured providers.
+    if not suggestions and text and not text.startswith("[") and not text.startswith("{"):
         for line in text.splitlines():
             t = line.strip()
             if not t:
                 continue
-            # Strip leading bullets / numbering: "1. ", "1) ", "- ", "* "
             t = re.sub(r"^\s*(?:\d+[\.\)]|[-*•])\s+", "", t)
-            # Trim wrapping quotes.
             if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
                 t = t[1:-1].strip()
             if t:
                 suggestions.append(t)
-    # JSON-array fallback (legacy / model regression).
-    if not suggestions:
-        try:
-            s = json.loads(raw)
-            if isinstance(s, list):
-                suggestions = s
-        except Exception:
-            start, end = raw.find('['), raw.rfind(']')
-            if start != -1 and end > start:
-                try:
-                    suggestions = json.loads(raw[start:end + 1])
-                except Exception:
-                    pass
     suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
     # Don't store endless / opener results in the cache — we want each
     # tick fresh, and openers are one-shot by design.

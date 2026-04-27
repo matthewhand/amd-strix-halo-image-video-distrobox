@@ -46,10 +46,15 @@ def _auto_pick_model(provider, base_url, api_key, timeout) -> str | None:
     return models[0]["id"] if models else None
 
 
-def lmstudio_call(sys_p: str, user_p: str) -> str:
-    """Back-compat entry point used by /enhance.
+def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) -> str:
+    """Back-compat entry point used by /enhance + /subjects/suggest.
 
-    Name retained for history; now dispatches to the configured local provider.
+    Name retained for history; now dispatches to the configured local
+    provider. Optional `response_format` passes an OpenAI-style
+    structured-output spec through to the provider — used by
+    /subjects/suggest to constrain LLM output to a strict
+    {"suggestions": [...]} JSON document so chips can never contain
+    markdown / scaffolding leaks.
     """
     llm = _load_llm_cfg()
     provider = get_provider(llm.get("provider") or "lmstudio")
@@ -80,6 +85,7 @@ def lmstudio_call(sys_p: str, user_p: str) -> str:
                 api_key=api_key,
                 timeout=timeout,
                 extra_headers=extra_headers,
+                response_format=response_format,
             )
         except Exception as e:
             last_err = e
