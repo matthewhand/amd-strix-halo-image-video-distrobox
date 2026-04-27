@@ -552,6 +552,38 @@ function _mobileNavRefresh() {
 }
 window._mobileNavStep = _mobileNavStep;
 window._mobileNavRefresh = _mobileNavRefresh;
+
+// Focus-mode flanking FABs — same linear order as the mobile nav
+// (prompt ↔ queue ↔ slop). delta=-1 → prev, +1 → next. Triggers a
+// 220 ms slide-out on <main> in the right direction, swaps the
+// layout, then lets the new layout fade in via the same transition.
+function _focusFabNav(delta) {
+    const idx = _mobileNavCurrentIdx();
+    const target = _MOBILE_NAV_ORDER[idx + delta];
+    if (!target) return;
+    const main = document.querySelector('main');
+    if (!main) {
+        _mobileNavGo(idx + delta);
+        return;
+    }
+    const cls = delta < 0 ? 'layout-sliding-right' : 'layout-sliding-left';
+    main.classList.add(cls);
+    // Wait for the slide-out to land, then swap layout + clear class.
+    // The new layout's <main> starts off-screen (the same translateX
+    // the dying view ended at) and transitions back to identity for
+    // a directional 'slide-in' feel.
+    setTimeout(() => {
+        if (typeof selectLayoutView === 'function') selectLayoutView(target.layout);
+        else _applyLayoutView(target.layout);
+        // Wipe class on next frame so the new layout's main slides
+        // back in from the same direction.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => main.classList.remove(cls));
+        });
+        _mobileNavRefresh();
+    }, 220);
+}
+window._focusFabNav = _focusFabNav;
 document.addEventListener('DOMContentLoaded', () => {
     // On viewports too narrow for the desktop multi-pane layout, redirect
     // to the prompt-only single-card layout. The side-by-side Prompt+Queue
