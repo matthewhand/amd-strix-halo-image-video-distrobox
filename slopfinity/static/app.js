@@ -1211,30 +1211,54 @@ function _refreshSuggestBadge() {
     const addBtn = document.getElementById('subjects-suggest-add-btn');
     const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
     const isEndless = mode === 'endless';
+    // Simple mode UX: pre-first-batch, hide ↻ refresh and show + add
+    // (which fires regenSuggestions). Once any chip rows exist, swap
+    // back to ↻ refresh (regenSuggestions overwrites the stack). User
+    // never sees both at once. Endless owns the + permanently. Other
+    // modes (chat/raw) don't apply.
+    const stackHasRows = !!(document.querySelector('#subject-chips-stack .suggest-marquee-row'));
+    const simpleNeedsAdd = (mode === 'simple') && !stackHasRows;
     if (refreshBtn) {
-        refreshBtn.classList.toggle('hidden', isEndless);
+        // Hide refresh in: endless (+ owns the slot), simple-pre-first-batch.
+        refreshBtn.classList.toggle('hidden', isEndless || simpleNeedsAdd);
         refreshBtn.title = isOn
             ? 'Regenerate suggestions for the active prompt'
             : 'Suggestions are off — click to enable + fetch a fresh batch';
     }
     if (addBtn) {
-        addBtn.classList.toggle('hidden', !isEndless);
-        // Adding a row only makes sense when Suggestions is on AND a story
-        // is running. Off = nothing to seed the new row from; idle = the
-        // whole stack is already a single "press Start Story" hint, so
-        // appending an extra empty row would just visually confuse.
-        const storyRunning = !!window._endlessRunning;
-        const allow = isOn && storyRunning;
+        // Show + in: endless, simple-pre-first-batch. Hide otherwise.
+        addBtn.classList.toggle('hidden', !(isEndless || simpleNeedsAdd));
+        // Enable rules differ by mode:
+        //   endless: Suggestions ON + story running (idle = nothing to
+        //            seed continuations from)
+        //   simple:  Suggestions ON (no story concept)
+        // _endlessRunning is module-scoped (declared `let` later in this
+        // file). Reading it directly works because by the time any user
+        // click reaches this function, module-level init has finished.
+        let allow = isOn;
+        let titleText = '';
+        if (isEndless) {
+            const storyRunning = !!_endlessRunning;
+            allow = allow && storyRunning;
+            if (!isOn) {
+                titleText = 'Suggestions are off — turn them on to add a story-beat row';
+            } else if (!storyRunning) {
+                titleText = 'Start a story first — then + adds another beat row';
+            } else {
+                titleText = 'Add another story-beat row using the default prompt';
+            }
+        } else if (simpleNeedsAdd) {
+            // Simple mode pre-first-batch — + bootstraps the initial
+            // suggestion stack. Badge swaps to ↻ refresh once the
+            // first batch lands.
+            titleText = isOn
+                ? 'Click to fetch your first batch of suggestions'
+                : 'Suggestions are off — click to enable + fetch a batch';
+        }
         addBtn.disabled = !allow;
         addBtn.classList.toggle('opacity-40', !allow);
         addBtn.classList.toggle('cursor-not-allowed', !allow);
-        if (!isOn) {
-            addBtn.title = 'Suggestions are off — turn them on to add a story-beat row';
-        } else if (!storyRunning) {
-            addBtn.title = 'Start a story first — then + adds another beat row';
-        } else {
-            addBtn.title = 'Add another story-beat row using the default prompt';
-        }
+        addBtn.title = titleText;
     }
     if (lbl) {
         const p = _getPromptById(_getDefaultPromptId());
@@ -2028,7 +2052,25 @@ function _wireEndlessStoryCycle() {
                 const d = await r.json();
                 const arr = (d && d.suggestions) || [];
                 if (arr.length && typeof _appendSuggestBatchRow === 'function') {
-                    _appendSuggestBatchRow(arr);
+                    // Pass promptId + rowIdx so the cycle's auto-appended
+                    // rows render with the same subject/refresh/minus
+                    // lead cluster as the rows added by the user. Without
+                    // these opts the row would render as a bare marquee
+                    // (no dropdown), which read as "the simple-mode
+                    // suggestions are leaking into endless".
+                    const stack = document.getElementById('subject-chips-stack');
+                    const existingRows = stack ? stack.querySelectorAll('.suggest-marquee-row').length : 0;
+                    const promptId = (typeof _getDefaultPromptId === 'function')
+                        ? _getDefaultPromptId() : 'yes-and';
+                    // Persist the new row's prompt so refresh / minus on
+                    // it stays in sync with _ENDLESS_ROW_PROMPTS_KEY.
+                    if (typeof _getEndlessRowPrompts === 'function'
+                        && typeof _setEndlessRowPrompts === 'function') {
+                        const arrIds = _getEndlessRowPrompts();
+                        arrIds.push(promptId);
+                        _setEndlessRowPrompts(arrIds);
+                    }
+                    _appendSuggestBatchRow(arr, { promptId, rowIdx: existingRows });
                 }
             } catch (_) { }
         }, _endlessCycleMs());
@@ -4141,6 +4183,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         _renderCachedSuggestions(); // simple-mode-only; no-op for raw/chat
     }
+    // Repaint the badge so the + ↔ ↻ swap reflects whether rows
+    // ended up in the stack (cache hit) or not (empty → + bootstraps).
+    if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 });
 
 function updateOutputs(o) {
@@ -7443,6 +7488,28 @@ async function _addEndlessRow() {
     }
 }
 window._addEndlessRow = _addEndlessRow;
+
+// Router for the "+" badge button. Dispatches by current mode:
+//   endless → _addEndlessRow (append a new story-beat row)
+//   simple  → first-time bootstrap: regenSuggestions to render the
+//             initial chip stack. After that the badge swaps to ↻
+//             refresh (see _refreshSuggestBadge), so this path only
+//             fires on the very first click in a fresh session.
+//   other   → fall back to regenSuggestions (chat replies).
+function _addOrFirstSuggestion() {
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode === 'endless') return _addEndlessRow();
+    if (typeof regenSuggestions === 'function') {
+        return regenSuggestions().then(() => {
+            // Repaint the badge so the + → ↻ swap happens immediately
+            // once the first batch lands. Without this the user has to
+            // change modes (or trigger another _refreshSuggestBadge) to
+            // see the affordance flip.
+            if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
+        });
+    }
+}
+window._addOrFirstSuggestion = _addOrFirstSuggestion;
 
 // Remove the row at rowIdx — drops its prompt from the persisted array
 // and removes its DOM node. Subsequent rows shift indices; we re-render

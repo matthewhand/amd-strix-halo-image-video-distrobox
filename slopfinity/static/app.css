@@ -2221,6 +2221,38 @@ body[data-layout="subj-queue"] #split-right > .card-body {
     min-height: 0;
 }
 
+/* Prompt-focus layout: the active pane + its inner textarea/log
+   should expand to fill the viewport instead of clustering at the
+   top of the card. Otherwise the card-body grows tall but its
+   children stay at their natural sizes, leaving a sea of empty
+   space below the textarea.
+   - Active pane (.subjects-pane[data-pane-mode=*] when its mode
+     matches body.subj-mode-*) becomes flex:1 — except in raw, where
+     the per-stage panel has its natural height + the textarea below
+     should grow instead. We let the input row grow instead.
+   - In simple/endless/chat the pane itself grows.
+   - The shared #p-core textarea inside #subjects-input-row gets
+     flex-grow so it expands vertically when its row is given room. */
+body[data-layout="subjects"] body.subj-mode-simple .subjects-pane[data-pane-mode="simple"],
+body[data-layout="subjects"].subj-mode-simple .subjects-pane[data-pane-mode="simple"],
+body[data-layout="subjects"].subj-mode-endless .subjects-pane[data-pane-mode="endless"],
+body[data-layout="subjects"].subj-mode-chat .subjects-pane[data-pane-mode="chat"] {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+body[data-layout="subjects"] #subjects-input-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+}
+
+body[data-layout="subjects"] #p-core {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+}
+
 /* Right-edge fade: when an asset-link badge is too wide for the row,
    fade the rightmost ~24 px to transparent so the badge dissolves
    behind the time/ETA column on its right instead of overlapping it.
