@@ -2744,6 +2744,29 @@ body.endless-pill-locked #subjects-need-ideas-row [disabled] {
     opacity: 1 !important;
 }
 
+/* When the user drags the upper-pane divider taller, let the input
+   form (textarea) grow with it instead of leaving a sea of empty
+   space below. Default-layout rule: if the active pane is simple or
+   endless and there's leftover vertical room, stretch the textarea.
+   #subjects-input-row gets flex:1 inside the card-body's flex column;
+   #p-core inside it gets flex-grow so the textarea claims the row's
+   height. Endless+running keeps the input row hidden (story-pane is
+   the focus); chat hides #subjects-input-row entirely. Raw doesn't
+   render the textarea. So the rule is mode-gated to simple/endless
+   pre-running. */
+body.subj-mode-simple:not([data-layout="subjects"]) #subjects-input-row,
+body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #subjects-input-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+}
+body.subj-mode-simple:not([data-layout="subjects"]) #p-core,
+body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-core {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+}
+
 /* Suggestions stack — auto-scroll internally when too many rows pile
    up (endless mode lets the user keep adding). Without this the rows
    either overflow the card silently or push the upper pane past its
