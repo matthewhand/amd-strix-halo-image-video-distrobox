@@ -2043,29 +2043,14 @@ function _setSubjectsMode(mode) {
         _renderChatLog();
         if (typeof _renderChatReplies === 'function') _renderChatReplies();
     }
-    // Endless mode REQUIRES Suggestions to be ON — force-enable the toggle
-    // and lock it (pointer-events:none + reduced opacity) so the user
-    // can't accidentally kill the cycle's data source. Switching out of
-    // endless re-enables clicking the toggle.
+    // The Suggestions toggle stays freely user-controlled in every mode.
+    // Endless's Suggestions-required constraint is enforced at the
+    // Start-Story button (disabled until Suggestions is on) — not by
+    // forcing the toggle. _updateSubjectsActionLabel handles that.
     const sugLabel = document.getElementById('subjects-suggestions-toggle');
-    const sugInput = document.getElementById('subjects-suggestions-toggle-input');
-    if (sugLabel && sugInput) {
-        if (mode === 'endless') {
-            if (!sugInput.checked) {
-                sugInput.checked = true;
-                sugInput.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            // Lock just the click-target — DON'T grey out the label so the
-            // 'Suggestions' word stays at full readability. The user sees a
-            // normal-looking toggle that doesn't respond to clicks; tooltip
-            // explains why.
-            sugLabel.classList.add('pointer-events-none');
-            sugLabel.classList.remove('opacity-70');
-            sugLabel.title = 'Endless mode requires Suggestions ON — toggle locked while in endless';
-        } else {
-            sugLabel.classList.remove('pointer-events-none', 'opacity-70');
-            sugLabel.title = 'Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.';
-        }
+    if (sugLabel) {
+        sugLabel.classList.remove('pointer-events-none', 'opacity-70');
+        sugLabel.title = 'Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.';
     }
     // Repaint the unified Suggestions badge — its right-edge action button
     // swaps between "↻ refresh-all" (simple/chat) and "+ add row" (endless),
