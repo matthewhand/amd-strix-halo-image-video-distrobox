@@ -2363,6 +2363,41 @@ function _updateSubjectsActionLabel() {
 }
 window._updateSubjectsActionLabel = _updateSubjectsActionLabel;
 
+// Queue-status chip under the Queue Slop button. Pulls depth + activity
+// from the WS tick payload (passed in as `d`). Best-effort; missing
+// fields fall back to '—' / 'idle'. Updates two spans:
+//   #btn-queue-info-depth   — pending count or 'queue empty'
+//   #btn-queue-info-status  — current step OR mode OR 'idle' / 'paused'
+function _updateQueueStatusChip(d) {
+    const depthEl = document.getElementById('btn-queue-info-depth');
+    const statusEl = document.getElementById('btn-queue-info-status');
+    if (!depthEl || !statusEl) return;
+    const queue = (d && d.queue) || [];
+    const pending = queue.filter(x => x && (x.status === 'pending' || x.status == null)).length;
+    const working = queue.filter(x => x && x.status === 'working').length;
+    if (pending === 0 && working === 0) {
+        depthEl.textContent = 'queue empty';
+        depthEl.classList.remove('text-primary');
+    } else {
+        depthEl.textContent = `${working}+${pending} queued`;
+        depthEl.classList.toggle('text-primary', working > 0);
+    }
+    const state = (d && d.state) || {};
+    let status = 'idle';
+    if (state.step) {
+        status = state.step.toLowerCase();
+    } else if (state.mode && state.mode !== 'Idle') {
+        status = state.mode.toLowerCase();
+    }
+    // Pause flag (broadcast in d.paused or via a separate poll); when
+    // present, override the activity label.
+    if (d && d.paused) status = 'paused';
+    statusEl.textContent = status;
+    statusEl.classList.toggle('text-warning', status === 'paused');
+    statusEl.classList.toggle('text-success', !!state.step);
+}
+window._updateQueueStatusChip = _updateQueueStatusChip;
+
 // ---------------------------------------------------------------------------
 // Chat mode — tool-using assistant. The LLM has tools to queue clips,
 // inspect status, list recent outputs, etc. Client owns conversation
@@ -5756,6 +5791,13 @@ function connect() {
                 }
             } catch (_) { /* summary is best-effort */ }
             _lastTick = d;
+            // Queue-status chip under the Queue Slop button. Surfaces
+            // depth + activity so the user knows things are progressing
+            // even when the Queue card isn't on screen (focused layouts,
+            // mobile). Best-effort — failures don't break the WS tick.
+            try {
+                if (typeof _updateQueueStatusChip === 'function') _updateQueueStatusChip(d);
+            } catch (_) { /* chip is purely informational */ }
             // Push GPU% sample for the auto-suggest idle gate.
             try {
                 const gpuPct = Number((d.stats && (d.stats.gpu ?? d.stats.gpu_pct ?? d.stats.gpu_util)) || 0);
