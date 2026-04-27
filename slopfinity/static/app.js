@@ -2474,6 +2474,12 @@ async function _startEndlessStory() {
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
     _endlessRunning = true;
+    // Snapshot start-time (ms epoch) so _stitchEndlessStory can later
+    // ask /assets for FINAL_*.mp4 clips that completed AFTER this
+    // moment — i.e. the clips this story produced. Survives Submit
+    // (we want to be able to stitch after the story ends) and is
+    // cleared on Reset.
+    window._endlessStoryStartTs = Date.now();
     document.body.classList.add('endless-running');
     ta.readOnly = true;
     ta.classList.add('opacity-70');
@@ -2482,21 +2488,16 @@ async function _startEndlessStory() {
     if (log) log.textContent = seed;
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.remove('hidden');
-    // Force the first endless row to use the currently-selected default
-    // suggestion prompt. Without this, a user who tweaked the dropdown
-    // before pressing Start Story would still see whatever prompt was
-    // saved at the head of _ENDLESS_ROW_PROMPTS_KEY from a prior session.
+    // Start with EXACTLY ONE row using the currently-selected default
+    // suggestion prompt — equivalent to pressing the + button once.
+    // The user adds more rows manually via + (each new + uses whatever
+    // their dropdown is set to AT THAT MOMENT). Previous behavior of
+    // pre-loading the saved _ENDLESS_ROW_PROMPTS_KEY (often 4+ rows)
+    // surprised users who'd just pressed Start Story expecting one
+    // fresh start.
     try {
-        const defaultId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : null;
-        if (defaultId) {
-            const arr = _getEndlessRowPrompts();
-            if (!arr.length || arr[0] !== defaultId) {
-                arr.unshift(defaultId);
-                // Cap to a sensible upper bound so unshift doesn't grow
-                // the list unbounded across many Start Story presses.
-                _setEndlessRowPrompts(arr.slice(0, 6));
-            }
-        }
+        const defaultId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : 'yes-and';
+        _setEndlessRowPrompts([defaultId]);
     } catch (_) {}
     // Kick the existing endless cycle on (it reads the hidden checkbox).
     const t = document.getElementById('endless-story-toggle');
@@ -2563,9 +2564,12 @@ function _submitEndlessStory() {
 window._submitEndlessStory = _submitEndlessStory;
 
 // Reset — destructive: clears the log and hides the pane. Confirms first.
+// Also clears the stitch-cutoff timestamp so a subsequent Stitch click
+// (after starting a NEW story) doesn't pull in clips from the old one.
 function _resetEndlessStory() {
     if (!confirm('Reset story? This clears the story log. Already-queued clips keep running.')) return;
     _endEndlessStory(true);
+    window._endlessStoryStartTs = 0;
 }
 window._resetEndlessStory = _resetEndlessStory;
 
@@ -2582,6 +2586,75 @@ function _copyEndlessStory() {
     }).catch(err => console.warn('copy story failed', err));
 }
 window._copyEndlessStory = _copyEndlessStory;
+
+// Stitch every FINAL_*.mp4 produced since the current (or just-submitted)
+// story started into one combined STORY_<ts>.mp4 via /story/stitch.
+// Strategy: capture the start timestamp when _startEndlessStory fires
+// (window._endlessStoryStartTs), then on click pull /assets, filter
+// to FINAL_*.mp4 with mtime >= start_ts, sort by mtime ascending
+// (chronological), confirm count + total duration with the user,
+// and POST to /story/stitch. Server runs ffmpeg concat (stream copy
+// — fast + lossless when source clips share codec params, which they
+// do since the same model + settings produced them).
+async function _stitchEndlessStory() {
+    const startTs = window._endlessStoryStartTs || 0;
+    if (!startTs) {
+        if (typeof _toast === 'function') _toast('No story start time recorded — start a story first', 'warning');
+        return;
+    }
+    let assets = [];
+    try {
+        const r = await fetch('/assets?limit=200');
+        const d = await r.json();
+        assets = (d && d.assets) || [];
+    } catch (e) {
+        if (typeof _toast === 'function') _toast(`Stitch: /assets fetch failed (${e.message})`, 'error');
+        return;
+    }
+    // Pull FINAL_*.mp4 entries that landed AFTER the story began. /assets
+    // mtime is in seconds; window._endlessStoryStartTs is set in JS via
+    // Date.now() (ms). Compare in seconds for consistency with the server.
+    const startSec = Math.floor(startTs / 1000);
+    const candidates = assets
+        .filter(a => a && a.file && a.file.startsWith('FINAL_') && a.file.endsWith('.mp4'))
+        .filter(a => (a.mtime || 0) >= startSec - 5)  // 5 s grace for clock skew
+        .sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
+    if (!candidates.length) {
+        if (typeof _toast === 'function') _toast('Stitch: no FINAL_*.mp4 clips have completed for this story yet', 'warning');
+        return;
+    }
+    const filenames = candidates.map(a => a.file);
+    const ok = confirm(
+        `Stitch ${filenames.length} clip${filenames.length === 1 ? '' : 's'} into one mp4?\n\n`
+        + filenames.map((f, i) => `${i + 1}. ${f}`).join('\n')
+        + '\n\n(Stream copy — fast and lossless. Output: STORY_<timestamp>.mp4)'
+    );
+    if (!ok) return;
+    const btn = document.getElementById('subjects-story-stitch');
+    if (btn) { btn.disabled = true; btn.classList.add('opacity-50'); }
+    try {
+        const res = await fetch('/story/stitch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filenames }),
+        });
+        const data = await res.json();
+        if (data && data.ok) {
+            if (typeof _toast === 'function') {
+                _toast(`Stitched ${data.n_inputs} clips → ${data.output}`, 'success');
+            }
+        } else {
+            if (typeof _toast === 'function') {
+                _toast(`Stitch failed: ${(data && data.error) || res.statusText}`, 'error');
+            }
+        }
+    } catch (e) {
+        if (typeof _toast === 'function') _toast(`Stitch network error: ${e.message}`, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('opacity-50'); }
+    }
+}
+window._stitchEndlessStory = _stitchEndlessStory;
 
 // Append a chip's text to the story log when in endless+running mode.
 // Called from the chip click handler in _buildSuggestChip.
