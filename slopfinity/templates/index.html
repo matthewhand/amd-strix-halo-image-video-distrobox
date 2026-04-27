@@ -632,8 +632,8 @@
                                            (_subjectsAction) and the queue-info chip pattern
                                            with the simple/endless input-row button so the
                                            UX reads consistently across modes. #}
-                                        <div class="flex flex-col flex-none w-40 gap-1 self-stretch">
-                                            <button class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight flex-1"
+                                        <div class="flex flex-col flex-none w-40 gap-1 self-start">
+                                            <button class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight"
                                                 id="btn-start-stop-raw" onclick="_subjectsAction()"
                                                 title="Queue the per-stage prompts above (no LLM rewrite)">
                                                 Queue Slop
@@ -3092,40 +3092,33 @@
         </button>
     </nav>
 
-    <div id="focus-slop-fab" aria-hidden="true">
-        <button data-fab-target="subjects" class="btn btn-circle btn-primary shadow-xl" title="Prompt"
-            aria-label="Open Prompt" onclick="openGalleryFabDialog('subjects')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
-            </svg>
-        </button>
-        <button data-fab-target="queue" class="btn btn-circle btn-secondary shadow-xl" title="Queue"
-            aria-label="Open Queue" onclick="openGalleryFabDialog('queue')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6" />
-                <line x1="8" y1="12" x2="21" y2="12" />
-                <line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" />
-                <line x1="3" y1="12" x2="3.01" y2="12" />
-                <line x1="3" y1="18" x2="3.01" y2="18" />
-            </svg>
-        </button>
-        <button data-fab-target="slop" class="btn btn-circle btn-accent shadow-xl" title="Slop" aria-label="Open Slop"
-            onclick="openSlopFabDialog()">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-            </svg>
-        </button>
-    </div>
+    {# Focus-mode flanking nav — two FABs, one bottom-left (← prev
+       layout) and one bottom-right (→ next layout) in the linear
+       order prompt ↔ queue ↔ slop. Click triggers a slide-out
+       animation on <main>, then navigates. The end of the linear
+       sequence (subjects has no prev, gallery has no next) hides
+       the corresponding button. _focusFabNav handles dispatch. #}
+    <button id="focus-fab-prev" type="button" aria-hidden="true"
+            class="btn btn-circle btn-primary shadow-xl"
+            onclick="_focusFabNav(-1)"
+            title="Previous layout">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+        </svg>
+    </button>
+    <button id="focus-fab-next" type="button" aria-hidden="true"
+            class="btn btn-circle btn-primary shadow-xl"
+            onclick="_focusFabNav(1)"
+            title="Next layout">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+        </svg>
+    </button>
+    {# Legacy multi-button FAB kept hidden for now in case any
+       handler still references it; CSS rules for #focus-slop-fab
+       no longer match anything since we removed the markup. #}
     <dialog id="focus-slop-modal" class="modal">
         <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
             <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Slop</h3>
