@@ -2419,36 +2419,40 @@ body.no-card-wm .card-wm-bar {
     display: none;
 }
 
+/* Default: active pane sizes to its CONTENT (no flex-grow). This
+   keeps simple / raw / endless rendering predictably — raw's per-
+   stage panel is ~200 px and should always be visible at its
+   natural height, not crushed into a flex:1 box. */
 body.subj-mode-simple  .subjects-pane[data-pane-mode="simple"],
 body.subj-mode-raw     .subjects-pane[data-pane-mode="raw"],
-body.subj-mode-endless .subjects-pane[data-pane-mode="endless"],
-body.subj-mode-chat    .subjects-pane[data-pane-mode="chat"] {
-    display: block;
-}
-
-/* Shared per-pane heading. Matches across all four panes so the
-   four modes feel like variations of the same surface, not four
-   different cards. Title + subtitle stack vertically; copy varies
-   per pane, structure stays identical. */
-.subjects-pane-heading {
+body.subj-mode-endless .subjects-pane[data-pane-mode="endless"] {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin-bottom: 4px;
 }
-.subjects-pane-title {
-    font-size: 0.6875rem;        /* 11px */
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: hsl(var(--p));
+
+/* Chat is the exception — chat-log needs to flex-grow inside the
+   pane so input + send + replies stay pinned at the bottom of the
+   visible card. Without flex:1 on the pane itself, chat-pane has
+   no growable parent to fill, and the input row falls off the
+   bottom of the splitter-constrained card. overflow-y:auto is the
+   safety net for when even chat-log + input + replies together
+   exceed the card height (e.g. tiny upper pane). */
+body.subj-mode-chat .subjects-pane[data-pane-mode="chat"] {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
-.subjects-pane-sub {
-    font-size: 0.625rem;          /* 10px */
-    line-height: 1.45;
-    color: hsl(var(--bc) / 0.6);
-    font-style: italic;
-}
+
+/* Per-mode descriptive copy lives as the textarea PLACEHOLDER
+   (set in _setSubjectsMode) — not as separate heading text above
+   the input. Keeps the surface uncluttered: the user sees the
+   hint when the field is empty, and it gets out of the way the
+   moment they start typing. The .subjects-pane-heading +
+   .subjects-pane-title + .subjects-pane-sub rules used to live
+   here; removed in favour of the placeholder approach for
+   consistency across all four modes. */
 
 /* Chat mode — the shared input row + suggestions cluster + chip
    stack are all hidden. Chat owns its own input inside its pane,
