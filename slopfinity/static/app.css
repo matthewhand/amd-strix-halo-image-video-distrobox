@@ -2511,6 +2511,20 @@ body.subj-mode-endless #subjects-story-log {
     max-height: none;
 }
 
+/* Quick-spin feedback on every refresh-icon click. _wireRefreshTapSpin
+   in app.js delegates pointerdown events to any element matching a
+   refresh-button selector and toggles .refresh-tapping on its inner SVG
+   for the animation duration. Visible whether or not the underlying
+   action completes — purely a click-acknowledgement gesture. */
+@keyframes refresh-tap-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.refresh-tapping {
+    animation: refresh-tap-spin 600ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
+}
+
 /* Chat "thought bubble" — used when the assistant is calling tools or
    when a tool result lands. Distinct from the regular .chat-bubble:
    dashed border + softer fill so it reads as inner monologue / inner

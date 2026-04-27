@@ -2052,6 +2052,25 @@ function _setSubjectsMode(mode) {
         _renderChatLog();
         if (typeof _renderChatReplies === 'function') _renderChatReplies();
     }
+    // Endless mode REQUIRES Suggestions to be ON — force-enable the toggle
+    // and lock it (pointer-events:none + reduced opacity) so the user
+    // can't accidentally kill the cycle's data source. Switching out of
+    // endless re-enables clicking the toggle.
+    const sugLabel = document.getElementById('subjects-suggestions-toggle');
+    const sugInput = document.getElementById('subjects-suggestions-toggle-input');
+    if (sugLabel && sugInput) {
+        if (mode === 'endless') {
+            if (!sugInput.checked) {
+                sugInput.checked = true;
+                sugInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            sugLabel.classList.add('pointer-events-none', 'opacity-70');
+            sugLabel.title = 'Endless mode requires Suggestions ON — disabled to protect the cycle';
+        } else {
+            sugLabel.classList.remove('pointer-events-none', 'opacity-70');
+            sugLabel.title = 'Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.';
+        }
+    }
     // Repaint the unified Suggestions badge — its right-edge action button
     // swaps between "↻ refresh-all" (simple/chat) and "+ add row" (endless),
     // so a mode change has to refire the icon swap immediately.
@@ -7312,6 +7331,28 @@ function _spinRefreshBriefly(ms) {
     setTimeout(() => svg.classList.remove('animate-spin'), ms || 1500);
 }
 window._spinRefreshBriefly = _spinRefreshBriefly;
+
+// Universal refresh-tap acknowledgement. Any clickable element that LOOKS
+// like a refresh affordance (data-row-refresh, #subjects-suggest-btn,
+// #btn-suggest, .btn-refresh, plus the per-row refresh in suggest rows)
+// gets a one-shot 600 ms rotation on its inner SVG. Independent of the
+// underlying action's completion — purely a "yes I heard the click".
+document.addEventListener('click', (e) => {
+    const target = e.target.closest(
+        '[data-row-refresh],' +
+        '#subjects-suggest-btn,' +
+        '#subjects-suggest-prompt-name + #subjects-suggest-btn,' +
+        '.btn-refresh,' +
+        '[data-refresh-tap]'
+    );
+    if (!target) return;
+    const svg = target.querySelector('svg');
+    if (!svg) return;
+    svg.classList.remove('refresh-tapping'); // restart even if mid-spin
+    void svg.offsetWidth;                    // force reflow so the keyframe re-fires
+    svg.classList.add('refresh-tapping');
+    setTimeout(() => svg.classList.remove('refresh-tapping'), 700);
+}, { capture: true });
 
 // ---------------------------------------------------------------------------
 // Multi-row marquee chip area — replaces the single-row carousel from #76.
