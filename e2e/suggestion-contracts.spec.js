@@ -239,16 +239,20 @@ test('mode swap: chips do not leak across modes', async ({ page }) => {
     const simpleRowCount = await countRows(page);
     expect(simpleRowCount).toBeGreaterThan(0);
     // Swap to endless WITHOUT starting a story — chip stack should
-    // collapse to the 'press Start Story' hint, not retain simple chips.
+    // be empty (not retain simple chips). The previous explanatory
+    // hint string was removed per UX request; emptiness is now the
+    // signal that endless is idle.
     await setMode(page, 'endless');
     await page.waitForTimeout(300);
     const endlessRowCount = await countRows(page);
     expect(endlessRowCount).toBe(0);
-    const hintVisible = await page.evaluate(() => {
+    // No hint text any more — emptiness IS the idle signal. Just
+    // assert the stack has zero chip rows + zero textual content.
+    const stackText = await page.evaluate(() => {
         const stack = document.getElementById('subject-chips-stack');
-        return stack && stack.textContent.includes('Start Story');
+        return (stack && stack.textContent.trim()) || '';
     });
-    expect(hintVisible).toBe(true);
+    expect(stackText).toBe('');
 });
 
 // ---------------------------------------------------------------------------
