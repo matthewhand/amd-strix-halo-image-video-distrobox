@@ -1897,6 +1897,26 @@
                     </label>
                     <p class="text-[10px] opacity-60 leading-snug">When OFF (default), the hover overlay close/restore/maximize buttons on each card are hidden. Use the View dropdown to change layout instead.</p>
 
+                    {# Celebration animation choice — when a stat ticker (GPU /
+                       RAM / Load / Disk) hits 100%, its percentage label
+                       gets a celebrate-* CSS class for a little visual
+                       reward. Default 'random' rotates each time; pinning a
+                       specific style is a quieter (or noisier!) experience. #}
+                    <label class="label py-1 mt-3">
+                        <span class="label-text text-xs">100% celebration animation</span>
+                        <select id="settings-celebrate-style"
+                                class="select select-bordered select-sm w-44"
+                                onchange="setCelebrateChoice(this.value)">
+                            <option value="random">Random (default)</option>
+                            <option value="celebrate-bounce">Bounce</option>
+                            <option value="celebrate-wobble">Wobble</option>
+                            <option value="celebrate-pulse">Pulse</option>
+                            <option value="celebrate-jump">Jump</option>
+                            <option value="celebrate-wave">Wave</option>
+                        </select>
+                    </label>
+                    <p class="text-[10px] opacity-60 leading-snug">Picks which animation runs on the percentage label when a stat ticker reaches 100%. 'Random' picks fresh each time the ticker re-enters 100% so you don't see the same wiggle every time.</p>
+
                     {# Disk-low generation guard. When EITHER threshold trips
                        (free pct ≤ X OR free GB ≤ Y), /inject is blocked with
                        a 409 + "disk-low guard" message. Set either to 0 to
