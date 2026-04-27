@@ -2471,11 +2471,27 @@ body.subj-mode-endless.endless-running #subjects-input-row {
 }
 
 /* Raw mode — LLM-free, suggestions don't apply. Hide the unified
-   Suggestions badge + the chip-stack marquee. The shared input row
-   stays visible (Queue button is the action). */
+   Suggestions badge + the chip-stack marquee. Also hide the shared
+   subject textarea (#p-core) — raw doesn't use a subject seed at
+   all; the per-stage prompts above ARE the queue payload. The
+   Queue Slop button stays visible (still inside #subjects-input-row)
+   and now stretches to fill the row since the textarea is gone. */
 body.subj-mode-raw #subjects-need-ideas-row,
-body.subj-mode-raw #subjects-suggestions-area {
+body.subj-mode-raw #subjects-suggestions-area,
+body.subj-mode-raw #p-core {
     display: none !important;
+}
+
+/* With #p-core hidden, the Queue Slop button is the only child of
+   #subjects-input-row. Drop the ml-auto right-pin and let it
+   stretch full-width so it reads as the primary action affordance,
+   not a stranded button on the right edge. */
+body.subj-mode-raw #subjects-input-row {
+    justify-content: stretch;
+}
+body.subj-mode-raw #btn-start-stop-inline {
+    width: 100% !important;
+    margin-left: 0 !important;
 }
 
 /* Endless story log + chat log + chat pane — let them flex-grow

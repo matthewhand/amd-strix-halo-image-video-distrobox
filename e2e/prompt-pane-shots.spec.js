@@ -1,8 +1,10 @@
 // Phase-1 per-mode pane screenshots. Switches the Prompt card through
 // each of the four modes (simple / raw / endless / chat) by pressing
 // the matching mode-pill button + screenshots both:
-//   /tmp/pane-<mode>-card.png   — just the Prompt card (cropped)
-//   /tmp/pane-<mode>-full.png   — full viewport (default layout)
+//   /tmp/pane-<mode>-card.png      — just the Prompt card (cropped)
+//   /tmp/pane-<mode>-full.png      — full viewport (default layout)
+// Plus a focused-layout shot per mode:
+//   /tmp/pane-<mode>-focused.png   — body[data-layout="subjects"]
 //
 // Lets the user eyeball pane copy + per-mode visual consistency in
 // one go without manually clicking each tab. Not an assertion suite —
@@ -75,5 +77,34 @@ for (const mode of MODES) {
         if (card) {
             await card.screenshot({ path: `/tmp/pane-${mode}-card.png` });
         }
+    });
+
+    test(`pane=${mode}: prompt-focused layout`, async ({ page }) => {
+        await page.addInitScript(() => {
+            try { localStorage.clear(); } catch (_) {}
+        });
+        // ?layout=subjects activates the prompt-focus single-pane mode.
+        await page.goto(`${BASE}/?layout=subjects`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => {
+            const splash = document.getElementById('splash-overlay');
+            const main = document.querySelector('main');
+            const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
+            return !splash && mainOpacity >= 1;
+        }, null, { timeout: 5000 });
+        await page.click(`.subjects-mode-pill button[data-subj-mode="${mode}"]`);
+        await page.waitForTimeout(400);
+        // Clear the seed textarea so the placeholder shows.
+        await page.evaluate(() => {
+            const ta = document.getElementById('p-core');
+            if (ta) {
+                ta.value = '';
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        await page.waitForTimeout(120);
+        await page.screenshot({
+            path: `/tmp/pane-${mode}-focused.png`,
+            fullPage: false,
+        });
     });
 }

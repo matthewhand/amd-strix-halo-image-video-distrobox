@@ -2153,7 +2153,9 @@ function _setSubjectsMode(mode) {
         // for in this mode and (b) what action to take next.
         const placeholders = {
             simple:  'Your idea — type it here.\n\nThe LLM rewrites your idea into per-stage prompts when you click Queue Slop. Pick from the suggestions below if you want a starter.',
-            raw:     'One subject per line — what you type is what runs.\n\ne.g.\nlumpy clay robots\ncyberpunk dragons\nhermit crab lawyers\n\nNo LLM rewriting. Edit each per-stage prompt above directly, or click Rewrite to draft with the LLM.',
+            // Raw hides #p-core entirely; placeholder unused but kept
+            // so a mode-switch sequence doesn't leave stale copy.
+            raw:     '(raw mode uses the per-stage prompts above directly — no subject seed)',
             endless: 'Write your first beat — then click Start Story.\n\nThe LLM cycles continuation suggestions below; click any chip to extend the story. Submit when you\'re done.',
             chat:    'Ask the assistant — e.g. "queue 3 short clips of dragons"',
         };
