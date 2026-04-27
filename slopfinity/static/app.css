@@ -2259,8 +2259,49 @@ body[data-layout="queue"] #ui-split-handle {
     display: none !important;
 }
 
+/* True single-card focus layouts (subjects / queue): anchor
+   body→main→ui-split→ui-split-upper to the viewport with
+   overflow:hidden at every level so the card can only grow
+   DOWNWARD into available space, never upward behind the top
+   stat bar. The previous min-height: calc(100vh - 88px) caused
+   overflow when the upper-pane's natural height exceeded
+   available room — the card would creep up behind the SLOPFINITY
+   top bar. Now: body height = 100vh, main fills body, ui-split
+   fills main, ui-split-upper takes remaining space below
+   #top-collapsible. Each level overflow:hidden so a long inner
+   element scrolls inside its OWN bounds rather than pushing the
+   whole layout. subj-queue is EXCLUDED — it keeps slop visible
+   as a horizontal filmstrip BELOW the upper pane, so we don't
+   clip body overflow there. */
+body[data-layout="subjects"],
+body[data-layout="queue"] {
+    height: 100vh;
+    overflow: hidden;
+}
+body[data-layout="subjects"] main,
+body[data-layout="queue"] main {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+body[data-layout="subjects"] #ui-split,
+body[data-layout="queue"] #ui-split {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
 body[data-layout="subjects"] #ui-split-upper,
-body[data-layout="queue"] #ui-split-upper,
+body[data-layout="queue"] #ui-split-upper {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden;
+}
+/* subj-queue keeps the legacy min-height-based fill — slop sits
+   below the upper pane so we want the upper pane to claim a
+   sensible chunk without forcing 100vh body. */
 body[data-layout="subj-queue"] #ui-split-upper {
     flex: 1 1 auto !important;
     height: auto !important;
