@@ -3399,7 +3399,21 @@ async function loadPlanRender() {
         prevStageIdx = curIdx;
         const tag = d.load && d.load.length ? 'LOAD ' : 'HIT  ';
         const cls = d.load && d.load.length ? '' : 'text-success';
-        const stage = (d.step.stage || '').padEnd(11);
+        // Stage labels: convert internal slugs to user-facing 'X Model'
+        // strings. The internal slug ('image', 'video', 'audio', etc.)
+        // is the role-key the planner uses; the display label reads
+        // as a noun phrase aligned with how the user thinks of each
+        // model role.
+        const _stageLabel = ({
+            concept: 'Text Model ',
+            image:   'Image Model',
+            video:   'Video Model',
+            audio:   'Music Model',
+            tts:     'Speech Model',
+            upscale: 'Upscale Model',
+            merge:   'Final Merge',
+        })[d.step.stage] || (d.step.stage || '');
+        const stage = _stageLabel.padEnd(13);
         const model = (d.step.model || '').padEnd(12);
         const gb = (Math.round((d.step.gb || 0) * 10) / 10).toFixed(1);
         rows.push(
