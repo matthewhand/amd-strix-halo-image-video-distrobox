@@ -7500,7 +7500,7 @@ async function _fetchSuggestBatch(opts) {
             if (t.length > 200) return true;
             // Obvious error markers.
             if (/^error[:\s]/i.test(t)) return true;
-            if (/^http\s*[34][0-9]{2}/i.test(t)) return true;
+            if (/^http\s*[345][0-9]{2}/i.test(t)) return true;  // 3xx/4xx/5xx
             if (/\btimed?\s*out\b/i.test(t)) return true;
             if (/^internal\s*server\s*error/i.test(t)) return true;
             if (/^<error/i.test(t)) return true;
@@ -7573,12 +7573,21 @@ window.regenSuggestions = regenSuggestions;
 
 // SIMPLE mode — 3 rows, all of the user's default prompt. Server-cache
 // hits row 1 → row 2/3 use fresh=1 to get genuinely different batches.
+//
+// Mode-check at every await boundary: if the user swaps modes mid-fetch,
+// the in-flight result must not paint into the new mode's stack (would
+// leak as 'naked' simple-mode rows in endless / chat). We capture the
+// mode at start and bail if it changes.
 async function _renderSimpleRows(n) {
+    const startMode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    const stillSimple = () => (typeof _getSubjectsMode === 'function')
+        ? _getSubjectsMode() === startMode : true;
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
     const promptId = _getDefaultPromptId();
     box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
     const arr = await _fetchSuggestBatch({ n, promptId, fresh: false });
+    if (!stillSimple()) return;
     if (!arr.length) {
         box.innerHTML = '<span class="text-[10px] italic text-warning">LLM unreachable</span>';
         return;
@@ -7588,11 +7597,13 @@ async function _renderSimpleRows(n) {
     const TARGET_ROWS = 3;
     for (let i = 1; i < TARGET_ROWS; i++) {
         await new Promise(r => setTimeout(r, 800));
+        if (!stillSimple()) return;
         const t = _lastTick && _lastTick.stats ? _lastTick.stats : {};
         const ramT = t.ram_t || 0;
         const ramPct = ramT > 0 ? Math.round((t.ram_u / ramT) * 100) : 0;
         if ((t.gpu || 0) >= 80 || ramPct >= 80 || (t.load_pct || 0) >= 80) break;
         const more = await _fetchSuggestBatch({ n, promptId, fresh: true });
+        if (!stillSimple()) return;
         if (more && more.length) _appendSuggestBatchRow(more);
     }
 }
@@ -7606,6 +7617,10 @@ async function _renderSimpleRows(n) {
 // chip-stack just shows a hint so we don't burn LLM cycles on a seed
 // that hasn't been chosen yet.
 async function _renderEndlessRows(n) {
+    // Mode-check guard: if user swaps to non-endless mid-fetch, bail
+    // before painting (otherwise endless rows leak into simple/chat).
+    const stillEndless = () => (typeof _getSubjectsMode === 'function')
+        && _getSubjectsMode() === 'endless' && _endlessRunning;
     const box = document.getElementById('subject-chips-stack');
     if (!box) return;
     if (!_endlessRunning) {
@@ -7630,8 +7645,12 @@ async function _renderEndlessRows(n) {
         // earlier session would be off-context. Cache is reserved for
         // simple mode (see _renderCachedSuggestions doc).
         const arr = await _fetchSuggestBatch({ n, promptId, fresh: true });
+        if (!stillEndless()) return;  // mode swap during fetch — abandon
         if (arr && arr.length) _appendSuggestBatchRow(arr, { promptId, rowIdx: i });
-        if (i < rowPrompts.length - 1) await new Promise(r => setTimeout(r, 700));
+        if (i < rowPrompts.length - 1) {
+            await new Promise(r => setTimeout(r, 700));
+            if (!stillEndless()) return;
+        }
     }
 }
 
