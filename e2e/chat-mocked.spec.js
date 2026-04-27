@@ -6,7 +6,7 @@
 // Captures /tmp/pane-chat-mocked-{default,focused}.png so the user
 // can eyeball whether the chat ever overflows the card.
 
-const { test } = require('@playwright/test');
+const { test, expect } = require('@playwright/test');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
@@ -27,6 +27,66 @@ const MOCK_HISTORY = [
     { role: 'user', content: 'how much disk free?' },
     { role: 'assistant', content: '76.5 GB free of 386 GB total — disk-low guard threshold is 5 GB / 1 %. Plenty of headroom.' },
 ];
+
+// Desktop chat with VERY long history — verify input stays in viewport
+// regardless of conversation length. Triples the mock history then
+// asserts input.y + input.height ≤ viewport.height. The user's
+// repeated 'chat goes off page' complaint maps to either (a) input
+// pushed below viewport (chat-log overflow not constrained) or
+// (b) entire pane scrolled off because parent isn't constrained.
+test.describe('desktop chat overflow', () => {
+    test.use({ viewport: { width: 1440, height: 900 } });
+    test('chat input visible with 50+ message history (default layout)', async ({ page }) => {
+        const longHistory = [];
+        for (let i = 0; i < 25; i++) {
+            longHistory.push({ role: 'user', content: `message ${i + 1} from user` });
+            longHistory.push({ role: 'assistant', content: `assistant reply ${i + 1} with some longer text to fill the bubble width and push the chat log toward overflow as quickly as possible` });
+        }
+        await page.addInitScript((hist) => {
+            try {
+                localStorage.clear();
+                localStorage.setItem('slopfinity-chat-history-v1', JSON.stringify(hist));
+                localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            } catch (_) {}
+        }, longHistory);
+        await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: '/tmp/pane-chat-mocked-long-default.png', fullPage: false });
+        const inputBox = await page.locator('#subjects-chat-input').boundingBox();
+        const sendBox = await page.locator('#subjects-chat-send').boundingBox();
+        const viewportH = page.viewportSize().height;
+        // Both must be entirely inside the viewport.
+        expect(inputBox).toBeTruthy();
+        expect(sendBox).toBeTruthy();
+        expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(viewportH);
+        expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(viewportH);
+    });
+
+    test('chat input visible with 50+ message history (focused layout)', async ({ page }) => {
+        const longHistory = [];
+        for (let i = 0; i < 25; i++) {
+            longHistory.push({ role: 'user', content: `message ${i + 1}` });
+            longHistory.push({ role: 'assistant', content: `assistant reply ${i + 1} expanded text to fill the bubble width and approach overflow` });
+        }
+        await page.addInitScript((hist) => {
+            try {
+                localStorage.clear();
+                localStorage.setItem('slopfinity-chat-history-v1', JSON.stringify(hist));
+            } catch (_) {}
+        }, longHistory);
+        await page.goto(`${BASE}/?layout=subjects`, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: '/tmp/pane-chat-mocked-long-focused.png', fullPage: false });
+        const inputBox = await page.locator('#subjects-chat-input').boundingBox();
+        const viewportH = page.viewportSize().height;
+        expect(inputBox).toBeTruthy();
+        expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(viewportH);
+    });
+});
 
 // Mobile chat — verify the bottom nav bar doesn't push input off-screen
 // and chat still scrolls internally on a phone viewport.
