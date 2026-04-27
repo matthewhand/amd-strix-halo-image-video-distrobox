@@ -812,7 +812,12 @@ async def chat_endpoint(payload: dict = Body(...)):
         return JSONResponse({"ok": False, "error": "messages must be a list"}, status_code=400)
     # Keep server-side history bounded too — the client should already trim.
     history = history[-50:]
-    messages = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}] + history
+    config = cfg.load_config()
+    # Provide the LLM with current pipeline state so its tools usage is informed.
+    # Exclude heavy/private blocks (auto_suspend, api_keys).
+    public_config = {k: v for k, v in config.items() if k not in cfg.SENSITIVE_KEYS and k != "auto_suspend"}
+    sys_msg = f"{_CHAT_SYSTEM_PROMPT}\n\nCurrent pipeline configuration:\n{json.dumps(public_config, indent=2)}"
+    messages = [{"role": "system", "content": sys_msg}] + history
 
     tool_audit = []  # surfaced to the client for UI rendering
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
