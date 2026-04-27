@@ -870,41 +870,18 @@ body[data-slop-expanded="1"] {
     flex-direction: column;
 }
 
+/* Slop section — always expanded (<details>/<summary> wrapper removed
+   per the layout-revert). The collapsible variant was clutter the
+   user never wanted, and it broke infinite-scroll geometry when
+   collapsed. Container stays a flex column so the inner card-body
+   can claim leftover vertical room and the gallery scrolls. */
 #slop-collapsible {
     display: flex;
     flex-direction: column;
     width: 100%;
     min-height: 0;
-}
-
-#slop-collapsible[open] {
     flex: 1 1 auto;
     border-top: none;
-}
-
-/* In the default 3-pane layout, the slop card is the workhorse — there's
-   no good reason to collapse it; doing so leaves the lower split mostly
-   empty. Lock it open in default mode and disable the click-to-toggle
-   on the summary. Other layouts (subjects, queue, gallery, …) keep the
-   collapsible behaviour for compactness. */
-body:not([data-layout]) #slop-collapsible {
-    pointer-events: auto; /* container itself stays interactive */
-}
-
-body:not([data-layout]) #slop-collapsible > summary,
-body[data-layout="gallery"] #slop-collapsible > summary {
-    cursor: default !important;
-    pointer-events: none; /* the summary row no longer toggles */
-}
-
-body:not([data-layout]) #slop-collapsible > summary > *,
-body[data-layout="gallery"] #slop-collapsible > summary > * {
-    pointer-events: auto; /* but inner buttons (⊕ upload) still click */
-}
-
-body:not([data-layout]) #slop-collapsible .slop-indicator,
-body[data-layout="gallery"] #slop-collapsible .slop-indicator {
-    visibility: hidden;
 }
 
 /* Mobile sheets — when the user edge-swipes on a phone (gallery layout),
@@ -957,24 +934,9 @@ body[data-layout="gallery"] #slop-collapsible .slop-indicator {
     }
 }
 
-/* Summary bar is always visible as the toggle row. */
-#slop-collapsible summary {
-    list-style: none;
-    outline: none;
-}
-
-#slop-collapsible summary::-webkit-details-marker {
-    display: none;
-}
-
-#slop-collapsible[open] .slop-indicator {
-    transform: rotate(180deg);
-}
-
-#slop-collapsible .slop-indicator {
-    display: inline-block;
-    transition: transform 0.2s;
-}
+/* The old <summary>/<details> selectors lived here and toggled the
+   collapsible's chevron + click affordance. Removed with the wrapper
+   revert — slop is always expanded now. */
 
 /* Legacy class kept for any inner descendants that still reference it. */
 .ui-split-pane {
@@ -2545,6 +2507,17 @@ body.subj-mode-endless #subjects-story-log {
     opacity: 0.45;
     min-height: 22px;
     transition: opacity 120ms ease-out;
+}
+
+/* Simple mode — the refresh button is the only end-element of the
+   Suggestions join cluster (the + button is hidden in non-endless
+   modes), so the daisyUI .join-item flat right-edge looks awkward.
+   Round it to a pill in simple mode where it visually stands alone.
+   Endless still uses the joined square edge because the + button
+   sits adjacent and they should read as one segmented control. */
+body.subj-mode-simple #subjects-suggest-btn.join-item {
+    border-top-right-radius: 9999px;
+    border-bottom-right-radius: 9999px;
 }
 
 /* Suggestions stack — auto-scroll internally when too many rows pile

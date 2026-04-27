@@ -1053,11 +1053,16 @@
             <div id="ui-split-handle" class="flex-none cursor-row-resize select-none"
                 title="Drag to resize · double-click to reset"></div>
             <div id="ui-split-lower" class="ui-split-pane custom-scrollbar">
-                <details id="slop-collapsible" open
+                {# Slop section — plain <div>, NOT a <details>/<summary>. The
+                   collapsible wrapper was UX clutter (the user always wants
+                   the gallery visible) and broke infinite-scroll's geometry
+                   when collapsed. Header bar below is a static row; infinite
+                   scroll attaches to the viewport (root: null) and pages via
+                   GET /assets, see app.js _initInfiniteSlop. #}
+                <div id="slop-collapsible"
                     class="bg-base-200/20 rounded-t-lg border-t border-base-300 overflow-hidden">
-                    <summary id="slop-collapsible-summary"
-                        class="cursor-pointer p-2 bg-base-300/40 flex items-center gap-3 text-xs select-none hover:bg-base-300/60 transition-colors">
-                        <span class="slop-indicator opacity-60">▾</span>
+                    <div id="slop-collapsible-summary"
+                        class="p-2 bg-base-300/40 flex items-center gap-3 text-xs transition-colors">
                         <span class="flex-1 font-bold uppercase tracking-widest text-primary">{{ branding.labels.gallery_completed }}</span>
                         <span class="loading loading-ring loading-xs text-accent" id="live-ring" style="display:none"></span>
                         <div id="slop-bar-stats" class="flex items-center gap-3 text-[10px] opacity-60">
@@ -1081,7 +1086,7 @@
                         </button>
                         <input type="file" id="seed-upload-input" multiple accept="image/*"
                             class="hidden" aria-hidden="true">
-                    </summary>
+                    </div> {# /slop-collapsible-summary #}
                     <section id="output-section" class="card-body p-4 pt-3"
                         style="display:{% if vids or live or imgs %}block{% else %}none{% endif %}">
                         {# Hover window-controls (Non-OSX style) #}
@@ -1307,7 +1312,7 @@
                         <div id="v-grid" class="hidden"></div>
                         <div id="i-grid" class="hidden"></div>
                     </section>
-                </details>
+                </div> {# /slop-collapsible #}
 
                 <!-- Output Empty-state card (shown when all grids empty) -->
                 <div id="output-empty" class="card bg-base-200/30 border border-base-300 mb-12"
