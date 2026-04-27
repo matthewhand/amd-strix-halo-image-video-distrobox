@@ -791,47 +791,15 @@ textarea.subjects-autogrow {
     flex-direction: column;
 }
 
-/* When the slop gallery is expanded, the parent flex pane is bounded
-   to the viewport so growth pushes UPWARDS into the upper pane's
-   space, not downwards extending the page. Upper pane caps at 35vh
-   (Subjects + Queue stay readable but tight); slop takes everything
-   below. Internal scroll handled by ui-split-lower so the slop grid
-   feeds infinite-scroll naturally. */
-/* Expanded slop pane is HOISTED to its own layer (position: fixed at the
-   bottom of the viewport with high z-index). The upper pane keeps its
-   natural height + Subjects/Queue cards aren't crowded. The slop pane
-   overlays the bottom 65vh with its own internal scroll. Click the
-   summary's collapse chevron to dismiss the overlay back to a thin
-   bottom strip. */
-body[data-slop-expanded="1"] #ui-split {
-    height: auto;
-    overflow: visible;
-}
-
-body[data-slop-expanded="1"] #ui-split-upper {
-    /* Upper stays at natural size — no cap, no overflow clipping. */
-    flex: 1 1 auto;
-}
-
-body[data-slop-expanded="1"] #ui-split-lower {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 65vh;
-    z-index: 30;
-    background: hsl(var(--b2));
-    box-shadow: 0 -8px 24px hsl(var(--bc) / 0.25);
-    overflow-y: auto;
-    border-top: 1px solid hsl(var(--p) / 0.4);
-}
-
-/* Push the page bottom-padding while the slop overlay is visible so the
-   user can still scroll the upper cards without having the slop overlay
-   permanently obscuring the bottom of any extended content. */
-body[data-slop-expanded="1"] {
-    padding-bottom: calc(65vh + 8px);
-}
+/* The body[data-slop-expanded="1"] position:fixed overlay rules used
+   to live here — they hoisted the slop pane to a fixed-bottom layer
+   with z-index:30, designed for the now-removed expand/collapse
+   toggle behaviour. With slop always inline (no more <details>
+   wrapper), those rules caused slop to overlay the upper pane
+   regardless of the user's actual layout intent. Removed entirely:
+   #ui-split-lower now sits naturally in the flex flow below the
+   draggable splitter handle, infinite-scroll observes the viewport
+   directly. */
 
 #top-collapsible[open] {
     flex: 0 0 auto;

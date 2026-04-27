@@ -4114,65 +4114,32 @@ document.addEventListener('DOMContentLoaded', () => {
     _applySlopFilters();
     _initSplitDivider();
 
-    // Slop section is always expanded now (collapsible <details> wrapper
-    // removed in the layout-revert). Pin the body flag for any CSS or
-    // legacy code that still reads data-slop-expanded so they continue
-    // to render the "expanded" branch.
-    document.body.dataset.slopExpanded = '1';
+    // data-slop-expanded was the toggle state for the now-removed
+    // <details> wrapper around slop. With slop always inline, the
+    // body flag is meaningless — and the position:fixed CSS that
+    // keyed off it caused slop to overlay the upper pane. Both the
+    // attribute and the CSS rules are gone.
     if (typeof _updateSingleLabels === 'function') _updateSingleLabels();
     if (typeof _updateChaosEnabled === 'function') _updateChaosEnabled();
     if (typeof _updateTerminateEnabled === 'function') _updateTerminateEnabled();
     if (typeof _updateGenModePill === 'function') _updateGenModePill();
     if (typeof _renderStageEtas === 'function') _renderStageEtas();
-    // Suggestions on page load:
-    //   1. Render cached chips immediately (no LLM call) so the row isn't
-    //      empty during the first second.
-    //   2. If no cache AND queue is idle, fire one fetch to populate cache.
-    //   3. The 🎲 Suggest button always fetches fresh + overwrites cache.
-    // EXCEPT in endless mode without a running story — endless suggestions
-    // are story-beat continuations and shouldn't render until the user
-    // commits to a seed via Start Story / I'm Feeling Lucky.
+    // Suggestions on page load — passive only:
+    //   1. Render cached chips for SIMPLE mode if a cache exists (no LLM
+    //      call, just localStorage hydration so the user sees the last
+    //      session's last batch).
+    //   2. Endless idle shows the "press Start Story" hint.
+    //   3. NO auto-fire on page load (old design — would burn LLM cycles
+    //      every time the dashboard opened, even when the user hadn't
+    //      asked for suggestions). The user clicks ↻ Refresh on the
+    //      Suggestions badge when they actually want a fresh batch.
     const _curMode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
     const _endlessIdle = (_curMode === 'endless' && !_endlessRunning);
-    const hadCache = _endlessIdle ? false : _renderCachedSuggestions();
     if (_endlessIdle) {
         const box = document.getElementById('subject-chips-stack');
         if (box) box.innerHTML = '<span class="text-[10px] italic text-base-content/50">Press Start Story or pick a seed — suggestions unlock once the story is running.</span>';
-    }
-    if (!hadCache && typeof regenSuggestions === 'function') {
-        const tryAutoSuggest = () => {
-            if (_isSuggestionsHidden()) return;
-            const t = _lastTick;
-            if (!t) return setTimeout(tryAutoSuggest, 250);
-            // Settings toggle — bail immediately when disabled.
-            // Manual 🎲 button stays available regardless.
-            if (_autoSuggestDisabled()) {
-                console.info('skipping auto-suggest: suggest_auto_disabled');
-                return;
-            }
-            // Preferred gate: GPU has been at <=5% for >=3 consecutive
-            // seconds. This catches ad-hoc GPU users (manual ComfyUI
-            // runs, transient spikes) that the old queue/fleet check
-            // missed, and avoids firing during brief fleet-stage gaps.
-            if (_gpuPctHistory.length > 0) {
-                if (!_isGpuIdleEnough()) {
-                    console.info('skipping auto-suggest: GPU busy');
-                    return setTimeout(tryAutoSuggest, 1000);
-                }
-            } else {
-                // Fallback for the very first ticks before any GPU
-                // history accumulates — keep the old heuristic so we
-                // don't block forever if WS stats are unavailable.
-                const queueBusy = (t.queue || []).some(x => x.status == null || x.status === 'pending');
-                const fleetBusy = t.state && t.state.mode && t.state.mode !== 'Idle';
-                if (queueBusy || fleetBusy) {
-                    console.info('skipping auto-suggest: queue active');
-                    return;
-                }
-            }
-            regenSuggestions().catch(() => { });
-        };
-        setTimeout(tryAutoSuggest, 500);
+    } else {
+        _renderCachedSuggestions(); // simple-mode-only; no-op for raw/chat
     }
 });
 
