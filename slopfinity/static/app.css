@@ -2454,6 +2454,14 @@ body.subj-mode-raw #subjects-suggestions-area {
     display: none !important;
 }
 
+/* Chat mode — the marquee chip stack is replaced by the chat pane's own
+   4-reply strip, so hide the marquee area to avoid showing both at once.
+   The unified badge stays visible (the prompt-name dropdown there drives
+   what style the chat-reply prompts use). */
+body.subj-mode-chat #subjects-suggestions-area {
+    display: none !important;
+}
+
 /* The per-stage prompt panel (image / video / music / tts with AI Magic
    buttons) is only meaningful in Raw mode. Hide everywhere else.
    Simple mode lets the LLM auto-rewrite on queue; Endless cycles a story;

@@ -1099,6 +1099,9 @@ function _getDefaultPromptId() {
 function _setDefaultPromptId(id) {
     try { localStorage.setItem(_DEFAULT_SUGGEST_PROMPT_ID_KEY, id); } catch (_) {}
     _refreshSuggestBadge();
+    // Visual feedback: spin the badge's refresh icon while the regen call
+    // is in flight so the user knows the dropdown change is taking effect.
+    if (typeof _spinRefreshBriefly === 'function') _spinRefreshBriefly(1500);
     if (typeof regenSuggestions === 'function') regenSuggestions().catch(() => {});
 }
 window._getDefaultPromptId = _getDefaultPromptId;
@@ -7201,46 +7204,32 @@ async function _renderChatReplies() {
     const host = document.getElementById('subjects-chat-replies');
     if (!host) return;
     const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
-    host.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
-
+    // No bouncing dots while we wait — the unified badge's refresh button
+    // gets a spinning icon instead (see _spinRefreshBriefly). The reply
+    // strip stays empty rather than flashing a placeholder that immediately
+    // gets replaced.
     let subjects = '';
-    let nudge = '';
     if (history.length) {
-        // Continuation mode — last user/assistant pair as context.
         const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
         const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
         subjects = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
-        nudge = 'Suggest 4 short reply candidates the user might send next, 3-8 words each, plain text, one per line.';
-    } else {
-        // Starter mode — pick from things this dashboard's chat assistant
-        // can actually do (queue clips, check status, list outputs).
-        subjects = '';
-        nudge = (
-            'You are the slopfinity assistant. Suggest exactly 4 short conversation '
-            + 'starters the user might send first, 3-8 words each, plain text, one per '
-            + 'line, no numbering, no quotes. Examples of valid starters: '
-            + '"queue 3 short dragon clips", "what\'s running?", "list recent finals", '
-            + '"cancel everything pending".'
-        );
     }
-    const qs = '?n=4&fresh=1&_t=' + Date.now()
-        + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-        + '&custom_prompt_inline=' + encodeURIComponent(nudge);
+    // Honor the user's selected prompt_id so swapping the dropdown actually
+    // changes the reply style (Yes-and / Plot Twist / Concrete Detail / …).
+    // Empty subjects → server's default "give me N ideas" prompt picks up
+    // the named prompt's system text via prompt_id.
+    const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
     let arr = [];
     try {
-        // The server doesn't have a custom_prompt_inline param; fall through
-        // by passing the nudge as the subjects seed when history is empty
-        // (server's "match these existing subjects" template still produces
-        // sensible output for the starter case). For continuation it works
-        // naturally since `subjects` carries the chat context.
-        const seed = subjects || nudge;
-        const r = await fetch('/subjects/suggest?n=4&fresh=1&_t=' + Date.now()
-            + '&subjects=' + encodeURIComponent(seed));
+        const qs = '?n=4&fresh=1&_t=' + Date.now()
+            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+            + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
+        const r = await fetch('/subjects/suggest' + qs);
         const d = await r.json();
         arr = (d && d.suggestions) || [];
     } catch (_) {}
     if (!arr.length) {
-        host.innerHTML = '<span class="text-[10px] italic opacity-60">no starter suggestions (LLM unreachable)</span>';
+        host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
         return;
     }
     host.innerHTML = arr.slice(0, 4).map(s =>
@@ -7250,6 +7239,19 @@ async function _renderChatReplies() {
         </button>`).join('');
 }
 window._renderChatReplies = _renderChatReplies;
+
+// Visual feedback on the unified-badge refresh icon: when an action is
+// pending (dropdown swap → regen, manual refresh click), spin the icon
+// for ~1.5 s OR until the next render hooks in.
+function _spinRefreshBriefly(ms) {
+    const btn = document.getElementById('subjects-suggest-btn');
+    if (!btn) return;
+    const svg = btn.querySelector('svg');
+    if (!svg) return;
+    svg.classList.add('animate-spin');
+    setTimeout(() => svg.classList.remove('animate-spin'), ms || 1500);
+}
+window._spinRefreshBriefly = _spinRefreshBriefly;
 
 // ---------------------------------------------------------------------------
 // Multi-row marquee chip area — replaces the single-row carousel from #76.
