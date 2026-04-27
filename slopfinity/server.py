@@ -2393,6 +2393,98 @@ async def free_endpoint():
     return {"ok": result.get("ok", False), **result}
 
 
+@app.post("/story/stitch")
+async def story_stitch(data: dict = Body(...)):
+    """Concatenate a list of FINAL_*.mp4 clips into one combined story
+    video using ffmpeg's concat demuxer (stream copy, no re-encode).
+
+    Body:
+      filenames: ["FINAL_19_dragon.mp4", "FINAL_20_lighthouse.mp4", ...]
+      output_name: optional — defaults to STORY_<ts>.mp4
+
+    Returns {ok, output, error?}. Output lands in EXP_DIR alongside
+    the source clips so it surfaces in the gallery via /assets.
+
+    Used by the endless-story flow: the user accepts N suggestion chips
+    over the course of a story, each becomes a queued iter, each iter
+    produces a FINAL_*.mp4. Once they're all done the user clicks
+    Stitch in the story-pane footer to concat them into the actual
+    final story video. Stream-copy (no re-encode) is fast and lossless
+    when the source clips share codec params (which they do —
+    same model + settings produced them).
+    """
+    raw_files = data.get("filenames") or []
+    if not isinstance(raw_files, list) or not raw_files:
+        return JSONResponse({"ok": False, "error": "filenames must be a non-empty list"}, status_code=400)
+
+    # Validate every file exists in EXP_DIR + is a FINAL_*.mp4 (basename
+    # only — strip any path components a malicious client might supply).
+    abs_paths = []
+    for raw in raw_files:
+        if not isinstance(raw, str):
+            return JSONResponse({"ok": False, "error": f"filename not a string: {raw!r}"}, status_code=400)
+        name = os.path.basename(raw)
+        if not (name.startswith("FINAL_") and name.lower().endswith(".mp4")):
+            return JSONResponse({"ok": False, "error": f"not a FINAL_*.mp4: {name}"}, status_code=400)
+        p = os.path.join(EXP_DIR, name)
+        if not os.path.isfile(p):
+            return JSONResponse({"ok": False, "error": f"missing file: {name}"}, status_code=404)
+        abs_paths.append(p)
+
+    output_name = (data.get("output_name") or "").strip()
+    if not output_name:
+        output_name = f"STORY_{int(time.time())}.mp4"
+    output_name = os.path.basename(output_name)
+    if not output_name.lower().endswith(".mp4"):
+        output_name += ".mp4"
+    output_path = os.path.join(EXP_DIR, output_name)
+    if os.path.exists(output_path):
+        return JSONResponse({"ok": False, "error": f"output already exists: {output_name}"}, status_code=409)
+
+    # ffmpeg concat demuxer needs a temp list file with `file '<path>'`
+    # entries — one per clip in order. We write it next to the output so
+    # debugging is easy if the concat fails.
+    list_path = output_path + ".concat.txt"
+    try:
+        with open(list_path, "w") as f:
+            for p in abs_paths:
+                # Single-quote the path with ffmpeg's escape rule (replace
+                # ' with '\'') so spaces / quotes in filenames don't break
+                # the demuxer's parser.
+                escaped = p.replace("'", r"'\''")
+                f.write(f"file '{escaped}'\n")
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-y",                    # overwrite (we already 409'd above; safety)
+            "-f", "concat", "-safe", "0",
+            "-i", list_path,
+            "-c", "copy",            # stream copy — fast + lossless
+            output_path,
+        ]
+        proc = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, timeout=600,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or "").strip().splitlines()[-1] if proc.stderr else "ffmpeg failed"
+            return JSONResponse(
+                {"ok": False, "error": f"ffmpeg: {err}", "cmd": " ".join(cmd)},
+                status_code=500,
+            )
+    finally:
+        # Clean up the concat list — keep the output, drop the helper.
+        try:
+            os.remove(list_path)
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "output": output_name,
+        "url": f"/files/{output_name}",
+        "n_inputs": len(abs_paths),
+    }
+
+
 @app.post("/emergency_free")
 async def emergency_free_endpoint():
     """ComfyUI /free + pkill stray model launchers."""

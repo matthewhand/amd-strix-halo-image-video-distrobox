@@ -2308,6 +2308,15 @@ body[data-layout="queue-slop"] #focus-slop-fab [data-fab-target="slop"] {
     display: none;
 }
 
+/* Push the focus-mode FAB cluster off the chat input row in chat mode
+   (subjects-layout) — the bottom-right corner is where chat's
+   Send button lives, and the FABs were partially obscuring it. Move
+   them up + add right padding to the card so they sit cleanly above
+   the input row instead of overlapping it. */
+body[data-layout="subjects"].subj-mode-chat #focus-slop-fab {
+    bottom: 80px;
+}
+
 /* Hide the inline Slop card whenever Slop is not part of the layout. */
 body[data-layout="subjects"] #output-section,
 body[data-layout="queue"] #output-section,
