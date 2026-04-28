@@ -994,7 +994,7 @@
                             clear "this belongs to Prompt" boundary. #}
                             <div id="subjects-need-ideas-row"
                                 class="flex items-center gap-1 flex-nowrap mt-3 pt-2 border-t border-base-300/40 overflow-x-auto">
-                                <div id="subjects-suggest-cluster" class="join">
+                                <div id="subjects-suggest-cluster" class="join flex-none">
                                     <label id="subjects-suggestions-toggle"
                                         class="join-item btn btn-primary btn-outline btn-xs cursor-pointer gap-1.5"
                                         title="Suggestions — show/hide auto-suggestion controls. Required for Endless story mode.">
@@ -1054,7 +1054,7 @@
                                 Visible only in simple mode (CSS body.subj-mode-simple).
                                 Endless has per-row controls in each row's lead cluster
                                 so it doesn't need this; raw / chat don't render rows. #}
-                                <div id="subjects-simple-rowctl" class="join hidden">
+                                <div id="subjects-simple-rowctl" class="join flex-none hidden">
                                     <button id="subjects-simple-add-row" type="button"
                                         class="join-item btn btn-primary btn-outline btn-xs" onclick="_addSimpleRow()"
                                         title="Add a suggestion row (fresh batch from current prompt)">
