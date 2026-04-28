@@ -2909,8 +2909,10 @@ function _renderChatLog() {
     const _chain = (typeof _chatActiveChain === 'function') ? _chatActiveChain() : [];
     // Render-helper: build the inner blocks for ONE thinking item (either
     // an assistant tool_calls turn or a tool-result turn). Used inside the
-    // fused thinking-run wrapper. Returns the call/result <details> HTML
-    // only — no outer chat-thought wrapper, no cogs prefix.
+    // fused thinking-run wrapper. Now renders as PLAIN <div>s (no nested
+    // <details>) because the whole run is wrapped in ONE master <details>
+    // expander — see the runItems map below. The inline label still shows
+    // the tool name + a one-line preview for context once expanded.
     const _renderThinkingItemInner = (m) => {
         const role = m.role || '';
         if (role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
@@ -2929,10 +2931,10 @@ function _renderChatLog() {
                 } catch (_) {
                     prettyHtml = `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(String(fn.arguments || ''))}</pre>`;
                 }
-                return `<details class="text-[10px] mt-1">
-                    <summary class="cursor-pointer opacity-80 hover:opacity-100 font-mono">→ ${_htmlEscape(summary)}</summary>
+                return `<div class="chat-thought-item text-[10px] mt-1">
+                    <div class="font-mono opacity-80">→ ${_htmlEscape(summary)}</div>
                     <div class="mt-1 p-2 bg-base-300/40 rounded">${prettyHtml}</div>
-                </details>`;
+                </div>`;
             }).join('');
         }
         if (role === 'tool') {
@@ -2940,12 +2942,32 @@ function _renderChatLog() {
             const oneLine = (raw || '').split('\n')[0] || '';
             const preview = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine;
             const name = m.name || 'tool';
-            return `<details class="text-[10px] mt-1">
-                <summary class="cursor-pointer text-[10px] font-mono opacity-80 hover:opacity-100">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</summary>
+            return `<div class="chat-thought-item text-[10px] mt-1">
+                <div class="font-mono opacity-80">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</div>
                 <div class="mt-1 p-2 bg-base-300/40 rounded">${_renderKvPrettySafe(raw)}</div>
-            </details>`;
+            </div>`;
         }
         return '';
+    };
+    // Build a one-line summary for the master expander based on the run's
+    // tool_calls. Examples: "1 tool call: queue_status",
+    // "3 tool calls: queue_status + cancel_job + recent_finals",
+    // "2 tool calls: queue_status + cancel_job + …" (truncated past 3).
+    const _summariseRun = (runItems) => {
+        const names = [];
+        runItems.forEach(m => {
+            if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+                m.tool_calls.forEach(c => {
+                    const n = ((c.function || {}).name) || 'tool';
+                    names.push(n);
+                });
+            }
+        });
+        if (!names.length) return 'tool run';
+        const head = names.slice(0, 3).join(' + ');
+        const tail = names.length > 3 ? ' + …' : '';
+        const noun = names.length === 1 ? 'tool call' : 'tool calls';
+        return `${names.length} ${noun}: ${head}${tail}`;
     };
     // Animated cogs (active state). The 'done' state shares the same
     // markup but CSS gates the @keyframes animation to .chat-thought-active
@@ -2993,7 +3015,13 @@ function _renderChatLog() {
             const inflight = i >= history.length;
             const stateCls = inflight ? ' chat-thought-active' : ' chat-thought-done';
             const inner = runItems.map(_renderThinkingItemInner).join('');
-            out.push(`<div class="chat chat-start" data-msg-idx="${runStart}"><div class="chat-thought text-xs${stateCls}">${_cogsHTML}${inner}</div></div>`);
+            const summaryText = _summariseRun(runItems);
+            // Master expander: ALL tool_call args + tool_result bodies live
+            // inside ONE <details>. Closed by default — user sees only the
+            // cogs + a one-line summary until they click. Per-item <details>
+            // were removed (replaced by plain <div>s) in _renderThinkingItemInner
+            // so we don't end up with a nested-collapsible mess.
+            out.push(`<div class="chat chat-start" data-msg-idx="${runStart}"><div class="chat-thought text-xs${stateCls}">${_cogsHTML}<details class="chat-thought-detail-wrap"><summary class="chat-thought-summary">${_htmlEscape(summaryText)}</summary><div class="chat-thought-body">${inner}</div></details></div></div>`);
             continue;
         }
         if (role === 'user') {
