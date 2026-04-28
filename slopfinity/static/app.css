@@ -3134,6 +3134,28 @@ textarea::placeholder {
     text-decoration: line-through;
 }
 
+/* Round both edges of the slop-filter join clusters so the pill cluster
+   reads as a continuous capsule rather than a button-chain with sharp
+   middle joints. daisyUI's .join only rounds the FIRST/LAST item by
+   default — but inside the kind-filter cluster (4 items) and the
+   intermediates fieldset cluster (2 items), the user wants the OUTER
+   ends curved like the Subjects-mode pill. .join already handles this
+   IF the children are direct .join-item — in our markup the joinable
+   buttons are nested inside <label> wrappers, so we have to apply the
+   radius to the outer label's first/last instances explicitly. */
+.slop-filter-pill > label:first-child .join-item,
+fieldset[aria-label="Intermediate assets filter"] .join > label:first-child .join-item {
+    border-top-left-radius: 9999px;
+    border-bottom-left-radius: 9999px;
+    padding-left: 0.85rem;
+}
+.slop-filter-pill > label:last-child .join-item,
+fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join-item {
+    border-top-right-radius: 9999px;
+    border-bottom-right-radius: 9999px;
+    padding-right: 0.85rem;
+}
+
 /* Quick-spin feedback on every refresh-icon click. _wireRefreshTapSpin
    in app.js delegates pointerdown events to any element matching a
    refresh-button selector and toggles .refresh-tapping on its inner SVG

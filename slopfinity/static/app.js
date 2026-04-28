@@ -5983,20 +5983,36 @@ function connect() {
                 // on the wrapper (and the action <a>s) so clicks land on the
                 // intended action instead of the summary toggle.
                 const stop = `event.stopPropagation()`;
+                // Action labels: word LEFT, icon RIGHT (justify-between).
+                // The label is the meaning the user scans for; the icon is
+                // the affordance. Right-aligned icons line up vertically
+                // across the menu, making it easier to scan symbols at a
+                // glance ("there's the cancel ✕"). Was leading-glyph-then-
+                // text which wasn't aligning the icons across rows.
+                // _ml renders one row consistently — split label/icon via
+                // a small helper rather than templating each <li> twice.
+                const _mlRow = (label, icon, handler, extraCls) =>
+                    `<li><a class="flex items-center justify-between gap-3${extraCls ? ' ' + extraCls : ''}" onclick="${handler}"><span>${label}</span><span class="opacity-70 font-mono text-base">${icon}</span></a></li>`;
+                // toggleItemInfinity already builds its own `infToggleLabel` string
+                // ("♾ Infinity" / "✖ Disable Infinity") with a leading icon — split it
+                // back into icon + label so the same right-align rule applies.
+                const _splitInfLbl = infToggleLabel.split(/\s+/, 2);
+                const infIcon = _splitInfLbl[0] || '♾';
+                const infLabel = _splitInfLbl[1] || 'Infinity';
                 const menuHTML = isCancelled
                     ? `<div class="dropdown dropdown-end" onclick="${stop}">
                         <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions" onclick="${stop}">⋯</label>
-                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
-                            <li><a onclick="event.stopPropagation();requeueItem(${q.ts || 0})">↻ Re-queue</a></li>
+                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-44">
+                            ${_mlRow('Re-queue', '↻', `event.stopPropagation();requeueItem(${q.ts || 0})`)}
                         </ul>
                        </div>`
                     : `<div class="dropdown dropdown-end" onclick="${stop}">
                         <label tabindex="0" class="btn btn-ghost btn-xs btn-square" title="Actions" onclick="${stop}">⋯</label>
-                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-40">
-                            <li><a onclick='event.stopPropagation();editItem(${q.ts || 0}, ${promptForJs})'>✎ Edit prompt</a></li>
-                            <li><a onclick="event.stopPropagation();toggleItemInfinity(${q.ts || 0})">${infToggleLabel}</a></li>
-                            <li><a onclick="event.stopPropagation();toggleItemPolymorphic(${q.ts || 0})">${q.chaos ? '✖ Disable Polymorphic' : '⤳ Enable Polymorphic'}</a></li>
-                            <li><a onclick="event.stopPropagation();cancelItem(${q.ts || 0})" class="text-error">✕ Cancel</a></li>
+                        <ul tabindex="0" class="dropdown-content menu menu-xs p-1 shadow bg-base-300 rounded-box z-10 w-44">
+                            ${_mlRow('Edit prompt', '✎', `event.stopPropagation();editItem(${q.ts || 0}, ${promptForJs})`)}
+                            ${_mlRow(infLabel, infIcon, `event.stopPropagation();toggleItemInfinity(${q.ts || 0})`)}
+                            ${_mlRow(q.chaos ? 'Disable Polymorphic' : 'Enable Polymorphic', q.chaos ? '✖' : '⤳', `event.stopPropagation();toggleItemPolymorphic(${q.ts || 0})`)}
+                            ${_mlRow('Cancel', '✕', `event.stopPropagation();cancelItem(${q.ts || 0})`, 'text-error')}
                         </ul>
                        </div>`;
                 const cls = `bg-base-200 rounded-md${isCancelled ? ' opacity-50 slop-cancelled-fade' : ''}${isActive ? ' ring-2 ring-primary' : ''}`;
