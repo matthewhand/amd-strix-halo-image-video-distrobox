@@ -4696,8 +4696,12 @@ function openModelSettingsPopup(role, qTs) {
     const bodyEl = document.getElementById('model-settings-body');
     if (titleEl) titleEl.textContent = title;
     if (bodyEl) {
+        // Footer copy now contains an inline "Pipeline Settings" link
+        // instead of a duplicate Open-Pipeline button in the modal-action
+        // row. One affordance, less visual clutter — the link routes
+        // through the same openPipeline() handler the button used.
         bodyEl.innerHTML = `<div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1">${body}</div>` +
-            `<div class="text-[10px] text-base-content/40 italic mt-3">Read-only snapshot from when this item was queued. Use “Open Pipeline” to edit defaults for future items.</div>`;
+            `<div class="text-[10px] text-base-content/40 italic mt-3">Read-only snapshot from when this item was queued. Use <a href="#" class="link link-primary" onclick="event.preventDefault();document.getElementById('model-settings-modal').close();openPipeline();">Pipeline Settings</a> to edit defaults for future items.</div>`;
     }
     const d = document.getElementById('model-settings-modal');
     if (d && d.showModal) d.showModal();
