@@ -2597,7 +2597,10 @@ body.subj-mode-raw #subjects-per-stage textarea {
 .raw-rewrite-btn {
     position: absolute;
     top: 4px;
-    right: 4px;
+    /* Offset from the right edge — clears the textarea's native scrollbar
+       (which appears once the prompt overflows ~1 row) so the rewrite chip
+       doesn't sit on top of the scroll thumb. */
+    right: 14px;
     width: 22px;
     height: 22px;
     display: inline-flex;
@@ -2659,6 +2662,11 @@ body.subj-mode-raw #subjects-per-stage textarea {
 .endless-row-lead.lead-expanded .endless-row-fold {
     background: hsl(var(--p));
     color: hsl(var(--pc));
+    /* Re-flow fold to the FAR RIGHT when expanded so re-clicking it to
+       collapse doesn't land on the now-adjacent minus button. Default
+       DOM order puts fold first; flex `order` overrides without touching
+       JS markup. */
+    order: 99;
 }
 
 @media (max-width: 767px) {
@@ -3358,7 +3366,10 @@ body.endless-running #p-core {
 
 .chat-bubble-actions {
     position: absolute;
-    top: 4px;
+    /* Aligned to the BOTTOM-right of the bubble. Bubble text starts at
+       the top, so anchoring actions to the bottom keeps them out of the
+       reading flow regardless of how tall the bubble grows. */
+    bottom: 4px;
     right: 4px;
     display: inline-flex;
     gap: 2px;
@@ -3996,4 +4007,37 @@ body.seed-drag-active::before {
     letter-spacing: 0.15em;
     pointer-events: none;
     backdrop-filter: blur(2px);
+}
+
+/* Story-action buttons (Submit / Reset) — bare ghost buttons with only
+   text-success / text-error reads as "link" not "button". Add a tinted
+   border so they look like proper themed actions matching the visual
+   weight of the live story log they act on. */
+#subjects-story-submit {
+    border: 1px solid oklch(var(--su) / 0.45);
+    background: oklch(var(--su) / 0.06);
+}
+
+#subjects-story-submit:hover {
+    background: oklch(var(--su) / 0.18);
+    border-color: oklch(var(--su) / 0.7);
+}
+
+#subjects-story-reset {
+    border: 1px solid oklch(var(--er) / 0.45);
+    background: oklch(var(--er) / 0.06);
+}
+
+#subjects-story-reset:hover {
+    background: oklch(var(--er) / 0.18);
+    border-color: oklch(var(--er) / 0.7);
+}
+
+/* Chat input — placeholder gets shortened on narrow viewports where the
+   long mode-hint clips and reads as garbled. The full placeholder still
+   serves as the accessible name on wider screens. */
+@media (max-width: 639px) {
+    #subjects-chat-input::placeholder {
+        font-size: 0.7rem;
+    }
 }
