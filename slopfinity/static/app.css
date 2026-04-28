@@ -2313,8 +2313,13 @@ body[data-layout="queue"] #ui-split-upper,
 body[data-layout="subj-queue"] #ui-split-upper {
     flex: 1 1 auto !important;
     height: auto !important;
-    min-height: calc(100vh - 120px);
-    max-height: calc(100vh - 120px);
+    /* Match the slop layout's full-bleed height (calc(100vh - 88px)).
+       Was 120px reserve to keep the focus-fab buttons clear, but the
+       buttons now live inside a bg-base-100 PILL that overlays the
+       page rather than sitting in the document flow — the cards can
+       safely extend all the way to the bottom edge underneath it. */
+    min-height: calc(100vh - 88px);
+    max-height: calc(100vh - 88px);
 }
 
 /* And the surviving card body inside the upper pane should fill its
@@ -2560,22 +2565,11 @@ body[data-layout="subjects"].subj-mode-endless #p-core {
 /* New flanking-nav FABs — bottom-left (prev) and bottom-right (next).
    Hidden by default; shown only in focus layouts. End buttons hidden
    when there's no prev/next in the linear sequence. */
-#focus-fab-prev,
-#focus-fab-next {
-    display: none;
-    position: fixed;
-    bottom: 16px;
-    z-index: 40;
-}
-#focus-fab-prev { left: 16px; }
-#focus-fab-next { right: 16px; }
-
-body[data-layout="subjects"] #focus-fab-next,
-body[data-layout="queue"] #focus-fab-prev,
-body[data-layout="queue"] #focus-fab-next,
-body[data-layout="gallery"] #focus-fab-prev {
-    display: flex;
-}
+/* Legacy standalone focus-fab visibility rules — REMOVED. Both buttons
+   now live inside #focus-fab-pill (one bottom-center container) and
+   visibility is owned by the pill's own body[data-layout=...] selectors
+   further down. The end-stop hide (no prev on subjects, no next on
+   gallery) is also moved to that block. */
 
 /* Slide-out animation triggered before layout change. _focusFabNav
    adds .layout-sliding-{left,right} on <main> for ~250 ms then
@@ -2620,47 +2614,61 @@ main.layout-sliding-right #stats-navbar {
     transform: translateX(-30%);
 }
 
-/* Bigger circular flanking-nav (focus-fab-prev / focus-fab-next) —
-   bumped from daisyUI's btn-circle default (~3rem) to 4.5rem so the
-   destination layout name sits INSIDE the circle alongside a small
-   arrow. Theme primary fill + primary-content text matches the rest
-   of the dashboard's active-state palette.
+/* ─── Flanking-nav PILL ────────────────────────────────────────────────
+   Both focus-fab buttons live inside one bottom-center pill container.
+   The pill's fill + border match the page bg (--b1) so it visually
+   blends into the page; only the contained primary-circle buttons
+   read as interactive controls. A subtle shadow gives floating depth.
+   The cards behind can extend full-height (calc(100vh - 88px)) since
+   the pill is overlay, not in the document flow. */
+#focus-fab-pill {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    background: hsl(var(--b1));
+    border: 2px solid hsl(var(--b1));
+    border-radius: 9999px;
+    padding: 6px 8px;
+    display: none;                        /* shown via body[data-layout=…] below */
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 24px hsl(var(--bc) / 0.25),
+                0 2px 8px hsl(var(--bc) / 0.15);
+}
 
-   Visibility is owned by `body[data-layout=…] #focus-fab-…` rules
-   above (display:none default, display:flex when this layout has a
-   prev/next direction worth showing). The chunky rules here only
-   own LOOK + size — the layout-specific show/hide is intentionally
-   left to the upstream block so the contract stays in one place. */
+/* Show the pill on focused layouts. _focusFabNav handles the
+   directional sequencing inside; individual buttons hide themselves
+   with .fab-end-stop when there's no prev/next to navigate to. */
+body[data-layout="subjects"] #focus-fab-pill,
+body[data-layout="queue"] #focus-fab-pill,
+body[data-layout="gallery"] #focus-fab-pill {
+    display: inline-flex;
+}
+
 .focus-fab {
-    width: 4.5rem;
-    height: 4.5rem;
+    width: 4.25rem;
+    height: 4.25rem;
     border-radius: 9999px;
     background: hsl(var(--p));
     color: hsl(var(--pc));
     border: 2px solid hsl(var(--p));
+    display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 2px;
     cursor: pointer;
-    transition: transform 0.15s, background 0.15s;
+    transition: transform 0.15s, background 0.15s, opacity 0.15s;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    /* Position-fixed bottom corners — same as the legacy btn-circle
-       rules but at the new larger size. The display value is `none`
-       by default; the body[data-layout=...] selectors flip to `flex`. */
-    position: fixed;
-    bottom: 1.25rem;
-    z-index: 40;
-    display: none;
 }
 .focus-fab:hover {
     transform: scale(1.06);
     background: hsl(var(--pf, var(--p)));
 }
 .focus-fab:active { transform: scale(0.96); }
-.focus-fab-prev { left: 1.25rem; }
-.focus-fab-next { right: 1.25rem; }
 .focus-fab .fab-label {
     font-size: 0.7rem;
     font-weight: 700;
@@ -2670,10 +2678,20 @@ main.layout-sliding-right #stats-navbar {
     flex: none;
     opacity: 0.85;
 }
+
+/* Per-layout: hide the prev or next button when at the start or end
+   of the linear cycle (Prompt → Queue → Slop). Subjects has no prev
+   (start of cycle); gallery has no next (end). The pill stays
+   visible — it just contains a single button when at an end. */
+body[data-layout="subjects"] #focus-fab-prev,
+body[data-layout="gallery"] #focus-fab-next {
+    display: none;
+}
+
 @media (max-width: 767px) {
     /* Mobile uses the bottom nav bar for navigation — hide the
-       desktop flanking FABs to avoid overlap with the nav bar. */
-    .focus-fab { display: none !important; }
+       desktop flanking pill to avoid overlap with that bar. */
+    #focus-fab-pill { display: none !important; }
 }
 
 body[data-layout="subjects"] #focus-slop-fab,

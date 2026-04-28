@@ -3254,37 +3254,41 @@
        animation on <main>, then navigates. The end of the linear
        sequence (subjects has no prev, gallery has no next) hides
        the corresponding button. _focusFabNav handles dispatch. #}
-    {# Bigger circular flanking-nav buttons with the destination layout
-       name STACKED inside the circle (above a small arrow). Bigger hit
-       target + clearer affordance — user no longer has to read the
-       title attribute to know where they're going. _focusFabNav reads
-       the same _MOBILE_NAV_ORDER cycle so the labels stay in sync. The
-       text content of `.fab-label` is populated on every tick by
-       _refreshFlankingFabLabels (added to app.js below). #}
-    <button id="focus-fab-prev" type="button" aria-hidden="true"
-            class="focus-fab focus-fab-prev shadow-xl indicator"
-            onclick="_focusFabNav(-1)"
-            title="Previous layout">
-        <span id="focus-fab-prev-badge"
-              class="indicator-item indicator-start badge badge-secondary badge-sm hidden">0</span>
-        <span class="fab-label" data-fab-side="prev">PREV</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-        </svg>
-    </button>
-    <button id="focus-fab-next" type="button" aria-hidden="true"
-            class="focus-fab focus-fab-next shadow-xl indicator"
-            onclick="_focusFabNav(1)"
-            title="Next layout">
-        <span id="focus-fab-next-badge"
-              class="indicator-item badge badge-secondary badge-sm hidden">0</span>
-        <span class="fab-label" data-fab-side="next">NEXT</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"/>
-        </svg>
-    </button>
+    {# Flanking-nav PILL — the prev/next buttons live inside a single
+       bottom-center pill container. The pill itself uses bg-base-100
+       (page bg) + matching border so it visually "blends" with the
+       page — only the contained primary-circle buttons read as
+       interactive. Shadow gives it floating depth. The cards behind
+       can extend full-height; the pill overlays the bottom region.
+       Container has a single visibility selector instead of two
+       (body[data-layout=…] #focus-fab-pill) so the show/hide rules
+       move from the per-button block to one place. #}
+    <div id="focus-fab-pill" aria-hidden="true">
+        <button id="focus-fab-prev" type="button"
+                class="focus-fab focus-fab-prev indicator"
+                onclick="_focusFabNav(-1)"
+                title="Previous layout">
+            <span id="focus-fab-prev-badge"
+                  class="indicator-item indicator-start badge badge-secondary badge-sm hidden">0</span>
+            <span class="fab-label" data-fab-side="prev">PREV</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+            </svg>
+        </button>
+        <button id="focus-fab-next" type="button"
+                class="focus-fab focus-fab-next indicator"
+                onclick="_focusFabNav(1)"
+                title="Next layout">
+            <span id="focus-fab-next-badge"
+                  class="indicator-item badge badge-secondary badge-sm hidden">0</span>
+            <span class="fab-label" data-fab-side="next">NEXT</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </button>
+    </div>
     {# Legacy multi-button FAB kept hidden for now in case any
        handler still references it; CSS rules for #focus-slop-fab
        no longer match anything since we removed the markup. #}
