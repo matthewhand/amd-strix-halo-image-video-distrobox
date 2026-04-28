@@ -5199,6 +5199,13 @@ function _applySlopFilters() {
     const imgSpan = document.getElementById('slop-bar-count-image');
     if (vidSpan) vidSpan.textContent = `${vCount} vids`;
     if (imgSpan) imgSpan.textContent = `${iCount} imgs`;
+    // Empty-state class — set when no card is currently visible, so the
+    // CSS `::before` empty-state hint surfaces. Cleared otherwise.
+    const grid = document.getElementById('preview-grid');
+    if (grid) {
+        const anyVisible = vCount + iCount > 0;
+        grid.classList.toggle('slop-empty-state', !anyVisible);
+    }
 }
 document.addEventListener('change', e => {
     if (e.target.matches('[data-slop-filter]')) _applySlopFilters();
