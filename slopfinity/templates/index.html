@@ -166,42 +166,92 @@
                 <span class="flex flex-col items-start gap-0"
                     title="{{ outputs_disk.used_gb }} GB used / {{ outputs_disk.free_gb if outputs_disk.free_gb else (outputs_disk.total_gb - outputs_disk.used_gb) }} GB free · ticker spans ~1 hour">
                     <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">Disk <span
-                                class="opacity-60 normal-case">(1hr)</span></span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">
+                            <span class="ticker-label-full">Disk</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                 stroke-linejoin="round" class="ticker-label-short ticker-label-icon"
+                                 aria-label="Disk">
+                                <rect x="2" y="3" width="20" height="8" rx="2" ry="2"/>
+                                <rect x="2" y="13" width="20" height="8" rx="2" ry="2"/>
+                                <line x1="6" y1="7" x2="6.01" y2="7"/>
+                                <line x1="6" y1="17" x2="6.01" y2="17"/>
+                            </svg>
+                            <span class="opacity-60 normal-case ticker-label-extra">(1hr)</span>
+                        </span>
                         <span
                             class="font-mono font-black {% if outputs_disk.status == 'danger' %}text-error{% elif outputs_disk.status == 'warn' %}text-warning{% else %}text-primary{% endif %}"
                             id="d-v">{{ outputs_disk.pct }}%</span>
                         <span class="ticker-bar ml-1" id="d-t" data-tone="primary"></span>
                     </span>
-                    <span class="font-mono text-[9px] text-base-content/50 leading-none" id="d-r">{{
+                    <span class="font-mono text-[9px] text-base-content/50 leading-none ticker-sub" id="d-r">{{
                         outputs_disk.used_gb }} used / {{ (outputs_disk.free_gb if outputs_disk.free_gb else
                         (outputs_disk.total_gb - outputs_disk.used_gb)) }} GB free</span>
                 </span>
                 <span class="flex flex-col items-start gap-0">
                     <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">RAM</span>
-                        <span class="font-mono font-black text-secondary" id="v-v">0%</span>
-                        <span class="ticker-bar ml-1" id="v-t" data-tone="secondary"></span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">
+                            <span class="ticker-label-full">RAM</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                 stroke-linejoin="round" class="ticker-label-short ticker-label-icon"
+                                 aria-label="RAM">
+                                <rect x="2" y="7" width="20" height="10" rx="1.5"/>
+                                <line x1="6" y1="7" x2="6" y2="17"/>
+                                <line x1="10" y1="7" x2="10" y2="17"/>
+                                <line x1="14" y1="7" x2="14" y2="17"/>
+                                <line x1="18" y1="7" x2="18" y2="17"/>
+                                <line x1="4" y1="20" x2="4" y2="22"/>
+                                <line x1="20" y1="20" x2="20" y2="22"/>
+                            </svg>
+                        </span>
+                        <span class="font-mono font-black text-primary" id="v-v">0%</span>
+                        <span class="ticker-bar ml-1" id="v-t" data-tone="primary"></span>
                     </span>
-                    <span class="font-mono text-[9px] text-base-content/50 leading-none" id="r-v">0 / 0 GB</span>
+                    <span class="font-mono text-[9px] text-base-content/50 leading-none ticker-sub" id="r-v">0 / 0 GB</span>
                 </span>
                 <span class="flex flex-col items-start gap-0">
                     <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">GPU</span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">
+                            <span class="ticker-label-full">GPU</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                 stroke-linejoin="round" class="ticker-label-short ticker-label-icon"
+                                 aria-label="GPU">
+                                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                                <rect x="9" y="9" width="6" height="6"/>
+                                <line x1="9" y1="2" x2="9" y2="4"/>
+                                <line x1="15" y1="2" x2="15" y2="4"/>
+                                <line x1="9" y1="20" x2="9" y2="22"/>
+                                <line x1="15" y1="20" x2="15" y2="22"/>
+                                <line x1="20" y1="9" x2="22" y2="9"/>
+                                <line x1="20" y1="15" x2="22" y2="15"/>
+                                <line x1="2" y1="9" x2="4" y2="9"/>
+                                <line x1="2" y1="15" x2="4" y2="15"/>
+                            </svg>
+                        </span>
                         <span class="font-mono font-black text-primary" id="g-v">0%</span>
                         <span class="ticker-bar ml-1" id="g-t" data-tone="primary"></span>
                     </span>
-                    <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem]"
+                    <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem] ticker-sub"
                         id="g-name" title="">—</span>
                 </span>
                 <span class="flex flex-col items-start gap-0"
                     title="Load average — system-wide pressure (1m / 5m / 15m).">
                     <span class="flex items-baseline gap-1">
-                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">Load</span>
-                        <span class="font-mono font-black text-info" id="l-v">0%</span>
-                        <span class="ticker-bar ml-1" id="l-t" data-tone="info"></span>
+                        <span class="text-[10px] uppercase tracking-widest text-base-content/50">
+                            <span class="ticker-label-full">Load</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                 stroke-linejoin="round" class="ticker-label-short ticker-label-icon"
+                                 aria-label="Load">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            </svg>
+                        </span>
+                        <span class="font-mono font-black text-primary" id="l-v">0%</span>
+                        <span class="ticker-bar ml-1" id="l-t" data-tone="primary"></span>
                     </span>
-                    <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem]"
+                    <span class="font-mono text-[9px] text-base-content/50 leading-none truncate max-w-[14rem] ticker-sub"
                         id="l-name" title="">—</span>
                 </span>
             </div>
@@ -533,17 +583,6 @@
                                             </svg>
                                             <span class="subj-mode-full">Simple</span>
                                         </button>
-                                        <button type="button" data-subj-mode="chat"
-                                            class="join-item btn btn-xs btn-primary btn-outline gap-1"
-                                            onclick="_setSubjectsMode('chat')"
-                                            title="Chat — converse with the LLM; it can call tools to queue clips, check status, cancel jobs, list recent outputs.">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                                                class="subj-mode-icon w-3.5 h-3.5 text-primary flex-none">
-                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                                            </svg>
-                                            <span class="subj-mode-full">Chat</span>
-                                        </button>
                                         <button type="button" data-subj-mode="raw"
                                             class="join-item btn btn-xs btn-primary btn-outline gap-1" onclick="_setSubjectsMode('raw')"
                                             title="Raw — single subject + per-stage prompt panel. Use AI Magic on each stage to pre-fill, then queue without further LLM calls. Works even when the LLM provider is unavailable.">
@@ -561,6 +600,17 @@
                                                 <line x1="17" y1="16" x2="23" y2="16"/>
                                             </svg>
                                             <span class="subj-mode-full">Raw</span>
+                                        </button>
+                                        <button type="button" data-subj-mode="chat"
+                                            class="join-item btn btn-xs btn-primary btn-outline gap-1"
+                                            onclick="_setSubjectsMode('chat')"
+                                            title="Chat — converse with the LLM; it can call tools to queue clips, check status, cancel jobs, list recent outputs.">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                                class="subj-mode-icon w-3.5 h-3.5 text-primary flex-none">
+                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                            </svg>
+                                            <span class="subj-mode-full">Chat</span>
                                         </button>
                                     </div>
                                     {# Right-side cluster: live summary pill + pipeline-config button sit together so
@@ -645,18 +695,24 @@
                                             ] %}
                                             <div>
                                                 <span class="label-text text-[10px] uppercase tracking-widest opacity-60 block mb-1">{{ label }}</span>
-                                                <div class="flex items-center gap-1">
-                                                    <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 flex-1 min-w-0"
+                                                {# Rewrite-overlay layout — the textarea fills the row
+                                                   and the rewrite button hovers over its top-right corner
+                                                   at low opacity, fading to full on textarea-hover or
+                                                   button-hover. Frees up the horizontal space the old
+                                                   side-by-side button claimed (~80 px) so the textarea
+                                                   has room for actual prompt text. The .raw-rewrite-host
+                                                   class drives the hover/transparency CSS. #}
+                                                <div class="raw-rewrite-host">
+                                                    <textarea id="p-{{ stage }}" class="textarea textarea-bordered text-xs h-9 w-full"
                                                         placeholder="{{ placeholder }}"></textarea>
-                                                    <button type="button" class="btn btn-xs btn-primary btn-outline gap-1 flex-none self-stretch"
+                                                    <button type="button" class="raw-rewrite-btn"
                                                         onclick="enhanceStage('{{ stage }}')"
-                                                        title="Rewrite this prompt with the LLM using the seed from the subject field below">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                            stroke-linejoin="round" class="w-3 h-3">
-                                                            <path d="M5 3v4M3 5h4M19 17v4M17 19h4M11 3l-1.7 4.3L5 9l4.3 1.7L11 15l1.7-4.3L17 9l-4.3-1.7L11 3z"/>
+                                                        title="Rewrite this prompt with the LLM using the seed from the subject field below"
+                                                        aria-label="Rewrite {{ label }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+                                                            class="w-3.5 h-3.5">
+                                                            <path d="M12 2l1.6 5.2 5.2 1.6-5.2 1.6L12 15.6l-1.6-5.2-5.2-1.6 5.2-1.6L12 2zm6.5 11l.8 2.4 2.4.8-2.4.8-.8 2.4-.8-2.4-2.4-.8 2.4-.8.8-2.4zm-13.5.5l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6.6-1.7z"/>
                                                         </svg>
-                                                        Rewrite
                                                     </button>
                                                 </div>
                                             </div>
@@ -762,26 +818,33 @@
                                        space so a long conversation scrolls inside its
                                        own bounds without pushing the input off-screen. #}
                                     <div id="subjects-chat-pane" class="hidden flex flex-col gap-2 mt-2">
-                                        <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-base-content/50">
-                                            <span>Conversation</span>
-                                            <button type="button" id="subjects-chat-reset"
-                                                class="btn btn-ghost btn-xs text-error gap-1"
-                                                onclick="_resetChat()"
-                                                title="Clear chat history. Confirms first.">
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                    stroke-linejoin="round" class="w-3 h-3">
-                                                    <line x1="18" y1="6" x2="6" y2="18" />
-                                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                                </svg>
-                                                <span>Reset</span>
-                                            </button>
+                                        {# Suggestions group — wrapped in a primary-tinted
+                                           bordered card so the user sees the suggestion
+                                           cluster as one cohesive surface, separate from
+                                           the chat log + input below. Heading + Reset
+                                           sit inside the same border. #}
+                                        <div class="chat-suggestions-box">
+                                            <div class="flex items-center justify-between text-[10px] uppercase tracking-widest text-primary chat-suggestions-heading">
+                                                <span>Suggestions</span>
+                                                <button type="button" id="subjects-chat-reset"
+                                                    class="btn btn-ghost btn-xs text-error gap-1"
+                                                    onclick="_resetChat()"
+                                                    title="Clear chat history. Confirms first.">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round" class="w-3 h-3">
+                                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                                    </svg>
+                                                    <span>Reset</span>
+                                                </button>
+                                            </div>
+                                            {# Reply suggestions — populated by _renderChatReplies
+                                               after each assistant turn. 4 chips max. Click to
+                                               copy into the chat input. Above the log per UX. #}
+                                            <div id="subjects-chat-replies"
+                                                class="flex flex-col gap-1 text-xs flex-none"></div>
                                         </div>
-                                        {# Reply suggestions — populated by _renderChatReplies
-                                           after each assistant turn. 4 chips max. Click to
-                                           copy into the chat input. Above the log per UX. #}
-                                        <div id="subjects-chat-replies"
-                                            class="flex flex-col gap-1 text-xs flex-none"></div>
                                         <div id="subjects-chat-log"
                                             class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 overflow-y-auto flex flex-col gap-2 m-0 flex-1 min-h-0"></div>
                                         <div class="flex gap-2 flex-none">
@@ -843,7 +906,7 @@
                                    row directly below it. The mt-3 margin creates a
                                    clear "this belongs to Prompt" boundary. #}
                                 <div id="subjects-need-ideas-row"
-                                    class="flex items-center gap-1 flex-wrap mt-3 pt-2 border-t border-base-300/40">
+                                    class="flex items-center gap-1 flex-nowrap mt-3 pt-2 border-t border-base-300/40 overflow-x-auto">
                                     <div id="subjects-suggest-cluster" class="join">
                                         <label id="subjects-suggestions-toggle"
                                             class="join-item btn btn-primary btn-outline btn-xs cursor-pointer gap-1.5"
@@ -1215,10 +1278,16 @@
                    when collapsed. Header bar below is a static row; infinite
                    scroll attaches to the viewport (root: null) and pages via
                    GET /assets, see app.js _initInfiniteSlop. #}
+                {# Slop card chrome — matches the prompt/queue cards' visual
+                   weight (bg-base-100, primary border-2, rounded card, shadow-xl)
+                   so the slop section reads as a peer card rather than a
+                   trailing strip. Header bar (`#slop-collapsible-summary`)
+                   keeps the darker contrast bg so the title + count chips
+                   pop against the body. #}
                 <div id="slop-collapsible"
-                    class="bg-base-200/20 rounded-t-lg border-t border-base-300 overflow-hidden">
+                    class="card bg-base-100 border-2 border-primary shadow-xl rounded-2xl overflow-hidden">
                     <div id="slop-collapsible-summary"
-                        class="p-2 bg-base-300/40 flex items-center gap-3 text-xs transition-colors">
+                        class="px-4 py-2 bg-base-200/70 border-b border-primary/30 flex items-center gap-3 text-xs transition-colors">
                         <span class="flex-1 font-bold uppercase tracking-widest text-primary">{{ branding.labels.gallery_completed }}</span>
                         <span class="loading loading-ring loading-xs text-accent" id="live-ring" style="display:none"></span>
                         <div id="slop-bar-stats" class="flex items-center gap-3 text-[10px] opacity-60">
@@ -1315,6 +1384,22 @@
                                         class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">assets
                                         <span class="ml-1 font-mono opacity-70"
                                             data-chip-count="assets">0</span></span></label>
+                                {# Secondary 'frames' filter — bridge PNGs that ffmpeg
+                                   extracts as the LAST FRAME of one video chain to
+                                   feed as the first frame of the NEXT chain. They're
+                                   technically images and qualify as intermediate
+                                   assets, but visually they're just stills FROM the
+                                   videos already in the grid, so they're noisy.
+                                   Default OFF; only meaningful when 'assets' is ON
+                                   (a frame is itself an intermediate asset). The
+                                   chip's enabled/disabled state is owned by
+                                   _applySlopFilters (greys out when assets is OFF). #}
+                                <label class="cursor-pointer slop-filter-frames-label"
+                                    title="Show ffmpeg bridge frames (the last-frame stills extracted from each video chain to feed the next chain's first frame). Only meaningful when 'assets' is on."><input
+                                        type="checkbox" class="peer hidden" data-slop-filter="frames"><span
+                                        class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">frames
+                                        <span class="ml-1 font-mono opacity-70"
+                                            data-chip-count="frames">0</span></span></label>
                                 {# Preview size pill — S / M / L. Persists in localStorage
                                 and flips body[data-slop-size]; CSS rules below resize
                                 #preview-grid columns + each card's figure height.
@@ -1373,6 +1458,31 @@
                             {% set is_speech = is_wav and ('_tts' in f or f.startswith('tts/')) %}
                             {% set is_music = is_wav and not is_speech %}
                             {% set is_final = is_mp4 and f.startswith('FINAL_') %}
+                            {# Bridge frame detection — PNGs of the shape
+                               `slop_<N>_<slug>_f<M>.png` or `v<N>_f<M>.png`
+                               (ffmpeg-extracted last-frame of a video chain,
+                               handed to the next chain as its first frame).
+                               Used by the secondary 'frames' filter chip to
+                               toggle visibility independently of the broader
+                               'assets' chip.
+
+                               Pure-Jinja detection (no custom filter dep —
+                               keeps SSR working even if the running uvicorn
+                               process pre-dates a templates.env.filters edit):
+                                 1. ends in .png
+                                 2. starts with 'slop_' or 'v'
+                                 3. last `_f`-split component is the bare
+                                    digit suffix before .png  (so
+                                    `slop_1_dragon_f0.png` ✅ but
+                                    `slop_1_fractals_base.png` ✗ — its split
+                                    on `_f` yields a tail of 'ractals_base'
+                                    which is not all-digits). #}
+                            {% set _stem = f[:-4] if f.endswith('.png') else '' %}
+                            {% set _split = _stem.split('_f') if _stem else [] %}
+                            {% set is_frame = (_stem != '')
+                                and (f.startswith('slop_') or f.startswith('v'))
+                                and (_split | length) > 1
+                                and _split[-1].isdigit() %}
                             {# kind drives filter-chip visibility (video / image / audio).
                             PNG = image regardless of provenance (qwen base, LTX bridge,
                             etc); MP4 = video; WAV = audio. Filename intuition wins. #}
@@ -1430,7 +1540,7 @@
                             So at a glance, a card's outline tells you which filter group it lives in. #}
                             {% set border_color = 'border-primary' if is_final else 'border-accent' %}
                             <div class="card card-compact bg-base-100 shadow-lg border {{ border_color }} card-hover overflow-hidden"
-                                data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}" data-slop-file="{{ f }}">
+                                data-slop-kind="{{ kind }}" data-slop-final="{{ '1' if is_final else '0' }}" data-slop-frame="{{ '1' if is_frame else '0' }}" data-slop-file="{{ f }}">
                                 <figure class="bg-black aspect-video flex items-center justify-center overflow-hidden">
                                     {% if is_mp4 %}
                                     <video controls muted loop preload="metadata" class="w-full h-full object-contain">
@@ -3111,20 +3221,28 @@
        the layout switch + button-state refresh. Hidden on desktop —
        the existing FAB cluster + View dropdown serve there. #}
     <nav id="mobile-nav-bar" aria-hidden="true">
+        {# Both arrow buttons: identical pill geometry (icon + label) so the
+           bar reads as a symmetric prev/next pair. The center span shows
+           the cycle (Prompt · Queue · Slop) with the active one highlighted
+           — populated by _mobileNavRefresh on every layout switch. #}
         <button id="mobile-nav-prev" type="button" class="mobile-nav-btn" onclick="_mobileNavStep(-1)" aria-label="Previous card">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
-                stroke-linejoin="round" class="w-5 h-5">
+                stroke-linejoin="round" class="mobile-nav-icon">
                 <polyline points="15 18 9 12 15 6"/>
             </svg>
-            <span id="mobile-nav-prev-label" class="text-xs ml-1"></span>
+            <span id="mobile-nav-prev-label" class="mobile-nav-label"></span>
         </button>
-        <span id="mobile-nav-current" class="font-bold uppercase tracking-widest text-xs text-primary"></span>
-        <button id="mobile-nav-next" type="button" class="mobile-nav-btn justify-end" onclick="_mobileNavStep(1)" aria-label="Next card">
-            <span id="mobile-nav-next-label" class="text-xs mr-1"></span>
+        {# Center cycle label removed — user reclaimed that space. The
+           prev/next pills already name their destination so the cycle
+           was redundant. Kept the empty spacer so flex justify-between
+           still pushes prev to the left edge and next to the right. #}
+        <span class="mobile-nav-spacer flex-1"></span>
+        <button id="mobile-nav-next" type="button" class="mobile-nav-btn" onclick="_mobileNavStep(1)" aria-label="Next card">
+            <span id="mobile-nav-next-label" class="mobile-nav-label"></span>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
-                stroke-linejoin="round" class="w-5 h-5">
+                stroke-linejoin="round" class="mobile-nav-icon">
                 <polyline points="9 18 15 12 9 6"/>
             </svg>
         </button>
@@ -3136,27 +3254,33 @@
        animation on <main>, then navigates. The end of the linear
        sequence (subjects has no prev, gallery has no next) hides
        the corresponding button. _focusFabNav handles dispatch. #}
+    {# Bigger circular flanking-nav buttons with the destination layout
+       name STACKED inside the circle (above a small arrow). Bigger hit
+       target + clearer affordance — user no longer has to read the
+       title attribute to know where they're going. _focusFabNav reads
+       the same _MOBILE_NAV_ORDER cycle so the labels stay in sync. The
+       text content of `.fab-label` is populated on every tick by
+       _refreshFlankingFabLabels (added to app.js below). #}
     <button id="focus-fab-prev" type="button" aria-hidden="true"
-            class="btn btn-circle btn-primary shadow-xl"
+            class="focus-fab focus-fab-prev shadow-xl indicator"
             onclick="_focusFabNav(-1)"
             title="Previous layout">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none"
+        <span id="focus-fab-prev-badge"
+              class="indicator-item indicator-start badge badge-secondary badge-sm hidden">0</span>
+        <span class="fab-label" data-fab-side="prev">PREV</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
         </svg>
     </button>
     <button id="focus-fab-next" type="button" aria-hidden="true"
-            class="btn btn-circle btn-primary shadow-xl indicator"
+            class="focus-fab focus-fab-next shadow-xl indicator"
             onclick="_focusFabNav(1)"
             title="Next layout">
-        {# Queue-count badge — visible only when next-layout is queue
-           AND the queue has work pending. Updated by
-           _updateQueueStatusChip on every WS tick. The .indicator
-           class on the parent + .indicator-item lets daisyUI position
-           the badge over the top-right corner of the button. #}
         <span id="focus-fab-next-badge"
               class="indicator-item badge badge-secondary badge-sm hidden">0</span>
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none"
+        <span class="fab-label" data-fab-side="next">NEXT</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="fab-arrow w-3.5 h-3.5" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"/>
         </svg>
