@@ -2269,10 +2269,23 @@ async def settings_get():
     llm_safe = dict(llm)
     llm_safe["api_key"] = "***" if has_key else ""
     branding_cfg = c.get("branding") or {}
+    # Cloud-endpoints gate. The provider registry today is local-only
+    # (see slopfinity/llm/providers.py) so the list returned here is the
+    # same regardless of the toggle — but we still surface the bool so
+    # the client can pre-toggle the UI checkbox and so a future cloud
+    # provider entry can be filtered server-side without a UI change.
+    allow_cloud = bool(c.get("allow_cloud_endpoints", False))
+    _LOCAL_PROVIDERS = {"lmstudio", "ollama", "vllm", "llamacpp", "custom"}
+    all_providers = list_providers()
+    if allow_cloud:
+        providers_filtered = list(all_providers)
+    else:
+        providers_filtered = [p for p in all_providers if p in _LOCAL_PROVIDERS]
     return {
         "llm": llm_safe,
         "llm_has_api_key": has_key,
-        "providers": list_providers(),
+        "providers": providers_filtered,
+        "allow_cloud_endpoints": allow_cloud,
         "branding": {
             "active": branding_cfg.get("active") or "slopfinity",
             "profiles": _branding.list_profiles(),
@@ -2400,6 +2413,12 @@ async def settings_post(data: dict = Body(...)):
             c["enhancer_prompt"] = cfg.DEFAULT_CONFIG["enhancer_prompt"]
         elif isinstance(v, str):
             c["enhancer_prompt"] = v
+    # Cloud-endpoints gate (Settings → LLM). When False (default) the
+    # provider dropdown only shows local providers. The registry itself
+    # is still local-only today; this just persists the user's choice
+    # so adding a cloud provider later doesn't require a UI hop.
+    if "allow_cloud_endpoints" in data:
+        c["allow_cloud_endpoints"] = bool(data.get("allow_cloud_endpoints"))
     # Auto-suggest LLM controls (Settings → LLM → Generation).
     if "suggest_use_subjects" in data:
         c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
@@ -2425,7 +2444,9 @@ async def settings_post(data: dict = Body(...)):
                     "method": str(e.get("method") or "sigstop"),
                 }
                 # Pass through whitelisted method-specific fields.
-                for f in ("process_name", "endpoint", "container", "body"):
+                # `command` is the script-method override (added 2026-04);
+                # empty string is preserved so the UI keeps an empty input.
+                for f in ("process_name", "endpoint", "container", "body", "command"):
                     if f in e and e[f] is not None:
                         ce[f] = e[f]
                 if ce["id"]:

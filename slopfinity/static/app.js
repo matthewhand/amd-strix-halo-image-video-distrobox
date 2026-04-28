@@ -7721,6 +7721,12 @@ async function openSettings() {
         if (dpct) dpct.value = String(sr.disk_min_pct ?? 1);
         if (dgb) dgb.value = String(sr.disk_min_gb ?? 5);
         renderAutoSuspendList(sr.auto_suspend);
+        // Cloud-endpoints toggle (Settings → LLM). Server-side default
+        // is OFF — show the local-only provider list. When ON, future
+        // cloud entries in the registry would surface here too.
+        const allowCloud = $('set-allow-cloud-endpoints');
+        if (allowCloud) allowCloud.checked = !!sr.allow_cloud_endpoints;
+        filterProviderDropdown(!!sr.allow_cloud_endpoints);
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const sugUseSub = $('set-suggest-use-subjects');
@@ -7863,7 +7869,36 @@ const AUTO_SUSPEND_METHODS = [
     { value: 'rest_unload', label: 'unload via REST', fields: ['endpoint'] },
     { value: 'docker_stop', label: 'docker stop', fields: ['container'] },
     { value: 'sigterm', label: 'SIGTERM (one-shot)', fields: ['process_name'] },
+    // The script method runs an arbitrary shell command on suspend.
+    // The `command` text input is rendered by the renderAutoSuspendRow
+    // logic below — empty string falls back to a hardcoded default.
+    { value: 'script', label: 'shell script (custom)', fields: ['command'] },
 ];
+
+// Cloud-endpoints filter for the LLM provider <select>. Toggled by the
+// "Allow cloud LLM endpoints" checkbox (Settings → LLM). Today every
+// option in the dropdown is a local provider, so this is a no-op gate;
+// the wiring is in place so a future cloud entry tagged with
+// data-provider-tier="cloud" gets hidden when the toggle is OFF.
+// TODO(cloud-endpoints): once cloud providers land in slopfinity/llm/
+// providers.py, add data-provider-tier="cloud" to the matching <option>
+// elements in templates/index.html — this gate already enforces them.
+function filterProviderDropdown(allow) {
+    const sel = document.getElementById('set-provider');
+    if (!sel) return;
+    Array.from(sel.options).forEach(o => {
+        const tier = o.getAttribute('data-provider-tier') || 'local';
+        const hide = tier === 'cloud' && !allow;
+        o.hidden = hide;
+        o.disabled = hide;
+    });
+    // If the currently selected option got hidden, fall back to the first
+    // visible (local) option so the form never submits a hidden cloud value.
+    if (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].hidden) {
+        const firstVis = Array.from(sel.options).find(o => !o.hidden);
+        if (firstVis) sel.value = firstVis.value;
+    }
+}
 
 function autoSuspendMethodMeta(method) {
     return AUTO_SUSPEND_METHODS.find(m => m.value === method) || AUTO_SUSPEND_METHODS[0];
@@ -7993,6 +8028,9 @@ async function saveSettings() {
             timeout_s: parseInt($('set-timeout').value, 10),
         },
         auto_suspend: readAutoSuspendList(),
+        allow_cloud_endpoints: $('set-allow-cloud-endpoints')
+            ? !!$('set-allow-cloud-endpoints').checked
+            : false,
         philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
         suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
         suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',

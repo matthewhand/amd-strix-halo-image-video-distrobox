@@ -75,6 +75,8 @@ async def _dispatch(entry: dict, *, suspending: bool) -> dict:
             detail = await _docker_stop(entry, suspending=suspending)
         elif method == "sigterm":
             detail = await _sigterm(entry, suspending=suspending)
+        elif method == "script":
+            detail = await _script(entry, suspending=suspending)
         else:
             return {**base, "ok": False, "error": f"unknown method: {method!r}"}
         return {**base, "ok": True, "detail": detail}
@@ -150,6 +152,45 @@ async def _docker_stop(entry: dict, *, suspending: bool) -> dict:
     if res["rc"] != 0:
         raise RuntimeError(f"{' '.join(cmd)} -> rc={res['rc']} stderr={res['stderr']!r}")
     return {"container": container, "action": cmd[1], **res}
+
+
+async def _script(entry: dict, *, suspending: bool) -> dict:
+    """Run a user-provided shell command on suspend; no-op on resume.
+
+    Honors the per-entry `command` text field — if non-empty, the command
+    is run via `/bin/sh -c <command>`. If empty, falls back to the
+    hardcoded default of `pkill -STOP -f <process_name>` so existing
+    configs that picked the script method without a command keep working.
+    Resume is a deliberate no-op (mirrors `sigterm` semantics): scripts
+    are typically one-shot teardown actions; configure a sigstop/sigcont
+    entry instead if you need symmetric resume.
+    """
+    if not suspending:
+        return {"skipped": "script has no resume action"}
+    command = (entry.get("command") or "").strip()
+    if not command:
+        # Hardcoded fallback — preserves the legacy behavior of the
+        # `script` method when no custom command is supplied.
+        name = (entry.get("process_name") or "").strip()
+        if not name:
+            raise ValueError("script entry needs either 'command' or 'process_name'")
+        command = f"pkill -STOP -f {name!r}"
+
+    def _run() -> dict:
+        cp = subprocess.run(
+            ["/bin/sh", "-c", command],
+            capture_output=True, text=True, timeout=30,
+        )
+        return {
+            "rc": cp.returncode,
+            "stdout": (cp.stdout or "").strip()[:200],
+            "stderr": (cp.stderr or "").strip()[:200],
+        }
+
+    res = await asyncio.to_thread(_run)
+    if res["rc"] != 0:
+        raise RuntimeError(f"script rc={res['rc']} stderr={res['stderr']!r}")
+    return {"command": command, **res}
 
 
 async def _sigterm(entry: dict, *, suspending: bool) -> dict:

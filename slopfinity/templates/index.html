@@ -2414,16 +2414,31 @@
                             <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Provider
                                 connection
                             </div>
+                            {# Cloud-endpoints toggle. Default OFF — slopfinity is local-first.
+                            When OFF, any <option data-provider-tier="cloud"> below is hidden
+                            client-side via filterProviderDropdown(). The provider registry is
+                            still local-only today, so flipping this on currently has no visible
+                            effect; the toggle persists in config so a future cloud provider
+                            entry shows up automatically without another UI round-trip. #}
+                            <label class="flex items-center gap-3 mb-3 cursor-pointer">
+                                <input id="set-allow-cloud-endpoints" type="checkbox"
+                                    class="toggle toggle-primary toggle-sm"
+                                    onchange="filterProviderDropdown(this.checked)" />
+                                <span class="flex-1">
+                                    <span class="label-text text-xs">Allow cloud LLM endpoints</span>
+                                    <span class="block text-[10px] opacity-60 italic leading-snug">When OFF (default), only local providers (LM Studio / Ollama / vLLM / llama.cpp / custom) appear in the dropdown below. Turn ON to surface any registered cloud providers (none today; reserved for a future addition).</span>
+                                </span>
+                            </label>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <label class="form-control">
                                     <span class="label-text text-xs">Provider</span>
                                     <select id="set-provider" class="select select-bordered select-sm"
                                         onchange="onSettingsUrlChanged()">
-                                        <option value="lmstudio">LM Studio</option>
-                                        <option value="ollama">Ollama</option>
-                                        <option value="vllm">vLLM</option>
-                                        <option value="llamacpp">llama.cpp</option>
-                                        <option value="custom">Custom (OpenAI-compat)</option>
+                                        <option value="lmstudio" data-provider-tier="local">LM Studio</option>
+                                        <option value="ollama" data-provider-tier="local">Ollama</option>
+                                        <option value="vllm" data-provider-tier="local">vLLM</option>
+                                        <option value="llamacpp" data-provider-tier="local">llama.cpp</option>
+                                        <option value="custom" data-provider-tier="local">Custom (OpenAI-compat)</option>
                                     </select>
                                 </label>
 
@@ -3426,26 +3441,31 @@
                             </label>
                         </div><!-- /Diagnostics tabpanel -->
 
-                        {# Layout tab — choose between full-dashboard and gallery-focused
-                        views. Persisted in localStorage (`slopfinity-layout-view`). #}
+                        {# Layout tab — choose between full-dashboard, focused single-card,
+                        and two-card splits. Mirrors the navbar View pill (▦) so the same
+                        choices are available with verbose descriptions in one place.
+                        The hidden radios are the source of truth — selectLayoutView() syncs
+                        them and dispatches `change`. Persisted in localStorage
+                        (`slopfinity-layout-view`). #}
                         <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Layout" />
                         <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
-                            <div class="flex items-center justify-between mb-3">
-                                <p class="text-[11px] opacity-60 italic leading-snug">Switch between full-dashboard and
-                                    gallery-focused views. The gallery view hides the Prompt + Queue cards and exposes
-                                    them as
-                                    floating buttons that open in modals.</p>
+                            <div class="mb-3">
+                                <p class="text-[11px] opacity-60 italic leading-snug">Configure which cards (Prompt /
+                                    Queue / Slop) are visible. The full dashboard shows all three; the focused views
+                                    promote one card and hide the rest; the two-card splits show any pair side-by-side.
+                                    These same choices live in the navbar View pill (▦) for one-click switching;
+                                    descriptions here are verbose for power-user setup.</p>
                             </div>
+                            <div class="divider text-[10px] uppercase tracking-widest opacity-50 my-2">Show all</div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <label class="cursor-pointer">
                                     <input type="radio" name="layout-view" value="default" class="hidden peer"
                                         checked />
                                     <div
                                         class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
-                                        <div class="text-xs font-bold mb-1">Default</div>
-                                        <div class="text-[10px] opacity-60 mb-2">Prompt + Queue + Slop.
-                                            Splitter-resizable.
-                                        </div>
+                                        <div class="text-xs font-bold mb-1">Full dashboard</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Prompt + Queue + Slop with a
+                                            draggable splitter. Default view — best on desktop.</div>
                                         <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
                                             xmlns="http://www.w3.org/2000/svg">
                                             <rect x="2" y="2" width="36" height="18" rx="2" fill="currentColor"
@@ -3457,20 +3477,111 @@
                                         </svg>
                                     </div>
                                 </label>
+                            </div>
+                            <div class="divider text-[10px] uppercase tracking-widest opacity-50 my-2">Single-card focus</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="layout-view" value="subjects" class="hidden peer" />
+                                    <div
+                                        class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                                        <div class="text-xs font-bold mb-1">Prompt focused</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Only the Prompt / Subjects card. Best
+                                            for ideation runs.</div>
+                                        <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="2" y="2" width="76" height="46" rx="2" fill="currentColor"
+                                                opacity="0.5" />
+                                        </svg>
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="layout-view" value="queue" class="hidden peer" />
+                                    <div
+                                        class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                                        <div class="text-xs font-bold mb-1">Queue focused</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Only the Queue card. Best for
+                                            triaging large backlogs.</div>
+                                        <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="2" y="2" width="76" height="46" rx="2" fill="currentColor"
+                                                opacity="0.5" />
+                                            <line x1="6" y1="10" x2="74" y2="10" stroke="currentColor"
+                                                stroke-width="1.5" />
+                                            <line x1="6" y1="18" x2="60" y2="18" stroke="currentColor"
+                                                stroke-width="1.5" />
+                                            <line x1="6" y1="26" x2="68" y2="26" stroke="currentColor"
+                                                stroke-width="1.5" />
+                                        </svg>
+                                    </div>
+                                </label>
                                 <label class="cursor-pointer">
                                     <input type="radio" name="layout-view" value="gallery" class="hidden peer" />
                                     <div
                                         class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
-                                        <div class="text-xs font-bold mb-1">Gallery-focused</div>
-                                        <div class="text-[10px] opacity-60 mb-2">Slop fills viewport. Prompt + Queue
-                                            open via
-                                            floating buttons.</div>
+                                        <div class="text-xs font-bold mb-1">Slop / gallery focused</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Slop fills the viewport; Prompt +
+                                            Queue open via floating buttons. Best on mobile.</div>
                                         <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
                                             xmlns="http://www.w3.org/2000/svg">
                                             <rect x="2" y="2" width="76" height="46" rx="2" fill="currentColor"
                                                 opacity="0.7" />
                                             <circle cx="64" cy="40" r="4" fill="currentColor" />
                                             <circle cx="74" cy="40" r="4" fill="currentColor" />
+                                        </svg>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="divider text-[10px] uppercase tracking-widest opacity-50 my-2">Two-card splits</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="layout-view" value="subj-slop" class="hidden peer" />
+                                    <div
+                                        class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                                        <div class="text-xs font-bold mb-1">Prompt + Slop</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Hide Queue. Generate while watching
+                                            output.</div>
+                                        <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor"
+                                                opacity="0.5" />
+                                            <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
+                                                opacity="0.7" />
+                                        </svg>
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="layout-view" value="queue-slop" class="hidden peer" />
+                                    <div
+                                        class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                                        <div class="text-xs font-bold mb-1">Queue + Slop</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Hide Prompt. Watch the queue burn
+                                            down.</div>
+                                        <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor"
+                                                opacity="0.5" />
+                                            <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
+                                                opacity="0.7" />
+                                            <line x1="6" y1="8" x2="74" y2="8" stroke="currentColor"
+                                                stroke-width="1.5" />
+                                            <line x1="6" y1="14" x2="60" y2="14" stroke="currentColor"
+                                                stroke-width="1.5" />
+                                        </svg>
+                                    </div>
+                                </label>
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="layout-view" value="subj-queue" class="hidden peer" />
+                                    <div
+                                        class="card bg-base-200 border-2 border-transparent peer-checked:border-primary p-3 hover:border-primary/40 transition-colors">
+                                        <div class="text-xs font-bold mb-1">Prompt + Queue</div>
+                                        <div class="text-[10px] opacity-60 mb-2">Hide Slop. Best for setup before a
+                                            big run.</div>
+                                        <svg viewBox="0 0 80 50" class="w-full h-12 opacity-70"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="2" y="2" width="36" height="46" rx="2" fill="currentColor"
+                                                opacity="0.5" />
+                                            <rect x="42" y="2" width="36" height="46" rx="2" fill="currentColor"
+                                                opacity="0.5" />
                                         </svg>
                                     </div>
                                 </label>
