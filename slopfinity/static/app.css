@@ -4091,10 +4091,13 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
 
 /* Master expander wrapping ALL tool_call + tool_result detail inside a
    single fused thought bubble. Closed by default — user sees only the
-   cogs + one-line summary ("3 tool calls: …") until they click.
-   Per-item rendering inside `.chat-thought-body` is now plain <div>s
-   (no nested <details>) so the master expander is the ONLY collapse
-   surface in the bubble. */
+   cogs + the most-recent tool_call's clean one-liner (e.g.
+   `queue_status()` or `add_to_queue(prompt="…", count=3)`) until they
+   click. Was: "3 tool calls: …" generic count — that was a stat, not a
+   status, so it didn't tell the user what was happening NOW. Per-item
+   rendering inside `.chat-thought-history` is plain <div>s (no nested
+   <details>) so the master expander is the ONLY collapse surface in
+   the bubble. */
 .chat-thought-detail-wrap {
     display: inline;
 }
@@ -4102,8 +4105,12 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
 .chat-thought-summary {
     cursor: pointer;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-    font-size: 10px;
-    opacity: 0.75;
+    /* Bumped from 10px → 11px because the headline IS the primary
+       surface now ("what is the assistant doing right now?") rather
+       than a small "click to expand" hint. Per-item history lines
+       inside chat-thought-history stay at 10px. */
+    font-size: 11px;
+    opacity: 0.85;
     user-select: none;
 }
 
@@ -4111,8 +4118,18 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     opacity: 1;
 }
 
-.chat-thought-body {
+/* Open-state body. Stacks the chronological list of every tool_call +
+   tool_result in the run. Slight inset + dashed left rule makes it
+   read as "nested under the headline" rather than a flat second pane. */
+.chat-thought-history {
+    display: block;
     margin-top: 0.25rem;
+    padding-left: 6px;
+    border-left: 1px dashed oklch(var(--bc) / 0.25);
+}
+
+.chat-thought-history > .chat-thought-item:first-child {
+    margin-top: 0;
 }
 
 /* Animated gear-cogs prefix for chat-thought bubbles. Replaces the static
