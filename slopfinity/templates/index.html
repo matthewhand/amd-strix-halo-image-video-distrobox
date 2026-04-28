@@ -2619,6 +2619,22 @@
                         <span class="label-text-alt text-[10px] opacity-60">How often Endless mode asks the LLM for the
                             next chapter (4–60s).</span>
                     </label>
+                    {# Simple-mode initial-rows count — controls how many
+                       suggestion rows render when the user enters simple
+                       mode / fires regen. After the initial render, the
+                       +/− pill still adds/removes rows manually. Default 3. #}
+                    <label class="form-control mb-2">
+                        <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
+                            <span>Simple-mode initial rows</span>
+                            <span class="font-mono"><span id="slop-simple-rows-val">3</span></span>
+                        </span>
+                        <input id="slop-simple-rows" type="range" min="1" max="10" step="1" value="3"
+                            class="range range-sm range-primary"
+                            oninput="$('slop-simple-rows-val').innerText = this.value"
+                            onchange="(() => { try { localStorage.setItem('slopfinity-simple-initial-rows', this.value); } catch(_) {} }).call(this)" />
+                        <span class="label-text-alt text-[10px] opacity-60">How many suggestion rows render initially in
+                            Simple mode (1–10). +/− pill still adds/removes after.</span>
+                    </label>
                     <label class="label cursor-pointer py-1">
                         <span class="label-text text-xs">Fresh suggestion marquee (auto-evict oldest at cap)</span>
                         <input id="slop-fresh-toggle-modal" type="checkbox" class="toggle toggle-primary toggle-sm"
