@@ -2842,6 +2842,30 @@ window._chatSwitchActiveTo = _chatSwitchActiveTo;
 window._chatSiblingsOf = _chatSiblingsOf;
 window._chatActiveChain = _chatActiveChain;
 
+// Switch to a sibling branch via the chat-branch-pill, re-render, then
+// scroll the FORK-FROM user message into view. The fork-from message is
+// the one carrying the branch-nav (i.e. the user message at the same
+// chain position as the target node), and it shares its `nodeId` value
+// with the target's siblings — so we can grab `targetNodeId` directly
+// and scrollIntoView the bubble that has `data-node-id="<targetNodeId>"`.
+// Without this, the chat log auto-scrolls to the end (set by
+// _renderChatLog), which can hide the fork point if the new branch is
+// long. See user's request: "when i toggle between forked threads, can
+// we jump to the message that the fork was from?".
+window._chatToggleFork = function (targetNodeId) {
+    _chatSwitchActiveTo(targetNodeId);
+    _renderChatLog();
+    // scrollIntoView after the next paint so layout is settled. The
+    // user-bubble carrying this id is the fork-from message itself.
+    requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-node-id="${targetNodeId}"]`);
+        if (el && typeof el.scrollIntoView === 'function') {
+            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            catch (_) { el.scrollIntoView(); }
+        }
+    });
+};
+
 function _resetChat() {
     if (!confirm('Clear chat history? This wipes the current conversation.')) return;
     _setChatHistory([]);
@@ -3033,7 +3057,7 @@ function _renderChatLog() {
                 const isActive = sid === nodeId;
                 return `<button type="button" class="chat-branch-pill${isActive ? ' chat-branch-active' : ''}"
                         title="Switch to branch ${j + 1} of ${sibs.length}"
-                        onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${j + 1}</button>`;
+                        onclick="_chatToggleFork('${sid}')">${j + 1}</button>`;
             }).join('')}
             </div>` : (nodeId ? `<div class="chat-branch-nav chat-branch-nav-fork" data-pos-idx="${idx}">
                 <button type="button" class="chat-branch-pill chat-branch-fork"
