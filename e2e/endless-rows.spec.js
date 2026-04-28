@@ -277,11 +277,16 @@ test('endless-rows: every row has a lead cluster', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: After Submit, the + button should re-disable + the row
-// stack hint should reappear.
+// CONTRACT: After Submit, the story ends — _endlessRunning flips false,
+// body.endless-running is removed, and the seed textarea is cleared.
+// (Prior versions of this test asserted that the + button re-disables
+// and body got an `endless-pill-locked` class. Both behaviours were
+// REMOVED in v316/v317 — the user asked for the + and prompt-name to
+// never look greyed out. See app.js _refreshSuggestBadge ~line 1414 +
+// the "isEndless: allow=true" branch ~line 1472.)
 // ---------------------------------------------------------------------------
 
-test('endless-rows: Submit re-locks pill + clears stack', async ({ page }) => {
+test('endless-rows: Submit ends story (clears running flag + seed)', async ({ page }) => {
     await bootstrap(page);
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
@@ -289,12 +294,15 @@ test('endless-rows: Submit re-locks pill + clears stack', async ({ page }) => {
     // Submit ends the story.
     await page.click('#subjects-story-submit');
     await page.waitForTimeout(400);
-    // + button should be disabled (story ended).
+    // body.endless-running must be cleared.
+    const isRunning = await page.evaluate(() => document.body.classList.contains('endless-running'));
+    expect(isRunning).toBe(false);
+    // Seed textarea was emptied (per _submitEndlessStory).
+    const seed = await page.locator('#p-core').inputValue();
+    expect(seed).toBe('');
+    // + button stays enabled in endless mode (see contract update).
     const addDisabled = await page.locator('#subjects-suggest-add-btn').evaluate(el => el.disabled);
-    expect(addDisabled).toBe(true);
-    // Body class should be locked.
-    const locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
-    expect(locked).toBe(true);
+    expect(addDisabled).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

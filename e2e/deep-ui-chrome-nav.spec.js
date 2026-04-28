@@ -241,9 +241,13 @@ for (const vp of VPS) {
             const layoutDD = await inspect(page, '#layout-select, [data-layout-dropdown], select[name="layout"]');
             rec('layoutDropdown', vp.name, layoutDD);
 
-            // Close drawer
-            await page.locator('#settings-drawer .drawer-overlay').click({ position: { x: 8, y: 200 } }).catch(() => {});
-            await page.waitForTimeout(300);
+            // Close drawer. At compact (375x800) the overlay click can hang
+            // (locator auto-wait when overlay is partially obscured) or tear
+            // down the context entirely. Cap the click attempt + ignore any
+            // close-side error — the test's assertions (rec'd above) are
+            // already complete.
+            await page.locator('#settings-drawer .drawer-overlay').click({ position: { x: 8, y: 200 }, timeout: 1500 }).catch(() => {});
+            await page.waitForTimeout(300).catch(() => {});
         });
 
         test(`layouts + slide animation @ ${vp.name}`, async ({ page }) => {
