@@ -2931,6 +2931,37 @@ function _renderChatLog() {
     // Also pull the active-chain nodes so each rendered message can
     // be paired with its tree id (drives the Edit + branch-nav UI).
     const _chain = (typeof _chatActiveChain === 'function') ? _chatActiveChain() : [];
+    // Format a single tool_call into a clean human-friendly one-liner:
+    //   queue_status()
+    //   cancel_job(id=42)
+    //   add_to_queue(prompt="dragons in fog…", count=3)
+    // - String args truncate to 30 chars + ellipsis, kept in quotes.
+    // - Numbers/bools render as-is via JSON.stringify.
+    // - At most 3 args; remaining keys collapse to a trailing `…`.
+    // Returns plain text — caller is responsible for HTML-escaping.
+    const _toolCallSummary = (c) => {
+        const fn = (c && c.function) || {};
+        const name = fn.name || 'unknown';
+        let parsed = {};
+        try {
+            parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
+        } catch (_) {
+            return `${name}(…)`;
+        }
+        const entries = Object.entries(parsed || {});
+        if (!entries.length) return `${name}()`;
+        const head = entries.slice(0, 3).map(([k, v]) => {
+            if (typeof v === 'string') {
+                const trimmed = v.length > 30 ? v.slice(0, 30) + '…' : v;
+                return `${k}="${trimmed}"`;
+            }
+            // Numbers, bools, null, arrays, objects — JSON.stringify is fine.
+            // For nested objects we still want a compact repr.
+            return `${k}=${JSON.stringify(v)}`;
+        });
+        const argShort = head.join(', ') + (entries.length > 3 ? ', …' : '');
+        return `${name}(${argShort})`;
+    };
     // Render-helper: build the inner blocks for ONE thinking item (either
     // an assistant tool_calls turn or a tool-result turn). Used inside the
     // fused thinking-run wrapper. Now renders as PLAIN <div>s (no nested
@@ -2942,19 +2973,17 @@ function _renderChatLog() {
         if (role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
             return m.tool_calls.map(c => {
                 const fn = (c.function || {});
-                const name = fn.name || 'unknown';
                 let prettyHtml = '';
-                let summary = name + '(…)';
+                const summary = _toolCallSummary(c);
                 try {
                     const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
                     prettyHtml = _renderKvPretty(parsed, 0);
-                    const argShort = Object.entries(parsed).map(([k, v]) =>
-                        `${k}=${typeof v === 'string' ? '"' + v.slice(0, 30) + (v.length > 30 ? '…' : '') + '"' : JSON.stringify(v)}`
-                    ).join(' ');
-                    summary = `${name}(${argShort})`;
                 } catch (_) {
                     prettyHtml = `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(String(fn.arguments || ''))}</pre>`;
                 }
+                // Plain div (not <details>) — the master <details> wrapping
+                // the whole run is the SOLE collapse surface; nested per-item
+                // collapses inside it would be annoying noise.
                 return `<div class="chat-thought-item text-[10px] mt-1">
                     <div class="font-mono opacity-80">→ ${_htmlEscape(summary)}</div>
                     <div class="mt-1 p-2 bg-base-300/40 rounded">${prettyHtml}</div>
@@ -2973,25 +3002,20 @@ function _renderChatLog() {
         }
         return '';
     };
-    // Build a one-line summary for the master expander based on the run's
-    // tool_calls. Examples: "1 tool call: queue_status",
-    // "3 tool calls: queue_status + cancel_job + recent_finals",
-    // "2 tool calls: queue_status + cancel_job + …" (truncated past 3).
-    const _summariseRun = (runItems) => {
-        const names = [];
-        runItems.forEach(m => {
-            if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-                m.tool_calls.forEach(c => {
-                    const n = ((c.function || {}).name) || 'tool';
-                    names.push(n);
-                });
+    // Headline summary (collapsed state): the MOST RECENT tool_call's
+    // clean one-liner, so a long run reads as "currently doing X" not
+    // "3 tool calls". The full chronological history lives inside the
+    // master <details> body, revealed on click.
+    const _runHeadlineSummary = (runItems) => {
+        for (let j = runItems.length - 1; j >= 0; j--) {
+            const m = runItems[j];
+            if (m && m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+                const last = m.tool_calls[m.tool_calls.length - 1];
+                return _toolCallSummary(last);
             }
-        });
-        if (!names.length) return 'tool run';
-        const head = names.slice(0, 3).join(' + ');
-        const tail = names.length > 3 ? ' + …' : '';
-        const noun = names.length === 1 ? 'tool call' : 'tool calls';
-        return `${names.length} ${noun}: ${head}${tail}`;
+        }
+        const t = runItems.find(m => m && m.role === 'tool');
+        return t ? `${t.name || 'tool'}(…)` : 'thinking…';
     };
     // Animated cogs (active state). The 'done' state shares the same
     // markup but CSS gates the @keyframes animation to .chat-thought-active
@@ -3038,14 +3062,17 @@ function _renderChatLog() {
             // etc.), the run is done — cogs go static.
             const inflight = i >= history.length;
             const stateCls = inflight ? ' chat-thought-active' : ' chat-thought-done';
+            // Chronological inner: every tool_call (one per call entry) +
+            // every tool result, in the order they appeared. The master
+            // <details> hides this list by default. The headline (visible
+            // collapsed) is the most-recent tool_call's clean one-liner —
+            // so a long run reads as "currently doing X" not "3 tool calls".
             const inner = runItems.map(_renderThinkingItemInner).join('');
-            const summaryText = _summariseRun(runItems);
-            // Master expander: ALL tool_call args + tool_result bodies live
-            // inside ONE <details>. Closed by default — user sees only the
-            // cogs + a one-line summary until they click. Per-item <details>
-            // were removed (replaced by plain <div>s) in _renderThinkingItemInner
-            // so we don't end up with a nested-collapsible mess.
-            out.push(`<div class="chat chat-start" data-msg-idx="${runStart}"><div class="chat-thought text-xs${stateCls}">${_cogsHTML}<details class="chat-thought-detail-wrap"><summary class="chat-thought-summary">${_htmlEscape(summaryText)}</summary><div class="chat-thought-body">${inner}</div></details></div></div>`);
+            // Master expander: cogs + headline visible always; full
+            // chronological history (calls + results) lives inside the
+            // <details> body and is hidden by default.
+            const headline = _runHeadlineSummary(runItems);
+            out.push(`<div class="chat chat-start" data-msg-idx="${runStart}"><div class="chat-thought text-xs${stateCls}">${_cogsHTML}<details class="chat-thought-detail-wrap"><summary class="chat-thought-summary font-mono cursor-pointer">${_htmlEscape(headline)}</summary><div class="chat-thought-history">${inner}</div></details></div></div>`);
             continue;
         }
         if (role === 'user') {
@@ -3348,13 +3375,33 @@ window._sendChatMessage = _sendChatMessage;
 // Single click handler on the big queue button — forks on mode.
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
-    if (mode === 'endless') return _startEndlessStory();
     if (mode === 'chat') return; // chat input is the only action; big button is hidden
-    // Simple + Raw both use the legacy queue path. The only difference is
-    // visual (Raw exposes the per-stage prompt panel for power users to
-    // pre-fill via AI Magic; Simple keeps the textarea as the only input).
-    // Both honor whatever's in p-image / p-video / etc. when present, so a
-    // Raw user who pre-filled all stages skips LLM rewrites at queue time.
+    // STORY MODE — Queue button queues the persisted beat lines as the
+    // subjects list, then runs the standard queue path. Was: clicked
+    // Queue here started a fresh endless-story session via
+    // _startEndlessStory which RESET the per-beat log to just-the-seed
+    // and toggled body.endless-running — read to the user as "UI
+    // reverted and didn't queue anything". Per their explicit ask:
+    // "we were going to replace 'Start Story' with just the usual
+    // Queue Slop button". The persisted beat lines from the editable
+    // per-beat rows become the multi-line p-core value that the
+    // standard queue path consumes.
+    if (mode === 'endless') {
+        const lines = (typeof _loadEndlessLogLines === 'function') ? _loadEndlessLogLines() : [];
+        const cleaned = (lines || []).map(s => (s || '').trim()).filter(Boolean);
+        if (cleaned.length) {
+            const ta = document.getElementById('p-core');
+            if (ta) {
+                ta.value = cleaned.join('\n');
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+        // Fall through to the same toggleInfinity() path simple/raw use.
+    }
+    // Simple + Raw + Story (post line-sync above) hit the legacy queue
+    // path. Raw exposes the per-stage prompt panel for power users to
+    // pre-fill via AI Magic; Simple keeps the textarea as the only input;
+    // Story turns the per-beat list into the multi-line subject list.
     if (typeof toggleInfinity === 'function') return toggleInfinity();
 }
 window._subjectsAction = _subjectsAction;
@@ -9846,11 +9893,24 @@ async function _renderChatReplies() {
     // outer attribute is critical — JSON.stringify produces a
     // "-wrapped string and would close a "-wrapped onclick at the
     // first inner ". (See chat-suggestion-send.spec.js.)
-    host.innerHTML = arr.slice(0, displayCount).map(s =>
-        `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
-            onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
+    host.innerHTML = arr.slice(0, displayCount).map(s => {
+        // The onclick attribute uses single-quote outer wrapping because
+        // JSON.stringify(s) is "-wrapped (would close a "-wrapped attr).
+        // BUT if `s` contains a literal apostrophe (e.g. "what's running")
+        // the JSON output is `"what's running"` — the inner `'` closes
+        // our outer single-quote attribute and the rest becomes garbage
+        // ("Invalid or unexpected token"). Solution: HTML-escape the
+        // JSON output for the attribute context — `&#39;` survives
+        // attribute parsing AND the browser un-escapes it before JS
+        // evaluation. Same fix applies to `&` (must precede the others).
+        const payload = JSON.stringify(s)
+            .replace(/&/g, '&amp;')
+            .replace(/'/g, '&#39;');
+        return `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick='_consumeChatReply(this, ${payload})'>
             ${_htmlEscape(s)}
-        </button>`).join('');
+        </button>`;
+    }).join('');
 }
 window._renderChatReplies = _renderChatReplies;
 
@@ -9865,11 +9925,16 @@ function _resliceChatReplies(displayCount) {
     const arr = host._chatReplyArr;
     if (!Array.isArray(arr) || arr.length < displayCount) return false;
     host._chatReplyBuffer = arr.slice(displayCount);
-    host.innerHTML = arr.slice(0, displayCount).map(s =>
-        `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
-            onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
+    host.innerHTML = arr.slice(0, displayCount).map(s => {
+        // See _renderChatReplies for the apostrophe-escape rationale.
+        const payload = JSON.stringify(s)
+            .replace(/&/g, '&amp;')
+            .replace(/'/g, '&#39;');
+        return `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick='_consumeChatReply(this, ${payload})'>
             ${_htmlEscape(s)}
-        </button>`).join('');
+        </button>`;
+    }).join('');
     return true;
 }
 window._resliceChatReplies = _resliceChatReplies;
