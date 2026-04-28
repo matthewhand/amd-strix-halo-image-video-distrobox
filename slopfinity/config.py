@@ -169,13 +169,13 @@ DEFAULT_SCHEDULER = {
 
 DEFAULT_AUTO_SUSPEND = [
     {"id": "lmstudio", "label": "LLM (LM Studio)", "enabled": True,
-     "method": "sigstop", "process_name": "LM Studio"},
+     "method": "sigstop", "process_name": "LM Studio", "command": ""},
     {"id": "comfyui", "label": "ComfyUI", "enabled": False,
-     "method": "rest_unload", "endpoint": "http://localhost:8188/free"},
+     "method": "rest_unload", "endpoint": "http://localhost:8188/free", "command": ""},
     {"id": "qwen-tts", "label": "Qwen-TTS worker", "enabled": False,
-     "method": "docker_stop", "container": "strix-halo-qwen-tts"},
+     "method": "docker_stop", "container": "strix-halo-qwen-tts", "command": ""},
     {"id": "ollama", "label": "Ollama LLM", "enabled": False,
-     "method": "sigstop", "process_name": "ollama"},
+     "method": "sigstop", "process_name": "ollama", "command": ""},
 ]
 
 DEFAULT_CONFIG = {
@@ -232,6 +232,13 @@ DEFAULT_CONFIG = {
     "concurrency_budget_gb": 0.0,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
     "scheduler": DEFAULT_SCHEDULER,
+    # Gate for cloud LLM endpoints in the Settings → LLM provider dropdown.
+    # Slopfinity ships local-only by default (False); flipping this on
+    # surfaces any cloud providers registered in slopfinity/llm/. The
+    # backend `list_providers()` registry currently only contains local
+    # entries, so this is a forward-compatible toggle — see TODO in
+    # static/app.js (filterProviderDropdown) for the client gate.
+    "allow_cloud_endpoints": False,
     "suggest_max_len_endless": 20,
     "suggest_max_len_simple": 40,
     "suggest_max_len_chat": 80,
