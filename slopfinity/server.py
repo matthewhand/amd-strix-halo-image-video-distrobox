@@ -513,7 +513,7 @@ def _default_suggest_system_prompt(n: int) -> str:
 
 @app.get("/subjects/suggest")
 async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, opener: int = 0,
-                            fresh: int = 0, prompt_id: str = ""):
+                            fresh: int = 0, chat: int = 0, prompt_id: str = ""):
     """Generate N short visual subject ideas via the configured local LLM.
 
     Cache key includes both N and (subjects, settings flags) so toggling the
@@ -625,8 +625,14 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     # numbered lists, code fences, scaffolding restatements, or
     # apologetic preludes ("Here are 6 ideas:") — all of which
     # required defensive client-side filters before. With the schema,
-    # the LLM physically cannot produce non-JSON output. Each chip
-    # capped at 120 chars; whole array between 1 and n items.
+    # the LLM physically cannot produce non-JSON output.
+    if endless:
+        max_len = config.get("suggest_max_len_endless") or 50
+    elif chat:
+        max_len = config.get("suggest_max_len_chat") or 200
+    else:
+        max_len = config.get("suggest_max_len_simple") or 100
+
     response_format = {
         "type": "json_schema",
         "json_schema": {
@@ -642,7 +648,7 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
                         "items": {
                             "type": "string",
                             "minLength": 2,
-                            "maxLength": 120,
+                            "maxLength": max_len,
                         },
                     },
                 },

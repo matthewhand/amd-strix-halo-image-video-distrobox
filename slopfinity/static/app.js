@@ -1460,6 +1460,10 @@ function _refreshSuggestBadge() {
             removeBtn.disabled = !stackHasRows;
             removeBtn.classList.toggle('opacity-40', !stackHasRows);
         }
+        const countEl = document.getElementById('subjects-simple-row-count');
+        if (countEl) {
+            countEl.innerText = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length;
+        }
     }
     if (refreshBtn) {
         // Hide refresh in: endless (+ owns the slot), simple-pre-first-batch.
@@ -5140,7 +5144,6 @@ function _applySlopFilters() {
     // off, since toggling it has no effect there.
     const framesLabel = document.querySelector('.slop-filter-frames-label');
     const framesInput = document.querySelector('[data-slop-filter="frames"]');
-    if (framesLabel) framesLabel.classList.toggle('slop-filter-disabled', !showAssets);
     if (framesInput) framesInput.disabled = !showAssets;
     let vCount = 0;
     let iCount = 0;
@@ -9055,7 +9058,7 @@ async function _renderChatReplies() {
         // clicks a chip → that chip animates out → we slide-in the
         // next from the buffer. Mirrors the endless-row consume-and-
         // refill UX. Server returns up to 6; we display 3.
-        const qs = '?n=6&fresh=1&_t=' + Date.now()
+        const qs = '?n=6&fresh=1&chat=1&_t=' + Date.now()
             + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
             + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
         const r = await fetch('/subjects/suggest' + qs);

@@ -223,6 +223,9 @@ DEFAULT_CONFIG = {
     "concurrency_budget_gb": 0.0,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
     "scheduler": DEFAULT_SCHEDULER,
+    "suggest_max_len_endless": 50,
+    "suggest_max_len_simple": 100,
+    "suggest_max_len_chat": 200,
 }
 
 
