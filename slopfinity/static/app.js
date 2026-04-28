@@ -5,6 +5,14 @@
 (function () {
     const saved = localStorage.getItem('slopfinity-theme');
     if (saved) document.documentElement.dataset.theme = saved;
+    // Visuals density — also apply early so border/padding rules using
+    // calc(... * var(--slop-density)) settle before first paint. Default
+    // 1.0; user-tunable in Settings → General → Visuals.
+    const dens = parseFloat(localStorage.getItem('slopfinity-visuals-density') || '1');
+    if (isFinite(dens) && dens > 0) {
+        document.documentElement.style.setProperty('--slop-density',
+            String(Math.max(0.5, Math.min(1.5, dens))));
+    }
 })();
 
 function applyTheme(name) {
@@ -530,12 +538,14 @@ function _applyLayoutView(view) {
     //   subjects    — Subjects only (Queue + Slop hidden; FAB → Queue + Slop)
     //   queue       — Queue only (Subjects + Slop hidden; FAB → Subjects + Slop)
     //   gallery     — Slop only (Subjects + Queue hidden; FAB → Subjects + Queue)
-    //   subj-slop   — Subjects + Slop (Queue hidden; FAB → Queue)
-    //   queue-slop  — Queue + Slop (Subjects hidden; FAB → Subjects)
-    //   subj-queue  — Subjects + Queue (Slop hidden; FAB → Slop)
+    //
+    // 2-card layouts (subj-slop / queue-slop / subj-queue) REMOVED — the
+    // user found them unnecessary now that single-card focus modes have
+    // the side-rail nav + the default multi-pane shows everything at
+    // once on large viewports. Stale `?layout=subj-slop` URLs fall
+    // through to default.
     const valid = new Set([
         'gallery', 'queue', 'subjects',
-        'subj-slop', 'queue-slop', 'subj-queue',
     ]);
     if (valid.has(view)) document.body.dataset.layout = view;
     else delete document.body.dataset.layout;
@@ -2501,18 +2511,19 @@ function _updateSubjectsActionLabel() {
         // toggling Suggestions on flips it back to clickable.
         const sugInput = document.getElementById('subjects-suggestions-toggle-input');
         const suggestOn = !!(sugInput && sugInput.checked);
+        const txtNode = document.getElementById('btn-start-stop-inline-text') || btn;
         if (_endlessRunning) {
-            btn.textContent = 'Story Running…';
+            txtNode.textContent = 'Story Running…';
             btn.disabled = true;
             btn.classList.add('opacity-70');
             btn.title = 'Endless story is cycling — use Submit / Reset above to stop';
         } else if (!suggestOn) {
-            btn.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
+            txtNode.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
             btn.title = 'Endless mode requires Suggestions — toggle Suggestions ON to start';
         } else {
-            btn.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
+            txtNode.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
             btn.disabled = false;
             btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed');
             btn.title = seed
@@ -2531,7 +2542,8 @@ function _updateSubjectsActionLabel() {
         btn.title = 'Start/queue generation';
         // Set a sensible default text BEFORE _updateStartBtn runs so even
         // if that helper is missing or no-ops, the label isn't a leftover.
-        btn.textContent = (window.__SLOPFINITY_DEFAULT_QUEUE_LABEL__ || 'Queue Slop');
+        const txtNode = document.getElementById('btn-start-stop-inline-text') || btn;
+        txtNode.textContent = (window.__SLOPFINITY_DEFAULT_QUEUE_LABEL__ || 'Queue Slop');
         if (typeof _updateStartBtn === 'function') _updateStartBtn();
     }
 }
@@ -3071,7 +3083,11 @@ window._chatCommitEdit = function (nodeId, btn) {
         // so don't re-append by submitting through the input. Instead
         // call /chat directly with the active history.
         const sendBtn = document.getElementById('subjects-chat-send');
-        if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
+            stxt.textContent = '…';
+        }
         const chain = _chatActiveChain();
         fetch('/chat', {
             method: 'POST',
@@ -3097,7 +3113,11 @@ window._chatCommitEdit = function (nodeId, btn) {
                 _renderChatLog();
             })
             .finally(() => {
-                if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                    let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
+                    stxt.textContent = 'Send';
+                }
             });
     }
 };
@@ -3210,7 +3230,8 @@ async function _sendChatMessage() {
     input.value = '';
     if (sendBtn) {
         sendBtn.disabled = true;
-        sendBtn.textContent = '…';
+        let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
+        stxt.textContent = '…';
     }
     const history = _getChatHistory();
     history.push({ role: 'user', content: text });
@@ -3241,7 +3262,8 @@ async function _sendChatMessage() {
     }
     if (sendBtn) {
         sendBtn.disabled = false;
-        sendBtn.textContent = 'Send';
+        let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
+        stxt.textContent = 'Send';
     }
     if (input) input.focus();
     // Refresh reply suggestions against the new latest assistant turn so
@@ -7599,6 +7621,13 @@ async function openSettings() {
         const rowsLabel = document.getElementById('slop-simple-rows-val');
         if (rowsSlider) rowsSlider.value = String(rowsClamped);
         if (rowsLabel) rowsLabel.innerText = String(rowsClamped);
+        // Visuals density hydrate (default 1.0; range 0.5-1.5).
+        const dens = parseFloat(localStorage.getItem('slopfinity-visuals-density') || '1');
+        const densClamped = Math.max(0.5, Math.min(1.5, isFinite(dens) ? dens : 1));
+        const densSlider = document.getElementById('set-visuals-density');
+        const densLabel = document.getElementById('set-visuals-density-val');
+        if (densSlider) densSlider.value = String(densClamped);
+        if (densLabel) densLabel.innerText = String(densClamped);
     } catch (_) { }
     try {
         const [sr, br] = await Promise.all([

@@ -280,9 +280,9 @@
                 <div id="refresh-wrapper" class="tooltip tooltip-left" data-tip="Polling interval">
                     <select id="refresh-interval" class="select select-bordered select-xs w-24"
                         onchange="updateRefresh()">
-                        <option value="5000" selected>5s</option>
-                        <option value="15000">15s</option>
-                        <option value="0">off</option>
+                        <option value="5000" selected>5s Refresh</option>
+                        <option value="15000">15s Refresh</option>
+                        <option value="0">Refresh off</option>
                     </select>
                 </div>
                 {# View / layout dropdown — relocates the Settings → Layout
@@ -873,8 +873,15 @@
                                             placeholder="Ask the assistant — e.g. 'queue 3 short clips of dragons'"
                                             onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); _sendChatMessage(); }">
                                         <button type="button" id="subjects-chat-send"
-                                            class="btn btn-primary btn-sm flex-none"
-                                            onclick="_sendChatMessage()">Send</button>
+                                            class="btn btn-primary btn-sm flex-none flex items-center justify-center gap-1"
+                                            onclick="_sendChatMessage()">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+                                                viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round"
+                                                    d="M12 4v16m8-8H4" />
+                                            </svg>
+                                            <span id="subjects-chat-send-text">Send</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -897,10 +904,15 @@
                                     oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
                                 <div class="flex flex-col flex-none w-40 ml-auto gap-1">
                                     <button
-                                        class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight"
+                                        class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight flex items-center justify-center gap-2"
                                         id="btn-start-stop-inline" onclick="_subjectsAction()"
                                         title="Start/queue generation">
-                                        {% if config.infinity_mode %}Queue Infinite Slop{% else %}Queue Slop{% endif %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                                            viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        <span id="btn-start-stop-inline-text">{% if config.infinity_mode %}Queue
+                                            Infinite Slop{% else %}Queue Slop{% endif %}</span>
                                     </button>
                                     {# Queue-status chip: depth + activity. Populated by
                                     _updateQueueStatusChip on every WS tick. Keeps the
@@ -2228,6 +2240,26 @@
                         id="settings-tab-strip">
                         <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="General" checked />
                         <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
+                            {# Visuals group — controls the global density slider
+                               (border + padding compression). Drives the
+                               --slop-density CSS variable on <html>. Default 1.0
+                               is the current spacing; 0.5 = tight (compact mode
+                               native), 1.5 = roomy. Persisted as
+                               localStorage['slopfinity-visuals-density']. #}
+                            <fieldset class="border border-base-content/30 rounded-md p-3 mb-3">
+                                <legend class="text-[10px] uppercase tracking-widest text-base-content/60 px-1">Visuals</legend>
+                                <label class="form-control mb-2">
+                                    <span class="label-text text-[10px] uppercase tracking-widest opacity-60 flex justify-between">
+                                        <span>Density (border + padding scale)</span>
+                                        <span class="font-mono"><span id="set-visuals-density-val">1.0</span>×</span>
+                                    </span>
+                                    <input id="set-visuals-density" type="range" min="0.5" max="1.5" step="0.05" value="1"
+                                        class="range range-sm range-primary"
+                                        oninput="$('set-visuals-density-val').innerText = this.value"
+                                        onchange="(() => { try { localStorage.setItem('slopfinity-visuals-density', this.value); document.documentElement.style.setProperty('--slop-density', this.value); } catch(_) {} }).call(this)" />
+                                    <span class="label-text-alt text-[10px] opacity-60">Lower = tighter borders / less padding (gains screen real estate). Higher = roomier (easier to read).</span>
+                                </label>
+                            </fieldset>
                             <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Interface
                             </div>
                             <label class="label cursor-pointer py-1">
