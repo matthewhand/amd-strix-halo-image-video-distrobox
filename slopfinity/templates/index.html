@@ -2104,9 +2104,18 @@
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
 
-    <!-- Settings Modal (local-only LLM configuration) -->
-    <dialog id="settings-modal" class="modal">
-        <div class="modal-box bg-base-200 border border-base-100 w-[95vw] max-w-4xl">
+    <!-- Settings Drawer (slides in from the right, like the queue drawer).
+         The legacy <dialog id="settings-modal"> contract is preserved as
+         a SHIM — `openSettings()` checks the drawer-toggle checkbox if
+         present, and falls back to the dialog API if not (so any caller
+         that still does `document.getElementById('settings-modal').close()`
+         keeps working). The drawer's wrapper preserves the `settings-modal`
+         id so all the existing inner-element selectors keep matching. -->
+    <div class="drawer drawer-end" id="settings-drawer">
+        <input id="settings-drawer-toggle" type="checkbox" class="drawer-toggle" />
+        <div class="drawer-side z-50">
+            <label for="settings-drawer-toggle" aria-label="close settings drawer" class="drawer-overlay"></label>
+            <div id="settings-modal" class="bg-base-200 border-l border-base-100 w-[95vw] max-w-4xl min-h-full p-4 overflow-y-auto custom-scrollbar">
             <h3 class="font-bold text-lg text-primary uppercase tracking-widest mb-2">Settings</h3>
             <p class="text-[11px] text-base-content/60 mb-4 italic">Local-only. No cloud endpoints accepted.</p>
 
@@ -2128,7 +2137,21 @@
             single row, overflow-x-auto adds the touch-scroll.
             settings-tabs adds a tighter padding/font-size override so 9
             tabs fit without runaway width per .tab — see app.css. #}
-            <div role="tablist" class="tabs tabs-lifted settings-tabs mb-4 overflow-x-auto flex-nowrap whitespace-nowrap">
+            {# Tab strip wrapped in a scroll-shell — left/right faded
+               arrow buttons reveal more tabs on overflow. Buttons hide
+               via CSS when at scroll start/end (no need to JS-hide).
+               daisyUI doesn't ship a sliding-tabs primitive, so this is
+               a thin wrapper using overflow-x-auto + button overlays. #}
+            <div class="tabs-scroll-wrap relative mb-4">
+                <button type="button" class="tabs-scroll-arrow tabs-scroll-prev"
+                    onclick="_settingsTabsScroll(-1)" aria-label="Scroll tabs left"
+                    title="Scroll tabs left">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <div role="tablist" class="tabs tabs-lifted settings-tabs overflow-x-auto flex-nowrap whitespace-nowrap" id="settings-tab-strip">
                 <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="General" checked />
                 <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                     <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Interface</div>
@@ -2288,7 +2311,7 @@
                     </div>
                     <p class="text-[11px] opacity-60 italic mb-2">Model selection moved to <button type="button"
                             class="link link-primary"
-                            onclick="document.getElementById('settings-modal').close(); openPipeline();">Pipeline →
+                            onclick="if(window._setSettingsOpen) window._setSettingsOpen(false); openPipeline();">Pipeline →
                             LLM</button> so all per-iteration model choices live in one place.</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <label class="form-control">
@@ -3151,14 +3174,23 @@
                     </div>
                 </div><!-- /Layout tabpanel -->
             </div><!-- /tablist -->
+                <button type="button" class="tabs-scroll-arrow tabs-scroll-next"
+                    onclick="_settingsTabsScroll(1)" aria-label="Scroll tabs right"
+                    title="Scroll tabs right">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </button>
+            </div><!-- /tabs-scroll-wrap -->
 
-            <div class="modal-action">
+            <div class="flex justify-end gap-2 mt-4 sticky bottom-0 bg-base-200 pt-3 pb-1 border-t border-base-300">
                 <button class="btn btn-sm btn-primary" onclick="saveSettings()">Save</button>
-                <form method="dialog"><button class="btn btn-sm btn-ghost">Cancel</button></form>
+                <label for="settings-drawer-toggle" class="btn btn-sm btn-ghost">Cancel</label>
             </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+            </div> {# /#settings-modal inner panel #}
+        </div> {# /.drawer-side #}
+    </div> {# /#settings-drawer #}
 
     {# Gallery-mode floating action buttons + modal hosts. Hidden by default;
     CSS reveals when body[data-layout="gallery"]. The dialogs serve as

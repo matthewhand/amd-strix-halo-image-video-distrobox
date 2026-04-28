@@ -3009,6 +3009,63 @@ body.endless-running #p-core {
     letter-spacing: 0.12em;
 }
 
+/* Chat reply chip enter animation — paired with .chip-disappear (defined
+   above for marquee chips). When the buffer has a spare, the just-clicked
+   chip fades out; we replace it with a fresh chip starting at .chip-arriving
+   (translateY-down + opacity:0), then drop the class on the next frame so
+   it transitions to its natural position. */
+.chat-reply-chip.chip-arriving {
+    transform: translateY(-6px);
+    opacity: 0;
+}
+.chat-reply-chip {
+    transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
+                opacity 0.3s ease-out;
+}
+
+/* Settings tab strip — left/right arrow overlays for scroll-paging.
+   The strip is overflow-x-auto, so on viewports too narrow to fit all
+   9 tabs, the user can either swipe (touch) or click these arrows to
+   page ±240 px. Arrows fade in/out via JS-set .at-start / .at-end
+   classes on the wrap so they hide automatically at the edges. */
+.tabs-scroll-wrap {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+}
+.tabs-scroll-wrap > .tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* Smooth scroll for keyboard / arrow-button paging. */
+    scroll-behavior: smooth;
+}
+.tabs-scroll-arrow {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    background: hsl(var(--b1) / 0.85);
+    border: none;
+    color: hsl(var(--p));
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+    z-index: 2;
+}
+.tabs-scroll-arrow:hover {
+    background: hsl(var(--p) / 0.18);
+}
+.tabs-scroll-prev {
+    border-right: 1px solid hsl(var(--bc) / 0.15);
+}
+.tabs-scroll-next {
+    border-left: 1px solid hsl(var(--bc) / 0.15);
+}
+/* Hide the matching arrow when at-edge — JS sets these classes on the
+   wrap element on scroll. */
+.tabs-scroll-wrap.at-start .tabs-scroll-prev { opacity: 0; pointer-events: none; }
+.tabs-scroll-wrap.at-end   .tabs-scroll-next { opacity: 0; pointer-events: none; }
+
 /* Default-kind toast — uses primary theme accent rather than the daisyUI
    info-blue so the dashboard's "live signal" colour palette stays
    consistent across alerts, status chips, ticker bars, mode pills, etc.
