@@ -5384,6 +5384,83 @@ setInterval(() => {
 // hides the label within ~1 s of the TTL elapsing.
 setInterval(_applyRenderHeartbeat, 1000);
 
+// =====================================================================
+// Chat-thinking ephemeral bubble — driven by `chat_thinking` WS events.
+// The /chat endpoint emits {phase:'received'|'calling'|'done'} signals
+// while it processes a user message. Client renders an in-flight thought
+// bubble (NOT in _chatGetTree — purely ephemeral) at the bottom of the
+// chat log while phase is 'received' or 'calling'. Each signal pushes
+// an 8 s dead-man timeout into the future; if heartbeats stop arriving,
+// a 1 Hz expiry tick auto-hides the bubble. A 'done' signal hides
+// immediately. The bubble carries `.chat-thought-active` so the cogs
+// CSS animation runs.
+// =====================================================================
+let _chatThinkingExpiresAt = 0;
+const _CHAT_THINKING_EPHEMERAL_ID = 'chat-thinking-ephemeral';
+
+function _chatThinkingEphemeralHTML() {
+    // Re-use the same cogs SVG markup that `_renderChatLog` emits so the
+    // visuals match exactly. Inline copy to avoid coupling to render-helper
+    // closures. Active class drives @keyframes via app.css.
+    return `<div class="chat chat-start" id="${_CHAT_THINKING_EPHEMERAL_ID}">
+        <div class="chat-thought text-xs chat-thought-active">
+            <span class="chat-cogs" aria-hidden="true" title="thinking…">
+                <svg class="chat-cog" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+                </svg>
+                <svg class="chat-cog-rev" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+                </svg>
+            </span>
+            <span class="opacity-70 text-[10px]">thinking…</span>
+        </div>
+    </div>`;
+}
+
+function _showChatThinkingBubble() {
+    const log = document.getElementById('subjects-chat-log');
+    if (!log) return;
+    let el = document.getElementById(_CHAT_THINKING_EPHEMERAL_ID);
+    if (!el) {
+        // Append to the end of the log; the placeholder text in an empty
+        // log gets pushed up, which is fine — the cogs read as "thinking".
+        log.insertAdjacentHTML('beforeend', _chatThinkingEphemeralHTML());
+        el = document.getElementById(_CHAT_THINKING_EPHEMERAL_ID);
+    }
+    if (el) {
+        log.scrollTop = log.scrollHeight;
+    }
+}
+
+function _hideChatThinkingBubble() {
+    const el = document.getElementById(_CHAT_THINKING_EPHEMERAL_ID);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    _chatThinkingExpiresAt = 0;
+}
+
+function _applyChatThinkingExpiry() {
+    if (_chatThinkingExpiresAt && Date.now() > _chatThinkingExpiresAt) {
+        _hideChatThinkingBubble();
+    }
+}
+
+function _onChatThinkingSignal(d) {
+    const phase = d && d.phase;
+    if (phase === 'received' || phase === 'calling') {
+        // Push the dead-man timeout 8 s into the future. As long as
+        // heartbeats arrive at <8 s intervals, the bubble keeps spinning.
+        _chatThinkingExpiresAt = Date.now() + 8000;
+        _showChatThinkingBubble();
+    } else if (phase === 'done') {
+        _hideChatThinkingBubble();
+    }
+}
+
+// 1 Hz dead-man check — fires regardless of WS traffic so a stalled
+// backend (no `done`, no heartbeats) auto-hides the bubble within ~1 s
+// of the 8 s window elapsing.
+setInterval(_applyChatThinkingExpiry, 1000);
+
 // Pretty display label for a configured model id (from config snapshot).
 function _modelDisplayName(id, role) {
     if (!id || id === 'none') return '';
@@ -6090,6 +6167,13 @@ function connect() {
                 expiresAt: (typeof d.expires_ts === 'number' ? d.expires_ts * 1000 : Date.now() + 15000),
             };
             _applyRenderHeartbeat();
+            return;
+        }
+        if (d.type === 'chat_thinking') {
+            // Backend chat-endpoint lifecycle: received / calling / done.
+            // 8 s dead-man timeout in case heartbeats stop arriving — see
+            // _onChatThinkingSignal + _applyChatThinkingExpiry.
+            _onChatThinkingSignal(d);
             return;
         }
         if (d.type === 'state') {

@@ -906,6 +906,38 @@ _CHAT_SYSTEM_PROMPT = (
 _CHAT_MAX_TURNS = 6  # bounded tool-call recursion
 
 
+async def _broadcast_chat_thinking(phase: str) -> None:
+    """Emit a `chat_thinking` signal to every connected WS client.
+
+    Phases: 'received' (user message landed), 'calling' (LLM call in flight,
+    sent on a heartbeat cadence), 'done' (response ready, hide bubble).
+    Client uses this as a dead-man switch — see `_chatThinkingExpiresAt`
+    in app.js. Best-effort: dropped clients are silently pruned.
+    """
+    msg = {"type": "chat_thinking", "phase": phase, "ts": time.time()}
+    for c in list(clients):
+        try:
+            await c.send_json(msg)
+        except Exception:
+            pass
+
+
+async def _chat_thinking_heartbeat(stop_evt: asyncio.Event) -> None:
+    """Repeatedly emit `chat_thinking: calling` every ~2s while the LLM
+    call is in flight. Stops when `stop_evt` is set. Pairs with the 8s
+    dead-man timeout client-side: as long as heartbeats arrive, the
+    cogs keep spinning."""
+    try:
+        while not stop_evt.is_set():
+            await _broadcast_chat_thinking("calling")
+            try:
+                await asyncio.wait_for(stop_evt.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                continue
+    except Exception:
+        pass
+
+
 @app.post("/chat")
 async def chat_endpoint(payload: dict = Body(...)):
     """Multi-turn chat with tool-calling. Client sends the conversation
@@ -919,6 +951,10 @@ async def chat_endpoint(payload: dict = Body(...)):
         return JSONResponse({"ok": False, "error": "messages must be a list"}, status_code=400)
     # Keep server-side history bounded too — the client should already trim.
     history = history[-50:]
+    # User message has landed — kick off the thought bubble immediately
+    # so the UI shows cogs even before we acquire the GPU lock (which
+    # may block behind a busy queue).
+    await _broadcast_chat_thinking("received")
     config = cfg.load_config()
     # Provide the LLM with current pipeline state so its tools usage is informed.
     # Exclude heavy/private blocks (auto_suspend, api_keys).
@@ -927,45 +963,62 @@ async def chat_endpoint(payload: dict = Body(...)):
     messages = [{"role": "system", "content": sys_msg}] + history
 
     tool_audit = []  # surfaced to the client for UI rendering
-    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
-        for _ in range(_CHAT_MAX_TURNS):
-            msg = await asyncio.to_thread(
-                lmstudio_chat_raw, messages, _CHAT_TOOLS_MANIFEST,
-            )
-            messages.append(msg)
-            calls = msg.get("tool_calls") or []
-            if not calls:
-                break
-            for call in calls:
-                fn = (call.get("function") or {})
-                name = fn.get("name") or ""
-                raw_args = fn.get("arguments") or "{}"
+    try:
+        async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
+            for _ in range(_CHAT_MAX_TURNS):
+                # Heartbeat the bubble while the LLM call runs. The
+                # dead-man timeout in the client (8s) needs us to keep
+                # broadcasting `calling` at <8s intervals or it auto-hides.
+                _hb_stop = asyncio.Event()
+                _hb_task = asyncio.create_task(_chat_thinking_heartbeat(_hb_stop))
                 try:
-                    args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-                except Exception:
-                    args = {}
-                handler = _CHAT_TOOL_HANDLERS.get(name)
-                if not handler:
-                    result = {"ok": False, "error": f"unknown tool: {name}"}
-                else:
+                    msg = await asyncio.to_thread(
+                        lmstudio_chat_raw, messages, _CHAT_TOOLS_MANIFEST,
+                    )
+                finally:
+                    _hb_stop.set()
                     try:
-                        result = handler(args)
-                    except Exception as e:
-                        result = {"ok": False, "error": f"{name} raised: {e!r}"}
-                tool_audit.append({"name": name, "args": args, "result": result})
+                        await _hb_task
+                    except Exception:
+                        pass
+                messages.append(msg)
+                calls = msg.get("tool_calls") or []
+                if not calls:
+                    break
+                for call in calls:
+                    fn = (call.get("function") or {})
+                    name = fn.get("name") or ""
+                    raw_args = fn.get("arguments") or "{}"
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                    except Exception:
+                        args = {}
+                    handler = _CHAT_TOOL_HANDLERS.get(name)
+                    if not handler:
+                        result = {"ok": False, "error": f"unknown tool: {name}"}
+                    else:
+                        try:
+                            result = handler(args)
+                        except Exception as e:
+                            result = {"ok": False, "error": f"{name} raised: {e!r}"}
+                    tool_audit.append({"name": name, "args": args, "result": result})
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or "",
+                        "name": name,
+                        "content": json.dumps(result),
+                    })
+            else:
+                # Hit the turn cap without a content-only response. Append a
+                # graceful fallback so the client doesn't render an empty turn.
                 messages.append({
-                    "role": "tool",
-                    "tool_call_id": call.get("id") or "",
-                    "name": name,
-                    "content": json.dumps(result),
+                    "role": "assistant",
+                    "content": "(stopped: tool-call loop hit the turn cap — try rephrasing.)",
                 })
-        else:
-            # Hit the turn cap without a content-only response. Append a
-            # graceful fallback so the client doesn't render an empty turn.
-            messages.append({
-                "role": "assistant",
-                "content": "(stopped: tool-call loop hit the turn cap — try rephrasing.)",
-            })
+    finally:
+        # Always emit `done` — even on exception — so the bubble doesn't
+        # hang. Client also has an 8s dead-man timer as a safety net.
+        await _broadcast_chat_thinking("done")
 
     # Strip the system prompt before returning; client doesn't need to see it.
     out_messages = [m for m in messages if m.get("role") != "system"]
