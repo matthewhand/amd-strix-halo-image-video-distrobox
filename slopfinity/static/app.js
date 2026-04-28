@@ -2731,10 +2731,38 @@ function _renderChatLog() {
             return JSON.stringify(obj, null, 2);
         } catch (_) { return s; }
     };
-    log.innerHTML = history.map(m => {
+    // Bubble action icons — appear dim on hover, light up on direct hover.
+    // Each bubble gets a copy icon (copies its text content); assistant
+    // bubbles ALSO get a refresh icon (re-asks the LLM with the same
+    // history minus the last assistant turn). Wrapped in
+    // `.chat-bubble-actions` so CSS handles opacity transitions.
+    const _bubbleActions = (text, withRefresh, msgIdx) => {
+        const escText = (text || '').replace(/"/g, '&quot;').replace(/\n/g, '&#10;');
+        return `<div class="chat-bubble-actions">
+            <button type="button" class="chat-bubble-action" title="Copy"
+                onclick='_copyBubbleText(this, "${escText}")'>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            </button>
+            ${withRefresh ? `<button type="button" class="chat-bubble-action" title="Re-ask"
+                onclick='_refreshAssistantTurn(${msgIdx})'>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                    <path d="M21 12a9 9 0 0 0-15-6.7L3 8"/>
+                    <path d="M3 3v5h5"/>
+                    <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>
+                    <path d="M21 21v-5h-5"/>
+                </svg>
+            </button>` : ''}
+        </div>`;
+    };
+    log.innerHTML = history.map((m, idx) => {
         const role = m.role || '';
         if (role === 'user') {
-            return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap">${_htmlEscape(m.content || '')}</div></div>`;
+            return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap relative chat-bubble-host">${_htmlEscape(m.content || '')}${_bubbleActions(m.content || '', false, idx)}</div></div>`;
         }
         if (role === 'assistant') {
             const content = (m.content || '').trim();
@@ -2767,7 +2795,7 @@ function _renderChatLog() {
                 return `<div class="chat chat-start"><div class="chat-thought text-xs"><span class="opacity-60 text-[11px]">💭</span> ${body}${callBlocks}</div></div>`;
             }
             const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
-            return `<div class="chat chat-start"><div class="chat-bubble text-xs">${body}</div></div>`;
+            return `<div class="chat chat-start"><div class="chat-bubble text-xs relative chat-bubble-host">${body}${_bubbleActions(content, true, idx)}</div></div>`;
         }
         if (role === 'tool') {
             // Tool RESULT — also rendered as a thought bubble (continuation
@@ -2789,6 +2817,48 @@ function _renderChatLog() {
     log.scrollTop = log.scrollHeight;
 }
 window._renderChatLog = _renderChatLog;
+
+// Copy a bubble's text to clipboard. Brief tick-flash via ::after on
+// success so the user sees the action landed without a disruptive toast.
+window._copyBubbleText = function (btn, text) {
+    if (!text || !navigator.clipboard) return;
+    navigator.clipboard.writeText(text.replace(/&#10;/g, '\n').replace(/&quot;/g, '"'))
+        .then(() => {
+            if (btn) {
+                btn.classList.add('copied');
+                setTimeout(() => btn.classList.remove('copied'), 900);
+            }
+        })
+        .catch(() => { });
+};
+
+// Re-ask the LLM for a fresh assistant turn at index `msgIdx`. Truncates
+// the chat history to the user message that PRECEDED this assistant turn,
+// then re-fires _sendChatMessage equivalent. Easier than polluting
+// /chat with a "regenerate" parameter — we just rewind history and
+// re-submit the last user message verbatim.
+window._refreshAssistantTurn = function (msgIdx) {
+    const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
+    if (!history.length || msgIdx < 0 || msgIdx >= history.length) return;
+    // Walk backward from msgIdx to find the preceding user message.
+    let userIdx = -1;
+    for (let i = Math.min(msgIdx - 1, history.length - 1); i >= 0; i--) {
+        if (history[i] && history[i].role === 'user') { userIdx = i; break; }
+    }
+    if (userIdx < 0) return;
+    const userText = history[userIdx].content || '';
+    if (!userText.trim()) return;
+    // Truncate history to BEFORE the user turn — _sendChatMessage will
+    // re-append it from the input field.
+    const trimmed = history.slice(0, userIdx);
+    if (typeof _setChatHistory === 'function') _setChatHistory(trimmed);
+    _renderChatLog();
+    const input = document.getElementById('subjects-chat-input');
+    if (input) {
+        input.value = userText;
+        if (typeof _sendChatMessage === 'function') _sendChatMessage();
+    }
+};
 
 async function _sendChatMessage() {
     const input = document.getElementById('subjects-chat-input');

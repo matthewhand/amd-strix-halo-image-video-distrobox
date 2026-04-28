@@ -316,13 +316,35 @@ async def enhance(data: dict = Body(...)):
             "'music' = a short mood/genre description for a music generator, "
             "'tts' = a one or two sentence voiceover line. Return ONLY JSON, no prose."
         )
-        # Manual LLM call — route through acquire_gpu so it participates in the
-        # auto-suspend dance (PR #75): if a fleet stage is mid-flight, this
-        # queues; if LM Studio was suspended, it gets resumed for this call.
-        # safety_gb=4 since this is just an LLM ping, not a 60 GB diffusion.
+        # JSON-schema constraint — same defense the /subjects/suggest path
+        # uses (server.py:545-568). Without this, reasoning models leak their
+        # planning preamble into the response and the client treats the
+        # whole prose blob as the rewrite. With strict:true, compliant
+        # providers (LM Studio / llama.cpp / vLLM) physically cannot emit
+        # anything outside the {image, video, music, tts} envelope.
+        distribute_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "stage_distribute",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "image": {"type": "string", "minLength": 1, "maxLength": 600},
+                        "video": {"type": "string", "minLength": 1, "maxLength": 600},
+                        "music": {"type": "string", "maxLength": 300},
+                        "tts": {"type": "string", "maxLength": 400},
+                    },
+                    "required": ["image", "video", "music", "tts"],
+                    "additionalProperties": False,
+                },
+            },
+        }
         async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
-            raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt)
-        # Best-effort JSON extraction
+            raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt, distribute_schema)
+        # Best-effort JSON extraction (schema-compliant providers will
+        # already give us pure JSON; the loose-find paths handle providers
+        # that ignore response_format).
         parsed = None
         try:
             parsed = json.loads(raw)
@@ -346,9 +368,53 @@ async def enhance(data: dict = Body(...)):
                 "tts": parsed.get("tts", ""),
             },
         }
+    # Single-stage rewrite — same json-schema treatment so the LLM cannot
+    # leak "Sure, here's the rewritten prompt:" or any planning preamble
+    # into the response. Returns just `{rewrite: "..."}`. Client extracts
+    # `r.suggestion` (kept as the wire field name for back-compat) which
+    # we now route through the schema-constrained extract.
+    rewrite_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "stage_rewrite",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "rewrite": {"type": "string", "minLength": 1, "maxLength": 800},
+                },
+                "required": ["rewrite"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    # Append a one-line schema reminder for non-compliant providers.
+    user_msg = prompt + '\n\nReturn ONLY a JSON object: {"rewrite": "..."}'
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
-        suggestion = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], prompt)
-    return {"suggestion": suggestion}
+        raw = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], user_msg, rewrite_schema)
+    # Schema-compliant path: parse {"rewrite": "..."}.
+    rewrite_text = ""
+    try:
+        text = (raw or "").strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        obj = json.loads(text)
+        if isinstance(obj, dict) and isinstance(obj.get("rewrite"), str):
+            rewrite_text = obj["rewrite"].strip()
+    except Exception:
+        pass
+    # Fallback: model ignored the schema (raw prose response). Strip
+    # common preamble patterns that reasoning models love. Last-resort
+    # we just hand the raw text back so SOMETHING shows up.
+    if not rewrite_text:
+        rewrite_text = (raw or "").strip()
+        # Drop "Sure, here's…" / "Rewritten:" / "Here is the…" preludes.
+        rewrite_text = re.sub(r'^(?:sure[,!.]?\s*|here\s*(?:is|are)\s*(?:the\s*)?(?:rewritten|revised|new)?\s*(?:prompt|version)?[:.]?\s*|rewritten[:.]?\s*|revised[:.]?\s*)',
+                              '', rewrite_text, flags=re.IGNORECASE).strip()
+    return {"suggestion": rewrite_text}
 
 
 @app.post("/enhance/distribute")
