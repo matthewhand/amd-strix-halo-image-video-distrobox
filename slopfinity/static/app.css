@@ -3072,6 +3072,17 @@ body.endless-running #p-core {
     color: oklch(var(--su));
 }
 
+/* Queue-item meta — "frames" collapses to bare "f" at compact widths.
+   Same idiom as the stats-navbar tight-mode icons (long form by
+   default, short form revealed under the breakpoint). 640 px matches
+   the existing tight-tier breakpoint so the queue and stats navbar
+   compact in lockstep. */
+.frames-short { display: none; }
+@media (max-width: 639px) {
+    .frames-long { display: none; }
+    .frames-short { display: inline; }
+}
+
 /* Settings tab strip — left/right arrow overlays for scroll-paging.
    The strip is overflow-x-auto, so on viewports too narrow to fit all
    9 tabs, the user can either swipe (touch) or click these arrows to
@@ -3192,17 +3203,24 @@ textarea::placeholder {
    IF the children are direct .join-item — in our markup the joinable
    buttons are nested inside <label> wrappers, so we have to apply the
    radius to the outer label's first/last instances explicitly. */
+/* Use LOGICAL properties (border-start-start-radius / border-end-start-radius)
+   to match daisyUI's own `:where(.join-item)` rule. Without this, daisyUI's
+   logical-property `0` wins over a physical-property `9999px` for the same
+   visual edge — observed at runtime: the kind-filter pill rendered with a
+   flat LEFT edge despite this rule (per QA agent's CDP getMatchedStyles).
+   Logical longhands are physical-longhand-equivalents under the LTR text
+   direction the dashboard runs in. */
 .slop-filter-pill > label:first-child .join-item,
 fieldset[aria-label="Intermediate assets filter"] .join > label:first-child .join-item {
-    border-top-left-radius: 9999px;
-    border-bottom-left-radius: 9999px;
-    padding-left: 0.85rem;
+    border-start-start-radius: 9999px;
+    border-end-start-radius: 9999px;
+    padding-inline-start: 0.85rem;
 }
 .slop-filter-pill > label:last-child .join-item,
 fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join-item {
-    border-top-right-radius: 9999px;
-    border-bottom-right-radius: 9999px;
-    padding-right: 0.85rem;
+    border-start-end-radius: 9999px;
+    border-end-end-radius: 9999px;
+    padding-inline-end: 0.85rem;
 }
 
 /* Quick-spin feedback on every refresh-icon click. _wireRefreshTapSpin

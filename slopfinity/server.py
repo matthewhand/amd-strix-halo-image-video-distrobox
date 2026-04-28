@@ -407,13 +407,32 @@ async def enhance(data: dict = Body(...)):
     except Exception:
         pass
     # Fallback: model ignored the schema (raw prose response). Strip
-    # common preamble patterns that reasoning models love. Last-resort
-    # we just hand the raw text back so SOMETHING shows up.
+    # common preamble patterns that reasoning models love. The QA agent
+    # found local LM Studio models leaking "**Cinematic Director
+    # Response:**\n\n```\n<actual rewrite>" — so we now also strip
+    # markdown headers (**bold:** / ## H2 / etc.) AND surrounding
+    # code-fence blocks. Last-resort we just hand the raw text back.
     if not rewrite_text:
         rewrite_text = (raw or "").strip()
+        # Strip surrounding code fences (```lang\n...\n```).
+        if rewrite_text.startswith("```"):
+            rewrite_text = rewrite_text.split("\n", 1)[1] if "\n" in rewrite_text else rewrite_text
+            if rewrite_text.endswith("```"):
+                rewrite_text = rewrite_text[:-3]
+            rewrite_text = rewrite_text.strip()
+        # Strip leading **bold heading:** or ## H1/H2 markdown headers
+        # that reasoning models put at the top of their response.
+        rewrite_text = re.sub(r'^(?:\*\*[^*\n]+\*\*[:.]?\s*\n+|#{1,6}\s+[^\n]+\n+)+',
+                              '', rewrite_text, flags=re.MULTILINE).strip()
         # Drop "Sure, here's…" / "Rewritten:" / "Here is the…" preludes.
-        rewrite_text = re.sub(r'^(?:sure[,!.]?\s*|here\s*(?:is|are)\s*(?:the\s*)?(?:rewritten|revised|new)?\s*(?:prompt|version)?[:.]?\s*|rewritten[:.]?\s*|revised[:.]?\s*)',
+        rewrite_text = re.sub(r'^(?:sure[,!.]?\s*|here\s*(?:is|are)\s*(?:the\s*)?(?:rewritten|revised|new)?\s*(?:prompt|version)?[:.]?\s*|rewritten[:.]?\s*|revised[:.]?\s*|cinematic\s+director\s+response[:.]?\s*)',
                               '', rewrite_text, flags=re.IGNORECASE).strip()
+        # Re-strip code fences in case a header preceded them.
+        if rewrite_text.startswith("```"):
+            rewrite_text = rewrite_text.split("\n", 1)[1] if "\n" in rewrite_text else rewrite_text
+            if rewrite_text.endswith("```"):
+                rewrite_text = rewrite_text[:-3]
+            rewrite_text = rewrite_text.strip()
     return {"suggestion": rewrite_text}
 
 

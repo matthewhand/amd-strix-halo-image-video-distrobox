@@ -6111,8 +6111,18 @@ function connect() {
                         const _fpp = snap.frames || 17;
                         const _ch = parseInt(snap.chains, 10) || 1;
                         const _tot = _fpp * _ch;
-                        const _label = _ch > 1 ? `${_tot} frames (${_ch} parts)` : `${_fpp} frames`;
-                        return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames across all chained parts">aspect ${_htmlEscape(snap.size || '1:1')} · ${_label}</span>`;
+                        // Dropped the trailing "(N parts)" suffix — every
+                        // queued item already has a chain badge in its
+                        // expanded reveal, so the count was duplicated noise
+                        // in the always-visible meta row. The number we
+                        // surface here is the TOTAL frame count (chains
+                        // multiplied through) since that's what determines
+                        // the clip's final length.
+                        const _frames = _ch > 1 ? _tot : _fpp;
+                        // "frames" word collapses to bare "f" at compact
+                        // widths via the .frames-long / .frames-short pair
+                        // — same trick as the stats-navbar tight-mode icons.
+                        return `<span class="text-base-content/60 font-mono text-[10px] flex-none" title="aspect ratio · total frames"><span>aspect ${_htmlEscape(snap.size || '1:1')} · ${_frames}</span><span class="frames-long"> frames</span><span class="frames-short">f</span></span>`;
                     })()}
                                 <span class="flex-none min-w-[7rem] text-right" style="margin-right:1.5rem">${activeBadge}</span>
                                 ${menuHTML}

@@ -83,7 +83,7 @@ const BASE = process.env.SLOP_URL || 'http://localhost:9099';
             mlRowMatch.test(appJs),
             'pattern from app.js source');
 
-        const reQueueOnly = /isCancelled[\s\S]{0,300}?_mlRow\('Re-queue'/.test(appJs);
+        const reQueueOnly = /isCancelled\s*\?\s*`[\s\S]{0,500}?_mlRow\('Re-queue'/.test(appJs);
         log('Change1: cancelled items show only Re-queue', reQueueOnly, '');
 
         const allFour = ['Edit prompt', 'Cancel'].every(s => appJs.includes(`_mlRow('${s}'`))
