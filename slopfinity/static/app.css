@@ -3023,6 +3023,55 @@ body.endless-running #p-core {
                 opacity 0.3s ease-out;
 }
 
+/* Chat bubble action icons — Copy + Re-ask. Dim by default; light up
+   on bubble hover (host) or direct icon hover. Position absolute so
+   they don't push the bubble's baseline content. */
+.chat-bubble-host {
+    /* Reserve a tiny bit of right-padding so the floating action cluster
+       doesn't overlap the last word of the message text. */
+    padding-right: 32px;
+}
+.chat-bubble-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+.chat-bubble-host:hover .chat-bubble-actions,
+.chat-bubble-host:focus-within .chat-bubble-actions {
+    opacity: 0.55;
+}
+.chat-bubble-actions:hover {
+    opacity: 1;
+}
+.chat-bubble-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    border: none;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.05s;
+}
+.chat-bubble-action:hover {
+    background: oklch(var(--bc) / 0.18);
+}
+.chat-bubble-action:active {
+    transform: scale(0.92);
+}
+/* Brief check-flash after a successful copy. */
+.chat-bubble-action.copied {
+    color: oklch(var(--su));
+}
+
 /* Settings tab strip — left/right arrow overlays for scroll-paging.
    The strip is overflow-x-auto, so on viewports too narrow to fit all
    9 tabs, the user can either swipe (touch) or click these arrows to
