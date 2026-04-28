@@ -2238,6 +2238,21 @@ body[data-layout="gallery"] #gallery-fab {
     }
 }
 
+/* Queue-row chevron: per-item collapsible affordance. The SVG sits at
+   the start of <summary>; rotating it 90° on [open] turns the right-
+   pointing chevron (▸) into a down-pointing one (▾) — same visual
+   language as the Video Chains arrow below. pointer-events:none on
+   the chevron itself ensures clicks pass through to <summary> so we
+   don't add a second click target that fights existing handlers. */
+#q-list details > summary .q-row-chevron {
+    transition: transform 0.15s ease;
+    pointer-events: none;
+}
+
+#q-list details[open] > summary .q-row-chevron {
+    transform: rotate(90deg);
+}
+
 /* Video Chains collapsible: arrow rotates 90° when the <details> is
    open, and the inline label swaps "expand" → "collapse" via CSS based
    on the [open] state. The label only shows until Final Merge produces

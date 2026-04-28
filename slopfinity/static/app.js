@@ -2453,10 +2453,11 @@ function _setSubjectsMode(mode) {
     if (mode === 'endless') {
         const log = document.getElementById('subjects-story-log');
         if (log) {
-            const saved = _loadEndlessLog();
-            if (saved && !log.textContent) {
-                log.textContent = saved;
-                log.scrollTop = log.scrollHeight;
+            const savedLines = _loadEndlessLogLines();
+            // Only paint if the host is empty AND there is saved content —
+            // avoids clobbering an in-progress edit on a quick tab flip.
+            if (savedLines.length && !log.children.length) {
+                _renderEndlessLog();
                 // Show the pane if there's saved content even if not
                 // currently running — gives the user a "your story is
                 // still here, press Start to continue" affordance.
@@ -3342,9 +3343,9 @@ async function _startEndlessStory() {
     ta.classList.add('opacity-70');
     // Reset the story log to just the seed AND persist it so layout
     // switches / reloads can rehydrate (see _hydrateEndlessLog below).
-    const log = document.getElementById('subjects-story-log');
-    if (log) log.textContent = seed;
-    _persistEndlessLog(seed);
+    // Storage is a list of rows; the seed is the first row.
+    _persistEndlessLogLines(seed ? [seed] : []);
+    if (typeof _renderEndlessLog === 'function') _renderEndlessLog();
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.remove('hidden');
     // Start with EXACTLY ONE row using the currently-selected default
@@ -3389,7 +3390,7 @@ function _endEndlessStory(clearLog) {
     if (pane && clearLog) pane.classList.add('hidden');
     if (clearLog) {
         const log = document.getElementById('subjects-story-log');
-        if (log) log.textContent = '';
+        if (log) log.innerHTML = '';
         _clearEndlessLog();
     }
     // Stop the cycle.
@@ -3434,8 +3435,10 @@ function _resetEndlessStory() {
 window._resetEndlessStory = _resetEndlessStory;
 
 function _copyEndlessStory() {
-    const log = document.getElementById('subjects-story-log');
-    const text = (log && log.textContent || '').trim();
+    // Read from persisted list (the editable rows would otherwise leak
+    // the per-row "×" button glyphs into log.textContent).
+    const lines = _loadEndlessLogLines();
+    const text = lines.join('\n').trim();
     if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
         const btn = document.getElementById('subjects-story-copy');
@@ -3611,35 +3614,146 @@ async function _runStitchNow(startTs, opts) {
 // Story-log persistence — survives layout switches (mobile-nav prev/next,
 // View dropdown), full reloads, etc. Stored under a single key alongside
 // the existing _endlessStoryStartTs so Reset/Submit can wipe both atomically.
+//
+// Storage shape: JSON-encoded array of strings (one per row). The loader
+// also accepts the legacy `\n`-joined plain-string shape and migrates it
+// on first read so existing user state isn't lost when the editable-row
+// UI lands.
 const _ENDLESS_STORY_LOG_KEY = 'slopfinity-endless-story-log';
-function _persistEndlessLog(text) {
-    try { localStorage.setItem(_ENDLESS_STORY_LOG_KEY, text || ''); } catch (_) { }
+
+function _serializeEndlessLog(lines) {
+    try { return JSON.stringify(Array.isArray(lines) ? lines : []); }
+    catch (_) { return '[]'; }
+}
+
+// Read the saved log as an array of lines. Handles both the new
+// JSON-array shape and the legacy `\n`-joined string shape — splitting
+// the legacy form on newlines preserves the user's content even when
+// they upgrade across this change.
+function _loadEndlessLogLines() {
+    let raw;
+    try { raw = localStorage.getItem(_ENDLESS_STORY_LOG_KEY); }
+    catch (_) { return []; }
+    if (!raw) return [];
+    // New shape: JSON array
+    if (raw.length && raw.charCodeAt(0) === 91 /* '[' */) {
+        try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) return arr.map(s => String(s || ''));
+        } catch (_) { /* fall through to legacy */ }
+    }
+    // Legacy shape: plain `\n`-joined string. Split + drop empty trailing
+    // lines so re-rendering doesn't show ghost empty rows.
+    const lines = String(raw).split('\n');
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    return lines;
+}
+
+function _persistEndlessLogLines(lines) {
+    try { localStorage.setItem(_ENDLESS_STORY_LOG_KEY, _serializeEndlessLog(lines)); }
+    catch (_) { }
+}
+
+// Back-compat shim — older callers passed a single string. Now they
+// pass either a string (treated as the seed = single row) or an array.
+function _persistEndlessLog(textOrLines) {
+    if (Array.isArray(textOrLines)) {
+        _persistEndlessLogLines(textOrLines);
+        return;
+    }
+    const s = String(textOrLines || '');
+    _persistEndlessLogLines(s ? [s] : []);
 }
 function _loadEndlessLog() {
-    try { return localStorage.getItem(_ENDLESS_STORY_LOG_KEY) || ''; }
-    catch (_) { return ''; }
+    // Returns the legacy `\n`-joined string view for callers that still
+    // want plaintext (e.g. _copyEndlessStory). Internal renderers use
+    // _loadEndlessLogLines directly.
+    return _loadEndlessLogLines().join('\n');
 }
 function _clearEndlessLog() {
     try { localStorage.removeItem(_ENDLESS_STORY_LOG_KEY); } catch (_) { }
 }
 
+// Render the editable rows from the persisted line list into
+// #subjects-story-log. Each row is a contenteditable span + a small ×
+// delete button. Edits commit on `input` (debounced via the next event-
+// loop tick) so every keystroke immediately persists; deletes drop the
+// row from the array and re-render.
+function _renderEndlessLog() {
+    const log = document.getElementById('subjects-story-log');
+    if (!log) return;
+    const lines = _loadEndlessLogLines();
+    if (!lines.length) {
+        log.innerHTML = '';
+        return;
+    }
+    const rows = lines.map((line, idx) => {
+        const safe = _htmlEscape(line || '');
+        return `<div class="endless-row group flex items-start gap-1 px-1 py-0.5 rounded hover:bg-base-300/40" data-row-idx="${idx}">
+            <span contenteditable="true" spellcheck="false"
+                  class="endless-row-text flex-1 min-w-0 whitespace-pre-wrap break-words outline-none focus:bg-base-100/60 focus:ring-1 focus:ring-primary rounded px-1"
+                  data-row-idx="${idx}">${safe}</span>
+            <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-50 group-hover:opacity-100 flex-none"
+                    data-row-idx="${idx}" title="Delete this line" aria-label="Delete line">×</button>
+        </div>`;
+    });
+    log.innerHTML = rows.join('');
+    log.scrollTop = log.scrollHeight;
+}
+window._renderEndlessLog = _renderEndlessLog;
+
+// Delegated handlers for the editable rows. One listener per concern
+// (input + click) on the host — beats wiring per-row on every render.
+(function _wireEndlessLogEditors() {
+    document.addEventListener('input', (e) => {
+        const span = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
+        if (!span) return;
+        const row = span.closest('.endless-row');
+        const idx = row ? parseInt(row.getAttribute('data-row-idx'), 10) : -1;
+        if (!Number.isInteger(idx) || idx < 0) return;
+        const lines = _loadEndlessLogLines();
+        if (idx >= lines.length) return;
+        // textContent strips any HTML the user might paste in — keeps
+        // the line shape clean (one editable string per row).
+        lines[idx] = span.textContent || '';
+        _persistEndlessLogLines(lines);
+    });
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest && e.target.closest('#subjects-story-log .endless-row-del');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-row-idx'), 10);
+        if (!Number.isInteger(idx) || idx < 0) return;
+        const lines = _loadEndlessLogLines();
+        if (idx >= lines.length) return;
+        lines.splice(idx, 1);
+        _persistEndlessLogLines(lines);
+        _renderEndlessLog();
+    });
+})();
+
 // Append a chip's text to the story log when in endless+running mode.
 // Called from the chip click handler in _buildSuggestChip.
 function _appendToEndlessLog(text) {
     if (!_endlessRunning || _getSubjectsMode() !== 'endless') return;
-    const log = document.getElementById('subjects-story-log');
-    if (!log) return;
-    const cur = log.textContent || '';
-    const next = cur ? cur + '\n' + text : text;
-    log.textContent = next;
-    log.scrollTop = log.scrollHeight;
-    _persistEndlessLog(next);
+    const lines = _loadEndlessLogLines();
+    lines.push(String(text || ''));
+    _persistEndlessLogLines(lines);
+    _renderEndlessLog();
 }
 window._appendToEndlessLog = _appendToEndlessLog;
 
 document.addEventListener('DOMContentLoaded', () => {
     _setSubjectsMode(_getSubjectsMode());
     _updateSubjectsActionLabel();
+    // Paint any saved story rows on first load so a refresh shows the
+    // user's in-progress story (the pane stays hidden until they're in
+    // endless mode + have content — see the _setSubjectsMode hydration
+    // above for the visibility rule).
+    try {
+        if (typeof _renderEndlessLog === 'function') _renderEndlessLog();
+    } catch (_) { /* ignore */ }
 });
 
 // Quick read-only popup for the LLM-rewritten prompt of the active job.
@@ -6523,9 +6637,18 @@ function connect() {
                 // reveal pre-opened so the user sees stage progress without an
                 // extra click. The reveal hosts model badges, size·frames meta,
                 // and the live pipeline strip + timers.
+                // Explicit chevron — clicking the <summary> toggles the
+                // <details> for free, so we just need a visual affordance
+                // here. The chevron rotates 90° when [open] via the
+                // `details[open] > summary .q-row-chevron` rule in app.css.
+                // Uses pointer-events:none on the SVG so the click lands on
+                // <summary> (not the chevron) — no extra handler, no risk
+                // of double-toggle.
+                const chevronHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="q-row-chevron w-3 h-3 flex-none text-base-content/60" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${_openPendingItems.has(q.ts || 0) ? 'open' : ''}>
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
+                            ${chevronHTML}
                             <span class="flex items-center gap-1 flex-none">
                                 ${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
                             </span>

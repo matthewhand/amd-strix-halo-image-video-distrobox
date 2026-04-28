@@ -771,8 +771,16 @@
                                         <div class="text-[10px] uppercase tracking-widest text-base-content/50">
                                             Story so far
                                         </div>
-                                        <pre id="subjects-story-log"
-                                            class="text-xs font-mono whitespace-pre-wrap leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 max-h-40 overflow-y-auto m-0"></pre>
+                                        {# Editable story log. Each accepted suggestion becomes a row
+                                        with a contenteditable text span and an × delete button. JS
+                                        owns the row markup (see _renderEndlessLog in app.js); this
+                                        host element just provides the box + scrolling. The list
+                                        shape is persisted to localStorage under the same key as
+                                        before (`slopfinity-endless-story-log`); the loader
+                                        accepts both the legacy `\n`-joined string and the new
+                                        JSON-array shape. #}
+                                        <div id="subjects-story-log"
+                                            class="text-xs font-mono leading-snug bg-base-200/60 border border-base-300/60 rounded p-1 max-h-40 overflow-y-auto m-0 flex flex-col gap-1"></div>
                                     <div class="flex items-center justify-end gap-1 mt-1">
                                         <button type="button" id="subjects-story-stitch"
                                             class="btn btn-ghost btn-xs gap-1 text-info" onclick="_stitchEndlessStory()"
