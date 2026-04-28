@@ -4045,15 +4045,31 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     transform-origin: 50% 50%;
 }
 
-.chat-cog {
-    animation: chat-cog-spin 3.2s linear infinite;
+.chat-cog,
+.chat-cog-rev {
+    animation: none;
 }
 
 .chat-cog-rev {
-    animation: chat-cog-spin-rev 3.2s linear infinite;
     /* Negative offset so the second cog meshes visually with the first
        — slight overlap reads as "interlocking teeth". */
     margin-left: -3px;
+}
+
+/* Animation gated to in-flight runs only (`.chat-thought-active`) — once
+   the run resolves and gets `.chat-thought-done`, the cogs sit static. */
+.chat-thought-active .chat-cog {
+    animation: chat-cog-spin 3.2s linear infinite;
+}
+
+.chat-thought-active .chat-cog-rev {
+    animation: chat-cog-spin-rev 3.2s linear infinite;
+}
+
+.chat-thought-done .chat-cogs {
+    /* De-emphasise resolved thinking runs so attention goes to the
+       active one (or the assistant text reply). */
+    opacity: 0.35;
 }
 
 @keyframes chat-cog-spin {

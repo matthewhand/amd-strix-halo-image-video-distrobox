@@ -2907,27 +2907,105 @@ function _renderChatLog() {
     // Also pull the active-chain nodes so each rendered message can
     // be paired with its tree id (drives the Edit + branch-nav UI).
     const _chain = (typeof _chatActiveChain === 'function') ? _chatActiveChain() : [];
-    log.innerHTML = history.map((m, idx) => {
+    // Render-helper: build the inner blocks for ONE thinking item (either
+    // an assistant tool_calls turn or a tool-result turn). Used inside the
+    // fused thinking-run wrapper. Returns the call/result <details> HTML
+    // only — no outer chat-thought wrapper, no cogs prefix.
+    const _renderThinkingItemInner = (m) => {
         const role = m.role || '';
-        // Match the message to its tree node (same idx = same position
-        // in the active chain). Use this for fork ops + sibling nav.
+        if (role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+            return m.tool_calls.map(c => {
+                const fn = (c.function || {});
+                const name = fn.name || 'unknown';
+                let prettyHtml = '';
+                let summary = name + '(…)';
+                try {
+                    const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
+                    prettyHtml = _renderKvPretty(parsed, 0);
+                    const argShort = Object.entries(parsed).map(([k, v]) =>
+                        `${k}=${typeof v === 'string' ? '"' + v.slice(0, 30) + (v.length > 30 ? '…' : '') + '"' : JSON.stringify(v)}`
+                    ).join(' ');
+                    summary = `${name}(${argShort})`;
+                } catch (_) {
+                    prettyHtml = `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(String(fn.arguments || ''))}</pre>`;
+                }
+                return `<details class="text-[10px] mt-1">
+                    <summary class="cursor-pointer opacity-80 hover:opacity-100 font-mono">→ ${_htmlEscape(summary)}</summary>
+                    <div class="mt-1 p-2 bg-base-300/40 rounded">${prettyHtml}</div>
+                </details>`;
+            }).join('');
+        }
+        if (role === 'tool') {
+            const raw = m.content || '';
+            const oneLine = (raw || '').split('\n')[0] || '';
+            const preview = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine;
+            const name = m.name || 'tool';
+            return `<details class="text-[10px] mt-1">
+                <summary class="cursor-pointer text-[10px] font-mono opacity-80 hover:opacity-100">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</summary>
+                <div class="mt-1 p-2 bg-base-300/40 rounded">${_renderKvPrettySafe(raw)}</div>
+            </details>`;
+        }
+        return '';
+    };
+    // Animated cogs (active state). The 'done' state shares the same
+    // markup but CSS gates the @keyframes animation to .chat-thought-active
+    // — see app.css. So in-flight runs spin and resolved runs sit static.
+    const _cogsHTML = `<span class="chat-cogs" aria-hidden="true" title="thinking…">
+        <svg class="chat-cog" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+        </svg>
+        <svg class="chat-cog-rev" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+        </svg>
+    </span>`;
+    const isThinkingMsg = (m) => {
+        if (!m) return false;
+        const r = m.role || '';
+        return r === 'tool' || (r === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
+    };
+    // Two-pass render: walk history fusing consecutive thinking-run
+    // messages (assistant w/ tool_calls + tool results) into ONE bubble,
+    // emit standalone bubbles for user + assistant-text turns. The fused
+    // bubble's `chat-thought-active` class flips to `chat-thought-done`
+    // when the run is followed by an assistant-text turn — gating cog
+    // animation. Old behavior (one bubble per message + cogs spinning
+    // forever) made replayed conversations look like every step was
+    // still computing.
+    const out = [];
+    let i = 0;
+    while (i < history.length) {
+        const m = history[i];
+        const role = m.role || '';
+        const idx = i;
         const node = _chain[idx] || null;
         const nodeId = node && node.id;
+        if (isThinkingMsg(m)) {
+            // Fuse the run.
+            const runItems = [];
+            const runStart = i;
+            while (i < history.length && isThinkingMsg(history[i])) {
+                runItems.push(history[i]);
+                i++;
+            }
+            // In-flight if NOTHING follows the run yet. Once any non-
+            // thinking message lands behind it (assistant text, user reply,
+            // etc.), the run is done — cogs go static.
+            const inflight = i >= history.length;
+            const stateCls = inflight ? ' chat-thought-active' : ' chat-thought-done';
+            const inner = runItems.map(_renderThinkingItemInner).join('');
+            out.push(`<div class="chat chat-start" data-msg-idx="${runStart}"><div class="chat-thought text-xs${stateCls}">${_cogsHTML}${inner}</div></div>`);
+            continue;
+        }
         if (role === 'user') {
-            // User bubble gets:
-            //   - an inline Edit button next to the existing copy/refresh cluster
-            //   - a branch-nav badge below the bubble if this position has
-            //     siblings (forks)
             const sibs = (nodeId && typeof _chatSiblingsOf === 'function')
                 ? _chatSiblingsOf(nodeId) : [];
             const isForked = sibs.length > 1;
-            const myIdx = isForked ? sibs.indexOf(nodeId) + 1 : 0;
             const navHTML = isForked ? `<div class="chat-branch-nav" data-pos-idx="${idx}">
-                ${sibs.map((sid, i) => {
+                ${sibs.map((sid, j) => {
                 const isActive = sid === nodeId;
                 return `<button type="button" class="chat-branch-pill${isActive ? ' chat-branch-active' : ''}"
-                        title="Switch to branch ${i + 1} of ${sibs.length}"
-                        onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${i + 1}</button>`;
+                        title="Switch to branch ${j + 1} of ${sibs.length}"
+                        onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${j + 1}</button>`;
             }).join('')}
             </div>` : (nodeId ? `<div class="chat-branch-nav chat-branch-nav-fork" data-pos-idx="${idx}">
                 <button type="button" class="chat-branch-pill chat-branch-fork"
@@ -2950,85 +3028,28 @@ function _renderChatLog() {
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                 </svg>
             </button>` : '';
-            // Inject the Edit button alongside the existing copy/refresh cluster.
-            // _bubbleActions emits the copy icon for user bubbles; we splice
-            // edit in by string-replacement on the closing </div>.
             const baseActions = _bubbleActions(m.content || '', false, idx);
             const actions = baseActions.replace('</div>', editBtn + '</div>');
-            return `<div class="chat chat-end" data-msg-idx="${idx}" data-node-id="${nodeId || ''}">
+            out.push(`<div class="chat chat-end" data-msg-idx="${idx}" data-node-id="${nodeId || ''}">
                 <div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap relative chat-bubble-host">${_htmlEscape(m.content || '')}${actions}</div>
                 ${navHTML}
-            </div>`;
+            </div>`);
+            i++;
+            continue;
         }
         if (role === 'assistant') {
+            // tool_calls case is handled by the thinking-run walker above —
+            // here we only handle the speak-only assistant turn.
             const content = (m.content || '').trim();
-            const calls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
-            // When the assistant is CALLING tools (tool_calls present),
-            // render as a thought bubble (dashed-border, "💭" prefix) with
-            // expandable per-call <details> showing pretty-rendered args.
-            // When it's just speaking (no tool_calls), keep the regular
-            // chat bubble.
-            if (calls.length) {
-                const callBlocks = calls.map(c => {
-                    const fn = (c.function || {});
-                    const name = fn.name || 'unknown';
-                    let prettyHtml = '';
-                    let summary = name + '(…)';
-                    try {
-                        const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
-                        // Pretty kv-tree render — keys as labels, values
-                        // type-coloured (string/number/bool/null/nest).
-                        prettyHtml = _renderKvPretty(parsed, 0);
-                        const argShort = Object.entries(parsed).map(([k, v]) =>
-                            `${k}=${typeof v === 'string' ? '"' + v.slice(0, 30) + (v.length > 30 ? '…' : '') + '"' : JSON.stringify(v)}`
-                        ).join(' ');
-                        summary = `${name}(${argShort})`;
-                    } catch (_) {
-                        prettyHtml = `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(String(fn.arguments || ''))}</pre>`;
-                    }
-                    return `<details class="text-[10px] mt-1">
-                        <summary class="cursor-pointer opacity-80 hover:opacity-100 font-mono">→ ${_htmlEscape(summary)}</summary>
-                        <div class="mt-1 p-2 bg-base-300/40 rounded">${prettyHtml}</div>
-                    </details>`;
-                }).join('');
-                const body = content ? `<div class="whitespace-pre-wrap mb-1 italic opacity-90">${_htmlEscape(content)}</div>` : '';
-                // Animated cogs replace the static 💭 — same semantics
-                // (assistant is "thinking" / about to call tools) but
-                // motion communicates "in flight" better than a glyph
-                // that's identical for live + replayed turns. CSS in
-                // app.css (.chat-cogs / @keyframes chat-cog-spin*).
-                const cogsHTML = `<span class="chat-cogs" aria-hidden="true" title="thinking…">
-                    <svg class="chat-cog" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
-                    </svg>
-                    <svg class="chat-cog-rev" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
-                    </svg>
-                </span>`;
-                return `<div class="chat chat-start"><div class="chat-thought text-xs">${cogsHTML}${body}${callBlocks}</div></div>`;
-            }
             const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
-            return `<div class="chat chat-start"><div class="chat-bubble text-xs relative chat-bubble-host">${body}${_bubbleActions(content, true, idx)}</div></div>`;
+            out.push(`<div class="chat chat-start"><div class="chat-bubble text-xs relative chat-bubble-host">${body}${_bubbleActions(content, true, idx)}</div></div>`);
+            i++;
+            continue;
         }
-        if (role === 'tool') {
-            // Tool RESULT — also rendered as a thought bubble (continuation
-            // of the assistant's thinking). Body switched from <pre>JSON</pre>
-            // to a styled key-value tree via _renderKvPrettySafe (falls back
-            // to a <pre> for non-JSON content). Summary stays a one-line
-            // mono preview so the closed state still scans quickly.
-            const raw = m.content || '';
-            const oneLine = (raw || '').split('\n')[0] || '';
-            const preview = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine;
-            const name = m.name || 'tool';
-            return `<div class="chat chat-start"><div class="chat-thought text-xs">
-                <details>
-                    <summary class="cursor-pointer text-[10px] font-mono opacity-80 hover:opacity-100">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</summary>
-                    <div class="mt-1 p-2 bg-base-300/40 rounded">${_renderKvPrettySafe(raw)}</div>
-                </details>
-            </div></div>`;
-        }
-        return '';
-    }).join('');
+        // Unknown role — skip silently.
+        i++;
+    }
+    log.innerHTML = out.join('');
     log.scrollTop = log.scrollHeight;
 }
 window._renderChatLog = _renderChatLog;
@@ -8162,6 +8183,17 @@ async function saveSettings() {
     _collectPromptField(body, 'set-prompts-infinity', 'infinity_user_prompt_template');
     _collectPromptField(body, 'set-prompts-chaos', 'chaos_suggest_system_prompt');
     _collectPromptField(body, 'set-prompts-void', 'void_fallback_template');
+    // Optimistically close the drawer FIRST so Save feels instant.
+    // The POSTs run in background; if /settings or /branding fails, the
+    // server-side state is unchanged but the user already sees the UI
+    // collapse — far better UX than waiting on the round-trip with the
+    // drawer frozen open. Was: close fired AFTER both awaits (~300-800ms
+    // delay on a slow LLM-host loop), reading as "Save did nothing".
+    const modal = $('settings-modal');
+    if (modal && typeof modal.close === 'function') {
+        try { modal.close(); } catch (_) { /* drawer mode → close via toggle */ }
+    }
+    if (typeof window._setSettingsOpen === 'function') window._setSettingsOpen(false);
     await fetch('/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -8175,13 +8207,6 @@ async function saveSettings() {
             body: JSON.stringify({ active: bsel.value }),
         });
     }
-    // Close the drawer (was modal.close() under the dialog era — kept
-    // as a defensive fallback if the element ever reverts to <dialog>).
-    const modal = $('settings-modal');
-    if (modal && typeof modal.close === 'function') {
-        try { modal.close(); } catch (_) { /* drawer mode → close via toggle */ }
-    }
-    if (typeof window._setSettingsOpen === 'function') window._setSettingsOpen(false);
 }
 
 async function resetFleetPrompt() {
@@ -9328,25 +9353,38 @@ window._getChatSuggestCount = _getChatSuggestCount;
 window._setChatSuggestCount = _setChatSuggestCount;
 window._chatSuggestCountStep = _chatSuggestCountStep;
 
-function _getChatSuggestMode() {
-    try {
-        const v = localStorage.getItem(_CHAT_SUGGEST_MODE_KEY);
-        if (v === 'helpful' || v === 'playful' || v === 'terse') return v;
-    } catch (_) { }
-    return 'helpful';
+// Chat-mode suggestion mode is now driven by the SHARED suggest_prompts
+// system (the same Yes-and / Plot Twist / Concrete Detail / … entries
+// simple mode uses). Pills are rendered into #chat-suggest-prompt-pills
+// from _getActivePrompts(), clicking a pill calls _setDefaultPromptId so
+// chat + simple share one selection. The legacy helpful/playful/terse
+// scaffold (and slopfinity-chat-suggest-mode localStorage key) is gone.
+function _renderChatSuggestPromptPills() {
+    const host = document.getElementById('chat-suggest-prompt-pills');
+    if (!host) return;
+    const active = (typeof _getActivePrompts === 'function') ? _getActivePrompts() : [];
+    if (!active.length) {
+        host.innerHTML = '';
+        return;
+    }
+    const cur = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+    host.innerHTML = active.map(p => {
+        const isActive = p.id === cur;
+        return `<button type="button"
+            class="btn btn-xs rounded-full btn-primary ${isActive ? '' : 'btn-outline'} normal-case chat-suggest-prompt-pill"
+            data-chat-prompt-id="${_htmlEscape(p.id)}"
+            title="${_htmlEscape(p.title)}"
+            onclick="_onChatSuggestPromptClick('${_htmlEscape(p.id)}')">${_htmlEscape(p.title)}</button>`;
+    }).join('');
 }
-function _setChatSuggestMode(v) {
-    if (v !== 'helpful' && v !== 'playful' && v !== 'terse') return;
-    try { localStorage.setItem(_CHAT_SUGGEST_MODE_KEY, v); } catch (_) { }
-    // TODO: thread the mode through to /subjects/suggest as a separate
-    // query param (e.g. &chat_mode=) so the server can layer a tone
-    // adjustment on top of the active prompt_id. For now this is UI
-    // scaffold only — selection persists but doesn't alter the fetch.
-    const inputs = document.querySelectorAll('input[name="chat-suggest-mode"]');
-    inputs.forEach(el => { el.checked = (el.value === v); });
+window._renderChatSuggestPromptPills = _renderChatSuggestPromptPills;
+
+function _onChatSuggestPromptClick(id) {
+    if (typeof _setDefaultPromptId === 'function') _setDefaultPromptId(id);
+    _renderChatSuggestPromptPills();
+    if (typeof _renderChatReplies === 'function') _renderChatReplies();
 }
-window._getChatSuggestMode = _getChatSuggestMode;
-window._setChatSuggestMode = _setChatSuggestMode;
+window._onChatSuggestPromptClick = _onChatSuggestPromptClick;
 
 // Hydrate the cluster's controls from localStorage and wire change handlers.
 // Idempotent — safe to call multiple times (re-binds are cheap and the
@@ -9359,17 +9397,15 @@ function _initChatSuggestCluster() {
         lbl.textContent = String(n);
         lbl.setAttribute('data-count', String(n));
     }
-    // Mode radios.
-    const cur = _getChatSuggestMode();
-    document.querySelectorAll('input[name="chat-suggest-mode"]').forEach(el => {
-        el.checked = (el.value === cur);
-        if (!el._chatSuggestWired) {
-            el.addEventListener('change', () => {
-                if (el.checked) _setChatSuggestMode(el.value);
-            });
-            el._chatSuggestWired = true;
-        }
-    });
+    // Prompt-pill cluster (driven by suggest_prompts; shared with
+    // simple-mode dropdown via _setDefaultPromptId). _loadSuggestPrompts
+    // hydrates the cache from /settings — fire-and-forget, then re-render
+    // when ready. The first paint uses _SUGGEST_PROMPTS_FALLBACK so the
+    // cluster never reads as empty during initial load.
+    if (typeof _loadSuggestPrompts === 'function') {
+        _loadSuggestPrompts().then(() => _renderChatSuggestPromptPills()).catch(() => { });
+    }
+    _renderChatSuggestPromptPills();
 }
 window._initChatSuggestCluster = _initChatSuggestCluster;
 document.addEventListener('DOMContentLoaded', _initChatSuggestCluster);
