@@ -2776,19 +2776,23 @@ function _renderChatLog() {
                 const callBlocks = calls.map(c => {
                     const fn = (c.function || {});
                     const name = fn.name || 'unknown';
-                    let pretty = '';
+                    let prettyHtml = '';
                     let summary = name + '(…)';
                     try {
                         const parsed = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments || {});
-                        pretty = JSON.stringify(parsed, null, 2);
+                        // Pretty kv-tree render — keys as labels, values
+                        // type-coloured (string/number/bool/null/nest).
+                        prettyHtml = _renderKvPretty(parsed, 0);
                         const argShort = Object.entries(parsed).map(([k, v]) =>
                             `${k}=${typeof v === 'string' ? '"' + v.slice(0, 30) + (v.length > 30 ? '…' : '') + '"' : JSON.stringify(v)}`
                         ).join(' ');
                         summary = `${name}(${argShort})`;
-                    } catch (_) { pretty = String(fn.arguments || ''); }
-                    return `<details class="text-[10px] font-mono mt-1">
-                        <summary class="cursor-pointer opacity-80 hover:opacity-100">→ ${_htmlEscape(summary)}</summary>
-                        <pre class="mt-1 p-2 bg-base-300/40 rounded text-[10px] whitespace-pre-wrap break-all">${_htmlEscape(pretty)}</pre>
+                    } catch (_) {
+                        prettyHtml = `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(String(fn.arguments || ''))}</pre>`;
+                    }
+                    return `<details class="text-[10px] mt-1">
+                        <summary class="cursor-pointer opacity-80 hover:opacity-100 font-mono">→ ${_htmlEscape(summary)}</summary>
+                        <div class="mt-1 p-2 bg-base-300/40 rounded">${prettyHtml}</div>
                     </details>`;
                 }).join('');
                 const body = content ? `<div class="whitespace-pre-wrap mb-1 italic opacity-90">${_htmlEscape(content)}</div>` : '';
@@ -2799,16 +2803,18 @@ function _renderChatLog() {
         }
         if (role === 'tool') {
             // Tool RESULT — also rendered as a thought bubble (continuation
-            // of the assistant's thinking), with expandable JSON pretty-print.
+            // of the assistant's thinking). Body switched from <pre>JSON</pre>
+            // to a styled key-value tree via _renderKvPrettySafe (falls back
+            // to a <pre> for non-JSON content). Summary stays a one-line
+            // mono preview so the closed state still scans quickly.
             const raw = m.content || '';
-            const pretty = _prettyJson(raw);
             const oneLine = (raw || '').split('\n')[0] || '';
             const preview = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine;
             const name = m.name || 'tool';
             return `<div class="chat chat-start"><div class="chat-thought text-xs">
                 <details>
                     <summary class="cursor-pointer text-[10px] font-mono opacity-80 hover:opacity-100">↳ ${_htmlEscape(name)}: ${_htmlEscape(preview)}</summary>
-                    <pre class="mt-1 p-2 bg-base-300/40 rounded text-[10px] whitespace-pre-wrap break-all">${_htmlEscape(pretty || raw)}</pre>
+                    <div class="mt-1 p-2 bg-base-300/40 rounded">${_renderKvPrettySafe(raw)}</div>
                 </details>
             </div></div>`;
         }
@@ -2817,6 +2823,63 @@ function _renderChatLog() {
     log.scrollTop = log.scrollHeight;
 }
 window._renderChatLog = _renderChatLog;
+
+// Render a JSON value as a styled key-value tree instead of raw text.
+// Each scalar gets a type-aware color:
+//   string  → quoted, theme primary
+//   number  → mono, theme secondary
+//   bool    → italic, theme accent
+//   null    → muted "—"
+//   object  → recursive nested .kv-pretty block
+//   array   → recursive numbered nested block
+// Used by the chat-log tool-call args + tool-result body so the
+// `<pre>${JSON.stringify}</pre>` blob becomes a scannable list.
+function _renderKvPretty(value, depth) {
+    depth = depth || 0;
+    if (value === null || value === undefined) {
+        return '<span class="kv-null">—</span>';
+    }
+    const t = typeof value;
+    if (t === 'string') {
+        return `<span class="kv-string">${_htmlEscape(value)}</span>`;
+    }
+    if (t === 'number') {
+        return `<span class="kv-number">${value}</span>`;
+    }
+    if (t === 'boolean') {
+        return `<span class="kv-bool">${value ? 'true' : 'false'}</span>`;
+    }
+    if (Array.isArray(value)) {
+        if (!value.length) return '<span class="kv-empty">[]</span>';
+        return `<div class="kv-pretty kv-array">${value.map((v, i) =>
+            `<div class="kv-row"><span class="kv-key">${i}</span>${_renderKvPretty(v, depth + 1)}</div>`
+        ).join('')}</div>`;
+    }
+    if (t === 'object') {
+        const entries = Object.entries(value);
+        if (!entries.length) return '<span class="kv-empty">{}</span>';
+        return `<div class="kv-pretty kv-object">${entries.map(([k, v]) =>
+            `<div class="kv-row"><span class="kv-key">${_htmlEscape(k)}</span>${_renderKvPretty(v, depth + 1)}</div>`
+        ).join('')}</div>`;
+    }
+    return _htmlEscape(String(value));
+}
+window._renderKvPretty = _renderKvPretty;
+// Best-effort JSON-or-string → pretty render. Falls back to a `<pre>`
+// blob if the input doesn't parse as JSON. Used for tool-result content
+// where we may receive either a JSON string or already-parsed object.
+function _renderKvPrettySafe(raw) {
+    if (raw == null) return '<span class="kv-null">—</span>';
+    let parsed = raw;
+    if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw); }
+        catch (_) {
+            // Not JSON — render as a plain pre block, theme-aligned.
+            return `<pre class="kv-raw whitespace-pre-wrap break-all text-[10px]">${_htmlEscape(raw)}</pre>`;
+        }
+    }
+    return _renderKvPretty(parsed, 0);
+}
 
 // Copy a bubble's text to clipboard. Brief tick-flash via ::after on
 // success so the user sees the action landed without a disruptive toast.
