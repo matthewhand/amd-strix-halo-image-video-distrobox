@@ -2752,7 +2752,7 @@ function _chatSyncTreeFromHistory(hist) {
     // If hist exactly matches the current chain, no-op.
     const matches = hist.length === chain.length && hist.every((m, i) =>
         chain[i] && chain[i].role === m.role && chain[i].content === m.content
-            && JSON.stringify(chain[i].tool_calls || null) === JSON.stringify(m.tool_calls || null)
+        && JSON.stringify(chain[i].tool_calls || null) === JSON.stringify(m.tool_calls || null)
     );
     if (matches) return;
     // If hist is a strict EXTENSION of the chain, append the new nodes
@@ -2932,11 +2932,11 @@ function _renderChatLog() {
             const myIdx = isForked ? sibs.indexOf(nodeId) + 1 : 0;
             const navHTML = isForked ? `<div class="chat-branch-nav" data-pos-idx="${idx}">
                 ${sibs.map((sid, i) => {
-                    const isActive = sid === nodeId;
-                    return `<button type="button" class="chat-branch-pill${isActive ? ' chat-branch-active' : ''}"
+                const isActive = sid === nodeId;
+                return `<button type="button" class="chat-branch-pill${isActive ? ' chat-branch-active' : ''}"
                         title="Switch to branch ${i + 1} of ${sibs.length}"
                         onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${i + 1}</button>`;
-                }).join('')}
+            }).join('')}
             </div>` : '';
             const editBtn = nodeId ? `<button type="button" class="chat-bubble-action chat-bubble-edit"
                 title="Edit + fork conversation"
@@ -4161,12 +4161,12 @@ async function loadPlanRender() {
         // model role.
         const _stageLabel = ({
             concept: 'Text Model ',
-            image:   'Image Model',
-            video:   'Video Model',
-            audio:   'Music Model',
-            tts:     'Speech Model',
+            image: 'Image Model',
+            video: 'Video Model',
+            audio: 'Music Model',
+            tts: 'Speech Model',
             upscale: 'Upscale Model',
-            merge:   'Final Merge',
+            merge: 'Final Merge',
         })[d.step.stage] || (d.step.stage || '');
         const stage = _stageLabel.padEnd(13);
         const model = (d.step.model || '').padEnd(12);
@@ -7277,6 +7277,8 @@ function _refreshFailedActionsVisibility(queue) {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = anyFailed ? '' : 'none';
     }
+    const mobileRequeue = document.getElementById('mobile-nav-requeue-failed');
+    if (mobileRequeue) mobileRequeue.classList.toggle('hidden', !anyFailed);
     const btnDone = document.getElementById('btn-clear-completed');
     if (btnDone) btnDone.style.display = anyCompleted ? '' : 'none';
 }
@@ -8929,27 +8931,27 @@ async function _addEndlessRow() {
 }
 window._addEndlessRow = _addEndlessRow;
 
-    // Router for the "+" badge button. Dispatches by current mode:
-    //   endless → _addEndlessRow (append a new story-beat row)
-    //   simple  → first-time bootstrap: regenSuggestions to render the
-    //             initial chip stack. After that the badge swaps to ↻
-    //             refresh (see _refreshSuggestBadge), so this path only
-    //             fires on the very first click in a fresh session.
-    //   other   → fall back to regenSuggestions (chat replies).
-    function _addOrFirstSuggestion() {
-        const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
-        if (mode === 'endless') return _addEndlessRow();
-        if (typeof regenSuggestions === 'function') {
-            return regenSuggestions().then(() => {
-                // Repaint the badge so the + → ↻ swap happens immediately
-                // once the first batch lands. Without this the user has to
-                // change modes (or trigger another _refreshSuggestBadge) to
-                // see the affordance flip.
-                if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
-            });
-        }
+// Router for the "+" badge button. Dispatches by current mode:
+//   endless → _addEndlessRow (append a new story-beat row)
+//   simple  → first-time bootstrap: regenSuggestions to render the
+//             initial chip stack. After that the badge swaps to ↻
+//             refresh (see _refreshSuggestBadge), so this path only
+//             fires on the very first click in a fresh session.
+//   other   → fall back to regenSuggestions (chat replies).
+function _addOrFirstSuggestion() {
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode === 'endless') return _addEndlessRow();
+    if (typeof regenSuggestions === 'function') {
+        return regenSuggestions().then(() => {
+            // Repaint the badge so the + → ↻ swap happens immediately
+            // once the first batch lands. Without this the user has to
+            // change modes (or trigger another _refreshSuggestBadge) to
+            // see the affordance flip.
+            if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
+        });
     }
-    window._addOrFirstSuggestion = _addOrFirstSuggestion;
+}
+window._addOrFirstSuggestion = _addOrFirstSuggestion;
 
 // Simple mode row-stack controls (separate from the Suggestions ↻
 // refresh button). + adds one fresh row to the BOTTOM of the stack;
@@ -8992,568 +8994,568 @@ function _removeSimpleRow() {
 window._addSimpleRow = _addSimpleRow;
 window._removeSimpleRow = _removeSimpleRow;
 
-    // Remove the row at rowIdx — drops its prompt from the persisted array
-    // and removes its DOM node. Subsequent rows shift indices; we re-render
-    // every row's leading chip so the minus/picker handlers stay synced.
-    function _removeEndlessRow(rowIdx) {
-        const arr = _getEndlessRowPrompts();
-        if (rowIdx < 0 || rowIdx >= arr.length) return;
-        arr.splice(rowIdx, 1);
-        _setEndlessRowPrompts(arr);
-        const stack = document.getElementById('subject-chips-stack');
-        if (!stack) return;
-        const rows = stack.querySelectorAll('.suggest-marquee-row');
-        if (rows[rowIdx]) rows[rowIdx].remove();
-        // Re-walk surviving rows + re-attach lead clusters with updated indices
-        // so each row's minus/picker call references its NEW position.
-        const survivingRows = stack.querySelectorAll('.suggest-marquee-row');
-        survivingRows.forEach((row, i) => {
-            const lead = row.querySelector('[data-endless-row-lead]');
-            if (lead) {
-                const promptId = arr[i];
-                const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(promptId) : null;
-                const ttl = promptObj ? promptObj.title : promptId;
-                lead.setAttribute('data-endless-row-lead', String(i));
-                lead.querySelector('[data-row-prompt-btn]')?.setAttribute('onclick', `_openSuggestPromptPicker(${i})`);
-                lead.querySelector('[data-row-prompt-label]') && (lead.querySelector('[data-row-prompt-label]').textContent = ttl);
-                lead.querySelector('[data-row-refresh]')?.setAttribute('onclick', `_regenEndlessRow(${i})`);
-                lead.querySelector('[data-row-remove]')?.setAttribute('onclick', `_removeEndlessRow(${i})`);
-            }
-        });
-    }
-    window._removeEndlessRow = _removeEndlessRow;
+// Remove the row at rowIdx — drops its prompt from the persisted array
+// and removes its DOM node. Subsequent rows shift indices; we re-render
+// every row's leading chip so the minus/picker handlers stay synced.
+function _removeEndlessRow(rowIdx) {
+    const arr = _getEndlessRowPrompts();
+    if (rowIdx < 0 || rowIdx >= arr.length) return;
+    arr.splice(rowIdx, 1);
+    _setEndlessRowPrompts(arr);
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    const rows = stack.querySelectorAll('.suggest-marquee-row');
+    if (rows[rowIdx]) rows[rowIdx].remove();
+    // Re-walk surviving rows + re-attach lead clusters with updated indices
+    // so each row's minus/picker call references its NEW position.
+    const survivingRows = stack.querySelectorAll('.suggest-marquee-row');
+    survivingRows.forEach((row, i) => {
+        const lead = row.querySelector('[data-endless-row-lead]');
+        if (lead) {
+            const promptId = arr[i];
+            const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(promptId) : null;
+            const ttl = promptObj ? promptObj.title : promptId;
+            lead.setAttribute('data-endless-row-lead', String(i));
+            lead.querySelector('[data-row-prompt-btn]')?.setAttribute('onclick', `_openSuggestPromptPicker(${i})`);
+            lead.querySelector('[data-row-prompt-label]') && (lead.querySelector('[data-row-prompt-label]').textContent = ttl);
+            lead.querySelector('[data-row-refresh]')?.setAttribute('onclick', `_regenEndlessRow(${i})`);
+            lead.querySelector('[data-row-remove]')?.setAttribute('onclick', `_removeEndlessRow(${i})`);
+        }
+    });
+}
+window._removeEndlessRow = _removeEndlessRow;
 
-    // CHAT mode — 4 reply chips beneath the input, no marquee. Each chip is
-    // a one-click "send this as your next message" shortcut.
-    //   With history:  4 contextual continuations of the conversation
-    //   Empty history: 4 conversation-starter prompts the user can pick to
-    //                  open a session (e.g. "queue 3 dragons", "what's running?")
-    async function _renderChatReplies() {
-        const host = document.getElementById('subjects-chat-replies');
-        if (!host) return;
-        const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
-        // No bouncing dots while we wait — the unified badge's refresh button
-        // gets a spinning icon instead (see _spinRefreshBriefly). The reply
-        // strip stays empty rather than flashing a placeholder that immediately
-        // gets replaced.
-        let subjects = '';
-        if (history.length) {
-            const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
-            const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
-            subjects = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
-        }
-        // Honor the user's selected prompt_id so swapping the dropdown actually
-        // changes the reply style (Yes-and / Plot Twist / Concrete Detail / …).
-        // Empty subjects → server's default "give me N ideas" prompt picks up
-        // the named prompt's system text via prompt_id.
-        const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
-        let arr = [];
-        try {
-            // Fetch n=6 (2 extra) so we have spares ready when the user
-            // clicks a chip → that chip animates out → we slide-in the
-            // next from the buffer. Mirrors the endless-row consume-and-
-            // refill UX. Server returns up to 6; we display 3.
-            const qs = '?n=6&fresh=1&_t=' + Date.now()
-                + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-                + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
-            const r = await fetch('/subjects/suggest' + qs);
-            const d = await r.json();
-            arr = (d && d.suggestions) || [];
-        } catch (_) { }
-        if (!arr.length) {
-            host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
-            return;
-        }
-        // Stash the spare buffer on the host element so the click handler
-        // can pull from it without re-fetching. Survives across renders
-        // until the next regen wipes innerHTML.
-        host._chatReplyBuffer = arr.slice(3); // 3 displayed, rest reserved
-        // Reply chips share the same primary-outline aesthetic as every
-        // OTHER suggestion chip in the dashboard (simple-mode marquee
-        // chips via _buildSuggestChip, endless-row chips). Was btn-ghost
-        // (no border, faded text) which read as "different cluster" and
-        // visually drifted from the rest of the suggestion language.
-        // Layout overrides (full-width left-justified text, normal-case
-        // for sentence-fragment readability) layered on top of the
-        // shared `btn btn-outline btn-primary btn-xs` base.
-        // 3 chips displayed (was 4 — user pref). Each chip wires through
-        // _consumeChatReply on click instead of the bare-IIFE inline
-        // handler so we can ALSO fade the chip out + slide a spare in
-        // from the buffer (mirrors endless-row consume UX). Single-quote
-        // outer attribute is critical — JSON.stringify produces a
-        // "-wrapped string and would close a "-wrapped onclick at the
-        // first inner ". (See chat-suggestion-send.spec.js.)
-        host.innerHTML = arr.slice(0, 3).map(s =>
-            `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+// CHAT mode — 4 reply chips beneath the input, no marquee. Each chip is
+// a one-click "send this as your next message" shortcut.
+//   With history:  4 contextual continuations of the conversation
+//   Empty history: 4 conversation-starter prompts the user can pick to
+//                  open a session (e.g. "queue 3 dragons", "what's running?")
+async function _renderChatReplies() {
+    const host = document.getElementById('subjects-chat-replies');
+    if (!host) return;
+    const history = (typeof _getChatHistory === 'function') ? _getChatHistory() : [];
+    // No bouncing dots while we wait — the unified badge's refresh button
+    // gets a spinning icon instead (see _spinRefreshBriefly). The reply
+    // strip stays empty rather than flashing a placeholder that immediately
+    // gets replaced.
+    let subjects = '';
+    if (history.length) {
+        const lastAsst = [...history].reverse().find(m => m.role === 'assistant' && (m.content || '').trim());
+        const lastUser = [...history].reverse().find(m => m.role === 'user' && (m.content || '').trim());
+        subjects = `Last assistant: ${(lastAsst && lastAsst.content) || '(none)'}\nLast user: ${(lastUser && lastUser.content) || '(none)'}`;
+    }
+    // Honor the user's selected prompt_id so swapping the dropdown actually
+    // changes the reply style (Yes-and / Plot Twist / Concrete Detail / …).
+    // Empty subjects → server's default "give me N ideas" prompt picks up
+    // the named prompt's system text via prompt_id.
+    const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+    let arr = [];
+    try {
+        // Fetch n=6 (2 extra) so we have spares ready when the user
+        // clicks a chip → that chip animates out → we slide-in the
+        // next from the buffer. Mirrors the endless-row consume-and-
+        // refill UX. Server returns up to 6; we display 3.
+        const qs = '?n=6&fresh=1&_t=' + Date.now()
+            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+            + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
+        const r = await fetch('/subjects/suggest' + qs);
+        const d = await r.json();
+        arr = (d && d.suggestions) || [];
+    } catch (_) { }
+    if (!arr.length) {
+        host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
+        return;
+    }
+    // Stash the spare buffer on the host element so the click handler
+    // can pull from it without re-fetching. Survives across renders
+    // until the next regen wipes innerHTML.
+    host._chatReplyBuffer = arr.slice(3); // 3 displayed, rest reserved
+    // Reply chips share the same primary-outline aesthetic as every
+    // OTHER suggestion chip in the dashboard (simple-mode marquee
+    // chips via _buildSuggestChip, endless-row chips). Was btn-ghost
+    // (no border, faded text) which read as "different cluster" and
+    // visually drifted from the rest of the suggestion language.
+    // Layout overrides (full-width left-justified text, normal-case
+    // for sentence-fragment readability) layered on top of the
+    // shared `btn btn-outline btn-primary btn-xs` base.
+    // 3 chips displayed (was 4 — user pref). Each chip wires through
+    // _consumeChatReply on click instead of the bare-IIFE inline
+    // handler so we can ALSO fade the chip out + slide a spare in
+    // from the buffer (mirrors endless-row consume UX). Single-quote
+    // outer attribute is critical — JSON.stringify produces a
+    // "-wrapped string and would close a "-wrapped onclick at the
+    // first inner ". (See chat-suggestion-send.spec.js.)
+    host.innerHTML = arr.slice(0, 3).map(s =>
+        `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
             onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
             ${_htmlEscape(s)}
         </button>`).join('');
+}
+window._renderChatReplies = _renderChatReplies;
+
+// Consume one chat reply chip:
+//   1. fade the clicked chip out (CSS class .chip-disappear, ~700 ms)
+//   2. submit the text via the standard chat input → _sendChatMessage
+//   3. if the host has a spare from the prefetch buffer, slide it
+//      into a NEW chip in the just-vacated slot
+//   4. if the buffer is empty, just leave the row at 2 chips until
+//      the next assistant turn re-renders (which fetches fresh n=6)
+window._consumeChatReply = function (btn, text) {
+    // Fire the send first so there's no perceived lag — the chat
+    // input + _sendChatMessage path is the canonical send.
+    const input = document.getElementById('subjects-chat-input');
+    if (input) {
+        input.value = text;
+        input.focus();
+        if (typeof _sendChatMessage === 'function') _sendChatMessage();
     }
-    window._renderChatReplies = _renderChatReplies;
-
-    // Consume one chat reply chip:
-    //   1. fade the clicked chip out (CSS class .chip-disappear, ~700 ms)
-    //   2. submit the text via the standard chat input → _sendChatMessage
-    //   3. if the host has a spare from the prefetch buffer, slide it
-    //      into a NEW chip in the just-vacated slot
-    //   4. if the buffer is empty, just leave the row at 2 chips until
-    //      the next assistant turn re-renders (which fetches fresh n=6)
-    window._consumeChatReply = function (btn, text) {
-        // Fire the send first so there's no perceived lag — the chat
-        // input + _sendChatMessage path is the canonical send.
-        const input = document.getElementById('subjects-chat-input');
-        if (input) {
-            input.value = text;
-            input.focus();
-            if (typeof _sendChatMessage === 'function') _sendChatMessage();
-        }
-        // Animate the chip out of the row.
-        if (btn) {
-            btn.classList.add('chip-disappear');
-            const host = btn.parentElement;
-            const spare = host && host._chatReplyBuffer && host._chatReplyBuffer.shift();
-            // After the chip-disappear animation completes, either swap
-            // in a fresh chip from the buffer or just remove the slot.
-            setTimeout(() => {
-                if (!btn.isConnected) return;
-                if (spare) {
-                    const fresh = document.createElement('button');
-                    fresh.type = 'button';
-                    fresh.className = 'chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5 chip-arriving';
-                    fresh.textContent = spare;
-                    fresh.onclick = () => window._consumeChatReply(fresh, spare);
-                    btn.replaceWith(fresh);
-                    // drop the entry class on next frame so the slide-in plays
-                    requestAnimationFrame(() => requestAnimationFrame(() => fresh.classList.remove('chip-arriving')));
-                } else {
-                    btn.remove();
-                }
-            }, 700);
-        }
-    };
-
-    // Visual feedback on the unified-badge refresh icon: when an action is
-    // pending (dropdown swap → regen, manual refresh click), spin the icon
-    // for ~1.5 s OR until the next render hooks in.
-    function _spinRefreshBriefly(ms) {
-        const btn = document.getElementById('subjects-suggest-btn');
-        if (!btn) return;
-        const svg = btn.querySelector('svg');
-        if (!svg) return;
-        svg.classList.add('animate-spin');
-        setTimeout(() => svg.classList.remove('animate-spin'), ms || 1500);
-    }
-    window._spinRefreshBriefly = _spinRefreshBriefly;
-
-    // Universal refresh-tap acknowledgement. Any clickable element that LOOKS
-    // like a refresh affordance (data-row-refresh, #subjects-suggest-btn,
-    // #btn-suggest, .btn-refresh, plus the per-row refresh in suggest rows)
-    // gets a one-shot 600 ms rotation on its inner SVG. Independent of the
-    // underlying action's completion — purely a "yes I heard the click".
-    document.addEventListener('click', (e) => {
-        const target = e.target.closest(
-            '[data-row-refresh],' +
-            '#subjects-suggest-btn,' +
-            '#subjects-suggest-prompt-name + #subjects-suggest-btn,' +
-            '.btn-refresh,' +
-            '[data-refresh-tap]'
-        );
-        if (!target) return;
-        const svg = target.querySelector('svg');
-        if (!svg) return;
-        svg.classList.remove('refresh-tapping'); // restart even if mid-spin
-        void svg.offsetWidth;                    // force reflow so the keyframe re-fires
-        svg.classList.add('refresh-tapping');
-        setTimeout(() => svg.classList.remove('refresh-tapping'), 700);
-    }, { capture: true });
-
-    // ---------------------------------------------------------------------------
-    // Multi-row marquee chip area — replaces the single-row carousel from #76.
-    //
-    // Each batch arrives as a new <div class="suggest-marquee-row"> appended
-    // to #subject-chips-stack. Inside the row, a <div class="suggest-marquee-track">
-    // holds the chips duplicated (items + items) so the CSS @keyframes
-    // translateX(-50%) loop is visually seamless. Speed scales with track
-    // length (60 px/s target, clamped 40..180 s) and pauses on hover/focus.
-    // FIFO cap of _SUGGEST_MAX_ROWS = 4 evicts oldest rows.
-    //
-    // Composition with #76's prefetch state machine: _maybePrefetch still
-    // fills _prefetchedBatches; the consumer is now an idle-time top-up that
-    // appends a new row when buffered batches are present. Manual 🎲 still
-    // renders fresh and bypasses the prefetch buffer.
-    // ---------------------------------------------------------------------------
-
-    // ---------------------------------------------------------------------------
-    // Subjects suggestion prefetch — preemptive cache from #76, repurposed
-    // to feed the multi-row marquee. Driven by hover/idle signals on the
-    // Subjects card; consumed by an idle-time top-up that calls
-    // _appendSuggestBatchRow when a buffered batch is ready. Every fetch path
-    // here is gated by _isGpuIdleEnough() AND by _autoSuggestDisabled() (the
-    // new Settings toggle). Manual 🎲 stays exempt from both.
-    //
-    // Invariants:
-    // - At most one inflight request (_prefetchInflight bool).
-    // - At most _PREFETCH_CAP buffered batches (FIFO).
-    // - 30 s backoff after empty/errored response.
-    // - Cancel idle timer when the page is hidden.
-    // ---------------------------------------------------------------------------
-
-    const _PREFETCH_CAP = 3;
-    const _PREFETCH_BACKOFF_MS = 30_000;
-    const _PREFETCH_IDLE_TRIGGER_MS = 8_000;
-    const _prefetchedBatches = []; // FIFO of string[]
-    let _prefetchInflight = false;
-    let _prefetchBackoffUntil = 0;
-    let _prefetchIdleTimer = null;
-    let _prefetchStats = { triggered: 0, fetched: 0, consumed: 0, skippedGpu: 0, skippedBackoff: 0, skippedFull: 0 };
-
-    // Consume the oldest buffered batch. If `forPromptId` is provided,
-    // skip + drop any leading entries that were generated under a
-    // DIFFERENT prompt (they're stale relative to the user's current
-    // dropdown choice and would surprise them if rendered now).
-    function _consumePrefetchedBatch(forPromptId) {
-        while (_prefetchedBatches.length) {
-            const head = _prefetchedBatches[0];
-            if (forPromptId && head.promptId && head.promptId !== forPromptId) {
-                _prefetchedBatches.shift(); // drop stale
-                continue;
+    // Animate the chip out of the row.
+    if (btn) {
+        btn.classList.add('chip-disappear');
+        const host = btn.parentElement;
+        const spare = host && host._chatReplyBuffer && host._chatReplyBuffer.shift();
+        // After the chip-disappear animation completes, either swap
+        // in a fresh chip from the buffer or just remove the slot.
+        setTimeout(() => {
+            if (!btn.isConnected) return;
+            if (spare) {
+                const fresh = document.createElement('button');
+                fresh.type = 'button';
+                fresh.className = 'chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5 chip-arriving';
+                fresh.textContent = spare;
+                fresh.onclick = () => window._consumeChatReply(fresh, spare);
+                btn.replaceWith(fresh);
+                // drop the entry class on next frame so the slide-in plays
+                requestAnimationFrame(() => requestAnimationFrame(() => fresh.classList.remove('chip-arriving')));
+            } else {
+                btn.remove();
             }
-            _prefetchedBatches.shift();
-            _prefetchStats.consumed += 1;
-            return head.suggestions;
-        }
-        return null;
+        }, 700);
     }
-    // Drop every buffered batch (called when the user swaps prompts —
-    // batches were generated for the OLD prompt and will read as wrong-
-    // topic suggestions if the user later presses + with the new prompt
-    // active). Caller pairs this with a _maybePrefetch() to start
-    // refilling under the new prompt. `discarded` stat tracks dumps
-    // for telemetry / dev console.
-    function _dropPrefetchedBatches() {
-        const n = _prefetchedBatches.length;
-        _prefetchedBatches.length = 0;
-        _prefetchStats.discarded = (_prefetchStats.discarded || 0) + n;
-        return n;
-    }
-    window._dropPrefetchedBatches = _dropPrefetchedBatches;
+};
 
-    function _maybePrefetch() {
-        if (_isSuggestionsHidden()) return;
-        // SIMPLE MODE ONLY. Endless story-beats need their own per-row
-        // prompt context (lead cluster); chat replies render into a
-        // different DOM target; raw doesn't use suggestions at all.
-        // Speculative prefetch into a generic batch buffer doesn't
-        // make sense for any of those.
+// Visual feedback on the unified-badge refresh icon: when an action is
+// pending (dropdown swap → regen, manual refresh click), spin the icon
+// for ~1.5 s OR until the next render hooks in.
+function _spinRefreshBriefly(ms) {
+    const btn = document.getElementById('subjects-suggest-btn');
+    if (!btn) return;
+    const svg = btn.querySelector('svg');
+    if (!svg) return;
+    svg.classList.add('animate-spin');
+    setTimeout(() => svg.classList.remove('animate-spin'), ms || 1500);
+}
+window._spinRefreshBriefly = _spinRefreshBriefly;
+
+// Universal refresh-tap acknowledgement. Any clickable element that LOOKS
+// like a refresh affordance (data-row-refresh, #subjects-suggest-btn,
+// #btn-suggest, .btn-refresh, plus the per-row refresh in suggest rows)
+// gets a one-shot 600 ms rotation on its inner SVG. Independent of the
+// underlying action's completion — purely a "yes I heard the click".
+document.addEventListener('click', (e) => {
+    const target = e.target.closest(
+        '[data-row-refresh],' +
+        '#subjects-suggest-btn,' +
+        '#subjects-suggest-prompt-name + #subjects-suggest-btn,' +
+        '.btn-refresh,' +
+        '[data-refresh-tap]'
+    );
+    if (!target) return;
+    const svg = target.querySelector('svg');
+    if (!svg) return;
+    svg.classList.remove('refresh-tapping'); // restart even if mid-spin
+    void svg.offsetWidth;                    // force reflow so the keyframe re-fires
+    svg.classList.add('refresh-tapping');
+    setTimeout(() => svg.classList.remove('refresh-tapping'), 700);
+}, { capture: true });
+
+// ---------------------------------------------------------------------------
+// Multi-row marquee chip area — replaces the single-row carousel from #76.
+//
+// Each batch arrives as a new <div class="suggest-marquee-row"> appended
+// to #subject-chips-stack. Inside the row, a <div class="suggest-marquee-track">
+// holds the chips duplicated (items + items) so the CSS @keyframes
+// translateX(-50%) loop is visually seamless. Speed scales with track
+// length (60 px/s target, clamped 40..180 s) and pauses on hover/focus.
+// FIFO cap of _SUGGEST_MAX_ROWS = 4 evicts oldest rows.
+//
+// Composition with #76's prefetch state machine: _maybePrefetch still
+// fills _prefetchedBatches; the consumer is now an idle-time top-up that
+// appends a new row when buffered batches are present. Manual 🎲 still
+// renders fresh and bypasses the prefetch buffer.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Subjects suggestion prefetch — preemptive cache from #76, repurposed
+// to feed the multi-row marquee. Driven by hover/idle signals on the
+// Subjects card; consumed by an idle-time top-up that calls
+// _appendSuggestBatchRow when a buffered batch is ready. Every fetch path
+// here is gated by _isGpuIdleEnough() AND by _autoSuggestDisabled() (the
+// new Settings toggle). Manual 🎲 stays exempt from both.
+//
+// Invariants:
+// - At most one inflight request (_prefetchInflight bool).
+// - At most _PREFETCH_CAP buffered batches (FIFO).
+// - 30 s backoff after empty/errored response.
+// - Cancel idle timer when the page is hidden.
+// ---------------------------------------------------------------------------
+
+const _PREFETCH_CAP = 3;
+const _PREFETCH_BACKOFF_MS = 30_000;
+const _PREFETCH_IDLE_TRIGGER_MS = 8_000;
+const _prefetchedBatches = []; // FIFO of string[]
+let _prefetchInflight = false;
+let _prefetchBackoffUntil = 0;
+let _prefetchIdleTimer = null;
+let _prefetchStats = { triggered: 0, fetched: 0, consumed: 0, skippedGpu: 0, skippedBackoff: 0, skippedFull: 0 };
+
+// Consume the oldest buffered batch. If `forPromptId` is provided,
+// skip + drop any leading entries that were generated under a
+// DIFFERENT prompt (they're stale relative to the user's current
+// dropdown choice and would surprise them if rendered now).
+function _consumePrefetchedBatch(forPromptId) {
+    while (_prefetchedBatches.length) {
+        const head = _prefetchedBatches[0];
+        if (forPromptId && head.promptId && head.promptId !== forPromptId) {
+            _prefetchedBatches.shift(); // drop stale
+            continue;
+        }
+        _prefetchedBatches.shift();
+        _prefetchStats.consumed += 1;
+        return head.suggestions;
+    }
+    return null;
+}
+// Drop every buffered batch (called when the user swaps prompts —
+// batches were generated for the OLD prompt and will read as wrong-
+// topic suggestions if the user later presses + with the new prompt
+// active). Caller pairs this with a _maybePrefetch() to start
+// refilling under the new prompt. `discarded` stat tracks dumps
+// for telemetry / dev console.
+function _dropPrefetchedBatches() {
+    const n = _prefetchedBatches.length;
+    _prefetchedBatches.length = 0;
+    _prefetchStats.discarded = (_prefetchStats.discarded || 0) + n;
+    return n;
+}
+window._dropPrefetchedBatches = _dropPrefetchedBatches;
+
+function _maybePrefetch() {
+    if (_isSuggestionsHidden()) return;
+    // SIMPLE MODE ONLY. Endless story-beats need their own per-row
+    // prompt context (lead cluster); chat replies render into a
+    // different DOM target; raw doesn't use suggestions at all.
+    // Speculative prefetch into a generic batch buffer doesn't
+    // make sense for any of those.
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    if (mode !== 'simple') return;
+    _prefetchStats.triggered += 1;
+    // Settings toggle — no auto-fetches when disabled. Manual 🎲 unaffected.
+    if (_autoSuggestDisabled()) return;
+    if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
+        _prefetchStats.skippedGpu += 1;
+        return;
+    }
+    if (_prefetchInflight) return;
+    if (_prefetchedBatches.length >= _PREFETCH_CAP) {
+        _prefetchStats.skippedFull += 1;
+        return;
+    }
+    if (Date.now() < _prefetchBackoffUntil) {
+        _prefetchStats.skippedBackoff += 1;
+        return;
+    }
+    _prefetchInflight = true;
+    const subjects = (($('p-core') && $('p-core').value) || '').trim();
+    // Capture the promptId AT FETCH TIME and ship it on the wire so
+    // the server's own promptId is respected, AND tag the cached
+    // batch with it so a later prompt-swap can reject stale entries
+    // in _consumePrefetchedBatch / drop them via _dropPrefetchedBatches.
+    const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+    const qs = '?n=6'
+        + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+        + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
+    fetch('/subjects/suggest' + qs)
+        .then(r => r.json())
+        .then(d => {
+            if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
+                _prefetchedBatches.push({ promptId, suggestions: d.suggestions });
+                _prefetchStats.fetched += 1;
+            } else {
+                _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS;
+            }
+        })
+        .catch(() => { _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS; })
+        .finally(() => { _prefetchInflight = false; });
+}
+// Exposed so the chip-click handler in _buildSuggestChip can kick a
+// fresh prefetch the moment the user picks a suggestion — "compute is
+// probably free RIGHT NOW (the LLM just finished the last batch), so
+// start the next one ASAP so it lands in the buffer before the user
+// is ready to pick again." All gates inside _maybePrefetch (mode,
+// GPU-idle, inflight, cap, backoff) still apply.
+window._maybePrefetch = _maybePrefetch;
+// Exposed for the simple-mode + button (`_addSimpleRow`) so it can
+// INSTANT-render a prefetched batch instead of awaiting a fresh
+// round-trip. Pass the current promptId so stale (post-swap)
+// batches are skipped.
+window._consumePrefetchedBatch = _consumePrefetchedBatch;
+
+function _resetPrefetchIdleTimer() {
+    if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
+    if (document.hidden) return;
+    _prefetchIdleTimer = setTimeout(() => {
+        // SIMPLE MODE ONLY. The drain previously fired regardless of
+        // mode and called _appendSuggestBatchRow(pre) with no opts —
+        // which in endless mode appended naked rows (no subject /
+        // refresh / minus lead cluster), reading as 'simple-mode
+        // rows leaking into endless'. The user explicitly asked
+        // for the old auto-load behaviour to go: "we got rid of
+        // the initial default load suggestions row right? that was
+        // old design". So endless / chat / raw skip both drain
+        // AND the speculative prefetch.
         const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
         if (mode !== 'simple') return;
-        _prefetchStats.triggered += 1;
-        // Settings toggle — no auto-fetches when disabled. Manual 🎲 unaffected.
-        if (_autoSuggestDisabled()) return;
-        if (typeof _isGpuIdleEnough === 'function' && _gpuPctHistory.length > 0 && !_isGpuIdleEnough()) {
-            _prefetchStats.skippedGpu += 1;
-            return;
+        const curPid = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+        const pre = _consumePrefetchedBatch(curPid);
+        if (pre) {
+            _appendSuggestBatchRow(pre);
+            _maybePrefetch();
+        } else {
+            _maybePrefetch();
         }
-        if (_prefetchInflight) return;
-        if (_prefetchedBatches.length >= _PREFETCH_CAP) {
-            _prefetchStats.skippedFull += 1;
-            return;
-        }
-        if (Date.now() < _prefetchBackoffUntil) {
-            _prefetchStats.skippedBackoff += 1;
-            return;
-        }
-        _prefetchInflight = true;
-        const subjects = (($('p-core') && $('p-core').value) || '').trim();
-        // Capture the promptId AT FETCH TIME and ship it on the wire so
-        // the server's own promptId is respected, AND tag the cached
-        // batch with it so a later prompt-swap can reject stale entries
-        // in _consumePrefetchedBatch / drop them via _dropPrefetchedBatches.
-        const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
-        const qs = '?n=6'
-            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
-            + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
-        fetch('/subjects/suggest' + qs)
-            .then(r => r.json())
-            .then(d => {
-                if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
-                    _prefetchedBatches.push({ promptId, suggestions: d.suggestions });
-                    _prefetchStats.fetched += 1;
-                } else {
-                    _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS;
-                }
-            })
-            .catch(() => { _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS; })
-            .finally(() => { _prefetchInflight = false; });
+    }, _PREFETCH_IDLE_TRIGGER_MS);
+}
+
+let _suggestPrefetchWired = false;
+function _wireSuggestPrefetch() {
+    if (_suggestPrefetchWired) return;
+    const stack = document.getElementById('subject-chips-stack');
+    const ta = document.getElementById('p-core');
+    if (!stack) return;
+    _suggestPrefetchWired = true;
+
+    // Hover the stack → top up the buffer (gated). Drain happens via the
+    // idle timer below so the marquee doesn't grow rows under the cursor.
+    stack.addEventListener('pointerenter', () => _maybePrefetch());
+
+    if (ta) {
+        ta.addEventListener('input', _resetPrefetchIdleTimer);
+        ta.addEventListener('focus', _resetPrefetchIdleTimer);
     }
-    // Exposed so the chip-click handler in _buildSuggestChip can kick a
-    // fresh prefetch the moment the user picks a suggestion — "compute is
-    // probably free RIGHT NOW (the LLM just finished the last batch), so
-    // start the next one ASAP so it lands in the buffer before the user
-    // is ready to pick again." All gates inside _maybePrefetch (mode,
-    // GPU-idle, inflight, cap, backoff) still apply.
-    window._maybePrefetch = _maybePrefetch;
-    // Exposed for the simple-mode + button (`_addSimpleRow`) so it can
-    // INSTANT-render a prefetched batch instead of awaiting a fresh
-    // round-trip. Pass the current promptId so stale (post-swap)
-    // batches are skipped.
-    window._consumePrefetchedBatch = _consumePrefetchedBatch;
-
-    function _resetPrefetchIdleTimer() {
-        if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
-        if (document.hidden) return;
-        _prefetchIdleTimer = setTimeout(() => {
-            // SIMPLE MODE ONLY. The drain previously fired regardless of
-            // mode and called _appendSuggestBatchRow(pre) with no opts —
-            // which in endless mode appended naked rows (no subject /
-            // refresh / minus lead cluster), reading as 'simple-mode
-            // rows leaking into endless'. The user explicitly asked
-            // for the old auto-load behaviour to go: "we got rid of
-            // the initial default load suggestions row right? that was
-            // old design". So endless / chat / raw skip both drain
-            // AND the speculative prefetch.
-            const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
-            if (mode !== 'simple') return;
-            const curPid = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
-            const pre = _consumePrefetchedBatch(curPid);
-            if (pre) {
-                _appendSuggestBatchRow(pre);
-                _maybePrefetch();
-            } else {
-                _maybePrefetch();
-            }
-        }, _PREFETCH_IDLE_TRIGGER_MS);
-    }
-
-    let _suggestPrefetchWired = false;
-    function _wireSuggestPrefetch() {
-        if (_suggestPrefetchWired) return;
-        const stack = document.getElementById('subject-chips-stack');
-        const ta = document.getElementById('p-core');
-        if (!stack) return;
-        _suggestPrefetchWired = true;
-
-        // Hover the stack → top up the buffer (gated). Drain happens via the
-        // idle timer below so the marquee doesn't grow rows under the cursor.
-        stack.addEventListener('pointerenter', () => _maybePrefetch());
-
-        if (ta) {
-            ta.addEventListener('input', _resetPrefetchIdleTimer);
-            ta.addEventListener('focus', _resetPrefetchIdleTimer);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && _prefetchIdleTimer) {
+            clearTimeout(_prefetchIdleTimer);
+            _prefetchIdleTimer = null;
+        } else if (!document.hidden) {
+            _resetPrefetchIdleTimer();
         }
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden && _prefetchIdleTimer) {
-                clearTimeout(_prefetchIdleTimer);
-                _prefetchIdleTimer = null;
-            } else if (!document.hidden) {
-                _resetPrefetchIdleTimer();
-            }
-        });
-        _resetPrefetchIdleTimer();
-    }
-    document.addEventListener('DOMContentLoaded', _wireSuggestPrefetch);
+    });
+    _resetPrefetchIdleTimer();
+}
+document.addEventListener('DOMContentLoaded', _wireSuggestPrefetch);
 
-    // Devtools helper — `_dumpSuggestPrefetchStats()` from the console.
-    window._dumpSuggestPrefetchStats = function () {
-        return {
-            cap: _PREFETCH_CAP,
-            buffered: _prefetchedBatches.length,
-            inflight: _prefetchInflight,
-            backoffMsRemaining: Math.max(0, _prefetchBackoffUntil - Date.now()),
-            stats: { ..._prefetchStats },
-        };
+// Devtools helper — `_dumpSuggestPrefetchStats()` from the console.
+window._dumpSuggestPrefetchStats = function () {
+    return {
+        cap: _PREFETCH_CAP,
+        buffered: _prefetchedBatches.length,
+        inflight: _prefetchInflight,
+        backoffMsRemaining: Math.max(0, _prefetchBackoffUntil - Date.now()),
+        stats: { ..._prefetchStats },
     };
+};
 
-    function updateStageSteps(state) {
-        if (!state) return;
-        const steps = document.querySelectorAll('#stage-steps li[data-stage]');
-        if (!steps.length) return;
-        const currentStage = state.step || '';
-        const order = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
-        const idx = order.indexOf(currentStage);
-        steps.forEach((el, i) => {
-            el.classList.remove('step-primary', 'step-accent');
-            if (idx < 0) return;
-            if (i < idx) el.classList.add('step-primary');
-            else if (i === idx) el.classList.add('step-accent');
+function updateStageSteps(state) {
+    if (!state) return;
+    const steps = document.querySelectorAll('#stage-steps li[data-stage]');
+    if (!steps.length) return;
+    const currentStage = state.step || '';
+    const order = ['Concept', 'Base Image', 'Video Chains', 'Audio', 'TTS', 'Post Process', 'Final Merge'];
+    const idx = order.indexOf(currentStage);
+    steps.forEach((el, i) => {
+        el.classList.remove('step-primary', 'step-accent');
+        if (idx < 0) return;
+        if (i < idx) el.classList.add('step-primary');
+        else if (i === idx) el.classList.add('step-accent');
+    });
+    const chainCounter = document.getElementById('chain-counter');
+    if (chainCounter) {
+        // Element id is legacy ("chain-counter"); display text now reads
+        // "Part X of Y" to match the user-facing rename. The state keys
+        // (`chain_index`, `total_chains`) come straight from the runner and
+        // stay unchanged.
+        chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
+            ? `Part ${state.chain_index} of ${state.total_chains}` : '';
+    }
+}
+
+// No-op stubs for reference-modal inline handlers that don't yet exist client-side.
+if (typeof window._onAudioChanged !== 'function') {
+    window._onAudioChanged = function () { /* reserved for future audio-dependent UI */ };
+}
+
+connect();
+_wireLockListeners();
+
+// ---------------------------------------------------------------------------
+// Top-section collapsible — persist open/closed in localStorage so the user's
+// preference survives reloads. The <details> element starts `open` in the
+// template so first-load matches existing behaviour; if the user has previously
+// collapsed it, we strip the attribute on init.
+// ---------------------------------------------------------------------------
+(function wireTopCollapsible() {
+    const init = () => {
+        const COLLAPSE_KEY = 'slopfinity_top_collapsed';
+        const top = document.getElementById('top-collapsible');
+        if (!top) return;
+        try {
+            if (localStorage.getItem(COLLAPSE_KEY) === '1') top.removeAttribute('open');
+        } catch (_) { }
+        top.addEventListener('toggle', () => {
+            try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) { }
         });
-        const chainCounter = document.getElementById('chain-counter');
-        if (chainCounter) {
-            // Element id is legacy ("chain-counter"); display text now reads
-            // "Part X of Y" to match the user-facing rename. The state keys
-            // (`chain_index`, `total_chains`) come straight from the runner and
-            // stay unchanged.
-            chainCounter.textContent = (state.step === 'Video Chains' && state.chain_index)
-                ? `Part ${state.chain_index} of ${state.total_chains}` : '';
-        }
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
+})();
 
-    // No-op stubs for reference-modal inline handlers that don't yet exist client-side.
-    if (typeof window._onAudioChanged !== 'function') {
-        window._onAudioChanged = function () { /* reserved for future audio-dependent UI */ };
-    }
-
-    connect();
-    _wireLockListeners();
-
-    // ---------------------------------------------------------------------------
-    // Top-section collapsible — persist open/closed in localStorage so the user's
-    // preference survives reloads. The <details> element starts `open` in the
-    // template so first-load matches existing behaviour; if the user has previously
-    // collapsed it, we strip the attribute on init.
-    // ---------------------------------------------------------------------------
-    (function wireTopCollapsible() {
-        const init = () => {
-            const COLLAPSE_KEY = 'slopfinity_top_collapsed';
-            const top = document.getElementById('top-collapsible');
-            if (!top) return;
-            try {
-                if (localStorage.getItem(COLLAPSE_KEY) === '1') top.removeAttribute('open');
-            } catch (_) { }
-            top.addEventListener('toggle', () => {
-                try { localStorage.setItem(COLLAPSE_KEY, top.open ? '0' : '1'); } catch (_) { }
-            });
-        };
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
-        }
-    })();
-
-    // ===========================================================================
-    // Draggable horizontal splitter between the Subjects/Queue (upper) and the
-    // Slop output (lower). Persists upper-section height as a 0..1 fraction of
-    // the splitter container in localStorage. Double-click resets to 50/50
-    // (cleared key → both panes use natural flex). Touch / pen / mouse all work
-    // via Pointer Events; Pointer Capture keeps drag tracking even when the
-    // cursor leaves the handle.
-    // ===========================================================================
-    (function wireUiSplit() {
-        const init = () => {
-            const handle = document.getElementById('ui-split-handle');
-            const upper = document.getElementById('ui-split-upper');
-            const lower = document.getElementById('ui-split-lower');
-            if (!handle || !upper || !lower) return;
-            // Storage key changed from `_pct` (legacy %, container-relative) to
-            // `_px` (absolute pixel height of the upper pane). The container no
-            // longer has a fixed height, so percent math has nothing to multiply
-            // against. Pixel storage is bounded by [200 px, 80 vh] on read.
-            const KEY = 'slopfinity_ui_split_upper_px';
-            // Helper — broadcast that the panes resized so internal autogrow /
-            // re-layout code (textarea autogrow, suggestion-chip filler, etc.)
-            // can recompute against the new available height.
-            const _emitSplitResize = () => {
-                try { window.dispatchEvent(new Event('resize')); } catch (_) { }
-                if (typeof window._autogrowSubjects === 'function') {
-                    try { window._autogrowSubjects(); } catch (_) { }
-                }
-            };
-            const _bounds = () => ({
-                min: 200,
-                max: Math.max(220, Math.floor(window.innerHeight * 0.8)),
-            });
-            const stored = parseFloat(localStorage.getItem(KEY));
-            if (!Number.isNaN(stored) && stored >= 100) {
-                const { min, max } = _bounds();
-                upper.style.height = Math.max(min, Math.min(max, stored)) + 'px';
+// ===========================================================================
+// Draggable horizontal splitter between the Subjects/Queue (upper) and the
+// Slop output (lower). Persists upper-section height as a 0..1 fraction of
+// the splitter container in localStorage. Double-click resets to 50/50
+// (cleared key → both panes use natural flex). Touch / pen / mouse all work
+// via Pointer Events; Pointer Capture keeps drag tracking even when the
+// cursor leaves the handle.
+// ===========================================================================
+(function wireUiSplit() {
+    const init = () => {
+        const handle = document.getElementById('ui-split-handle');
+        const upper = document.getElementById('ui-split-upper');
+        const lower = document.getElementById('ui-split-lower');
+        if (!handle || !upper || !lower) return;
+        // Storage key changed from `_pct` (legacy %, container-relative) to
+        // `_px` (absolute pixel height of the upper pane). The container no
+        // longer has a fixed height, so percent math has nothing to multiply
+        // against. Pixel storage is bounded by [200 px, 80 vh] on read.
+        const KEY = 'slopfinity_ui_split_upper_px';
+        // Helper — broadcast that the panes resized so internal autogrow /
+        // re-layout code (textarea autogrow, suggestion-chip filler, etc.)
+        // can recompute against the new available height.
+        const _emitSplitResize = () => {
+            try { window.dispatchEvent(new Event('resize')); } catch (_) { }
+            if (typeof window._autogrowSubjects === 'function') {
+                try { window._autogrowSubjects(); } catch (_) { }
             }
-            let dragging = false;
-            let startY = 0;
-            let startUpperPx = 0;
-            handle.addEventListener('pointerdown', (e) => {
-                // Skip on viewports where the media query made the handle inert.
-                if (window.matchMedia('(max-width: 768px)').matches) return;
-                dragging = true;
-                startY = e.clientY;
-                startUpperPx = upper.getBoundingClientRect().height;
-                try { handle.setPointerCapture(e.pointerId); } catch (_) { }
-                handle.classList.add('dragging');
-                document.body.style.userSelect = 'none';
-                e.preventDefault();
-            });
-            handle.addEventListener('pointermove', (e) => {
-                if (!dragging) return;
-                const { min, max } = _bounds();
-                const newUpper = Math.max(min, Math.min(max, startUpperPx + (e.clientY - startY)));
-                upper.style.height = newUpper + 'px';
-                // Lower pane is naturally below in the flex column and content-
-                // sized; no math needed for it.
-                _emitSplitResize();
-            });
-            const stop = (e) => {
-                if (!dragging) return;
-                dragging = false;
-                try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
-                handle.classList.remove('dragging');
-                document.body.style.userSelect = '';
-                const px = upper.getBoundingClientRect().height;
-                if (px >= 100) localStorage.setItem(KEY, String(Math.round(px)));
-            };
-            handle.addEventListener('pointerup', stop);
-            handle.addEventListener('pointercancel', stop);
-            // Double-click resets to default (clear the override + remove storage).
-            handle.addEventListener('dblclick', () => {
-                upper.style.height = '';
-                localStorage.removeItem(KEY);
-                _emitSplitResize();
-            });
         };
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
+        const _bounds = () => ({
+            min: 200,
+            max: Math.max(220, Math.floor(window.innerHeight * 0.8)),
+        });
+        const stored = parseFloat(localStorage.getItem(KEY));
+        if (!Number.isNaN(stored) && stored >= 100) {
+            const { min, max } = _bounds();
+            upper.style.height = Math.max(min, Math.min(max, stored)) + 'px';
         }
-    })();
+        let dragging = false;
+        let startY = 0;
+        let startUpperPx = 0;
+        handle.addEventListener('pointerdown', (e) => {
+            // Skip on viewports where the media query made the handle inert.
+            if (window.matchMedia('(max-width: 768px)').matches) return;
+            dragging = true;
+            startY = e.clientY;
+            startUpperPx = upper.getBoundingClientRect().height;
+            try { handle.setPointerCapture(e.pointerId); } catch (_) { }
+            handle.classList.add('dragging');
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        handle.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            const { min, max } = _bounds();
+            const newUpper = Math.max(min, Math.min(max, startUpperPx + (e.clientY - startY)));
+            upper.style.height = newUpper + 'px';
+            // Lower pane is naturally below in the flex column and content-
+            // sized; no math needed for it.
+            _emitSplitResize();
+        });
+        const stop = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            try { handle.releasePointerCapture(e.pointerId); } catch (_) { }
+            handle.classList.remove('dragging');
+            document.body.style.userSelect = '';
+            const px = upper.getBoundingClientRect().height;
+            if (px >= 100) localStorage.setItem(KEY, String(Math.round(px)));
+        };
+        handle.addEventListener('pointerup', stop);
+        handle.addEventListener('pointercancel', stop);
+        // Double-click resets to default (clear the override + remove storage).
+        handle.addEventListener('dblclick', () => {
+            upper.style.height = '';
+            localStorage.removeItem(KEY);
+            _emitSplitResize();
+        });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
 
-    // ===========================================================================
-    // Slop card factory + infinite scroll (PR: feat/infinite-scroll-slop-view)
-    // ---------------------------------------------------------------------------
-    // `_buildSlopCard` is the single source of truth for how a slop-feed card
-    // renders. Originally inlined in the WS `new_file` handler; now also called
-    // by the IntersectionObserver-driven infinite-scroll loader so that initial
-    // SSR cards, live WS pushes, and lazily-fetched older cards all produce
-    // identical DOM (filter chips, delete handlers, count chips all key off
-    // `data-slop-kind` and the .card.card-compact selector).
-    //
-    // Pagination shape (server: GET /assets):
-    //   { items: [{file, mtime, kind}], offset, limit, total, has_more }
-    //
-    // SSR renders the first 64 cards (see index.html `all_assets[:64]`); the
-    // observer takes over from offset=64 on. WS new_file events prepend new
-    // cards (they don't shift the offset — the offset tracks how far down
-    // historical mtime we've fetched, not the number of children in the grid).
-    // ===========================================================================
-    function _buildSlopCard(file, opts = {}) {
-        if (!file) return null;
-        const isV = file.endsWith('.mp4');
-        const isWav = file.endsWith('.wav');
-        const kind = isV ? 'video' : isWav ? 'audio' : 'image';
-        const meta = _slopBadgeMeta(file);
-        const c = document.createElement('div');
-        const pulseClass = opts.pulse ? ' animate-pulse' : '';
-        c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden${pulseClass}`;
-        c.dataset.slopKind = meta.kind || kind;
-        // Match the SSR card contract — _applySlopFilters reads both flags.
-        // isFinal: FINAL_*.mp4 (the merged video the pipeline builds last).
-        // isFrame: ffmpeg-extracted bridge PNG between video chains —
-        //   slop_<N>_<slug>_f<M>.png OR legacy v<N>_f<M>.png.
-        c.dataset.slopFinal = (isV && /^FINAL_/i.test(file)) ? '1' : '0';
-        c.dataset.slopFrame = /^(?:v\d+|slop_\d+)(?:_.+)?_f\d+\.png$/i.test(file) ? '1' : '0';
-        c.dataset.slopFile = file;
-        const partBadge = meta.part
-            ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
-            : '';
-        const autoplayAttr = opts.autoplay ? 'autoplay' : '';
-        let media;
-        if (isV) {
-            media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls ${autoplayAttr} muted loop preload="metadata" class="w-full h-full object-contain"><source data-src="/files/${file}"></video></figure>`;
-        } else if (isWav) {
-            media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source data-src="/files/${file}"></audio></figure>`;
-        } else {
-            media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img data-src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
-        }
-        c.innerHTML = `${media}
+// ===========================================================================
+// Slop card factory + infinite scroll (PR: feat/infinite-scroll-slop-view)
+// ---------------------------------------------------------------------------
+// `_buildSlopCard` is the single source of truth for how a slop-feed card
+// renders. Originally inlined in the WS `new_file` handler; now also called
+// by the IntersectionObserver-driven infinite-scroll loader so that initial
+// SSR cards, live WS pushes, and lazily-fetched older cards all produce
+// identical DOM (filter chips, delete handlers, count chips all key off
+// `data-slop-kind` and the .card.card-compact selector).
+//
+// Pagination shape (server: GET /assets):
+//   { items: [{file, mtime, kind}], offset, limit, total, has_more }
+//
+// SSR renders the first 64 cards (see index.html `all_assets[:64]`); the
+// observer takes over from offset=64 on. WS new_file events prepend new
+// cards (they don't shift the offset — the offset tracks how far down
+// historical mtime we've fetched, not the number of children in the grid).
+// ===========================================================================
+function _buildSlopCard(file, opts = {}) {
+    if (!file) return null;
+    const isV = file.endsWith('.mp4');
+    const isWav = file.endsWith('.wav');
+    const kind = isV ? 'video' : isWav ? 'audio' : 'image';
+    const meta = _slopBadgeMeta(file);
+    const c = document.createElement('div');
+    const pulseClass = opts.pulse ? ' animate-pulse' : '';
+    c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden${pulseClass}`;
+    c.dataset.slopKind = meta.kind || kind;
+    // Match the SSR card contract — _applySlopFilters reads both flags.
+    // isFinal: FINAL_*.mp4 (the merged video the pipeline builds last).
+    // isFrame: ffmpeg-extracted bridge PNG between video chains —
+    //   slop_<N>_<slug>_f<M>.png OR legacy v<N>_f<M>.png.
+    c.dataset.slopFinal = (isV && /^FINAL_/i.test(file)) ? '1' : '0';
+    c.dataset.slopFrame = /^(?:v\d+|slop_\d+)(?:_.+)?_f\d+\.png$/i.test(file) ? '1' : '0';
+    c.dataset.slopFile = file;
+    const partBadge = meta.part
+        ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
+        : '';
+    const autoplayAttr = opts.autoplay ? 'autoplay' : '';
+    let media;
+    if (isV) {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><video controls ${autoplayAttr} muted loop preload="metadata" class="w-full h-full object-contain"><source data-src="/files/${file}"></video></figure>`;
+    } else if (isWav) {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><audio controls class="w-full mx-2"><source data-src="/files/${file}"></audio></figure>`;
+    } else {
+        media = `<figure class="bg-black aspect-video flex items-center justify-center overflow-hidden"><img data-src="/files/${file}" class="w-full h-full object-contain" loading="lazy"></figure>`;
+    }
+    c.innerHTML = `${media}
         <div class="card-body !p-2 bg-base-200/60 gap-1">
             <div class="flex flex-wrap items-center gap-1">
                 <span class="badge badge-xs ${meta.color}">${meta.label}</span>
@@ -9562,84 +9564,84 @@ window._removeSimpleRow = _removeSimpleRow;
             <span class="text-[10px] font-mono text-base-content/60 truncate" title="${file}">${file}</span>
         </div>`;
 
-        // Throttle loading
-        PriorityLoader.register(c);
+    // Throttle loading
+    PriorityLoader.register(c);
 
-        return c;
-    }
+    return c;
+}
 
-    (function wireInfiniteScroll() {
-        const init = () => {
-            const sentinel = document.getElementById('preview-grid-sentinel');
-            const grid = document.getElementById('preview-grid');
-            if (!sentinel || !grid) return;
-            // Seed the v_idx resolver cache from the SSR-rendered cards on
-            // the page. Each card has its filename in the trailing
-            // `<span title="..."` attribute (see _buildSlopCard above) — we
-            // walk those once at init time so the very first pipeline-strip
-            // / done-list paint can use real names instead of synthesizing
-            // v{N}_base.png.
-            try {
-                grid.querySelectorAll('[data-slop-kind] span[title]').forEach(span => {
-                    const f = span.getAttribute('title');
-                    if (f) _ingestAssetFilename(f);
-                });
-            } catch (_) { /* ignore */ }
-
-            let loading = false;
-            let exhausted = false;
-            // SSR seeds the first 64 cards; older content starts at offset=64.
-            // WS-pushed files prepend without bumping offset (offset tracks
-            // historical mtime depth, not DOM child count).
-            let nextOffset = 64;
-            const PAGE = 48;
-
-            async function loadMore() {
-                if (loading || exhausted) return;
-                loading = true;
-                try {
-                    const r = await fetch(`/assets?offset=${nextOffset}&limit=${PAGE}`);
-                    if (!r.ok) { exhausted = true; return; }
-                    const j = await r.json();
-                    const items = (j && j.items) || [];
-                    if (!items.length) { exhausted = true; return; }
-                    // Append before the sentinel so it stays at the bottom of
-                    // the grid container.
-                    items.forEach(item => {
-                        // Seed the resolver cache so older paginated content
-                        // also feeds v_idx -> real-filename lookups.
-                        _ingestAssetFilename(item.file);
-                        const card = _buildSlopCard(item.file);
-                        if (card) grid.appendChild(card);
-                    });
-                    nextOffset += items.length;
-                    if (!j.has_more) exhausted = true;
-                    // Keep current filter chip state applied to freshly inserted cards.
-                    try { _applySlopFilters(); } catch (_) { /* ignore */ }
-                } catch (e) {
-                    console.warn('infinite-scroll fetch failed:', e);
-                } finally {
-                    loading = false;
-                }
-            }
-
-            // The page body is now the scroll container — the lower pane no
-            // longer has its own overflow cap. `root: null` ties the observer
-            // to the viewport so the sentinel fires as the user scrolls the
-            // page, not an inner pane.
-            const observer = new IntersectionObserver((entries) => {
-                if (entries.some(e => e.isIntersecting)) loadMore();
-            }, {
-                root: null,
-                rootMargin: '300px',
-                threshold: 0,
+(function wireInfiniteScroll() {
+    const init = () => {
+        const sentinel = document.getElementById('preview-grid-sentinel');
+        const grid = document.getElementById('preview-grid');
+        if (!sentinel || !grid) return;
+        // Seed the v_idx resolver cache from the SSR-rendered cards on
+        // the page. Each card has its filename in the trailing
+        // `<span title="..."` attribute (see _buildSlopCard above) — we
+        // walk those once at init time so the very first pipeline-strip
+        // / done-list paint can use real names instead of synthesizing
+        // v{N}_base.png.
+        try {
+            grid.querySelectorAll('[data-slop-kind] span[title]').forEach(span => {
+                const f = span.getAttribute('title');
+                if (f) _ingestAssetFilename(f);
             });
-            observer.observe(sentinel);
-        };
+        } catch (_) { /* ignore */ }
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
+        let loading = false;
+        let exhausted = false;
+        // SSR seeds the first 64 cards; older content starts at offset=64.
+        // WS-pushed files prepend without bumping offset (offset tracks
+        // historical mtime depth, not DOM child count).
+        let nextOffset = 64;
+        const PAGE = 48;
+
+        async function loadMore() {
+            if (loading || exhausted) return;
+            loading = true;
+            try {
+                const r = await fetch(`/assets?offset=${nextOffset}&limit=${PAGE}`);
+                if (!r.ok) { exhausted = true; return; }
+                const j = await r.json();
+                const items = (j && j.items) || [];
+                if (!items.length) { exhausted = true; return; }
+                // Append before the sentinel so it stays at the bottom of
+                // the grid container.
+                items.forEach(item => {
+                    // Seed the resolver cache so older paginated content
+                    // also feeds v_idx -> real-filename lookups.
+                    _ingestAssetFilename(item.file);
+                    const card = _buildSlopCard(item.file);
+                    if (card) grid.appendChild(card);
+                });
+                nextOffset += items.length;
+                if (!j.has_more) exhausted = true;
+                // Keep current filter chip state applied to freshly inserted cards.
+                try { _applySlopFilters(); } catch (_) { /* ignore */ }
+            } catch (e) {
+                console.warn('infinite-scroll fetch failed:', e);
+            } finally {
+                loading = false;
+            }
         }
-    })();
+
+        // The page body is now the scroll container — the lower pane no
+        // longer has its own overflow cap. `root: null` ties the observer
+        // to the viewport so the sentinel fires as the user scrolls the
+        // page, not an inner pane.
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) loadMore();
+        }, {
+            root: null,
+            rootMargin: '300px',
+            threshold: 0,
+        });
+        observer.observe(sentinel);
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();

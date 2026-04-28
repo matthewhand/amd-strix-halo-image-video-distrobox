@@ -3285,11 +3285,21 @@
             </svg>
             <span id="mobile-nav-prev-label" class="mobile-nav-label"></span>
         </button>
-        {# Center cycle label removed — user reclaimed that space. The
-           prev/next pills already name their destination so the cycle
-           was redundant. Kept the empty spacer so flex justify-between
-           still pushes prev to the left edge and next to the right. #}
-        <span class="mobile-nav-spacer flex-1"></span>
+        {# Center slot — empty by default; populated with the
+           "↻ Requeue failed" button on compact viewports when there
+           are failed queue items (visibility owned by JS that mirrors
+           the desktop #btn-requeue-failed display state). The desktop
+           button stays visible on >=md viewports; this is an additional
+           compact-only surface to save horizontal space inside the
+           queue card footer. #}
+        <span class="mobile-nav-spacer flex-1 flex items-center justify-center">
+            <button id="mobile-nav-requeue-failed"
+                class="btn btn-warning btn-xs gap-1 hidden"
+                onclick="if(typeof requeueFailedQueue === 'function') requeueFailedQueue()"
+                title="Requeue failed items">
+                <span>↻</span><span class="text-[10px] uppercase tracking-widest">Requeue failed</span>
+            </button>
+        </span>
         <button id="mobile-nav-next" type="button" class="mobile-nav-btn" onclick="_mobileNavStep(1)" aria-label="Next card">
             <span id="mobile-nav-next-label" class="mobile-nav-label"></span>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
