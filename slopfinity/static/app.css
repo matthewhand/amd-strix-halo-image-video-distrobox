@@ -13,6 +13,43 @@ main { padding: calc(1rem * var(--slop-density)); }
 }
 .ui-split-card { border-width: calc(2px * var(--slop-density)); }
 
+/* Compact viewport: hide the theme selector dropdown — it eats nav
+   real estate that the brand + critical metrics need more.
+   Available from Settings → General if anyone wants to swap themes
+   from a phone. */
+@media (max-width: 639px) {
+    #theme-select-wrap, .theme-select-host { display: none !important; }
+}
+
+/* Compact viewport: bump core touch targets to the 44px guideline.
+   Was 24px (btn-xs), failing iOS / WCAG 2.5.5 finger-tap minimum.
+   Done as a media-query-scoped override so desktop keeps the
+   dense btn-xs sizing. */
+@media (max-width: 639px) {
+    .btn-xs.touch-bump,
+    .compact-touch-bump {
+        min-height: 36px !important;
+        padding: 6px 10px !important;
+    }
+}
+
+/* Empty Slop region — when the preview grid has no cards visible
+   (filtered down to nothing OR no outputs yet), show a quiet
+   empty-state hint instead of a 0px-tall void.
+   Driven by JS: _applySlopFilters writes .slop-empty-state class on
+   #preview-grid when no card matches. */
+#preview-grid:empty::before,
+#preview-grid.slop-empty-state::before {
+    content: 'No slop yet — queue something to fill this gallery.';
+    display: block;
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 3rem 1rem;
+    color: oklch(var(--bc) / 0.5);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
 /* Stats-navbar tickers — bars use DaisyUI bg-primary/secondary/accent utility
    classes (assigned from JS based on the parent's data-tone) so they re-skin
    with the active theme. The .over modifier swaps to the danger color when
