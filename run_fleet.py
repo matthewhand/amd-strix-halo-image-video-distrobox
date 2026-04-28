@@ -1569,6 +1569,20 @@ def main():
     except Exception as e:
         print(f"[FLEET] startup working-sweep failed: {e!r}", flush=True)
     while True:
+        # Terminate gate — dashboard's POST /runner/terminate writes
+        # terminate.flag in OUTPUT_DIR. We exit cleanly at the top of
+        # the next iter. This is the canonical hard-stop mechanism for
+        # the host-runner-from-containerised-dashboard scenario where
+        # the dashboard can't SIGTERM us due to PID-namespace + Docker
+        # security-profile restrictions. Best-effort SIGTERM is also
+        # attempted by the endpoint as a bonus path; this flag is the
+        # one that's reliable across deployment shapes.
+        _terminate_flag = os.path.join(OUTPUT_DIR, "terminate.flag")
+        if os.path.exists(_terminate_flag):
+            print(f"[FLEET] terminate.flag detected at {_terminate_flag} — exiting", flush=True)
+            update_state(mode="Terminated", step="terminate.flag",
+                         video=0, total=0)
+            break
         # Pause gate — dashboard's POST /queue/pause writes pause.flag in
         # OUTPUT_DIR. We check at the TOP of every iter so an active iter
         # finishes naturally (pause is a soft stop, not a kill) but no
