@@ -1221,29 +1221,111 @@ async def inject(
     return {"status": "ok"}
 
 
+def _find_pids_by_cmdline(needle: str) -> list[int]:
+    """Scan /proc for processes whose argv contains a leaf matching `needle`.
+
+    Pure-Python replacement for `pgrep -f` — the dashboard's runtime
+    environment doesn't always have procps. Match precision: an arg's
+    BASENAME must equal `needle`. So `python3 /path/to/run_fleet.py` matches
+    (basename of arg = 'run_fleet.py') but `bash -c 'echo run_fleet.py'`
+    does NOT (basename of arg = 'echo'/'-c'/the literal echo string —
+    none equal 'run_fleet.py'). The original `if needle in cmd` was too
+    greedy and matched bash wrappers that quoted the literal.
+    """
+    pids: list[int] = []
+    if os.path.isdir("/proc"):
+        try:
+            for entry in os.scandir("/proc"):
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{entry.name}/cmdline", "rb") as f:
+                        raw = f.read()
+                    if not raw:
+                        continue  # kernel thread
+                    args = [a.decode("utf-8", errors="replace") for a in raw.split(b"\x00") if a]
+                    if any(os.path.basename(a) == needle for a in args):
+                        pids.append(int(entry.name))
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    continue
+            return pids
+        except Exception:
+            pass  # fall through to pgrep
+    try:
+        # pgrep with -x matches whole-word command names; combined with
+        # -f to match against full argv it still risks the `bash wrapper
+        # quoting needle` false positive, but it's the best fallback we
+        # can do without /proc.
+        out = subprocess.run(
+            ["pgrep", "-f", needle], capture_output=True, text=True, timeout=5
+        ).stdout
+        return [int(p) for p in out.split() if p.isdigit()]
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+
+@app.get("/runner/status")
+async def runner_status():
+    """Inspect run_fleet.py orchestrator state without sending signals.
+
+    Returns the pids currently matching, plus per-pid age + cmdline so
+    callers can verify _whether_ a runner is alive before deciding to
+    terminate. Used by e2e tests + the dashboard's pause-button retry
+    logic to distinguish "runner stuck" from "runner not running".
+    """
+    pids = _find_pids_by_cmdline("run_fleet.py")
+    info = []
+    now = time.time()
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat", "r") as f:
+                stat = f.read().split()
+            # field 22 = starttime in clock ticks since boot
+            starttime_ticks = int(stat[21])
+            clk_tck = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", 100))
+            with open("/proc/uptime", "r") as f:
+                uptime_s = float(f.read().split()[0])
+            age_s = uptime_s - (starttime_ticks / clk_tck)
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+            info.append({"pid": pid, "age_s": round(age_s, 1), "cmdline": cmd[:200]})
+        except (FileNotFoundError, PermissionError, ProcessLookupError):
+            info.append({"pid": pid, "age_s": None, "cmdline": "(unreadable)"})
+    return {"ok": True, "running": len(pids) > 0, "pids": info, "wall_time": now}
+
+
 @app.post("/runner/terminate")
 async def runner_terminate():
-    """Hard-stop the run_fleet.py orchestrator on the host.
+    """Stop the run_fleet.py orchestrator running on the host.
 
-    Sends SIGTERM (then SIGKILL on a 5 s budget) to every process whose
-    cmdline contains 'run_fleet.py'. For when /cancel-all isn't enough —
-    e.g. the runner is stuck inside a hung LLM HTTP call past any
-    in-loop cancel-flag check. Returns the pids it touched.
+    TWO-LAYER strategy:
+      1. Write `terminate.flag` to EXP_DIR. run_fleet.py checks this at
+         the top of every iter and exits cleanly. Works regardless of
+         host/container PID namespace + capability boundaries (the
+         dashboard sometimes runs in a container that can't SIGTERM
+         host processes due to default Docker security profiles, even
+         with pid:host).
+      2. Best-effort SIGTERM/SIGKILL. If the dashboard CAN see + signal
+         the runner, we hard-stop it for hung-LLM-HTTP scenarios past
+         any in-loop flag check. PermissionError is swallowed — the
+         flag is the canonical mechanism, the signal is bonus.
 
-    Safety: only matches the run_fleet.py basename; doesn't pkill on
-    arbitrary patterns. The runner is meant to be relaunched manually
-    after a terminate (it isn't supervised by anything yet)."""
+    Returns the flag path + the pids touched (signal + escalation).
+    Both succeed independently."""
     import signal
-    pids = []
+    flag_path = os.path.join(EXP_DIR, "terminate.flag")
+    flag_written = False
     try:
-        out = subprocess.run(["pgrep", "-f", "run_fleet.py"],
-                             capture_output=True, text=True, timeout=5).stdout
-        pids = [int(p) for p in out.split() if p.isdigit()]
+        with open(flag_path, "w") as f:
+            f.write(str(time.time()))
+        flag_written = True
     except Exception as e:
-        return {"ok": False, "error": f"pgrep failed: {e}"}
-    if not pids:
-        return {"ok": True, "killed": [], "note": "no run_fleet.py process running"}
-    killed = []
+        flag_err = repr(e)
+    pids = _find_pids_by_cmdline("run_fleet.py")
+    killed: list[int] = []
+    perm_errs: list[int] = []
     for pid in pids:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -1251,17 +1333,46 @@ async def runner_terminate():
         except ProcessLookupError:
             pass
         except PermissionError:
-            return {"ok": False, "error": f"PermissionError sending SIGTERM to {pid}"}
-    # Brief grace + SIGKILL fallback.
+            perm_errs.append(pid)
     await asyncio.sleep(2.0)
+    escalated: list[int] = []
     for pid in killed:
         try:
             os.kill(pid, 0)
-            # Still alive — escalate.
             os.kill(pid, signal.SIGKILL)
+            escalated.append(pid)
         except ProcessLookupError:
             pass
-    return {"ok": True, "killed": killed}
+        except PermissionError:
+            pass
+    return {
+        "ok": True,
+        "flag_written": flag_written,
+        "flag_path": flag_path,
+        "matched_pids": pids,
+        "killed": killed,
+        "escalated_to_sigkill": escalated,
+        "permission_denied_pids": perm_errs,
+        "note": "flag is the canonical mechanism; runner exits at next iter top. "
+                "Signals are best-effort — may fail with PermissionError under "
+                "container security profiles but that does not invalidate the flag.",
+    }
+
+
+@app.post("/runner/terminate-clear")
+async def runner_terminate_clear():
+    """Remove terminate.flag so a fresh run_fleet.py launch can proceed.
+
+    Without this, any newly-launched runner reads the stale flag and
+    exits immediately. Called automatically by start-runner workflows
+    (and manually if the user wants to clear without restarting)."""
+    flag_path = os.path.join(EXP_DIR, "terminate.flag")
+    existed = os.path.exists(flag_path)
+    try:
+        os.remove(flag_path)
+    except FileNotFoundError:
+        pass
+    return {"ok": True, "existed": existed, "flag_path": flag_path}
 
 
 @app.post("/queue/pause")
