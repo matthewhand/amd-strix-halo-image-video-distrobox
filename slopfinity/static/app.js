@@ -8366,7 +8366,15 @@ async function _renderSimpleRows(n) {
     // seconds. Spinner now lives only when the box is empty (first
     // load); existing chips persist + get a dim-while-loading class
     // so the user knows they're stale.
-    const hasExistingChips = !!box.querySelector('.suggest-marquee-row');
+    // Snapshot the existing row count BEFORE we touch the box. If the
+    // user has manually added rows via the +/− pill (so the current row
+    // count > the localStorage initial-rows default), we want regen to
+    // PRESERVE that count rather than collapsing back to the default.
+    // Specifically: switching the suggestion prompt fires regenSuggestions
+    // which lands here — without this, going from 7 rows back to 3 every
+    // prompt swap is a UX trap the user reported.
+    const _existingRowCount = box.querySelectorAll('.suggest-marquee-row').length;
+    const hasExistingChips = _existingRowCount > 0;
     if (!hasExistingChips) {
         box.innerHTML = '<span class="loading loading-dots loading-xs"></span>';
     } else {
