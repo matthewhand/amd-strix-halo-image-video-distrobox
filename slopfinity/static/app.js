@@ -3341,6 +3341,9 @@ async function _startEndlessStory() {
     // switches / reloads can rehydrate (see _hydrateEndlessLog below).
     // Storage is a list of rows; the seed is the first row.
     _persistEndlessLogLines(seed ? [seed] : []);
+    // New story → active beat is the seed (idx 0). Resetting here keeps a
+    // stale active-idx from a prior story from pointing past the new end.
+    if (typeof _setEndlessActiveBeatIdx === 'function') _setEndlessActiveBeatIdx(0);
     if (typeof _renderEndlessLog === 'function') _renderEndlessLog();
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.remove('hidden');
@@ -3388,6 +3391,10 @@ function _endEndlessStory(clearLog) {
         const log = document.getElementById('subjects-story-log');
         if (log) log.innerHTML = '';
         _clearEndlessLog();
+        // Clear the active-beat pointer too — otherwise the next Start
+        // Story rehydrates with whatever idx the previous story left
+        // behind, which can outlive the seed-only single-beat reset.
+        try { localStorage.removeItem(_ENDLESS_ACTIVE_BEAT_KEY); } catch (_) { }
     }
     // Stop the cycle.
     const t = document.getElementById('endless-story-toggle');
@@ -3670,11 +3677,44 @@ function _clearEndlessLog() {
     try { localStorage.removeItem(_ENDLESS_STORY_LOG_KEY); } catch (_) { }
 }
 
-// Render the editable rows from the persisted line list into
-// #subjects-story-log. Each row is a contenteditable span + a small ×
-// delete button. Edits commit on `input` (debounced via the next event-
-// loop tick) so every keystroke immediately persists; deletes drop the
-// row from the array and re-render.
+// === Active-beat tracking =============================================
+// Each beat is one editable input. The "active beat" is the one that
+// currently has focus (or, if nothing's focused, the last one focused).
+// Suggestion chips write into the active beat instead of appending to a
+// global log. Persisted across reloads under its own key so the user's
+// position survives layout swaps.
+const _ENDLESS_ACTIVE_BEAT_KEY = 'slopfinity-endless-active-beat-idx';
+
+function _getEndlessActiveBeatIdx() {
+    try {
+        const v = parseInt(localStorage.getItem(_ENDLESS_ACTIVE_BEAT_KEY) || '0', 10);
+        return Number.isInteger(v) && v >= 0 ? v : 0;
+    } catch (_) { return 0; }
+}
+function _setEndlessActiveBeatIdx(idx) {
+    if (!Number.isInteger(idx) || idx < 0) return;
+    try { localStorage.setItem(_ENDLESS_ACTIVE_BEAT_KEY, String(idx)); }
+    catch (_) { }
+    // Repaint just the active highlight without a full re-render (avoids
+    // blowing away focus on the input the user just clicked into).
+    try {
+        const log = document.getElementById('subjects-story-log');
+        if (!log) return;
+        log.querySelectorAll('.endless-row').forEach(row => {
+            const rIdx = parseInt(row.getAttribute('data-row-idx'), 10);
+            row.classList.toggle('beat-active', rIdx === idx);
+        });
+    } catch (_) { }
+}
+window._getEndlessActiveBeatIdx = _getEndlessActiveBeatIdx;
+window._setEndlessActiveBeatIdx = _setEndlessActiveBeatIdx;
+
+// Render the editable beats from the persisted line list into
+// #subjects-story-log. Each row is: drag-handle (≡) + contenteditable
+// span + per-row + (add new beat below) + × (delete). The active beat
+// gets `beat-active` so CSS can outline it. Edits commit on `input` so
+// every keystroke immediately persists; deletes drop the row and re-
+// render. Add-next inserts a fresh empty beat below and makes it active.
 function _renderEndlessLog() {
     const log = document.getElementById('subjects-story-log');
     if (!log) return;
@@ -3683,14 +3723,34 @@ function _renderEndlessLog() {
         log.innerHTML = '';
         return;
     }
+    // Clamp the persisted active idx so it can't point past the end after
+    // a delete-from-the-bottom or a fresh story load.
+    let activeIdx = _getEndlessActiveBeatIdx();
+    if (activeIdx >= lines.length) {
+        activeIdx = lines.length - 1;
+        _setEndlessActiveBeatIdx(activeIdx);
+    }
     const rows = lines.map((line, idx) => {
         const safe = _htmlEscape(line || '');
-        return `<div class="endless-row group flex items-start gap-1 px-1 py-0.5 rounded hover:bg-base-300/40" data-row-idx="${idx}">
+        const activeCls = idx === activeIdx ? ' beat-active' : '';
+        return `<div class="endless-row beat-row group flex items-start gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
+                     data-row-idx="${idx}" draggable="true">
+            <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/40 hover:text-base-content/80 select-none cursor-grab"
+                  title="Drag to reorder this beat" aria-label="Drag handle">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                    <line x1="4" y1="8" x2="20" y2="8" />
+                    <line x1="4" y1="12" x2="20" y2="12" />
+                    <line x1="4" y1="16" x2="20" y2="16" />
+                </svg>
+            </span>
             <span contenteditable="true" spellcheck="false"
-                  class="endless-row-text flex-1 min-w-0 whitespace-pre-wrap break-words outline-none focus:bg-base-100/60 focus:ring-1 focus:ring-primary rounded px-1"
+                  class="endless-row-text beat-input flex-1 min-w-0 whitespace-pre-wrap break-words outline-none focus:bg-base-100/60 rounded px-1"
                   data-row-idx="${idx}">${safe}</span>
+            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-50 group-hover:opacity-100 flex-none"
+                    data-row-idx="${idx}" title="Add a new beat below this one" aria-label="Add beat below">+</button>
             <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-50 group-hover:opacity-100 flex-none"
-                    data-row-idx="${idx}" title="Delete this line" aria-label="Delete line">×</button>
+                    data-row-idx="${idx}" title="Delete this beat" aria-label="Delete beat">×</button>
         </div>`;
     });
     log.innerHTML = rows.join('');
@@ -3698,8 +3758,78 @@ function _renderEndlessLog() {
 }
 window._renderEndlessLog = _renderEndlessLog;
 
-// Delegated handlers for the editable rows. One listener per concern
-// (input + click) on the host — beats wiring per-row on every render.
+// Suggestion-chip routing: in story mode, the chip text goes INTO the
+// currently-active beat input rather than appending a new line. If the
+// active beat is empty, the chip text replaces it; otherwise the text is
+// appended with a single space separator. After writing we persist + re-
+// render so the active highlight stays correct and the input box updates.
+function _storyAcceptIntoActive(text) {
+    const t = String(text || '');
+    if (!t) return;
+    const lines = _loadEndlessLogLines();
+    if (!lines.length) {
+        lines.push(t);
+        _persistEndlessLogLines(lines);
+        _setEndlessActiveBeatIdx(0);
+        _renderEndlessLog();
+        return;
+    }
+    let idx = _getEndlessActiveBeatIdx();
+    if (idx >= lines.length) idx = lines.length - 1;
+    const cur = String(lines[idx] || '');
+    lines[idx] = cur.trim() ? (cur.replace(/\s+$/, '') + ' ' + t) : t;
+    _persistEndlessLogLines(lines);
+    _renderEndlessLog();
+}
+window._storyAcceptIntoActive = _storyAcceptIntoActive;
+
+// Insert a fresh empty beat at `afterIdx + 1`, persist, mark it active,
+// re-render, then focus the new input so the user can immediately type
+// or click a suggestion chip into it.
+function _storyAddBeatAfter(afterIdx) {
+    const lines = _loadEndlessLogLines();
+    const at = Math.max(0, Math.min(lines.length, afterIdx + 1));
+    lines.splice(at, 0, '');
+    _persistEndlessLogLines(lines);
+    _setEndlessActiveBeatIdx(at);
+    _renderEndlessLog();
+    // Focus the freshly-rendered input so the next keystroke / chip click
+    // lands in the new beat without an extra click.
+    try {
+        const log = document.getElementById('subjects-story-log');
+        const newSpan = log && log.querySelector(`.beat-input[data-row-idx="${at}"]`);
+        if (newSpan) newSpan.focus();
+    } catch (_) { }
+}
+window._storyAddBeatAfter = _storyAddBeatAfter;
+
+// Move the beat at `from` to `to` (insertion-style — `to` is where the
+// row should END UP after the splice). Persists + re-renders. Used by
+// the HTML5 drag-and-drop handlers below.
+function _storyReorderBeat(from, to) {
+    if (from === to) return;
+    const lines = _loadEndlessLogLines();
+    if (!Number.isInteger(from) || from < 0 || from >= lines.length) return;
+    if (!Number.isInteger(to) || to < 0 || to > lines.length) return;
+    const [moved] = lines.splice(from, 1);
+    const insertAt = to > from ? to - 1 : to;
+    lines.splice(insertAt, 0, moved);
+    _persistEndlessLogLines(lines);
+    // Active beat follows the dragged row so its highlight stays with the
+    // user's intent ("the beat I just moved is the one I'm working on").
+    const oldActive = _getEndlessActiveBeatIdx();
+    let newActive = oldActive;
+    if (oldActive === from) newActive = insertAt;
+    else if (from < oldActive && to > oldActive) newActive = oldActive - 1;
+    else if (from > oldActive && to <= oldActive) newActive = oldActive + 1;
+    _setEndlessActiveBeatIdx(newActive);
+    _renderEndlessLog();
+}
+window._storyReorderBeat = _storyReorderBeat;
+
+// Delegated handlers for the editable beats. One listener per concern
+// (input + click + focus + drag-events) on the document — beats wiring
+// per-row on every render.
 (function _wireEndlessLogEditors() {
     document.addEventListener('input', (e) => {
         const span = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
@@ -3714,25 +3844,131 @@ window._renderEndlessLog = _renderEndlessLog;
         lines[idx] = span.textContent || '';
         _persistEndlessLogLines(lines);
     });
-    document.addEventListener('click', (e) => {
-        const btn = e.target.closest && e.target.closest('#subjects-story-log .endless-row-del');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const idx = parseInt(btn.getAttribute('data-row-idx'), 10);
+    // Focus → mark this beat active. focusin bubbles (focus does not).
+    document.addEventListener('focusin', (e) => {
+        const span = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
+        if (!span) return;
+        const row = span.closest('.endless-row');
+        const idx = row ? parseInt(row.getAttribute('data-row-idx'), 10) : -1;
         if (!Number.isInteger(idx) || idx < 0) return;
-        const lines = _loadEndlessLogLines();
-        if (idx >= lines.length) return;
-        lines.splice(idx, 1);
-        _persistEndlessLogLines(lines);
-        _renderEndlessLog();
+        _setEndlessActiveBeatIdx(idx);
+    });
+    document.addEventListener('click', (e) => {
+        const addBtn = e.target.closest && e.target.closest('#subjects-story-log .endless-row-add');
+        if (addBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = parseInt(addBtn.getAttribute('data-row-idx'), 10);
+            if (Number.isInteger(idx) && idx >= 0) _storyAddBeatAfter(idx);
+            return;
+        }
+        const delBtn = e.target.closest && e.target.closest('#subjects-story-log .endless-row-del');
+        if (delBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = parseInt(delBtn.getAttribute('data-row-idx'), 10);
+            if (!Number.isInteger(idx) || idx < 0) return;
+            const lines = _loadEndlessLogLines();
+            if (idx >= lines.length) return;
+            lines.splice(idx, 1);
+            _persistEndlessLogLines(lines);
+            // Keep active idx in range; if we deleted the active one,
+            // step back to the previous beat.
+            let active = _getEndlessActiveBeatIdx();
+            if (idx === active) active = Math.max(0, active - 1);
+            else if (idx < active) active -= 1;
+            _setEndlessActiveBeatIdx(Math.max(0, active));
+            _renderEndlessLog();
+            return;
+        }
+        // Click anywhere else inside a row → treat the row as the active
+        // beat (click a chip inside the drag-handle area still selects).
+        const row = e.target.closest && e.target.closest('#subjects-story-log .endless-row');
+        if (row) {
+            const idx = parseInt(row.getAttribute('data-row-idx'), 10);
+            if (Number.isInteger(idx) && idx >= 0) _setEndlessActiveBeatIdx(idx);
+        }
+    });
+
+    // === HTML5 drag-and-drop reordering =============================
+    // We track the source row idx on dragstart, paint a `.drag-over`
+    // outline on whichever row the cursor is over, then on drop call
+    // _storyReorderBeat(from, to). The drop target is calculated from
+    // the row the pointer is over PLUS the cursor's vertical position
+    // within that row's bounding box (top half = insert before; bottom
+    // half = insert after) — gives the user fine-grained control on
+    // adjacent beats without needing a separate gap drop-zone.
+    let _dragFromIdx = -1;
+    document.addEventListener('dragstart', (e) => {
+        const row = e.target.closest && e.target.closest('#subjects-story-log .endless-row');
+        if (!row) return;
+        _dragFromIdx = parseInt(row.getAttribute('data-row-idx'), 10);
+        if (!Number.isInteger(_dragFromIdx)) { _dragFromIdx = -1; return; }
+        row.classList.add('dragging');
+        try {
+            // dataTransfer must be set or some browsers cancel the drag.
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(_dragFromIdx));
+        } catch (_) { }
+    });
+    document.addEventListener('dragend', (e) => {
+        const log = document.getElementById('subjects-story-log');
+        if (log) log.querySelectorAll('.endless-row.dragging, .endless-row.drag-over')
+            .forEach(r => r.classList.remove('dragging', 'drag-over'));
+        _dragFromIdx = -1;
+    });
+    document.addEventListener('dragover', (e) => {
+        const row = e.target.closest && e.target.closest('#subjects-story-log .endless-row');
+        if (!row) return;
+        if (_dragFromIdx < 0) return;
+        e.preventDefault(); // required to allow drop
+        try { e.dataTransfer.dropEffect = 'move'; } catch (_) { }
+        const log = document.getElementById('subjects-story-log');
+        if (log) log.querySelectorAll('.endless-row.drag-over').forEach(r => {
+            if (r !== row) r.classList.remove('drag-over');
+        });
+        row.classList.add('drag-over');
+    });
+    document.addEventListener('dragleave', (e) => {
+        const row = e.target.closest && e.target.closest('#subjects-story-log .endless-row');
+        if (!row) return;
+        // Only clear when the pointer truly leaves the row (not just
+        // crosses into a child element). relatedTarget === null means
+        // the drag left the window.
+        if (!e.relatedTarget || !row.contains(e.relatedTarget)) {
+            row.classList.remove('drag-over');
+        }
+    });
+    document.addEventListener('drop', (e) => {
+        const row = e.target.closest && e.target.closest('#subjects-story-log .endless-row');
+        if (!row) return;
+        if (_dragFromIdx < 0) return;
+        e.preventDefault();
+        const toIdx = parseInt(row.getAttribute('data-row-idx'), 10);
+        if (!Number.isInteger(toIdx)) return;
+        // Top half = drop before this row; bottom half = drop after.
+        const rect = row.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        const insertionTo = after ? toIdx + 1 : toIdx;
+        const from = _dragFromIdx;
+        _dragFromIdx = -1;
+        _storyReorderBeat(from, insertionTo);
     });
 })();
 
-// Append a chip's text to the story log when in endless+running mode.
-// Called from the chip click handler in _buildSuggestChip.
+// Suggestion-chip → story routing.
+// Pre-redesign this APPENDED a fresh row per chip; the per-beat redesign
+// now writes the chip into the ACTIVE beat input via
+// _storyAcceptIntoActive (replacing if empty, space-appending if not).
+// Function name kept for back-compat with the call site in
+// _buildSuggestChip.
 function _appendToEndlessLog(text) {
     if (!_endlessRunning || _getSubjectsMode() !== 'endless') return;
+    if (typeof _storyAcceptIntoActive === 'function') {
+        _storyAcceptIntoActive(text);
+        return;
+    }
+    // Fallback (shouldn't normally trigger): append as a new beat.
     const lines = _loadEndlessLogLines();
     lines.push(String(text || ''));
     _persistEndlessLogLines(lines);
