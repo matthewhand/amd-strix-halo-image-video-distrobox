@@ -23,6 +23,14 @@ DOCKER_ENV = [
     "-e", "HSA_XNACK=1",
     "-e", "HSA_FORCE_FINE_GRAIN_PCIE=1",
     "-e", "HSA_ENABLE_SDMA=0",
+    # Force PyTorch to build/use gfx1151-native kernels instead of
+    # gfx11-generic fallback. Needed for bf16 path on the non-distilled
+    # LTX-2.3 dev checkpoint (distilled-fp8 doesn't care).
+    "-e", "PYTORCH_ROCM_ARCH=gfx1151",
+    # Legacy ROCm HSA knobs — harmless on 7.x, may help kernel dispatch
+    # select non-fallback paths on gfx1151.
+    "-e", "GPU_MAX_HEAP_SIZE=100",
+    "-e", "GPU_MAX_ALLOC_PERCENT=100",
 ]
 DOCKER_GPU = [
     "--device", "/dev/dri", "--device", "/dev/kfd",
