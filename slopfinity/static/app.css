@@ -4089,6 +4089,32 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     opacity: 0.5;
 }
 
+/* Master expander wrapping ALL tool_call + tool_result detail inside a
+   single fused thought bubble. Closed by default — user sees only the
+   cogs + one-line summary ("3 tool calls: …") until they click.
+   Per-item rendering inside `.chat-thought-body` is now plain <div>s
+   (no nested <details>) so the master expander is the ONLY collapse
+   surface in the bubble. */
+.chat-thought-detail-wrap {
+    display: inline;
+}
+
+.chat-thought-summary {
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 10px;
+    opacity: 0.75;
+    user-select: none;
+}
+
+.chat-thought-summary:hover {
+    opacity: 1;
+}
+
+.chat-thought-body {
+    margin-top: 0.25rem;
+}
+
 /* Animated gear-cogs prefix for chat-thought bubbles. Replaces the static
    💭 glyph while tool calls are in flight — two interlocking 12px cogs,
    one CW, one CCW, opacity 0.6 so it reads as ambient "thinking" not as
