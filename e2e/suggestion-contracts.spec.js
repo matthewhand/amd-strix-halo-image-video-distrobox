@@ -42,12 +42,18 @@ async function setMode(page, mode) {
 async function stubSuggestionResponse(page, suggestions) {
     // Replace fetch for /subjects/suggest with a deterministic response.
     // Other endpoints fall through to the real network.
+    // Server response shape is now a per-mode dict: {story, simple, chat}.
+    // _fetchSuggestBatch picks the slot based on subjects mode. We mirror
+    // the same chip set into all three slots so tests stay mode-agnostic.
     await page.addInitScript((stubChips) => {
         const realFetch = window.fetch.bind(window);
         window.fetch = async function (input, init) {
             const url = typeof input === 'string' ? input : input.url;
             if (url && url.includes('/subjects/suggest')) {
-                return new Response(JSON.stringify({ suggestions: stubChips }), {
+                const body = JSON.stringify({
+                    suggestions: { story: stubChips, simple: stubChips, chat: stubChips },
+                });
+                return new Response(body, {
                     status: 200, headers: { 'Content-Type': 'application/json' },
                 });
             }
@@ -101,7 +107,10 @@ test('endless: + click renders empty mask, no blank-chip placeholders', async ({
             const url = typeof input === 'string' ? input : input.url;
             if (url && url.includes('/subjects/suggest')) {
                 await new Promise(r => setTimeout(r, 800)); // simulate slow LLM
-                return new Response(JSON.stringify({ suggestions: ['x', 'y'] }), {
+                const arr = ['x', 'y'];
+                return new Response(JSON.stringify({
+                    suggestions: { story: arr, simple: arr, chat: arr },
+                }), {
                     status: 200, headers: { 'Content-Type': 'application/json' },
                 });
             }
@@ -161,7 +170,7 @@ test('endless: prefetch does not fire when typing seed', async ({ page }) => {
         return route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ suggestions: ['stub'] }),
+            body: JSON.stringify({ suggestions: { story: ['stub'], simple: ['stub'], chat: ['stub'] } }),
         });
     });
     await bootstrap(page);
@@ -301,7 +310,7 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
         suggestCalls += 1;
         return route.fulfill({
             status: 200, contentType: 'application/json',
-            body: JSON.stringify({ suggestions: ['live-llm-result'] }),
+            body: JSON.stringify({ suggestions: { story: ['live-llm-result'], simple: ['live-llm-result'], chat: ['live-llm-result'] } }),
         });
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
@@ -363,7 +372,7 @@ test('raw: no chip stack, no suggestion fetches', async ({ page }) => {
         suggestCalls += 1;
         return route.fulfill({
             status: 200, contentType: 'application/json',
-            body: JSON.stringify({ suggestions: ['stub'] }),
+            body: JSON.stringify({ suggestions: { story: ['stub'], simple: ['stub'], chat: ['stub'] } }),
         });
     });
     await bootstrap(page);
