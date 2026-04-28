@@ -23,12 +23,22 @@ async function bootstrap(page) {
         const url = new URL(route.request().url());
         const promptId = url.searchParams.get('prompt_id') || 'default';
         const opener = url.searchParams.get('opener');
-        const suggestions = opener === '1'
-            ? [`opener-from-${promptId}`]
-            : Array.from({ length: 6 }, (_, i) => `chip-${promptId}-${i + 1}`);
+        // Server response shape (post-23ec1b1) is a per-mode dict, not
+        // a flat array. _fetchSuggestBatch picks dict.story for endless
+        // and dict.simple for simple/raw. Opener path is handled by
+        // _startEndlessStory which still reads d.suggestions[0]; we keep
+        // a flat list for that case (server returns the dict either way
+        // but _startEndlessStory only looks at the first entry).
+        if (opener === '1') {
+            return route.fulfill({
+                status: 200, contentType: 'application/json',
+                body: JSON.stringify({ suggestions: [`opener-from-${promptId}`] }),
+            });
+        }
+        const arr = Array.from({ length: 6 }, (_, i) => `chip-${promptId}-${i + 1}`);
         return route.fulfill({
             status: 200, contentType: 'application/json',
-            body: JSON.stringify({ suggestions }),
+            body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
         });
     });
     await page.addInitScript(() => {
@@ -299,13 +309,17 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
         const url = new URL(route.request().url());
         const promptId = url.searchParams.get('prompt_id') || 'default';
         const opener = url.searchParams.get('opener');
-        const suggestions = opener === '1'
-            ? [`opener-from-${promptId}`]
-            : Array.from({ length: 6 }, (_, i) => `chip-${promptId}-${i + 1}`);
         await new Promise(r => setTimeout(r, 800));
+        if (opener === '1') {
+            return route.fulfill({
+                status: 200, contentType: 'application/json',
+                body: JSON.stringify({ suggestions: [`opener-from-${promptId}`] }),
+            });
+        }
+        const arr = Array.from({ length: 6 }, (_, i) => `chip-${promptId}-${i + 1}`);
         return route.fulfill({
             status: 200, contentType: 'application/json',
-            body: JSON.stringify({ suggestions }),
+            body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
         });
     });
     await page.addInitScript(() => {
