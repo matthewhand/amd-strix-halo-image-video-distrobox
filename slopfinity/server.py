@@ -45,6 +45,17 @@ if not os.path.isdir(EXP_DIR):
 TTS_OUT_DIR = os.path.join(EXP_DIR, "tts")
 os.makedirs(TTS_OUT_DIR, exist_ok=True)
 
+# Module-level mutex serializing LLM calls. The local providers
+# (LM Studio / llama.cpp / Ollama) are typically single-GPU and a single
+# in-flight request; firing concurrent requests at them either rejects
+# the second one outright or silently degrades latency for both. Wrapping
+# every lmstudio_call / lmstudio_chat_raw to_thread invocation in this
+# lock turns the dashboard's parallel auto-suggest + interactive-chat +
+# enhance traffic into a sequential queue from the model's POV. Each
+# call still runs off-loop (asyncio.to_thread), so FastAPI's event loop
+# stays responsive — only the LLM-backed coroutines wait their turn.
+_LLM_LOCK = asyncio.Lock()
+
 app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
@@ -340,7 +351,7 @@ async def enhance(data: dict = Body(...)):
                 },
             },
         }
-        async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+        async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
             raw = await asyncio.to_thread(lmstudio_call, sys_p, prompt, distribute_schema)
         # Best-effort JSON extraction (schema-compliant providers will
         # already give us pure JSON; the loose-find paths handle providers
@@ -390,7 +401,7 @@ async def enhance(data: dict = Body(...)):
     }
     # Append a one-line schema reminder for non-compliant providers.
     user_msg = prompt + '\n\nReturn ONLY a JSON object: {"rewrite": "..."}'
-    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
         raw = await asyncio.to_thread(lmstudio_call, config["enhancer_prompt"], user_msg, rewrite_schema)
     # Schema-compliant path: parse {"rewrite": "..."}.
     rewrite_text = ""
@@ -460,7 +471,7 @@ async def enhance_distribute(data: dict = Body(...)):
     # Fan-out makes multiple LLM calls. Hold acquire_gpu across the whole
     # batch so we suspend/resume LM Studio just once, not per call.
     # safety_gb=4 since this is just LLM rewrites, not a 60 GB diffusion stage.
-    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
         result = await asyncio.to_thread(
             _fanout.fanout,
             core,
@@ -642,7 +653,7 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     # Append a one-line schema reminder to the user message
     user_msg += '\n\nReturn ONLY a JSON object: {"story": ["..."], "simple": ["..."], "chat": ["..."]}'
     
-    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
         raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg, response_format)
 
     suggestions_dict = {"story": [], "simple": [], "chat": []}
@@ -916,7 +927,7 @@ async def chat_endpoint(payload: dict = Body(...)):
     messages = [{"role": "system", "content": sys_msg}] + history
 
     tool_audit = []  # surfaced to the client for UI rendering
-    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
+    async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
         for _ in range(_CHAT_MAX_TURNS):
             msg = await asyncio.to_thread(
                 lmstudio_chat_raw, messages, _CHAT_TOOLS_MANIFEST,
@@ -2925,7 +2936,8 @@ async def chaos_rotator():
                 sys_p = tmpl.format(subjects_csv=sample)
             except Exception:
                 sys_p = tmpl  # malformed user template — fall back to raw
-            raw = await asyncio.to_thread(lmstudio_call, sys_p, "Give me 8 tangentially-related subject ideas.")
+            async with _LLM_LOCK:
+                raw = await asyncio.to_thread(lmstudio_call, sys_p, "Give me 8 tangentially-related subject ideas.")
             arr = []
             try:
                 parsed = json.loads(raw)

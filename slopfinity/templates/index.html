@@ -3086,9 +3086,9 @@
                                     Pause</button>
                                 <button class="btn btn-sm btn-success join-item" onclick="schedPost('/resume')">▶
                                     Resume</button>
-                                <button class="btn btn-sm btn-primary join-item" onclick="schedPost('/free')">🧹 Free
+                                <button class="btn btn-sm btn-primary join-item" onclick="if(confirm('Free ComfyUI?\n\nThis stops the running ComfyUI instance to release VRAM. The next queued iter will spin it back up. Active job may fail.')) schedPost('/free')">🧹 Free
                                     ComfyUI</button>
-                                <button class="btn btn-sm btn-error join-item" onclick="schedPost('/emergency_free')">🚨
+                                <button class="btn btn-sm btn-error join-item" onclick="if(confirm('EMERGENCY FREE — kill ALL services and clear caches?\n\nDestroys any running job, releases VRAM, and resets scheduler state. Use only when stuck.')) schedPost('/emergency_free')">🚨
                                     Emergency free</button>
                             </div>
 
