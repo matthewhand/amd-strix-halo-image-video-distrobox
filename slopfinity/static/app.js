@@ -2695,7 +2695,160 @@ function _getChatHistory() {
 function _setChatHistory(arr) {
     const trimmed = (Array.isArray(arr) ? arr : []).slice(-_CHAT_HISTORY_MAX);
     try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(trimmed)); } catch (_) { }
+    // Mirror to the tree as the active chain — see _chatTree* below.
+    _chatSyncTreeFromHistory(trimmed);
 }
+
+// ── Chat message tree (forking + branch nav) ───────────────────────────────
+// Each message is a node with a `parent` pointer. Editing a user message
+// creates a NEW sibling node sharing the same parent — the original chain
+// still exists; the active chain just switches to the new sibling. Branch
+// nav under each forked message lets you flip between siblings.
+//
+// Storage:
+//   { nodes: { [id]: { id, role, content, tool_calls, name, parent, ts } },
+//     active: <leaf id>, nextId: int }
+// Active chain = walk from `active` back to root via parent pointers,
+// reverse → array of message objects (matches the legacy flat-array shape
+// `_getChatHistory` returns, so render + send paths Just Work).
+const _CHAT_TREE_KEY = 'slopfinity-chat-tree-v1';
+
+function _chatGetTree() {
+    try {
+        const raw = localStorage.getItem(_CHAT_TREE_KEY);
+        if (raw) {
+            const t = JSON.parse(raw);
+            if (t && t.nodes && typeof t.nextId === 'number') return t;
+        }
+    } catch (_) { }
+    return { nodes: {}, active: null, nextId: 1 };
+}
+function _chatSetTree(tree) {
+    try { localStorage.setItem(_CHAT_TREE_KEY, JSON.stringify(tree)); } catch (_) { }
+}
+// Active chain: walk parent pointers from active leaf back to root,
+// then reverse so chronological order matches the legacy history array.
+function _chatActiveChain() {
+    const tree = _chatGetTree();
+    if (!tree.active || !tree.nodes[tree.active]) return [];
+    const chain = [];
+    let cur = tree.active;
+    const seen = new Set();
+    while (cur && tree.nodes[cur] && !seen.has(cur)) {
+        seen.add(cur);
+        chain.push(tree.nodes[cur]);
+        cur = tree.nodes[cur].parent;
+    }
+    return chain.reverse();
+}
+// Sync the tree from a flat history array (called by _setChatHistory).
+// Strategy: if the LEGACY array's tail extends the current active chain,
+// just append new nodes. Otherwise rebuild from scratch — preserves the
+// fork tree across normal sends, lets explicit forks (via _chatForkAt)
+// override.
+function _chatSyncTreeFromHistory(hist) {
+    const tree = _chatGetTree();
+    const chain = _chatActiveChain();
+    // If hist exactly matches the current chain, no-op.
+    const matches = hist.length === chain.length && hist.every((m, i) =>
+        chain[i] && chain[i].role === m.role && chain[i].content === m.content
+            && JSON.stringify(chain[i].tool_calls || null) === JSON.stringify(m.tool_calls || null)
+    );
+    if (matches) return;
+    // If hist is a strict EXTENSION of the chain, append the new nodes
+    // to the active leaf (preserves any sibling branches elsewhere).
+    if (hist.length > chain.length && chain.every((c, i) => hist[i]
+        && hist[i].role === c.role && hist[i].content === c.content)) {
+        let parent = tree.active;
+        for (let i = chain.length; i < hist.length; i++) {
+            const id = String(tree.nextId++);
+            tree.nodes[id] = { id, ...hist[i], parent, ts: Date.now() };
+            parent = id;
+        }
+        tree.active = parent;
+        _chatSetTree(tree);
+        return;
+    }
+    // Divergence (e.g. truncation from refresh / external mutation):
+    // rebuild a flat chain. Sibling branches are dropped — safe because
+    // truncate-and-refresh is the user's explicit "undo this branch" path.
+    const fresh = { nodes: {}, active: null, nextId: 1 };
+    let parent = null;
+    hist.forEach(m => {
+        const id = String(fresh.nextId++);
+        fresh.nodes[id] = { id, ...m, parent, ts: Date.now() };
+        parent = id;
+    });
+    fresh.active = parent;
+    _chatSetTree(fresh);
+}
+// Fork at the user message with id `nodeId`: create a NEW sibling node
+// (same parent) carrying `newContent`, set it as the active leaf, save
+// the resulting linear chain via _setChatHistory so the legacy send
+// path picks it up. Returns the new node's id.
+function _chatForkAt(nodeId, newContent) {
+    const tree = _chatGetTree();
+    const orig = tree.nodes[nodeId];
+    if (!orig) return null;
+    const id = String(tree.nextId++);
+    tree.nodes[id] = {
+        id,
+        role: orig.role,           // preserved (only edit user roles in UI)
+        content: newContent,
+        parent: orig.parent,        // shared parent → siblings
+        ts: Date.now(),
+    };
+    tree.active = id;
+    _chatSetTree(tree);
+    // Mirror to the legacy flat history so _sendChatMessage's history
+    // loop sees the truncated + edited chain.
+    const chain = _chatActiveChain();
+    try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(chain)); } catch (_) { }
+    return id;
+}
+// Switch the active leaf to whichever leaf descends from `targetNodeId`.
+// If the target node is itself a leaf (no children), use it directly.
+// Otherwise walk down its descendant chain to a leaf — preserves the
+// "you were viewing branch B; now switching to branch A's most-recent
+// continuation" UX.
+function _chatSwitchActiveTo(targetNodeId) {
+    const tree = _chatGetTree();
+    if (!tree.nodes[targetNodeId]) return;
+    // Find a leaf descendant. BFS through the children of targetNodeId.
+    const childrenOf = (id) => Object.values(tree.nodes).filter(n => n.parent === id).map(n => n.id);
+    let cur = targetNodeId;
+    let kids = childrenOf(cur);
+    const seen = new Set([cur]);
+    while (kids.length && !seen.has(kids[0])) {
+        // Pick the most-recently-created child (highest ts) so the
+        // user lands on their LATEST continuation of that branch.
+        const next = kids.sort((a, b) => (tree.nodes[b].ts || 0) - (tree.nodes[a].ts || 0))[0];
+        seen.add(next);
+        cur = next;
+        kids = childrenOf(cur);
+    }
+    tree.active = cur;
+    _chatSetTree(tree);
+    // Mirror to legacy history so _renderChatLog (which reads from
+    // _getChatHistory) picks up the new chain.
+    const chain = _chatActiveChain();
+    try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(chain)); } catch (_) { }
+}
+// Sibling lookup for the branch nav. Returns array of sibling node ids
+// (the message at this position across forks) sorted by creation time.
+function _chatSiblingsOf(nodeId) {
+    const tree = _chatGetTree();
+    const node = tree.nodes[nodeId];
+    if (!node) return [];
+    return Object.values(tree.nodes)
+        .filter(n => n.parent === node.parent && n.role === node.role)
+        .sort((a, b) => (a.ts || 0) - (b.ts || 0))
+        .map(n => n.id);
+}
+window._chatForkAt = _chatForkAt;
+window._chatSwitchActiveTo = _chatSwitchActiveTo;
+window._chatSiblingsOf = _chatSiblingsOf;
+window._chatActiveChain = _chatActiveChain;
 
 function _resetChat() {
     if (!confirm('Clear chat history? This wipes the current conversation.')) return;
@@ -2759,10 +2912,50 @@ function _renderChatLog() {
             </button>` : ''}
         </div>`;
     };
+    // Also pull the active-chain nodes so each rendered message can
+    // be paired with its tree id (drives the Edit + branch-nav UI).
+    const _chain = (typeof _chatActiveChain === 'function') ? _chatActiveChain() : [];
     log.innerHTML = history.map((m, idx) => {
         const role = m.role || '';
+        // Match the message to its tree node (same idx = same position
+        // in the active chain). Use this for fork ops + sibling nav.
+        const node = _chain[idx] || null;
+        const nodeId = node && node.id;
         if (role === 'user') {
-            return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap relative chat-bubble-host">${_htmlEscape(m.content || '')}${_bubbleActions(m.content || '', false, idx)}</div></div>`;
+            // User bubble gets:
+            //   - an inline Edit button next to the existing copy/refresh cluster
+            //   - a branch-nav badge below the bubble if this position has
+            //     siblings (forks)
+            const sibs = (nodeId && typeof _chatSiblingsOf === 'function')
+                ? _chatSiblingsOf(nodeId) : [];
+            const isForked = sibs.length > 1;
+            const myIdx = isForked ? sibs.indexOf(nodeId) + 1 : 0;
+            const navHTML = isForked ? `<div class="chat-branch-nav" data-pos-idx="${idx}">
+                ${sibs.map((sid, i) => {
+                    const isActive = sid === nodeId;
+                    return `<button type="button" class="chat-branch-pill${isActive ? ' chat-branch-active' : ''}"
+                        title="Switch to branch ${i + 1} of ${sibs.length}"
+                        onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${i + 1}</button>`;
+                }).join('')}
+            </div>` : '';
+            const editBtn = nodeId ? `<button type="button" class="chat-bubble-action chat-bubble-edit"
+                title="Edit + fork conversation"
+                onclick='_chatBeginEdit("${nodeId}", this)'>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+            </button>` : '';
+            // Inject the Edit button alongside the existing copy/refresh cluster.
+            // _bubbleActions emits the copy icon for user bubbles; we splice
+            // edit in by string-replacement on the closing </div>.
+            const baseActions = _bubbleActions(m.content || '', false, idx);
+            const actions = baseActions.replace('</div>', editBtn + '</div>');
+            return `<div class="chat chat-end" data-msg-idx="${idx}" data-node-id="${nodeId || ''}">
+                <div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap relative chat-bubble-host">${_htmlEscape(m.content || '')}${actions}</div>
+                ${navHTML}
+            </div>`;
         }
         if (role === 'assistant') {
             const content = (m.content || '').trim();
@@ -2823,6 +3016,87 @@ function _renderChatLog() {
     log.scrollTop = log.scrollHeight;
 }
 window._renderChatLog = _renderChatLog;
+
+// Begin inline edit of a user message identified by tree node id.
+// Replaces the bubble's content with a textarea + Send/Cancel buttons.
+// On Send: forks at this node with the new content + truncates the
+// active chain + re-fires _sendChatMessage so the assistant replies
+// to the edited turn. On Cancel: re-renders to restore.
+window._chatBeginEdit = function (nodeId, btn) {
+    const tree = _chatGetTree();
+    const node = tree.nodes[nodeId];
+    if (!node || node.role !== 'user') return;
+    const bubble = btn.closest('.chat-bubble');
+    if (!bubble) return;
+    const original = node.content || '';
+    bubble.innerHTML = `<div class="chat-bubble-edit-form">
+        <textarea class="chat-bubble-edit-input textarea textarea-bordered text-xs w-full"
+            rows="3">${_htmlEscape(original)}</textarea>
+        <div class="flex gap-1 mt-1 justify-end">
+            <button type="button" class="btn btn-xs btn-ghost"
+                onclick='_renderChatLog()'>Cancel</button>
+            <button type="button" class="btn btn-xs btn-primary"
+                onclick='_chatCommitEdit("${nodeId}", this)'>Send fork →</button>
+        </div>
+    </div>`;
+    const ta = bubble.querySelector('textarea');
+    if (ta) {
+        ta.focus();
+        // Move cursor to end.
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+    }
+};
+
+window._chatCommitEdit = function (nodeId, btn) {
+    const ta = btn.closest('.chat-bubble-edit-form').querySelector('textarea');
+    const newText = (ta && ta.value || '').trim();
+    if (!newText) return;
+    // Fork: creates a sibling user node + sets it as active leaf +
+    // mirrors to legacy history (truncated to before the parent +
+    // ending at the new node).
+    const newId = _chatForkAt(nodeId, newText);
+    if (!newId) return;
+    // Re-render to show the new branch immediately.
+    _renderChatLog();
+    // Trigger the assistant's reply for the new branch. _sendChatMessage
+    // reads the input field; we stuff our edited text in there + invoke
+    // it. Behavior matches "send" except history is already correct.
+    const input = document.getElementById('subjects-chat-input');
+    if (input) {
+        // The forked chain ALREADY ends with the user's edited message,
+        // so don't re-append by submitting through the input. Instead
+        // call /chat directly with the active history.
+        const sendBtn = document.getElementById('subjects-chat-send');
+        if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '…'; }
+        const chain = _chatActiveChain();
+        fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: chain }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (d && d.ok && Array.isArray(d.messages)) {
+                    _setChatHistory(d.messages);
+                    _renderChatLog();
+                } else {
+                    const after = _getChatHistory();
+                    after.push({ role: 'assistant', content: `Error: ${(d && d.error) || 'chat request failed'}` });
+                    _setChatHistory(after);
+                    _renderChatLog();
+                }
+            })
+            .catch(e => {
+                const after = _getChatHistory();
+                after.push({ role: 'assistant', content: `Network error: ${e.message}` });
+                _setChatHistory(after);
+                _renderChatLog();
+            })
+            .finally(() => {
+                if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+            });
+    }
+};
 
 // Render a JSON value as a styled key-value tree instead of raw text.
 // Each scalar gets a type-aware color:
