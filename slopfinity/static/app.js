@@ -3016,7 +3016,20 @@ function _renderChatLog() {
                     </details>`;
                 }).join('');
                 const body = content ? `<div class="whitespace-pre-wrap mb-1 italic opacity-90">${_htmlEscape(content)}</div>` : '';
-                return `<div class="chat chat-start"><div class="chat-thought text-xs"><span class="opacity-60 text-[11px]">💭</span> ${body}${callBlocks}</div></div>`;
+                // Animated cogs replace the static 💭 — same semantics
+                // (assistant is "thinking" / about to call tools) but
+                // motion communicates "in flight" better than a glyph
+                // that's identical for live + replayed turns. CSS in
+                // app.css (.chat-cogs / @keyframes chat-cog-spin*).
+                const cogsHTML = `<span class="chat-cogs" aria-hidden="true" title="thinking…">
+                    <svg class="chat-cog" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+                    </svg>
+                    <svg class="chat-cog-rev" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
+                    </svg>
+                </span>`;
+                return `<div class="chat chat-start"><div class="chat-thought text-xs">${cogsHTML}${body}${callBlocks}</div></div>`;
             }
             const body = content ? `<div class="whitespace-pre-wrap">${_htmlEscape(content)}</div>` : '';
             return `<div class="chat chat-start"><div class="chat-bubble text-xs relative chat-bubble-host">${body}${_bubbleActions(content, true, idx)}</div></div>`;
@@ -9120,6 +9133,98 @@ window._removeEndlessRow = _removeEndlessRow;
 //   With history:  4 contextual continuations of the conversation
 //   Empty history: 4 conversation-starter prompts the user can pick to
 //                  open a session (e.g. "queue 3 dragons", "what's running?")
+// ---------------------------------------------------------------------------
+// Chat suggestion-cluster controls — radio mode (helpful/playful/terse) +
+// numeric stepper for chip count. Both persisted in localStorage so the
+// user's pref survives reload.
+//
+// NOTE: the MODE pill is currently UI-only — wiring the value through to the
+// /subjects/suggest fetch (so e.g. "playful" actually changes prompt tone)
+// is a follow-up. The current chat suggestions already honor the user's
+// _getDefaultPromptId() registry pick, and overlapping the chat pane with
+// a SECOND, narrower mode dimension would conflict with that. Surface for
+// now, plumb later. See TODO inside _chatSuggestRefreshCluster.
+//
+// The COUNT stepper IS wired: _renderChatReplies reads
+// `slopfinity-chat-suggest-count` and adjusts how many chips it displays
+// (server still returns up to n=6 buffer either way).
+// ---------------------------------------------------------------------------
+const _CHAT_SUGGEST_COUNT_KEY = 'slopfinity-chat-suggest-count';
+const _CHAT_SUGGEST_MODE_KEY = 'slopfinity-chat-suggest-mode';
+const _CHAT_SUGGEST_COUNT_MIN = 1;
+const _CHAT_SUGGEST_COUNT_MAX = 6;
+
+function _getChatSuggestCount() {
+    try {
+        const raw = parseInt(localStorage.getItem(_CHAT_SUGGEST_COUNT_KEY) || '', 10);
+        if (Number.isFinite(raw) && raw >= _CHAT_SUGGEST_COUNT_MIN && raw <= _CHAT_SUGGEST_COUNT_MAX) return raw;
+    } catch (_) { }
+    return 3;
+}
+function _setChatSuggestCount(n) {
+    const clamped = Math.max(_CHAT_SUGGEST_COUNT_MIN, Math.min(_CHAT_SUGGEST_COUNT_MAX, n | 0));
+    try { localStorage.setItem(_CHAT_SUGGEST_COUNT_KEY, String(clamped)); } catch (_) { }
+    const lbl = document.getElementById('chat-suggest-count');
+    if (lbl) {
+        lbl.textContent = String(clamped);
+        lbl.setAttribute('data-count', String(clamped));
+    }
+    if (typeof _renderChatReplies === 'function') _renderChatReplies();
+    return clamped;
+}
+function _chatSuggestCountStep(delta) {
+    return _setChatSuggestCount(_getChatSuggestCount() + (delta | 0));
+}
+window._getChatSuggestCount = _getChatSuggestCount;
+window._setChatSuggestCount = _setChatSuggestCount;
+window._chatSuggestCountStep = _chatSuggestCountStep;
+
+function _getChatSuggestMode() {
+    try {
+        const v = localStorage.getItem(_CHAT_SUGGEST_MODE_KEY);
+        if (v === 'helpful' || v === 'playful' || v === 'terse') return v;
+    } catch (_) { }
+    return 'helpful';
+}
+function _setChatSuggestMode(v) {
+    if (v !== 'helpful' && v !== 'playful' && v !== 'terse') return;
+    try { localStorage.setItem(_CHAT_SUGGEST_MODE_KEY, v); } catch (_) { }
+    // TODO: thread the mode through to /subjects/suggest as a separate
+    // query param (e.g. &chat_mode=) so the server can layer a tone
+    // adjustment on top of the active prompt_id. For now this is UI
+    // scaffold only — selection persists but doesn't alter the fetch.
+    const inputs = document.querySelectorAll('input[name="chat-suggest-mode"]');
+    inputs.forEach(el => { el.checked = (el.value === v); });
+}
+window._getChatSuggestMode = _getChatSuggestMode;
+window._setChatSuggestMode = _setChatSuggestMode;
+
+// Hydrate the cluster's controls from localStorage and wire change handlers.
+// Idempotent — safe to call multiple times (re-binds are cheap and the
+// element set is small).
+function _initChatSuggestCluster() {
+    // Count badge.
+    const lbl = document.getElementById('chat-suggest-count');
+    if (lbl) {
+        const n = _getChatSuggestCount();
+        lbl.textContent = String(n);
+        lbl.setAttribute('data-count', String(n));
+    }
+    // Mode radios.
+    const cur = _getChatSuggestMode();
+    document.querySelectorAll('input[name="chat-suggest-mode"]').forEach(el => {
+        el.checked = (el.value === cur);
+        if (!el._chatSuggestWired) {
+            el.addEventListener('change', () => {
+                if (el.checked) _setChatSuggestMode(el.value);
+            });
+            el._chatSuggestWired = true;
+        }
+    });
+}
+window._initChatSuggestCluster = _initChatSuggestCluster;
+document.addEventListener('DOMContentLoaded', _initChatSuggestCluster);
+
 async function _renderChatReplies() {
     const host = document.getElementById('subjects-chat-replies');
     if (!host) return;
@@ -9159,8 +9264,13 @@ async function _renderChatReplies() {
     }
     // Stash the spare buffer on the host element so the click handler
     // can pull from it without re-fetching. Survives across renders
-    // until the next regen wipes innerHTML.
-    host._chatReplyBuffer = arr.slice(3); // 3 displayed, rest reserved
+    // until the next regen wipes innerHTML. Display count is user-
+    // configurable via the +/- stepper in the suggestions header
+    // (localStorage `slopfinity-chat-suggest-count`, default 3, clamped
+    // to [1, 6]). Whatever's left over after the displayed slice is the
+    // prefetch buffer for consume-and-refill.
+    const displayCount = (typeof _getChatSuggestCount === 'function') ? _getChatSuggestCount() : 3;
+    host._chatReplyBuffer = arr.slice(displayCount);
     // Reply chips share the same primary-outline aesthetic as every
     // OTHER suggestion chip in the dashboard (simple-mode marquee
     // chips via _buildSuggestChip, endless-row chips). Was btn-ghost
@@ -9176,7 +9286,7 @@ async function _renderChatReplies() {
     // outer attribute is critical — JSON.stringify produces a
     // "-wrapped string and would close a "-wrapped onclick at the
     // first inner ". (See chat-suggestion-send.spec.js.)
-    host.innerHTML = arr.slice(0, 3).map(s =>
+    host.innerHTML = arr.slice(0, displayCount).map(s =>
         `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
             onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
             ${_htmlEscape(s)}
