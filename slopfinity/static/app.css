@@ -3163,11 +3163,17 @@ textarea::placeholder {
    Three soft scale-up beats over 1.6 s, then reset to natural size.
    transform-origin centers the pulse so the surrounding chrome
    doesn't shift. */
+/* oklch() not hsl() — daisyUI 4.10 ships --p as an OKLCH triple, so
+   hsl(var(--p)) is invalid syntax and the property is dropped at
+   parse time. Same bug we fixed for .chat-thought. The pulse stays
+   PRIMARY-themed throughout (no off-theme alarm color regardless of
+   how high the count grows — user explicitly wanted high-count
+   never to break theme). */
 @keyframes queue-count-pulse {
-    0%   { transform: scale(1);    color: hsl(var(--p)); }
-    20%  { transform: scale(1.35); color: hsl(var(--p)); text-shadow: 0 0 12px hsl(var(--p) / 0.6); }
-    40%  { transform: scale(1);    color: hsl(var(--p)); }
-    60%  { transform: scale(1.18); color: hsl(var(--p)); }
+    0%   { transform: scale(1);    color: oklch(var(--p)); }
+    20%  { transform: scale(1.35); color: oklch(var(--p)); text-shadow: 0 0 12px oklch(var(--p) / 0.6); }
+    40%  { transform: scale(1);    color: oklch(var(--p)); }
+    60%  { transform: scale(1.18); color: oklch(var(--p)); }
     100% { transform: scale(1);    color: inherit; text-shadow: none; }
 }
 .queue-count-pulse {
