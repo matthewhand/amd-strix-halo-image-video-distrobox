@@ -7086,9 +7086,58 @@ async function openSettingsToSuggestionPrompt() {
     });
 }
 
+// Drawer-style settings open/close. The legacy `<dialog>` was unworkable
+// at narrow viewports — the modal-box capped at max-w-4xl and the inner
+// 9-tab strip overflowed in ways that broke touch scrolling. The drawer
+// pattern (matching the queue drawer) gives the user a full-height side
+// panel they can swipe / tap-overlay to dismiss. The legacy
+// `settings-modal.close()` callsites still work via the openSettings()
+// shim — it sets the drawer-toggle checkbox to false.
+function _setSettingsOpen(open) {
+    const tog = document.getElementById('settings-drawer-toggle');
+    if (tog) {
+        tog.checked = !!open;
+        tog.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+}
+window._setSettingsOpen = _setSettingsOpen;
+
+// Settings tab strip — page-scroll the overflow strip ±240 px when the
+// user clicks the chevron overlays. Also wires up an `at-start`/`at-end`
+// class toggle so the matching arrow fades out at the edges (CSS owns
+// the visual state). 240 px ≈ 2-3 tab widths per click.
+function _settingsTabsScroll(direction) {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    strip.scrollBy({ left: direction * 240, behavior: 'smooth' });
+}
+window._settingsTabsScroll = _settingsTabsScroll;
+function _refreshSettingsTabsArrows() {
+    const strip = document.getElementById('settings-tab-strip');
+    const wrap = strip && strip.parentElement;
+    if (!strip || !wrap) return;
+    const atStart = strip.scrollLeft <= 4;
+    const atEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 4;
+    wrap.classList.toggle('at-start', atStart);
+    wrap.classList.toggle('at-end', atEnd);
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    strip.addEventListener('scroll', _refreshSettingsTabsArrows, { passive: true });
+    // Also recompute when the drawer opens (strip dims may have been 0
+    // before the drawer-content hydrated).
+    const tog = document.getElementById('settings-drawer-toggle');
+    if (tog) tog.addEventListener('change', () => setTimeout(_refreshSettingsTabsArrows, 60));
+    _refreshSettingsTabsArrows();
+});
+
 async function openSettings() {
     const modal = $('settings-modal');
     if (!modal) return;
+    // Open the drawer FIRST so any subsequent scrollIntoView / focus work
+    // happens against a visible panel.
+    _setSettingsOpen(true);
     // Pre-fill the Subjects-mode tunables (Endless cycle interval + Fresh
     // marquee toggle) — they live in localStorage, not in the server
     // settings payload, so hydrate them directly before the modal opens.
@@ -7247,7 +7296,12 @@ async function openSettings() {
                 if (opt) themeSel.value = current;
             }
         }
-        modal.showModal();
+        // Drawer is already open from the early _setSettingsOpen(true)
+        // call above. Keep `.showModal()` as a defensive fallback so a
+        // future re-introduction of the dialog form still works.
+        if (typeof modal.showModal === 'function') {
+            try { modal.showModal(); } catch (_) { /* not a dialog → drawer mode */ }
+        }
         reloadModels();
     } catch (e) {
         console.error('openSettings failed', e);
@@ -7431,8 +7485,13 @@ async function saveSettings() {
             body: JSON.stringify({ active: bsel.value }),
         });
     }
+    // Close the drawer (was modal.close() under the dialog era — kept
+    // as a defensive fallback if the element ever reverts to <dialog>).
     const modal = $('settings-modal');
-    if (modal && modal.close) modal.close();
+    if (modal && typeof modal.close === 'function') {
+        try { modal.close(); } catch (_) { /* drawer mode → close via toggle */ }
+    }
+    if (typeof window._setSettingsOpen === 'function') window._setSettingsOpen(false);
 }
 
 async function resetFleetPrompt() {
@@ -8530,7 +8589,11 @@ window._removeSimpleRow = _removeSimpleRow;
         const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
         let arr = [];
         try {
-            const qs = '?n=4&fresh=1&_t=' + Date.now()
+            // Fetch n=6 (2 extra) so we have spares ready when the user
+            // clicks a chip → that chip animates out → we slide-in the
+            // next from the buffer. Mirrors the endless-row consume-and-
+            // refill UX. Server returns up to 6; we display 3.
+            const qs = '?n=6&fresh=1&_t=' + Date.now()
                 + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
                 + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
             const r = await fetch('/subjects/suggest' + qs);
@@ -8541,6 +8604,10 @@ window._removeSimpleRow = _removeSimpleRow;
             host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
             return;
         }
+        // Stash the spare buffer on the host element so the click handler
+        // can pull from it without re-fetching. Survives across renders
+        // until the next regen wipes innerHTML.
+        host._chatReplyBuffer = arr.slice(3); // 3 displayed, rest reserved
         // Reply chips share the same primary-outline aesthetic as every
         // OTHER suggestion chip in the dashboard (simple-mode marquee
         // chips via _buildSuggestChip, endless-row chips). Was btn-ghost
@@ -8549,21 +8616,61 @@ window._removeSimpleRow = _removeSimpleRow;
         // Layout overrides (full-width left-justified text, normal-case
         // for sentence-fragment readability) layered on top of the
         // shared `btn btn-outline btn-primary btn-xs` base.
-        // CRITICAL: single-quote outer onclick — JSON.stringify produces
-        // a "-wrapped string, so a "-wrapped onclick attribute would
-        // close the attribute at the first inner ". The '-wrapped form
-        // is the same idiom used by every other inline-onclick handler
-        // in this file (search for ${JSON.stringify} in app.js and
-        // they're all single-quote outer). Was broken with double quotes
-        // — every chat suggestion click threw "Unexpected end of input"
-        // and the message never sent (caught by chat-suggestion-send.spec.js).
-        host.innerHTML = arr.slice(0, 4).map(s =>
-            `<button type="button" class="btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
-            onclick='(function(t){const i=document.getElementById("subjects-chat-input");if(i){i.value=t;i.focus();_sendChatMessage();}})(${JSON.stringify(s)})'>
+        // 3 chips displayed (was 4 — user pref). Each chip wires through
+        // _consumeChatReply on click instead of the bare-IIFE inline
+        // handler so we can ALSO fade the chip out + slide a spare in
+        // from the buffer (mirrors endless-row consume UX). Single-quote
+        // outer attribute is critical — JSON.stringify produces a
+        // "-wrapped string and would close a "-wrapped onclick at the
+        // first inner ". (See chat-suggestion-send.spec.js.)
+        host.innerHTML = arr.slice(0, 3).map(s =>
+            `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
             ${_htmlEscape(s)}
         </button>`).join('');
     }
     window._renderChatReplies = _renderChatReplies;
+
+    // Consume one chat reply chip:
+    //   1. fade the clicked chip out (CSS class .chip-disappear, ~700 ms)
+    //   2. submit the text via the standard chat input → _sendChatMessage
+    //   3. if the host has a spare from the prefetch buffer, slide it
+    //      into a NEW chip in the just-vacated slot
+    //   4. if the buffer is empty, just leave the row at 2 chips until
+    //      the next assistant turn re-renders (which fetches fresh n=6)
+    window._consumeChatReply = function (btn, text) {
+        // Fire the send first so there's no perceived lag — the chat
+        // input + _sendChatMessage path is the canonical send.
+        const input = document.getElementById('subjects-chat-input');
+        if (input) {
+            input.value = text;
+            input.focus();
+            if (typeof _sendChatMessage === 'function') _sendChatMessage();
+        }
+        // Animate the chip out of the row.
+        if (btn) {
+            btn.classList.add('chip-disappear');
+            const host = btn.parentElement;
+            const spare = host && host._chatReplyBuffer && host._chatReplyBuffer.shift();
+            // After the chip-disappear animation completes, either swap
+            // in a fresh chip from the buffer or just remove the slot.
+            setTimeout(() => {
+                if (!btn.isConnected) return;
+                if (spare) {
+                    const fresh = document.createElement('button');
+                    fresh.type = 'button';
+                    fresh.className = 'chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5 chip-arriving';
+                    fresh.textContent = spare;
+                    fresh.onclick = () => window._consumeChatReply(fresh, spare);
+                    btn.replaceWith(fresh);
+                    // drop the entry class on next frame so the slide-in plays
+                    requestAnimationFrame(() => requestAnimationFrame(() => fresh.classList.remove('chip-arriving')));
+                } else {
+                    btn.remove();
+                }
+            }, 700);
+        }
+    };
 
     // Visual feedback on the unified-badge refresh icon: when an action is
     // pending (dropdown swap → regen, manual refresh click), spin the icon
