@@ -9032,6 +9032,21 @@ function _isFreshMode() {
 // scale the duration so a single chip travels at ~60 px/s, clamped to
 // 40..180 s for the full track. Hover/focus-within pauses via CSS.
 function _appendSuggestBatchRow(items, opts) {
+    // Optional diagnostic for the "+ adds two rows" class of bugs. Enable by
+    // setting localStorage['slopfinity-debug-rows']='1' in DevTools — every
+    // entry logs a timestamped warn with opts + items.length + a stack so
+    // you can see WHO double-fired. Off by default so production stays
+    // quiet.
+    try {
+        if (typeof localStorage !== 'undefined'
+            && localStorage.getItem('slopfinity-debug-rows') === '1') {
+            console.warn('[debug-rows] _appendSuggestBatchRow', {
+                t: Date.now(),
+                items: (items && items.length) || 0,
+                opts: opts || null,
+            }, new Error('stack').stack);
+        }
+    } catch (_) { /* never block render on diagnostic */ }
     const stack = document.getElementById('subject-chips-stack');
     if (!stack || !items) return;
     // Empty items is allowed when opts has a promptId/rowIdx (endless
@@ -9591,7 +9606,20 @@ async function _addEndlessRow() {
         // chips next to the lead cluster.
         _appendSuggestBatchRow([], { promptId: newId, rowIdx: idx });
         const stack = document.getElementById('subject-chips-stack');
-        const row = stack ? stack.querySelectorAll('.suggest-marquee-row')[idx] : null;
+        // BUG FIX: previously looked up the placeholder by `[idx]` where
+        // idx came from the prompt-array length. If the prompt array
+        // and DOM row count had drifted (e.g. a dead-code endless cycle
+        // had pushed a prompt without rendering, or a prior render
+        // failed mid-flight), idx pointed at the WRONG row. mask/oldTrack
+        // came back null, the fallback at line 9430 ran, and a SECOND
+        // _appendSuggestBatchRow call appended the real batch — leaving
+        // the empty placeholder visible AND adding a fresh row beneath:
+        // "when I add a row it adds two, but one is empty". The
+        // placeholder is always appended LAST (no insertAtIdx), so look
+        // it up by last-child instead of by index. Stays correct even
+        // when the prompt array and DOM disagree.
+        const allRows = stack ? stack.querySelectorAll('.suggest-marquee-row') : [];
+        const row = allRows.length ? allRows[allRows.length - 1] : null;
         const refreshBtn = row ? row.querySelector('[data-row-refresh]') : null;
         const mask = row ? row.querySelector('.suggest-marquee-mask') : null;
         if (refreshBtn) refreshBtn.classList.add('row-refresh-spinning');
@@ -9609,6 +9637,9 @@ async function _addEndlessRow() {
                     mask.replaceChild(newTrack, oldTrack);
                 } else {
                     // Fallback: row scaffold missing — drop & re-append fresh.
+                    // Guarded so we don't double-append when the placeholder
+                    // exists but only the inner mask/track went missing for
+                    // some other reason.
                     if (row) row.remove();
                     _appendSuggestBatchRow(batch, { promptId: newId, rowIdx: idx });
                 }
