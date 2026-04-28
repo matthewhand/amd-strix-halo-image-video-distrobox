@@ -129,7 +129,18 @@ document.addEventListener('DOMContentLoaded', () => _setSlopSize(_getSlopSize())
 // via the existing /assets endpoint.
 // ---------------------------------------------------------------------------
 function _seedToast(msg, kind) {
-    const cls = ({ success: 'alert-success', warning: 'alert-warning', error: 'alert-error' })[kind] || 'alert-info';
+    // success / warning / error stay on daisyUI semantic alert tokens —
+    // those are intentionally semantic (a "success" alert reading as
+    // theme-primary would lose its meaning). info → primary so the
+    // default toast pops with the dashboard's accent colour rather
+    // than the generic info-blue. All four are theme-aware via the
+    // daisyUI CSS variable layer (--p, --su, --wa, --er) so they
+    // re-skin when the user changes themes.
+    const cls = ({
+        success: 'alert-success',
+        warning: 'alert-warning',
+        error: 'alert-error',
+    })[kind] || 'toast-themed-primary';
     const t = document.createElement('div');
     t.className = 'toast toast-end z-50';
     t.innerHTML = `<div class="alert ${cls} shadow-lg max-w-sm"><span class="text-sm">${msg.replace(/[<>&]/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[s]))}</span></div>`;
@@ -152,7 +163,48 @@ async function _uploadSeedFiles(fileList) {
         const j = await r.json();
         const saved = (j && j.saved) || [];
         const skipped = (j && j.skipped) || [];
-        if (saved.length) _seedToast(`Uploaded ${saved.length} seed${saved.length === 1 ? '' : 's'}`, 'success');
+        if (saved.length) {
+            // VISIBILITY: previously the upload silently landed on disk
+            // and the user saw only a toast. Three things hide newly-
+            // uploaded seeds from the user's eye:
+            //   1. Non-png seeds (jpg/jpeg/webp/gif) never get a WS
+            //      `new_file` broadcast (the watcher filters .png/.mp4).
+            //   2. Even when broadcast, the slop preview grid hides any
+            //      card with data-slop-final=0 unless the 'assets' chip
+            //      is on (default off).
+            //   3. The seeds-picker modal only refreshes on next open.
+            // Fix on three fronts: prepend the new file as a slop card
+            // tagged data-slop-seed=1 (the filter exempts seeds), auto-
+            // stage them so the staged-seeds strip updates immediately,
+            // and refresh the picker if it's open.
+            const grid = document.getElementById('preview-grid');
+            if (grid && typeof _buildSlopCard === 'function') {
+                saved.forEach(file => {
+                    const card = _buildSlopCard(file, { pulse: true, autoplay: false });
+                    if (card) {
+                        card.dataset.slopSeed = '1';
+                        grid.insertBefore(card, grid.firstChild);
+                    }
+                });
+                if (typeof _applySlopFilters === 'function') _applySlopFilters();
+            }
+            // Auto-stage the new uploads so they land in the staged-seeds
+            // strip immediately. User intent on uploading a seed is almost
+            // always "I want to use this in the next generation."
+            if (typeof _setStagedSeeds === 'function' && typeof _getStagedSeeds === 'function') {
+                const cur = _getStagedSeeds();
+                saved.forEach(f => { if (cur.indexOf(f) === -1) cur.push(f); });
+                _setStagedSeeds(cur);
+            }
+            // If the picker modal is currently open, repopulate its grid
+            // so the user sees the new uploads inline rather than having
+            // to close + reopen.
+            const pickerModal = document.getElementById('seeds-picker-modal');
+            if (pickerModal && pickerModal.open && typeof _openSeedsPicker === 'function') {
+                _openSeedsPicker();
+            }
+            _seedToast(`Uploaded ${saved.length} seed${saved.length === 1 ? '' : 's'} — auto-staged`, 'success');
+        }
         if (skipped.length) _seedToast(`Skipped ${skipped.length} (${skipped[0].reason})`, 'warning');
         return { saved, skipped };
     } catch (e) {
@@ -527,18 +579,38 @@ function _mobileNavStep(delta) {
     _mobileNavGo(_mobileNavCurrentIdx() + delta);
 }
 function _mobileNavRefresh() {
-    const nav = document.getElementById('mobile-nav-bar');
-    if (!nav) return;
     const i = _mobileNavCurrentIdx();
     const cur = _MOBILE_NAV_ORDER[i];
     const prev = _MOBILE_NAV_ORDER[i - 1];
     const next = _MOBILE_NAV_ORDER[i + 1];
+    // Sync the desktop flanking-FAB labels to the prev/next destination
+    // names. Used by `_focusFabNav`'s circular buttons so the user reads
+    // "PROMPT" / "QUEUE" / "SLOP" inside the circle instead of just an
+    // arrow. Independent of mobile-nav-bar visibility (FABs are desktop-
+    // only via @media). Safe to call even when the nav bar isn't on
+    // screen yet — the FABs use the same _MOBILE_NAV_ORDER cycle.
+    const fabPrevLabel = document.querySelector('#focus-fab-prev .fab-label');
+    const fabNextLabel = document.querySelector('#focus-fab-next .fab-label');
+    if (fabPrevLabel) fabPrevLabel.textContent = prev ? prev.label : '';
+    if (fabNextLabel) fabNextLabel.textContent = next ? next.label : '';
+    const nav = document.getElementById('mobile-nav-bar');
+    if (!nav) return;
     const prevBtn = document.getElementById('mobile-nav-prev');
     const nextBtn = document.getElementById('mobile-nav-next');
     const prevLbl = document.getElementById('mobile-nav-prev-label');
     const nextLbl = document.getElementById('mobile-nav-next-label');
     const curLbl = document.getElementById('mobile-nav-current');
-    if (curLbl) curLbl.textContent = cur ? cur.label : '';
+    // Center: render the full cycle (Prompt · Queue · Slop) with the
+    // active step highlighted. Gives the user a constant sense of where
+    // they are in the linear sequence rather than just naming the
+    // current card. _MOBILE_NAV_ORDER is the source of truth for the
+    // labels so adding/removing layouts updates this automatically.
+    if (curLbl) {
+        curLbl.innerHTML = _MOBILE_NAV_ORDER.map((s, j) => {
+            const cls = (j === i) ? 'is-current' : '';
+            return `<span class="${cls}">${s.label}</span>`;
+        }).join('<span class="sep">·</span>');
+    }
     if (prevBtn) {
         prevBtn.disabled = !prev;
         prevBtn.classList.toggle('invisible', !prev);
@@ -547,6 +619,8 @@ function _mobileNavRefresh() {
         nextBtn.disabled = !next;
         nextBtn.classList.toggle('invisible', !next);
     }
+    // Symmetric: each arrow names where it WILL take you. Empty string
+    // when at an end so the pill collapses cleanly via .invisible.
     if (prevLbl) prevLbl.textContent = prev ? prev.label : '';
     if (nextLbl) nextLbl.textContent = next ? next.label : '';
 }
@@ -1256,7 +1330,17 @@ function _getDefaultPromptId() {
     return first ? first.id : 'yes-and';
 }
 function _setDefaultPromptId(id) {
+    const prev = _getDefaultPromptId();
     try { localStorage.setItem(_DEFAULT_SUGGEST_PROMPT_ID_KEY, id); } catch (_) { }
+    // Prompt swap → every prefetched batch was generated under the OLD
+    // prompt and is now stale. Dump the buffer so a subsequent + click
+    // doesn't surprise the user with off-topic suggestions, then kick
+    // a fresh prefetch under the new prompt so the NEW + click can
+    // still hit the instant-render fast path.
+    if (id !== prev) {
+        if (typeof window._dropPrefetchedBatches === 'function') window._dropPrefetchedBatches();
+        if (typeof window._maybePrefetch === 'function') window._maybePrefetch();
+    }
     _refreshSuggestBadge();
     // Endless mode treats the dropdown as "the prompt the NEXT added row
     // will use" — existing rows have their own per-row prompts and should
@@ -1327,26 +1411,36 @@ function _refreshSuggestBadge() {
     // registry, so users who want to manage prompts pre-toggle-on go
     // there directly. body.suggest-cluster-collapsed lets CSS round
     // the toggle's right edge so it visually stands alone.
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+    const isEndless = mode === 'endless';
     if (nameBtn) {
-        nameBtn.classList.toggle('hidden', !isOn);
+        // Endless mode: keep the prompt-name dropdown visible regardless
+        // of the Suggestions toggle state — the user wants to see/swap
+        // the prompt for upcoming rows even when auto-suggest is paused.
+        // Other modes still hide the dropdown when the toggle is off
+        // (no chip stack to feed = no point in showing the picker).
+        nameBtn.classList.toggle('hidden', !isOn && !isEndless);
         nameBtn.title = "Active suggestion prompt — click to swap";
     }
-    document.body.classList.toggle('suggest-cluster-collapsed', !isOn);
-    // Endless mode pre-Start-Story: lock the ENTIRE Suggestions pill
-    // (toggle, prompt-name, +) — not just the + button. The cluster
-    // is meaningless until a story is running (no chips will fetch,
-    // toggling Suggestions on does nothing visible). Re-enable when
-    // _endlessRunning flips true; re-lock when story ends.
-    const endlessIdle = (typeof _getSubjectsMode === 'function')
-        && _getSubjectsMode() === 'endless' && !_endlessRunning;
-    document.body.classList.toggle('endless-pill-locked', endlessIdle);
+    // suggest-cluster-collapsed marks the toggle as standalone (rounds
+    // both edges via CSS). In endless mode the prompt-name button stays
+    // visible regardless, so the toggle is NOT standalone — skip the class.
+    document.body.classList.toggle('suggest-cluster-collapsed', !isOn && !isEndless);
+    // The body.endless-pill-locked dimmer was REMOVED — earlier iterations
+    // dimmed the whole row pre-Start-Story, but the user explicitly asked
+    // for the prompt-name and + button to NEVER look greyed out. The +
+    // button's enabled-state below now keys ONLY on storyRunning in
+    // endless mode (not on the Suggestions toggle), so the visual
+    // affordance stays clean. Class removal is idempotent — safe to call
+    // even when the class isn't present.
+    document.body.classList.remove('endless-pill-locked');
     // Swap which action button is visible based on mode. Two distinct
     // buttons — refresh (#subjects-suggest-btn) and add (#subjects-suggest-add-btn)
     // — share the joined badge slot so the refresh-tap-spin handler only
     // ever matches the actual refresh control.
     const addBtn = document.getElementById('subjects-suggest-add-btn');
-    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
-    const isEndless = mode === 'endless';
+    // (mode + isEndless captured above for the prompt-name visibility
+    // decision — reuse them rather than redeclare.)
     // Simple mode UX: pre-first-batch, hide ↻ refresh and show + add
     // (which fires regenSuggestions). Once any chip rows exist, swap
     // back to ↻ refresh (regenSuggestions overwrites the stack). User
@@ -1658,11 +1752,13 @@ if ('serviceWorker' in navigator) {
 
 function _showNewVersionToast() {
     if (document.getElementById('new-version-toast')) return;
+    // (Note: the alert class for THIS toast is set inline below — keep it
+    // aligned with the themed-primary used by _seedToast's default kind.)
     const t = document.createElement('div');
     t.id = 'new-version-toast';
     t.className = 'toast toast-end z-50';
     t.innerHTML = `
-        <div class="alert alert-info shadow-lg flex items-center gap-3 max-w-sm">
+        <div class="alert toast-themed-primary shadow-lg flex items-center gap-3 max-w-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <div class="flex-1">
                 <div class="font-semibold text-sm">New version available</div>
@@ -2145,7 +2241,7 @@ window.toggleItemPolymorphic = toggleItemPolymorphic;
 
 // Endless Story auto-cycle: when the navbar toggle is on, fetch a fresh
 // suggestion batch every 12 s and APPEND a new row (don't replace existing).
-// Cap at _SUGGEST_MAX_ROWS (=5); FIFO eviction kicks in beyond that.
+// Cap at _SUGGEST_MAX_ROWS (=50); FIFO eviction kicks in beyond that.
 let _endlessStoryTimer = null;
 function _endlessCycleMs() {
     try {
@@ -2170,21 +2266,22 @@ window._restartEndlessCycle = _restartEndlessCycle;
 function _wireEndlessStoryCycle() {
     const t = document.getElementById('endless-story-toggle');
     if (!t) return;
-    const start = () => {
-        if (_endlessStoryTimer) return;
+    // The 12 s auto-append cycle has been REMOVED — it spammed new rows
+    // every tick after Start Story, surprising users who expected the
+    // Prompt card to stay calm until they manually pressed +. The +
+    // button is now the canonical way to add a row (with prefetch making
+    // it instant), and per-row 🔄 refresh handles the "give me different
+    // chips for THIS row" case. Wiring is kept as a no-op so existing
+    // localStorage state + UI toggle stay valid; the change-listener
+    // below now only manages the toggle's persisted state.
+    const start = () => { /* intentional no-op — see comment above */ };
+    if (false) { // dead code, kept inside an unreachable block so the
+        // pre-existing closure capture (recentChips / promptId / etc.)
+        // remains for any future callers that want to revive it.
         _endlessStoryTimer = setInterval(async () => {
-            // Skip if user has hidden suggestions or globally disabled auto.
             if (typeof _isSuggestionsHidden === 'function' && _isSuggestionsHidden()) return;
             if (typeof _autoSuggestDisabled === 'function' && _autoSuggestDisabled()) return;
-            // HARD GATE: only append cycle rows while a story is actually
-            // running. Without this, a stale localStorage flag (left over
-            // from a prior session that pressed Start Story) would resurrect
-            // the cycle on page load and silently spam suggestion rows
-            // before the user has even started a story. _endlessRunning
-            // is the source of truth — the localStorage toggle hydration
-            // is just for restoring UI checkbox state.
             if (!_endlessRunning) return;
-            // Also bail when not in endless mode (mode swap mid-cycle).
             if (typeof _getSubjectsMode === 'function' && _getSubjectsMode() !== 'endless') return;
             // Direct fetch + APPEND (vs regenSuggestions which clears the stack)
             // so existing rows stay visible while new ones queue below them.
@@ -2338,6 +2435,29 @@ function _setSubjectsMode(mode) {
         const hasAsst = hist.some(m => m && m.role === 'assistant' && (m.content || '').trim());
         if (hasAsst && typeof _renderChatReplies === 'function') _renderChatReplies();
     }
+    // Switching INTO endless: rehydrate the persisted story log if we
+    // have one. Survives layout switches (mobile-nav prev/next), full
+    // reloads, and accidental tab-aways. The pane visibility is owned
+    // by `_endlessRunning`; the LOG content is owned by localStorage.
+    // We always paint the saved text into the pre — even when
+    // _endlessRunning is currently false (e.g. user came back after
+    // closing the browser), so the user sees their progress even
+    // before they re-Start.
+    if (mode === 'endless') {
+        const log = document.getElementById('subjects-story-log');
+        if (log) {
+            const saved = _loadEndlessLog();
+            if (saved && !log.textContent) {
+                log.textContent = saved;
+                log.scrollTop = log.scrollHeight;
+                // Show the pane if there's saved content even if not
+                // currently running — gives the user a "your story is
+                // still here, press Start to continue" affordance.
+                const pane = document.getElementById('subjects-story-pane');
+                if (pane) pane.classList.remove('hidden');
+            }
+        }
+    }
     // Switching INTO endless while no story is running: wipe whatever
     // chips the previous mode left behind and show the "press Start
     // Story" hint. Without this the simple/chat marquee rows remain
@@ -2445,12 +2565,35 @@ function _updateQueueStatusChip(d) {
     const queue = (d && d.queue) || [];
     const pending = queue.filter(x => x && (x.status === 'pending' || x.status == null)).length;
     const working = queue.filter(x => x && x.status === 'working').length;
-    const depthText = (pending === 0 && working === 0)
-        ? 'queue empty'
-        : `${working}+${pending} queued`;
+    // Drop the leading "0+" noise when nothing is in-flight — the user
+    // pointed out that "0+49 queued" reads as weird math. Keep the split
+    // ONLY when both counts are non-zero so the chip still distinguishes
+    // working-vs-pending at a glance during active runs.
+    let depthText;
+    if (pending === 0 && working === 0) depthText = 'queue empty';
+    else if (working === 0) depthText = `${pending} queued`;
+    else if (pending === 0) depthText = `${working} running`;
+    else depthText = `${working} running · ${pending} queued`;
+    // Detect a count INCREASE (item just queued) so we can pulse the chip
+    // — pure-grow visual feedback that the click did something. We pulse
+    // the depth element specifically (it's the count, not the status),
+    // and only on increase (decrements happen as items finish, which the
+    // user doesn't need a celebration for).
+    const total = pending + working;
+    const prevTotal = (typeof _updateQueueStatusChip._prevTotal === 'number')
+        ? _updateQueueStatusChip._prevTotal : total;
+    const grew = total > prevTotal;
+    _updateQueueStatusChip._prevTotal = total;
     depthEls.forEach(el => {
         el.textContent = depthText;
         el.classList.toggle('text-primary', working > 0);
+        if (grew) {
+            // Restart the animation by removing + forcing reflow + re-adding.
+            // CSS keyframe runs ~1.6 s and removes itself via animationend.
+            el.classList.remove('queue-count-pulse');
+            void el.offsetWidth;
+            el.classList.add('queue-count-pulse');
+        }
     });
     // Simplified status: just Idle / Generating / Paused. Earlier the
     // chip leaked the internal stage name ('base image' / 'video chains')
@@ -2466,25 +2609,62 @@ function _updateQueueStatusChip(d) {
     if (d && d.paused) status = 'Paused';
     statusEls.forEach(el => {
         el.textContent = status;
+        // Theme-coloured status: Generating reads as the active app accent
+        // (text-primary) rather than text-success — the rest of the dashboard
+        // already uses primary as the "this is the live signal" colour
+        // (ticker bars, mode-pill active fill, etc.) so success-green stood
+        // out as a one-off semantic. Paused stays text-warning because that
+        // genuinely IS a caution state, not a theme accent.
         el.classList.toggle('text-warning', status === 'Paused');
-        el.classList.toggle('text-success', status === 'Generating');
+        el.classList.toggle('text-primary', status === 'Generating');
     });
-    // Focus-mode FAB-next badge: when the NEXT layout in the linear
-    // sequence is 'queue' AND there's work queued, paint the count
-    // on the right-arrow button as a daisyUI indicator badge so the
-    // user sees "things are queued, click here to see them" without
-    // leaving the current focused layout.
-    const fabBadge = document.getElementById('focus-fab-next-badge');
-    if (fabBadge) {
-        const total = pending + working;
-        const curMode = (typeof _mobileNavCurrentIdx === 'function')
-            ? _mobileNavCurrentIdx() : -1;
-        const next = (typeof _MOBILE_NAV_ORDER !== 'undefined' && curMode >= 0)
-            ? _MOBILE_NAV_ORDER[curMode + 1] : null;
-        const showBadge = total > 0 && next && next.layout === 'queue';
-        fabBadge.classList.toggle('hidden', !showBadge);
-        if (showBadge) fabBadge.textContent = total > 99 ? '99+' : String(total);
+    // Focus-mode FAB badges: paint the queue tally on whichever flanking
+    // FAB points TOWARD queue from the user's current focused layout.
+    //   - On Prompt   → next is Queue → badge on focus-fab-next
+    //   - On Slop     → prev is Queue → badge on focus-fab-prev (NEW —
+    //                   the user wanted a queue tally visible from the
+    //                   Slop layout's nav cluster)
+    //   - On Queue    → user is already there, neither badge shows
+    const totalText = total > 99 ? '99+' : String(total);
+    const curMode = (typeof _mobileNavCurrentIdx === 'function')
+        ? _mobileNavCurrentIdx() : -1;
+    const nextStep = (typeof _MOBILE_NAV_ORDER !== 'undefined' && curMode >= 0)
+        ? _MOBILE_NAV_ORDER[curMode + 1] : null;
+    const prevStep = (typeof _MOBILE_NAV_ORDER !== 'undefined' && curMode >= 0)
+        ? _MOBILE_NAV_ORDER[curMode - 1] : null;
+    const fabNext = document.getElementById('focus-fab-next-badge');
+    if (fabNext) {
+        const show = total > 0 && nextStep && nextStep.layout === 'queue';
+        fabNext.classList.toggle('hidden', !show);
+        if (show) fabNext.textContent = totalText;
     }
+    const fabPrev = document.getElementById('focus-fab-prev-badge');
+    if (fabPrev) {
+        const show = total > 0 && prevStep && prevStep.layout === 'queue';
+        fabPrev.classList.toggle('hidden', !show);
+        if (show) fabPrev.textContent = totalText;
+    }
+    // Mobile bottom-nav: append the count to whichever directional label
+    // (prev or next) names "Queue", so the user sees the tally on the
+    // arrow that would take them there. _mobileNavRefresh sets the base
+    // label; we append "(N)" here on every WS tick.
+    const mNavPrevLbl = document.getElementById('mobile-nav-prev-label');
+    const mNavNextLbl = document.getElementById('mobile-nav-next-label');
+    if (mNavPrevLbl && prevStep) {
+        const base = prevStep.label || '';
+        mNavPrevLbl.textContent = (prevStep.layout === 'queue' && total > 0)
+            ? `${base} (${totalText})` : base;
+    }
+    if (mNavNextLbl && nextStep) {
+        const base = nextStep.label || '';
+        mNavNextLbl.textContent = (nextStep.layout === 'queue' && total > 0)
+            ? `${base} (${totalText})` : base;
+    }
+    // Stitch hooks — every tick, refresh the stitch button label so its
+    // "(waiting for N)" count tracks the live queue depth, then check
+    // whether the queue has drained enough to fire a deferred stitch.
+    if (typeof _refreshStitchButton === 'function') _refreshStitchButton();
+    if (typeof _maybeFirePendingStitch === 'function') _maybeFirePendingStitch();
 }
 window._updateQueueStatusChip = _updateQueueStatusChip;
 
@@ -2695,9 +2875,11 @@ async function _startEndlessStory() {
     document.body.classList.add('endless-running');
     ta.readOnly = true;
     ta.classList.add('opacity-70');
-    // Reset the story log to just the seed.
+    // Reset the story log to just the seed AND persist it so layout
+    // switches / reloads can rehydrate (see _hydrateEndlessLog below).
     const log = document.getElementById('subjects-story-log');
     if (log) log.textContent = seed;
+    _persistEndlessLog(seed);
     const pane = document.getElementById('subjects-story-pane');
     if (pane) pane.classList.remove('hidden');
     // Start with EXACTLY ONE row using the currently-selected default
@@ -2743,6 +2925,7 @@ function _endEndlessStory(clearLog) {
     if (clearLog) {
         const log = document.getElementById('subjects-story-log');
         if (log) log.textContent = '';
+        _clearEndlessLog();
     }
     // Stop the cycle.
     const t = document.getElementById('endless-story-toggle');
@@ -2808,12 +2991,106 @@ window._copyEndlessStory = _copyEndlessStory;
 // and POST to /story/stitch. Server runs ffmpeg concat (stream copy
 // — fast + lossless when source clips share codec params, which they
 // do since the same model + settings produced them).
+// Click-to-queue flow:
+//   1. If queue is empty AND there are already FINAL_*.mp4 clips for
+//      this story → fire the stitch right now (legacy fast path).
+//   2. If queue has pending/working items → schedule a "pending stitch"
+//      and let _updateQueueStatusChip's tick handler fire it the moment
+//      total = 0. Button label changes to "Stitch queued (waiting for N)"
+//      and a click while queued cancels.
+//   3. If neither → toast "no clips yet, queue something first".
+//
+// The pending state is held on `window._pendingStitch = { startTs, queuedAt }`
+// so the WS tick handler can spot it without poking module-private state.
 async function _stitchEndlessStory() {
     const startTs = window._endlessStoryStartTs || 0;
     if (!startTs) {
         if (typeof _toast === 'function') _toast('No story start time recorded — start a story first', 'warning');
         return;
     }
+    // Toggle: if a pending stitch is already scheduled, this click cancels it.
+    if (window._pendingStitch) {
+        window._pendingStitch = null;
+        _refreshStitchButton();
+        if (typeof _toast === 'function') _toast('Stitch cancelled', 'warning');
+        return;
+    }
+    // Snapshot current queue depth via the chip helper's last-seen value.
+    const total = (typeof _updateQueueStatusChip === 'function'
+        && typeof _updateQueueStatusChip._prevTotal === 'number')
+        ? _updateQueueStatusChip._prevTotal : 0;
+    if (total > 0) {
+        // Schedule — don't fire yet. The WS tick handler will trigger
+        // _runStitchNow() the moment total drops to 0.
+        window._pendingStitch = { startTs, queuedAt: Date.now() };
+        _refreshStitchButton();
+        if (typeof _toast === 'function') {
+            _toast(`Stitch queued — will run when ${total} clip${total === 1 ? '' : 's'} finish${total === 1 ? 'es' : ''}.`, 'success');
+        }
+        return;
+    }
+    // Queue already empty — fire immediately.
+    return _runStitchNow(startTs, { confirmFirst: true });
+}
+window._stitchEndlessStory = _stitchEndlessStory;
+
+// Update the stitch button's label/state based on the current pending
+// flag and last-seen queue depth. Called from the click handler and
+// from every WS tick (via _updateQueueStatusChip) so the user sees the
+// "(waiting for N)" count tick down as clips finish.
+function _refreshStitchButton() {
+    const btn = document.getElementById('subjects-story-stitch');
+    if (!btn) return;
+    const lbl = btn.querySelector('span:last-of-type') || btn;
+    const pending = window._pendingStitch;
+    if (!pending) {
+        lbl.textContent = 'Stitch';
+        btn.classList.remove('btn-warning');
+        btn.title = 'Concatenate this story\'s FINAL_*.mp4 clips into one mp4. Click while queued items pending → schedules stitch to run when queue drains.';
+        return;
+    }
+    const total = (typeof _updateQueueStatusChip._prevTotal === 'number')
+        ? _updateQueueStatusChip._prevTotal : 0;
+    lbl.textContent = total > 0
+        ? `Stitch queued (waiting for ${total})`
+        : 'Stitch queued (running…)';
+    btn.classList.add('btn-warning');
+    btn.title = 'Stitch is scheduled to fire when the queue drains. Click again to cancel.';
+}
+window._refreshStitchButton = _refreshStitchButton;
+
+// Tick-driven trigger — _updateQueueStatusChip calls this on every WS
+// state event. When a pending stitch is set AND queue total == 0, fire
+// the actual ffmpeg call (no confirm — the user already confirmed by
+// clicking Stitch earlier; queueing-vs-immediate is just timing).
+function _maybeFirePendingStitch() {
+    const pending = window._pendingStitch;
+    if (!pending) return;
+    const total = (typeof _updateQueueStatusChip._prevTotal === 'number')
+        ? _updateQueueStatusChip._prevTotal : -1;
+    if (total !== 0) return;
+    // Small debounce — wait at least 2 s after queue empties so any
+    // straggler "Final Merge" stage that's about to write FINAL_*.mp4
+    // has a moment to finish writing its file before we glob /assets.
+    if (!pending._emptyAt) {
+        pending._emptyAt = Date.now();
+        return;
+    }
+    if (Date.now() - pending._emptyAt < 2000) return;
+    // Clear the flag BEFORE firing so subsequent ticks don't re-trigger
+    // while ffmpeg is still running.
+    const startTs = pending.startTs;
+    window._pendingStitch = null;
+    _refreshStitchButton();
+    _runStitchNow(startTs, { confirmFirst: false });
+}
+window._maybeFirePendingStitch = _maybeFirePendingStitch;
+
+// The actual ffmpeg-concat path — split out so both the immediate-fire
+// case and the deferred-after-queue-drain case go through the same
+// fetch + toast handling.
+async function _runStitchNow(startTs, opts) {
+    opts = opts || {};
     let assets = [];
     try {
         const r = await fetch('/assets?limit=200');
@@ -2823,25 +3100,24 @@ async function _stitchEndlessStory() {
         if (typeof _toast === 'function') _toast(`Stitch: /assets fetch failed (${e.message})`, 'error');
         return;
     }
-    // Pull FINAL_*.mp4 entries that landed AFTER the story began. /assets
-    // mtime is in seconds; window._endlessStoryStartTs is set in JS via
-    // Date.now() (ms). Compare in seconds for consistency with the server.
     const startSec = Math.floor(startTs / 1000);
     const candidates = assets
         .filter(a => a && a.file && a.file.startsWith('FINAL_') && a.file.endsWith('.mp4'))
-        .filter(a => (a.mtime || 0) >= startSec - 5)  // 5 s grace for clock skew
+        .filter(a => (a.mtime || 0) >= startSec - 5)
         .sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
     if (!candidates.length) {
         if (typeof _toast === 'function') _toast('Stitch: no FINAL_*.mp4 clips have completed for this story yet', 'warning');
         return;
     }
     const filenames = candidates.map(a => a.file);
-    const ok = confirm(
-        `Stitch ${filenames.length} clip${filenames.length === 1 ? '' : 's'} into one mp4?\n\n`
-        + filenames.map((f, i) => `${i + 1}. ${f}`).join('\n')
-        + '\n\n(Stream copy — fast and lossless. Output: STORY_<timestamp>.mp4)'
-    );
-    if (!ok) return;
+    if (opts.confirmFirst) {
+        const ok = confirm(
+            `Stitch ${filenames.length} clip${filenames.length === 1 ? '' : 's'} into one mp4?\n\n`
+            + filenames.map((f, i) => `${i + 1}. ${f}`).join('\n')
+            + '\n\n(Stream copy — fast and lossless. Output: STORY_<timestamp>.mp4)'
+        );
+        if (!ok) return;
+    }
     const btn = document.getElementById('subjects-story-stitch');
     if (btn) { btn.disabled = true; btn.classList.add('opacity-50'); }
     try {
@@ -2866,7 +3142,21 @@ async function _stitchEndlessStory() {
         if (btn) { btn.disabled = false; btn.classList.remove('opacity-50'); }
     }
 }
-window._stitchEndlessStory = _stitchEndlessStory;
+
+// Story-log persistence — survives layout switches (mobile-nav prev/next,
+// View dropdown), full reloads, etc. Stored under a single key alongside
+// the existing _endlessStoryStartTs so Reset/Submit can wipe both atomically.
+const _ENDLESS_STORY_LOG_KEY = 'slopfinity-endless-story-log';
+function _persistEndlessLog(text) {
+    try { localStorage.setItem(_ENDLESS_STORY_LOG_KEY, text || ''); } catch (_) { }
+}
+function _loadEndlessLog() {
+    try { return localStorage.getItem(_ENDLESS_STORY_LOG_KEY) || ''; }
+    catch (_) { return ''; }
+}
+function _clearEndlessLog() {
+    try { localStorage.removeItem(_ENDLESS_STORY_LOG_KEY); } catch (_) { }
+}
 
 // Append a chip's text to the story log when in endless+running mode.
 // Called from the chip click handler in _buildSuggestChip.
@@ -2875,8 +3165,10 @@ function _appendToEndlessLog(text) {
     const log = document.getElementById('subjects-story-log');
     if (!log) return;
     const cur = log.textContent || '';
-    log.textContent = cur ? cur + '\n' + text : text;
+    const next = cur ? cur + '\n' + text : text;
+    log.textContent = next;
     log.scrollTop = log.scrollHeight;
+    _persistEndlessLog(next);
 }
 window._appendToEndlessLog = _appendToEndlessLog;
 
@@ -4414,14 +4706,42 @@ function _applySlopFilters() {
     // card). When ON, intermediate assets (chain mp4s, base pngs, bridge
     // frames) become visible too. The kind chips (video/image/audio) still
     // gate by media type independently.
-    const showAssets = enabled.assets !== false; // default false = only finals
+    const showAssets = enabled.assets === true; // default false = only finals
+    // Secondary 'frames' chip — only meaningful WHEN assets is ON. Frames
+    // are bridge PNGs ffmpeg extracts as the last frame of each video
+    // chain (handed to the next chain as its first frame). They're
+    // technically intermediate assets so they qualify under 'assets',
+    // but visually they're stills FROM videos already in the grid →
+    // noisy by default. When assets is OFF, the frame state is moot
+    // (frames are excluded by the assets filter regardless). When
+    // assets is ON + frames is OFF, hide just the frame cards.
+    const showFrames = enabled.frames === true;
+    // Update the 'frames' chip's enabled/disabled visual + interaction
+    // state to match the assets master chip — disabled when assets is
+    // off, since toggling it has no effect there.
+    const framesLabel = document.querySelector('.slop-filter-frames-label');
+    const framesInput = document.querySelector('[data-slop-filter="frames"]');
+    if (framesLabel) framesLabel.classList.toggle('slop-filter-disabled', !showAssets);
+    if (framesInput) framesInput.disabled = !showAssets;
     let vCount = 0;
     let iCount = 0;
     document.querySelectorAll('#preview-grid > [data-slop-kind]').forEach(card => {
         const kindOk = enabled[card.dataset.slopKind] !== false;
         const isFinal = card.dataset.slopFinal === '1';
-        const passesAssets = showAssets || isFinal;
-        const visible = kindOk && passesAssets;
+        const isFrame = card.dataset.slopFrame === '1';
+        const isSeed = card.dataset.slopSeed === '1';
+        // Seeds (user-uploaded source images) are exempt from the
+        // assets gate — without this, an upload would silently land
+        // in the grid but stay hidden until the user toggled assets
+        // on, which produced the "I uploaded but nothing happened"
+        // confusion. Seeds also bypass the frames gate (they aren't
+        // ffmpeg-extracted bridges).
+        const passesAssets = isSeed || showAssets || isFinal;
+        // Frames are a sub-class of assets — only show them when BOTH
+        // assets and frames are on. (Finals are not frames so they're
+        // unaffected.) Non-frame cards bypass this gate entirely.
+        const passesFrames = !isFrame || (showAssets && showFrames);
+        const visible = kindOk && passesAssets && passesFrames;
         card.style.display = visible ? '' : 'none';
 
         if (visible) {
@@ -4563,6 +4883,12 @@ function updateOutputs(o) {
     const chipP = document.querySelector('[data-chip-count="parts"]')
         || document.querySelector('[data-chip-count="assets"]');
     if (chipP) chipP.textContent = document.querySelectorAll('#preview-grid > [data-slop-kind][data-slop-final="0"]').length;
+    // 'frames' chip count — bridge PNGs only. Counted independently of
+    // visibility so the badge shows the TOTAL pool the chip would
+    // toggle, not the currently-visible subset (matches every other
+    // chip-count's semantics).
+    const chipF = document.querySelector('[data-chip-count="frames"]');
+    if (chipF) chipF.textContent = document.querySelectorAll('#preview-grid > [data-slop-frame="1"]').length;
 }
 
 function updateScheduler(sc) {
@@ -6064,7 +6390,7 @@ async function enhanceStage(stage) {
         tts: 'Rewrite the prompt as a one or two sentence voiceover line spoken in first or third person. Output ONLY the line.',
     }[stage] || 'Rewrite the prompt for ' + stage;
     const orig = ta.value;
-    ta.value = '✨ thinking...';
+    ta.value = '✨ rewriting...';
     ta.disabled = true;
     // 180-s ceiling — reasoning models (qwen3.5-claude-distill etc.) can
     // burn 60-120 s on a single rewrite. AbortController cuts the fetch
@@ -6119,7 +6445,7 @@ async function enhance() {
     // so the preview reflects active work even before the LLM responds.
     STAGE_NAMES.forEach(n => {
         const box = $('fanout-' + n);
-        if (box) box.textContent = '✨ thinking...';
+        if (box) box.textContent = '✨ rewriting...';
     });
     try {
         const res = await fetch('/enhance/distribute', {
@@ -7386,6 +7712,42 @@ function _buildSuggestChip(s) {
             // story-log pane so the user accumulates a high-level
             // story they can copy out before image/video rewrites.
             if (typeof _appendToEndlessLog === 'function') _appendToEndlessLog(s);
+            // Kick a fresh suggestion fetch ASAP. Rationale: the LLM just
+            // finished serving the batch this chip came from, so compute
+            // is probably free this instant — start generating the next
+            // batch in the background so it's ready before the user is
+            // ready to pick again. Both branches respect the GPU-idle +
+            // auto-suggest gates (silent no-op when compute is busy).
+            try {
+                const autoOff = (typeof window._autoSuggestDisabled === 'function')
+                    && window._autoSuggestDisabled();
+                const gpuOk = (typeof _isGpuIdleEnough !== 'function')
+                    || _gpuPctHistory.length === 0
+                    || _isGpuIdleEnough();
+                if (!autoOff && gpuOk) {
+                    const inEndless = (typeof _getSubjectsMode === 'function')
+                        && _getSubjectsMode() === 'endless'
+                        && (typeof _endlessRunning !== 'undefined' && _endlessRunning);
+                    if (inEndless) {
+                        // Regen THIS row with the new story tail so the next
+                        // beat's continuations reflect the just-picked chip.
+                        // Wait for the chip-disappear animation (~2.2 s) so
+                        // the user sees pulse → collapse → fresh row arrive.
+                        const rowEl = e.target.closest('.suggest-marquee-row');
+                        const allRows = Array.from(document.querySelectorAll(
+                            '#subject-chips-stack .suggest-marquee-row'));
+                        const rowIdx = rowEl ? allRows.indexOf(rowEl) : -1;
+                        if (rowIdx >= 0 && typeof _regenEndlessRow === 'function') {
+                            setTimeout(() => _regenEndlessRow(rowIdx), 2300);
+                        }
+                    } else if (typeof window._maybePrefetch === 'function') {
+                        // Simple mode: top up the prefetch buffer. The
+                        // existing idle-drain timer will swap a new row in
+                        // when the user pauses — non-jarring.
+                        window._maybePrefetch();
+                    }
+                }
+            } catch (_) { /* kick-on-pick is best-effort, never block inject */ }
             // Two-phase exit: pulse-with-success-tint for ~1.4 s so the
             // user gets visual confirmation that this prompt is now in
             // the queue, then collapse over ~0.7 s. Both phases are
@@ -7436,7 +7798,11 @@ function _buildSuggestChip(s) {
 // Hard cap on rows in the marquee stack — oldest row evicted (FIFO)
 // when the Fresh toggle is on; new batches are dropped once full when
 // Fresh is off so the user can pin a curated set on screen.
-const _SUGGEST_MAX_ROWS = 5;
+// Hard cap on rows in the marquee stack. Bumped from 5 → 50 — the user
+// wants room to keep many rows pinned while curating (Fresh OFF mode).
+// Fresh ON still FIFO-evicts oldest at the cap; the higher number just
+// means evictions only happen at extreme depth.
+const _SUGGEST_MAX_ROWS = 50;
 function _isFreshMode() {
     try { return localStorage.getItem('slopfinity-fresh') === '1'; }
     catch (_) { return false; }
@@ -7481,42 +7847,60 @@ function _appendSuggestBatchRow(items, opts) {
         const promptObj = (typeof _getPromptById === 'function') ? _getPromptById(opts.promptId) : null;
         const ttl = promptObj ? promptObj.title : opts.promptId;
         const lead = document.createElement('div');
-        lead.className = 'flex items-center gap-1 flex-none pl-1 pr-1';
+        // Right-aligned cluster (CSS: order:2 to flip past the mask) with
+        // a fold-toggle button visible only at compact viewports. The
+        // three controls (prompt-name / refresh / minus) collapse on
+        // compact + expand inline when the fold button is clicked.
+        lead.className = 'endless-row-lead flex items-center gap-1 flex-none';
         lead.setAttribute('data-endless-row-lead', String(opts.rowIdx));
         lead.innerHTML = `
-            <button type="button" class="btn btn-ghost btn-xs gap-1 px-1.5"
-                data-endless-row-prompt-btn="${opts.rowIdx}"
-                data-row-prompt-btn
-                title="Click to swap this row's prompt"
-                onclick="_openSuggestPromptPicker(${opts.rowIdx})">
-                <span class="font-semibold text-[10px]" data-row-prompt-label>${_htmlEscape(ttl)}</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round" class="w-2.5 h-2.5">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </button>
-            <button type="button" class="btn btn-ghost btn-xs btn-square"
-                data-row-refresh
-                title="Refresh this row" onclick="_regenEndlessRow(${opts.rowIdx})">
+            <button type="button" class="endless-row-fold btn btn-ghost btn-xs btn-square"
+                data-row-fold
+                title="Show row controls"
+                onclick="this.parentElement.classList.toggle('lead-expanded')">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round" class="w-3 h-3">
-                    <path d="M21 12a9 9 0 0 0-15-6.7L3 8"/>
-                    <path d="M3 3v5h5"/>
-                    <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>
-                    <path d="M21 21v-5h-5"/>
+                    <circle cx="12" cy="5" r="1.5"/>
+                    <circle cx="12" cy="12" r="1.5"/>
+                    <circle cx="12" cy="19" r="1.5"/>
                 </svg>
             </button>
-            <button type="button" class="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100 hover:text-error"
-                data-row-remove
-                title="Remove this row" onclick="_removeEndlessRow(${opts.rowIdx})">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
-                    stroke-linejoin="round" class="w-3 h-3">
-                    <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-            </button>`;
+            <div class="endless-row-controls flex items-center gap-1">
+                <button type="button" class="btn btn-ghost btn-xs gap-1 px-1.5"
+                    data-endless-row-prompt-btn="${opts.rowIdx}"
+                    data-row-prompt-btn
+                    title="Click to swap this row's prompt"
+                    onclick="_openSuggestPromptPicker(${opts.rowIdx})">
+                    <span class="font-semibold text-[10px]" data-row-prompt-label>${_htmlEscape(ttl)}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" class="w-2.5 h-2.5">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </button>
+                <button type="button" class="btn btn-ghost btn-xs btn-square"
+                    data-row-refresh
+                    title="Refresh this row" onclick="_regenEndlessRow(${opts.rowIdx})">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" class="w-3 h-3">
+                        <path d="M21 12a9 9 0 0 0-15-6.7L3 8"/>
+                        <path d="M3 3v5h5"/>
+                        <path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>
+                        <path d="M21 21v-5h-5"/>
+                    </svg>
+                </button>
+                <button type="button" class="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100 hover:text-error"
+                    data-row-remove
+                    title="Remove this row" onclick="_removeEndlessRow(${opts.rowIdx})">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+                        stroke-linejoin="round" class="w-3 h-3">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                </button>
+            </div>`;
         row.appendChild(lead);
     }
     const track = document.createElement('div');
@@ -7534,6 +7918,22 @@ function _appendSuggestBatchRow(items, opts) {
     } else {
         row.appendChild(track);
     }
+    // ── FLIP (First-Last-Invert-Play) — Option C of the marquee bump fix.
+    // Snapshot every existing row's bounding rect BEFORE the insertion,
+    // then perform the insertion, then snapshot AFTER. For any row whose
+    // top moved, apply an inverse translateY so it visually starts at its
+    // OLD position, then animate to translateY(0). The browser still
+    // performed the layout shift, but the user only sees a smooth
+    // animation — no abrupt bump above the new row. Safe-guarded against
+    // browsers without getBoundingClientRect (impossible in practice but
+    // catch keeps us defensive). */
+    const _flipBefore = new Map();
+    try {
+        stack.querySelectorAll('.suggest-marquee-row').forEach((r) => {
+            _flipBefore.set(r, r.getBoundingClientRect().top);
+        });
+    } catch (_) { /* FLIP best-effort */ }
+
     // Honor opts.insertAtIdx — used by _regenEndlessRow to put the
     // refreshed row back in its ORIGINAL position rather than appending
     // it at the end of the stack. Without this, swapping a row's
@@ -7546,6 +7946,36 @@ function _appendSuggestBatchRow(items, opts) {
     } else {
         stack.appendChild(row);
     }
+
+    // FLIP — apply inverse transforms to existing rows that moved.
+    try {
+        _flipBefore.forEach((oldTop, r) => {
+            if (!r.isConnected) return;            // row was removed
+            const newTop = r.getBoundingClientRect().top;
+            const dy = oldTop - newTop;
+            if (Math.abs(dy) < 0.5) return;        // didn't move — skip
+            // Step 1: snap to the old position with no transition.
+            r.style.transition = 'none';
+            r.style.transform = `translateY(${dy}px)`;
+            // Step 2: next frame — clear transform with a transition so
+            // the row glides to its new position. Using two rAFs to make
+            // sure the no-transition snap commits before the easing kicks.
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    r.style.transition = 'transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+                    r.style.transform = '';
+                });
+            });
+            // Cleanup: drop the inline transition once the slide finishes
+            // so it doesn't interfere with future hover/marquee animations.
+            const cleanup = (e) => {
+                if (e.propertyName !== 'transform') return;
+                r.style.transition = '';
+                r.removeEventListener('transitionend', cleanup);
+            };
+            r.addEventListener('transitionend', cleanup);
+        });
+    } catch (_) { /* FLIP best-effort */ }
     // Drop the .entering class once the slide-in completes so future
     // hover/focus rules apply normally and the transform doesn't linger
     // as inline animation state.
@@ -7833,7 +8263,26 @@ async function _renderEndlessRows(n) {
 // Re-fetch a SINGLE endless row in place — invoked by the picker after the
 // user swaps that row's prompt. Replaces the row's chip content; rest of
 // the marquee stack is untouched.
+//
+// CRITICAL: per-row inflight guard. Without this, rapid chip-clicks on the
+// same row schedule multiple `setTimeout(() => _regenEndlessRow(N), 2300)`
+// calls (chip click handler in _buildSuggestChip). Each runs independently:
+// both look up `rows[N]` BEFORE either has finished fetching, both call
+// `row.remove()`, both then `_appendSuggestBatchRow(..., insertAtIdx: N)`.
+// The second one's `existing[N]` lookup catches the first one's just-
+// inserted row and `insertBefore`s a SECOND new row in front of it ⇒ ghost
+// rows accumulate per click. A small per-index Set blocks the race.
+const _endlessRegenInflight = new Set();
 async function _regenEndlessRow(rowIdx) {
+    if (_endlessRegenInflight.has(rowIdx)) return;
+    _endlessRegenInflight.add(rowIdx);
+    try {
+        return await _regenEndlessRowImpl(rowIdx);
+    } finally {
+        _endlessRegenInflight.delete(rowIdx);
+    }
+}
+async function _regenEndlessRowImpl(rowIdx) {
     const stack = document.getElementById('subject-chips-stack');
     if (!stack) return;
     const rowPrompts = _getEndlessRowPrompts();
@@ -7965,10 +8414,29 @@ window._addEndlessRow = _addEndlessRow;
 // _refreshSuggestBadge toggles the cluster's visibility based on mode.
 async function _addSimpleRow() {
     const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : 'yes-and';
+    // FAST PATH: if the prefetch buffer has a batch tagged for THIS
+    // promptId, render it instantly — the LLM round-trip already
+    // happened in the background while the user was reading the prior
+    // row. Then kick another prefetch so the NEXT + click is also
+    // instant. Stale batches (different promptId) are dropped inside
+    // _consumePrefetchedBatch, not handed to us.
+    if (typeof window._consumePrefetchedBatch === 'function') {
+        const pre = window._consumePrefetchedBatch(promptId);
+        if (pre && pre.length && typeof _appendSuggestBatchRow === 'function') {
+            _appendSuggestBatchRow(pre);
+            if (typeof window._maybePrefetch === 'function') window._maybePrefetch();
+            if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
+            return;
+        }
+    }
+    // SLOW PATH: nothing buffered (cold start, GPU was busy, prompt
+    // just swapped, etc.) — fetch fresh and also kick prefetch so the
+    // next click can hit the fast path.
     const arr = await _fetchSuggestBatch({ n: 6, promptId, fresh: true });
     if (arr && arr.length && typeof _appendSuggestBatchRow === 'function') {
         _appendSuggestBatchRow(arr);
     }
+    if (typeof window._maybePrefetch === 'function') window._maybePrefetch();
     if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 }
 function _removeSimpleRow() {
@@ -8132,11 +8600,36 @@ window._removeSimpleRow = _removeSimpleRow;
     let _prefetchIdleTimer = null;
     let _prefetchStats = { triggered: 0, fetched: 0, consumed: 0, skippedGpu: 0, skippedBackoff: 0, skippedFull: 0 };
 
-    function _consumePrefetchedBatch() {
-        const next = _prefetchedBatches.shift();
-        if (next) _prefetchStats.consumed += 1;
-        return next || null;
+    // Consume the oldest buffered batch. If `forPromptId` is provided,
+    // skip + drop any leading entries that were generated under a
+    // DIFFERENT prompt (they're stale relative to the user's current
+    // dropdown choice and would surprise them if rendered now).
+    function _consumePrefetchedBatch(forPromptId) {
+        while (_prefetchedBatches.length) {
+            const head = _prefetchedBatches[0];
+            if (forPromptId && head.promptId && head.promptId !== forPromptId) {
+                _prefetchedBatches.shift(); // drop stale
+                continue;
+            }
+            _prefetchedBatches.shift();
+            _prefetchStats.consumed += 1;
+            return head.suggestions;
+        }
+        return null;
     }
+    // Drop every buffered batch (called when the user swaps prompts —
+    // batches were generated for the OLD prompt and will read as wrong-
+    // topic suggestions if the user later presses + with the new prompt
+    // active). Caller pairs this with a _maybePrefetch() to start
+    // refilling under the new prompt. `discarded` stat tracks dumps
+    // for telemetry / dev console.
+    function _dropPrefetchedBatches() {
+        const n = _prefetchedBatches.length;
+        _prefetchedBatches.length = 0;
+        _prefetchStats.discarded = (_prefetchStats.discarded || 0) + n;
+        return n;
+    }
+    window._dropPrefetchedBatches = _dropPrefetchedBatches;
 
     function _maybePrefetch() {
         if (_isSuggestionsHidden()) return;
@@ -8165,12 +8658,19 @@ window._removeSimpleRow = _removeSimpleRow;
         }
         _prefetchInflight = true;
         const subjects = (($('p-core') && $('p-core').value) || '').trim();
-        const qs = '?n=6' + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '');
+        // Capture the promptId AT FETCH TIME and ship it on the wire so
+        // the server's own promptId is respected, AND tag the cached
+        // batch with it so a later prompt-swap can reject stale entries
+        // in _consumePrefetchedBatch / drop them via _dropPrefetchedBatches.
+        const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+        const qs = '?n=6'
+            + (subjects ? '&subjects=' + encodeURIComponent(subjects) : '')
+            + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
         fetch('/subjects/suggest' + qs)
             .then(r => r.json())
             .then(d => {
                 if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
-                    _prefetchedBatches.push(d.suggestions);
+                    _prefetchedBatches.push({ promptId, suggestions: d.suggestions });
                     _prefetchStats.fetched += 1;
                 } else {
                     _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS;
@@ -8179,6 +8679,18 @@ window._removeSimpleRow = _removeSimpleRow;
             .catch(() => { _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS; })
             .finally(() => { _prefetchInflight = false; });
     }
+    // Exposed so the chip-click handler in _buildSuggestChip can kick a
+    // fresh prefetch the moment the user picks a suggestion — "compute is
+    // probably free RIGHT NOW (the LLM just finished the last batch), so
+    // start the next one ASAP so it lands in the buffer before the user
+    // is ready to pick again." All gates inside _maybePrefetch (mode,
+    // GPU-idle, inflight, cap, backoff) still apply.
+    window._maybePrefetch = _maybePrefetch;
+    // Exposed for the simple-mode + button (`_addSimpleRow`) so it can
+    // INSTANT-render a prefetched batch instead of awaiting a fresh
+    // round-trip. Pass the current promptId so stale (post-swap)
+    // batches are skipped.
+    window._consumePrefetchedBatch = _consumePrefetchedBatch;
 
     function _resetPrefetchIdleTimer() {
         if (_prefetchIdleTimer) clearTimeout(_prefetchIdleTimer);
@@ -8195,7 +8707,8 @@ window._removeSimpleRow = _removeSimpleRow;
             // AND the speculative prefetch.
             const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
             if (mode !== 'simple') return;
-            const pre = _consumePrefetchedBatch();
+            const curPid = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : '';
+            const pre = _consumePrefetchedBatch(curPid);
             if (pre) {
                 _appendSuggestBatchRow(pre);
                 _maybePrefetch();
@@ -8414,6 +8927,13 @@ window._removeSimpleRow = _removeSimpleRow;
         const pulseClass = opts.pulse ? ' animate-pulse' : '';
         c.className = `card card-compact bg-base-100 shadow-lg border ${meta.border} card-hover overflow-hidden${pulseClass}`;
         c.dataset.slopKind = meta.kind || kind;
+        // Match the SSR card contract — _applySlopFilters reads both flags.
+        // isFinal: FINAL_*.mp4 (the merged video the pipeline builds last).
+        // isFrame: ffmpeg-extracted bridge PNG between video chains —
+        //   slop_<N>_<slug>_f<M>.png OR legacy v<N>_f<M>.png.
+        c.dataset.slopFinal = (isV && /^FINAL_/i.test(file)) ? '1' : '0';
+        c.dataset.slopFrame = /^(?:v\d+|slop_\d+)(?:_.+)?_f\d+\.png$/i.test(file) ? '1' : '0';
+        c.dataset.slopFile = file;
         const partBadge = meta.part
             ? `<span class="badge badge-xs badge-ghost">part ${meta.part}</span>`
             : '';

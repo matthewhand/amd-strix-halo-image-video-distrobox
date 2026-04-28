@@ -71,6 +71,22 @@ async def _sw_allowed_header(request: Request, call_next):
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+# Custom Jinja filter — `{{ s | regex_match(pattern) }}` returns truthy
+# when `pattern` matches anywhere in `s` (re.search semantics, not full
+# match). Used by the slop-card SSR loop to flag bridge-frame PNGs
+# (`slop_<N>_<slug>_f<M>.png` / `v<N>_f<M>.png`) so the dashboard's
+# secondary 'frames' filter chip can hide them by default. Re-using
+# Python's compiled re cache means repeated calls are cheap.
+import re as _re_for_jinja
+def _jinja_regex_match(s, pattern):
+    if s is None:
+        return False
+    try:
+        return bool(_re_for_jinja.search(pattern, s))
+    except _re_for_jinja.error:
+        return False
+templates.env.filters['regex_match'] = _jinja_regex_match
+
 clients: List[WebSocket] = []
 
 # Rolling buffer of recent scheduler events (last 20). Drained from

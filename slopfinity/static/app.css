@@ -17,6 +17,34 @@
     border-radius: 2px 2px 0 0;
 }
 
+/* Three-tier responsive collapse for the stats-navbar metric pills.
+   Each pill renders label + % + ticker bar + sub-line. When the viewport
+   is too narrow the ticker bar visibly clips behind the settings cluster
+   on the right (overflow-hidden parent), which reads as a half-rendered
+   sparkline. So:
+     wide (>=1280px): label + % + ticker  (the original layout)
+     medium (640-1279px): label + %       (ticker hidden, no half-render)
+     tight  (<640px):    abbrev + %       (sub-line + extra label hidden too)
+   `.ticker-label-extra` is the parenthetical bit on the Disk pill ("(1hr)")
+   that's only useful when there's room. `.ticker-label-short` is the
+   compact form (default hidden, revealed at tight). */
+.ticker-label-short { display: none; }
+.ticker-label-icon {
+    width: 0.95rem;
+    height: 0.95rem;
+    color: hsl(var(--p));
+    vertical-align: middle;
+}
+@media (max-width: 1279px) {
+    .ticker-bar { display: none; }
+}
+@media (max-width: 639px) {
+    .ticker-label-full,
+    .ticker-label-extra,
+    .ticker-sub { display: none; }
+    .ticker-label-short { display: inline-block; }
+}
+
 /* Ticker label celebration animations — applied by app.js when a value
    hits 100 %. One of five styles is picked at random on the transition
    into 100 % and persists until the value drops back; the next 100 %
@@ -784,7 +812,14 @@ textarea.subjects-autogrow {
    cards still scroll internally instead of pushing the pane outward. */
 #ui-split-upper {
     flex: 0 0 auto;
-    min-height: 200px;
+    /* Bumped from 200 → 380 px. The audit found the prompt textarea
+       clipped to ~1 line in default / subj-slop / subj-queue layouts
+       because the upper pane defaulted to its min-height (no stored
+       drag value yet for the user). 380 px fits a ~3-line textarea +
+       suggestions row + queue button without clipping anything. The
+       drag handle still works — the user can shrink back below 380 if
+       they want, but they don't START there. */
+    min-height: 380px;
     max-height: 80vh;
     overflow: hidden;
     display: flex;
@@ -2179,7 +2214,16 @@ body.no-card-fabs #gallery-fab {
 }
 
 /* Active button keeps its icon visible too — small touch of colour
-   alongside the highlighted label. */
+   alongside the highlighted label. The button itself flips from
+   btn-outline (transparent fill, text-primary stroke) to filled
+   btn-primary (primary fill, primary-content text), so the icon's
+   text-primary stroke would vanish into the matching fill. Override
+   to primary-content (the daisyUI contrast color for text on primary)
+   so the active icon reads as inverted vs the inactive icons — gives
+   the user the same visual cue on the SVG that the label already gets. */
+.subjects-mode-pill button.subj-mode-active .subj-mode-icon {
+    color: hsl(var(--pc));
+}
 
 /* Endless Story toggle — the .es-knob slides 10px to the right when
    the hidden checkbox is checked, giving a daisyUI-style on/off
@@ -2315,6 +2359,170 @@ body[data-layout="subjects"].subj-mode-endless #subjects-story-pane:not(.hidden)
     min-height: 0;
 }
 
+/* Raw mode vertical fill — the per-stage panel + the four prompt
+   textareas should grow to fill any spare card height the way the
+   simple-mode textarea does. Without this, raw mode locks the
+   panel at its content height (~9 line-heights) and leaves a gap
+   below; user explicitly wanted the prompts to expand vertically.
+   The chain:
+     .subjects-pane[raw]                → already display:flex column
+       .flex.gap-2.items-stretch.mt-2    → wrapper (stretches by default)
+         #subjects-per-stage              → flex 1 1 auto, column
+           each <div> stage row            → flex 1 1 auto, column
+             <textarea#p-{stage}>          → flex 1 1 auto, no fixed h
+   The right-side Queue cluster stays at its natural width via
+   flex-none w-40 (pre-existing). */
+body.subj-mode-raw .subjects-pane[data-pane-mode="raw"] {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+body.subj-mode-raw .subjects-pane[data-pane-mode="raw"] > .flex.gap-2.items-stretch {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+body.subj-mode-raw #subjects-per-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+body.subj-mode-raw #subjects-per-stage > div {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+}
+body.subj-mode-raw #subjects-per-stage > div > .flex.items-center {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+body.subj-mode-raw #subjects-per-stage textarea {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    resize: none;
+}
+
+/* Raw mode rewrite-overlay — the rewrite button hovers over the top-right
+   of each per-stage textarea instead of stealing horizontal space beside
+   it. ~10 % opacity at rest so the prompt text reads cleanly underneath;
+   fades to full on host-hover or button-hover. The host wraps the
+   textarea + button so position:absolute on the button anchors to the
+   textarea's bounding box. */
+.raw-rewrite-host {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+.raw-rewrite-host textarea {
+    width: 100%;
+    height: 100%;
+    /* Right-padding so chip text doesn't run under the floating rewrite
+       button. 28 px ≈ button width + small gap. */
+    padding-right: 32px !important;
+}
+.raw-rewrite-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: hsl(var(--p));
+    background: hsl(var(--b1) / 0.6);
+    border: 1px solid hsl(var(--p) / 0.4);
+    opacity: 0.1;
+    transition: opacity 0.15s, background 0.15s, transform 0.05s;
+    cursor: pointer;
+}
+.raw-rewrite-host:hover .raw-rewrite-btn,
+.raw-rewrite-host:focus-within .raw-rewrite-btn,
+.raw-rewrite-btn:hover,
+.raw-rewrite-btn:focus {
+    opacity: 1;
+}
+.raw-rewrite-btn:hover {
+    background: hsl(var(--p) / 0.15);
+}
+.raw-rewrite-btn:active { transform: scale(0.92); }
+
+/* Endless-row lead cluster — right-aligned via flex order:2 (the marquee
+   mask is order:1 so it occupies the leftmost flex space). The fold
+   button is hidden on desktop; the three controls (prompt-name, refresh,
+   minus) sit visible. On compact viewports the relationship inverts:
+   fold visible, three controls hidden until .lead-expanded is added. */
+.endless-row-lead {
+    order: 2;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+.suggest-marquee-row.with-lead .suggest-marquee-mask {
+    order: 1;
+}
+.endless-row-fold {
+    display: none;
+}
+.endless-row-fold:hover {
+    background: hsl(var(--p) / 0.18);
+}
+/* When expanded, the fold button inverts to primary fill / primary-content
+   stroke so the user reads "this is the active control row" at a glance. */
+.endless-row-lead.lead-expanded .endless-row-fold {
+    background: hsl(var(--p));
+    color: hsl(var(--pc));
+}
+@media (max-width: 767px) {
+    /* Compact: fold button shows; the three controls collapse until tapped. */
+    .endless-row-fold { display: inline-flex; }
+    .endless-row-lead .endless-row-controls { display: none; }
+    .endless-row-lead.lead-expanded .endless-row-controls { display: flex; }
+}
+
+/* ─── Marquee row entry-bump fix — three layered defenses ───────────────
+   The user reports elements ABOVE briefly bumping up when a new row
+   slides in. Three simultaneous fixes; A is cheap, B addresses the
+   height-jump root cause, C is the FLIP technique applied to existing
+   rows so any residual layout shift is masked by inverse transforms. */
+
+/* A. CSS containment — declare that the chip stack's layout/style
+   changes can't affect ancestors. Browser stops measuring up the tree. */
+#subject-chips-stack {
+    contain: layout style;
+}
+
+/* B. Replace pure transform-slide with max-height + transform compound,
+   so the height GROWS smoothly as the row enters rather than appearing
+   full-height at insertion. Existing rows translate predictably; no
+   sudden full-height jump means no bump. The keyframe overrides the
+   inline-animation `entering` rule that lives further up in this file. */
+.suggest-marquee-row.entering {
+    animation: suggest-row-enter-smooth 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    overflow: hidden;
+}
+@keyframes suggest-row-enter-smooth {
+    0% {
+        max-height: 0;
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    40% {
+        max-height: 28px;
+        transform: translateX(60%);
+        opacity: 0.4;
+    }
+    100% {
+        max-height: 28px;
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+/* (C) is JS-side: see the FLIP block in _appendSuggestBatchRow. */
+
 body[data-layout="subjects"].subj-mode-simple #subjects-input-row,
 body[data-layout="subjects"].subj-mode-endless #subjects-input-row {
     flex: 1 1 auto;
@@ -2377,19 +2585,95 @@ body[data-layout="gallery"] #focus-fab-prev {
    were considering main 'unstable' during the opacity fade and
    blocking pointer events through the apparent transition window).
    When the slide class lands, transitions kick in for that paint
-   only; when the class is removed, no transition is registered. */
+   only; when the class is removed, no transition is registered.
+
+   Opacity fade was DROPPED — children that should stay PUT during the
+   slide (the stats navbar at the top of <main>) get a counter-translate
+   below to cancel the parent's transform. Opacity:0 on the parent would
+   wipe children regardless of any opacity:1 we set on them, so to make
+   the navbar appear stationary we have to keep the parent visible
+   throughout the slide and just translate. The mobile-nav-bar lives
+   OUTSIDE <main> + uses position:fixed → unaffected by all of this. */
 main.layout-sliding-left,
 main.layout-sliding-right {
-    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 220ms ease-out;
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 main.layout-sliding-left {
     transform: translateX(-30%);
-    opacity: 0;
 }
 main.layout-sliding-right {
     transform: translateX(30%);
-    opacity: 0;
+}
+/* Counter-translate the stats navbar so it appears glued in place
+   while the rest of <main> slides under it. Same easing/duration so
+   the cancellation is exact frame-by-frame. The navbar is full-width
+   (same width as <main>), so 30% of its width == 30% of main's width
+   and the two translates cancel cleanly. */
+main.layout-sliding-left #stats-navbar,
+main.layout-sliding-right #stats-navbar {
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+main.layout-sliding-left #stats-navbar {
+    transform: translateX(30%);
+}
+main.layout-sliding-right #stats-navbar {
+    transform: translateX(-30%);
+}
+
+/* Bigger circular flanking-nav (focus-fab-prev / focus-fab-next) —
+   bumped from daisyUI's btn-circle default (~3rem) to 4.5rem so the
+   destination layout name sits INSIDE the circle alongside a small
+   arrow. Theme primary fill + primary-content text matches the rest
+   of the dashboard's active-state palette.
+
+   Visibility is owned by `body[data-layout=…] #focus-fab-…` rules
+   above (display:none default, display:flex when this layout has a
+   prev/next direction worth showing). The chunky rules here only
+   own LOOK + size — the layout-specific show/hide is intentionally
+   left to the upstream block so the contract stays in one place. */
+.focus-fab {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 9999px;
+    background: hsl(var(--p));
+    color: hsl(var(--pc));
+    border: 2px solid hsl(var(--p));
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    transition: transform 0.15s, background 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    /* Position-fixed bottom corners — same as the legacy btn-circle
+       rules but at the new larger size. The display value is `none`
+       by default; the body[data-layout=...] selectors flip to `flex`. */
+    position: fixed;
+    bottom: 1.25rem;
+    z-index: 40;
+    display: none;
+}
+.focus-fab:hover {
+    transform: scale(1.06);
+    background: hsl(var(--pf, var(--p)));
+}
+.focus-fab:active { transform: scale(0.96); }
+.focus-fab-prev { left: 1.25rem; }
+.focus-fab-next { right: 1.25rem; }
+.focus-fab .fab-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.focus-fab .fab-arrow {
+    flex: none;
+    opacity: 0.85;
+}
+@media (max-width: 767px) {
+    /* Mobile uses the bottom nav bar for navigation — hide the
+       desktop flanking FABs to avoid overlap with the nav bar. */
+    .focus-fab { display: none !important; }
 }
 
 body[data-layout="subjects"] #focus-slop-fab,
@@ -2643,6 +2927,134 @@ body.subj-mode-raw #btn-start-stop-inline {
     max-height: none;
 }
 
+/* Endless STARTED — make the whole flex chain grow so the "Story so
+   far" pane fills every spare pixel of the card. Pure CSS so the
+   browser re-runs flex layout on viewport resize automatically; no
+   JS-set heights to go stale when the user goes wide → compact.
+   Chain (top → bottom):
+     .subjects-pane[endless]          → 1 1 auto + min-height:0
+       #subjects-story-pane           → already 1 1 auto (rule above)
+         #subjects-story-log          → already 1 1 auto (rule above)
+   While running we also collapse the seed textarea + its input row to
+   their natural height — the seed is read-only at this point, so it
+   doesn't need the vertical real estate it claims in the no-story
+   state (where it was the primary writing surface). */
+body.endless-running .subjects-pane[data-pane-mode="endless"] {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+body.endless-running #subjects-input-row {
+    flex: 0 0 auto !important;
+    align-items: flex-start !important;
+}
+body.endless-running #p-core {
+    flex: 0 0 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: 6rem;
+}
+
+/* Chat suggestions group — primary-tinted bordered card that cues the
+   user this cluster is the LLM's reply suggestions, not part of the
+   chat log. Sits flex-none above the log so it never steals the log's
+   scroll space. */
+.chat-suggestions-box {
+    border: 1px solid hsl(var(--p) / 0.4);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: hsl(var(--p) / 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: none;
+    /* Cap the suggestions cluster so 4 long reply chips can't push the
+       chat-log below the visible card. The inner #subjects-chat-replies
+       gets its own overflow so any chip overflow scrolls inside the box
+       rather than pushing siblings off-screen. 30vh is generous on a
+       laptop (~250 px) but never more than ~third the viewport, so the
+       chat history below always has room to breathe. */
+    max-height: 30vh;
+    overflow: hidden;
+}
+#subjects-chat-replies {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.chat-suggestions-heading {
+    font-weight: 700;
+    letter-spacing: 0.12em;
+}
+
+/* Default-kind toast — uses primary theme accent rather than the daisyUI
+   info-blue so the dashboard's "live signal" colour palette stays
+   consistent across alerts, status chips, ticker bars, mode pills, etc.
+   Semantic kinds (success / warning / error) keep their daisyUI tokens
+   intact — re-skinning those into primary would lose their meaning. */
+.toast-themed-primary {
+    background-color: hsl(var(--p));
+    color: hsl(var(--pc));
+    border-color: hsl(var(--p));
+}
+.toast-themed-primary .btn-ghost {
+    color: hsl(var(--pc));
+}
+.toast-themed-primary .btn-ghost:hover {
+    background-color: hsl(var(--pc) / 0.15);
+}
+
+/* Defensive input/textarea theming — daisyUI's .input/.textarea
+   already pull from --bc (base-content) but custom classes occasionally
+   slip through with no explicit color. Force the theme's content
+   colour everywhere so a user on a dark theme never sees default
+   dark-on-dark text in an input. */
+input,
+textarea,
+select {
+    color: hsl(var(--bc));
+}
+input::placeholder,
+textarea::placeholder {
+    color: hsl(var(--bc) / 0.45);
+}
+
+/* Queue count pulse — fires on the depth chip whenever the total
+   queued+working count INCREASES (added in _updateQueueStatusChip).
+   Three soft scale-up beats over 1.6 s, then reset to natural size.
+   transform-origin centers the pulse so the surrounding chrome
+   doesn't shift. */
+@keyframes queue-count-pulse {
+    0%   { transform: scale(1);    color: hsl(var(--p)); }
+    20%  { transform: scale(1.35); color: hsl(var(--p)); text-shadow: 0 0 12px hsl(var(--p) / 0.6); }
+    40%  { transform: scale(1);    color: hsl(var(--p)); }
+    60%  { transform: scale(1.18); color: hsl(var(--p)); }
+    100% { transform: scale(1);    color: inherit; text-shadow: none; }
+}
+.queue-count-pulse {
+    display: inline-block;
+    transform-origin: center;
+    animation: queue-count-pulse 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+@media (prefers-reduced-motion: reduce) {
+    .queue-count-pulse { animation: none; }
+}
+
+/* Slop filter — secondary 'frames' chip is gated by the master 'assets'
+   chip. When assets is OFF, frames toggling is meaningless (frames are
+   already excluded under the assets gate), so the chip reads as
+   inert: greyed-out, no pointer cursor, click-blocked. _applySlopFilters
+   adds/removes .slop-filter-disabled on the surrounding label every
+   time the assets state changes. */
+.slop-filter-disabled {
+    opacity: 0.35;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+.slop-filter-disabled .badge {
+    text-decoration: line-through;
+}
+
 /* Quick-spin feedback on every refresh-icon click. _wireRefreshTapSpin
    in app.js delegates pointerdown events to any element matching a
    refresh-button selector and toggles .refresh-tapping on its inner SVG
@@ -2700,28 +3112,70 @@ body.subj-mode-raw #btn-start-stop-inline {
     }
 }
 
+/* Symmetric prev/next pill — identical geometry on both sides so the
+   bar reads as a balanced pair. Width is content-driven (label + icon
+   + 6 px gap) so a long label like "Prompt" doesn't push the layout
+   asymmetrically. */
 .mobile-nav-btn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    flex: 1;
-    background: transparent;
-    color: hsl(var(--bc));
-    padding: 6px 8px;
-    border-radius: 8px;
+    justify-content: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    background: hsl(var(--p) / 0.12);
+    color: hsl(var(--p));
+    border: 1px solid hsl(var(--p) / 0.5);
+    padding: 6px 14px;
+    border-radius: 999px;
     cursor: pointer;
-    border: none;
-    transition: background 0.15s;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    min-height: 36px;
+}
+.mobile-nav-icon { width: 1.1rem; height: 1.1rem; flex: 0 0 auto; }
+.mobile-nav-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1;
 }
 
-.mobile-nav-btn:not(:disabled):hover,
+.mobile-nav-btn:not(:disabled):hover {
+    background: hsl(var(--p) / 0.22);
+    border-color: hsl(var(--p) / 0.8);
+}
 .mobile-nav-btn:not(:disabled):active {
-    background: hsl(var(--p) / 0.15);
+    transform: scale(0.97);
 }
 
 .mobile-nav-btn:disabled,
 .mobile-nav-btn.invisible {
     visibility: hidden;
     pointer-events: none;
+}
+
+/* Center cycle indicator: Prompt · Queue · Slop with the current step
+   highlighted (text-primary + bold). Populated as innerHTML by
+   _mobileNavRefresh so the active span gets the .is-current class. */
+.mobile-nav-cycle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: hsl(var(--bc) / 0.5);
+    flex: 1 1 auto;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.mobile-nav-cycle .is-current {
+    color: hsl(var(--p));
+    font-weight: 700;
+}
+.mobile-nav-cycle .sep {
+    opacity: 0.4;
 }
 
 /* Per-row refresh-button "loading" state — applied to a row's
@@ -2773,8 +3227,13 @@ body.subj-mode-simple #subjects-suggest-btn.join-item {
    amputated segment of a join group. body.suggest-cluster-collapsed
    is set by _refreshSuggestBadge based on toggle state. */
 body.suggest-cluster-collapsed #subjects-suggestions-toggle.join-item {
-    border-top-right-radius: 9999px;
-    border-bottom-right-radius: 9999px;
+    /* Round BOTH edges — the toggle is standalone in the join when
+     * Suggestions is OFF (prompt-name + refresh + add are all hidden).
+     * daisyUI's join-item only rounds the FIRST item's left edge, but a
+     * standalone item needs both sides rounded so it doesn't look
+     * "amputated" on the left. The right-only round was a v294 fix that
+     * only handled half the problem. */
+    border-radius: 9999px;
 }
 
 /* Endless mode + no story running: dim + disable the entire
