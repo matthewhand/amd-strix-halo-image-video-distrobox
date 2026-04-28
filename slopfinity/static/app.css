@@ -2688,6 +2688,63 @@ body.subj-mode-raw #subjects-per-stage textarea {
     }
 }
 
+/* ====================================================================
+   Story-mode beat rows (per-beat redesign)
+   --------------------------------------------------------------------
+   Each beat in the story log is its own row: drag-handle, editable input,
+   "+ add beat below" button, "× delete" button. The row currently in
+   focus is `.beat-active` — its outline tells the user "suggestion chip
+   clicks land HERE". Drag-and-drop adds `.dragging` to the source and
+   `.drag-over` to the row the cursor is hovering, with a primary-tinted
+   outline so the drop slot is unmistakable.
+   ==================================================================== */
+
+#subjects-story-log .beat-row {
+    transition: background-color 120ms ease, outline-color 120ms ease,
+        transform 120ms ease, opacity 120ms ease;
+    /* Border slot reserved at all times so adding the active outline
+       doesn't shift sibling rows by 2px when the active beat changes. */
+    outline: 1px solid transparent;
+    outline-offset: -1px;
+}
+
+#subjects-story-log .beat-row.beat-active {
+    background-color: oklch(var(--b1) / 0.7);
+    outline-color: oklch(var(--p) / 0.55);
+    box-shadow: 0 0 0 1px oklch(var(--p) / 0.18) inset;
+}
+
+#subjects-story-log .beat-drag-handle {
+    cursor: grab;
+    padding: 0 2px;
+    touch-action: none;
+}
+
+#subjects-story-log .beat-row.dragging .beat-drag-handle,
+#subjects-story-log .beat-drag-handle:active {
+    cursor: grabbing;
+}
+
+#subjects-story-log .beat-row.dragging {
+    opacity: 0.4;
+}
+
+#subjects-story-log .beat-row.drag-over {
+    outline-color: oklch(var(--p));
+    transform: translateY(1px);
+    background-color: oklch(var(--p) / 0.08);
+}
+
+/* Add-beat (+) button picks up the primary tint so users read it as
+   "additive / progress forward" vs the destructive × delete button. */
+#subjects-story-log .endless-row-add {
+    color: oklch(var(--p) / 0.7);
+}
+#subjects-story-log .endless-row-add:hover {
+    color: oklch(var(--p));
+    background-color: oklch(var(--p) / 0.12);
+}
+
 /* ─── Marquee row entry-bump fix — three layered defenses ───────────────
    The user reports elements ABOVE briefly bumping up when a new row
    slides in. Three simultaneous fixes; A is cheap, B addresses the

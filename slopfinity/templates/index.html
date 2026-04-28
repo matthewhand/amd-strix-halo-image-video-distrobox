@@ -768,17 +768,24 @@
                                        BELOW the log so they read as "act on what's
                                        above" rather than competing with the label. #}
                                     <div id="subjects-story-pane" class="hidden flex flex-col gap-1 mt-2">
-                                        <div class="text-[10px] uppercase tracking-widest text-base-content/50">
-                                            Story so far
+                                        <div class="flex items-center justify-between">
+                                            <div class="text-[10px] uppercase tracking-widest text-base-content/50">
+                                                Story beats
+                                            </div>
+                                            <div class="text-[9px] text-base-content/40 italic">
+                                                Drag ≡ to reorder · click + to add a beat below · suggestions land in the highlighted beat
+                                            </div>
                                         </div>
-                                        {# Editable story log. Each accepted suggestion becomes a row
-                                        with a contenteditable text span and an × delete button. JS
-                                        owns the row markup (see _renderEndlessLog in app.js); this
-                                        host element just provides the box + scrolling. The list
-                                        shape is persisted to localStorage under the same key as
-                                        before (`slopfinity-endless-story-log`); the loader
-                                        accepts both the legacy `\n`-joined string and the new
-                                        JSON-array shape. #}
+                                        {# Per-beat story log. Each beat = one editable input row with a
+                                        drag handle (≡), a + (insert a fresh beat below), and × (delete).
+                                        Suggestion chip clicks write the chip text into the currently-
+                                        ACTIVE beat (the row outlined in primary). Drag-and-drop
+                                        reorders beats via HTML5 dragstart/over/drop. JS owns row
+                                        markup (see _renderEndlessLog in app.js). Storage shape is a
+                                        JSON array of strings under `slopfinity-endless-story-log`;
+                                        the loader migrates the legacy `\n`-joined string on first read.
+                                        Active beat idx persists separately under
+                                        `slopfinity-endless-active-beat-idx`. #}
                                         <div id="subjects-story-log"
                                             class="text-xs font-mono leading-snug bg-base-200/60 border border-base-300/60 rounded p-1 max-h-40 overflow-y-auto m-0 flex flex-col gap-1"></div>
                                     <div class="flex items-center justify-end gap-1 mt-1">
