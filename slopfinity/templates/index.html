@@ -683,15 +683,15 @@
                                 </div>
 
                                 <div class="subjects-pane" data-pane-mode="raw">
-                                    {# Raw mode body: per-stage panel on the LEFT, Queue
-                                    Slop button + status chip on the RIGHT. Mirrors the
-                                    textarea+button layout simple/endless modes use, so
-                                    the Queue action sits visually on the right of the
-                                    input regardless of mode. The shared #subjects-
-                                    input-row below is hidden in raw via CSS — this
-                                    in-pane button is the canonical raw-mode Queue
+                                    {# Raw mode body: per-stage panel ON TOP, Queue Slop
+                                    button + status chip BELOW (full-width). Stacks for
+                                    the same reason simple/endless mode's input row does:
+                                    side-by-side compressed the textareas on compact and
+                                    fought vertical spacing on medium/large. The shared
+                                    #subjects-input-row below is hidden in raw via CSS —
+                                    this in-pane button is the canonical raw-mode Queue
                                     affordance. #}
-                                    <div class="flex gap-2 items-stretch mt-2">
+                                    <div class="flex flex-col gap-2 mt-2">
                                         <div id="subjects-per-stage"
                                             class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-1 flex-1 min-w-0">
                                             {% for stage, label, placeholder in [
@@ -738,7 +738,7 @@
                                         (_subjectsAction) and the queue-info chip pattern
                                         with the simple/endless input-row button so the
                                         UX reads consistently across modes. #}
-                                        <div class="flex flex-col flex-none w-40 gap-1 self-start">
+                                        <div class="flex flex-col gap-1">
                                             <button
                                                 class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight flex items-center justify-center gap-2"
                                                 id="btn-start-stop-raw" onclick="_subjectsAction()"
@@ -938,12 +938,20 @@
                             The button + status chip live in a flex-column so we
                             can surface queue depth + activity status under the
                             button without the button itself growing. #}
-                            <div id="subjects-input-row" class="flex gap-2 items-start">
+                            {# Stacked layout — textarea fills the row's full width, the
+                            Queue Slop button cluster sits BENEATH it as a horizontal
+                            full-width strip. Was: side-by-side w-40 column on the right,
+                            which (a) compressed the textarea on compact and (b) made
+                            medium/large struggle to keep vertical spacing balanced
+                            between the textarea, the button, and the suggestion area
+                            below. Stacking the cluster makes the same vertical rhythm
+                            work at every viewport. #}
+                            <div id="subjects-input-row" class="flex flex-col gap-2">
                                 <textarea id="p-core" rows="5"
-                                    class="textarea textarea-bordered textarea-primary text-sm leading-snug flex-1 min-w-0"
+                                    class="textarea textarea-bordered textarea-primary text-sm leading-snug w-full"
                                     placeholder="One subject per line.&#10;e.g.&#10;lumpy clay robots&#10;cyberpunk dragons&#10;hermit crab lawyers"
                                     oninput="updatePipeline(); _refreshChipHighlights && _refreshChipHighlights(); _updateSubjectsActionLabel && _updateSubjectsActionLabel()">{{ (config.infinity_themes or []) | join('\n') }}</textarea>
-                                <div class="flex flex-col flex-none w-40 ml-auto gap-1">
+                                <div class="flex flex-col gap-1">
                                     <button
                                         class="btn btn-primary btn-lg w-full whitespace-normal text-sm leading-tight flex items-center justify-center gap-2"
                                         id="btn-start-stop-inline" onclick="_subjectsAction()"
