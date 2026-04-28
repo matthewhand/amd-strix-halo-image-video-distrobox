@@ -140,15 +140,20 @@ test('endless: + click renders empty mask, no blank-chip placeholders', async ({
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: + button is disabled before Start Story, enabled after.
+// CONTRACT: + button stays ENABLED in endless mode regardless of story state.
+// (Was: disabled pre-start, enabled post-start. Product moved in
+// _refreshSuggestBadge — see app.js ~line 1472, "isEndless: allow=true".
+// The user asked for the + to never look greyed out. _addEndlessRow is
+// no-op-safe pre-Start; clicking it just appends to the saved row
+// prompts and renders when the story actually starts.)
 // ---------------------------------------------------------------------------
 
-test('endless: + disabled pre-start, enabled post-start', async ({ page }) => {
+test('endless: + always enabled in endless mode (pre + post Start)', async ({ page }) => {
     await stubSuggestionResponse(page, ['a', 'b']);
     await bootstrap(page);
     await setMode(page, 'endless');
     const preDisabled = await page.locator('#subjects-suggest-add-btn').evaluate(el => el.disabled);
-    expect(preDisabled).toBe(true);
+    expect(preDisabled).toBe(false);
     await page.fill('#p-core', 'seed');
     await page.click('#btn-start-stop-inline');
     await page.waitForTimeout(500);
@@ -326,39 +331,43 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: endless-pill-locked — in endless mode pre-Start-Story, the
-// entire Suggestions pill (toggle + prompt-name + +) is dimmed and
-// non-interactive. Story start unlocks it; Submit/Reset re-locks.
+// CONTRACT: endless mode — body.endless-pill-locked class was REMOVED in
+// the v316/v317 cleanup (see app.js _refreshSuggestBadge line ~1414:
+// "the body.endless-pill-locked dimmer was REMOVED — earlier iterations
+// dimmed the whole row pre-Start-Story, but the user explicitly asked
+// for the prompt-name and + button to NEVER look greyed out."). The
+// suggestions pill remains interactive at every stage; the + button
+// gating now keys ONLY on storyRunning visually via repaint, but
+// `disabled` stays false in endless. This test now asserts the absence
+// of the lock class across all 3 phases (pre/running/post-Submit).
 // ---------------------------------------------------------------------------
 
-test('endless: pill is locked pre-start, unlocked while running', async ({ page }) => {
+test('endless: pill is never locked (class removed in v316/v317)', async ({ page }) => {
     await stubSuggestionResponse(page, ['a', 'b']);
     await bootstrap(page);
     await setMode(page, 'endless');
-    // Before Start Story — body has the locked class.
+    // Pre-Start: no lock class.
     let locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
-    expect(locked).toBe(true);
-    // Pointer-events:none — clicking the toggle is a no-op (its state
-    // shouldn't flip). We assert via computed style rather than trying
-    // to click + check state.
+    expect(locked).toBe(false);
+    // Pointer-events should NOT be blocked anywhere on the row.
     const pillPointerEvents = await page.evaluate(() => {
         const el = document.getElementById('subjects-need-ideas-row');
         return el ? getComputedStyle(el).pointerEvents : '';
     });
-    expect(pillPointerEvents).toBe('none');
+    expect(pillPointerEvents).not.toBe('none');
 
-    // Start the story.
+    // Start the story — still no lock.
     await page.fill('#p-core', 'A seed');
     await page.click('#btn-start-stop-inline');
     await page.waitForTimeout(500);
     locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
     expect(locked).toBe(false);
 
-    // Submit ends the story → re-lock.
+    // Submit ends the story — still no lock.
     await page.click('#subjects-story-submit');
     await page.waitForTimeout(300);
     locked = await page.evaluate(() => document.body.classList.contains('endless-pill-locked'));
-    expect(locked).toBe(true);
+    expect(locked).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

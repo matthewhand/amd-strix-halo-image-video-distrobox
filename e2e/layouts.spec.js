@@ -1,5 +1,9 @@
-// Layout-mode coverage. body[data-layout] has 7 valid values:
-//   default · subjects · queue · gallery · subj-slop · queue-slop · subj-queue
+// Layout-mode coverage. body[data-layout] has 4 valid values:
+//   default · subjects · queue · gallery
+//
+// (The 2-card layouts subj-slop / queue-slop / subj-queue were REMOVED
+// in e9ac9ea — "ui+settings: 2-card layouts removed". Stale URLs fall
+// back to default at the app layer; the spec no longer asserts them.)
 //
 // For each mode this suite asserts:
 //   • the cards expected to be visible actually render with non-zero size
@@ -99,30 +103,10 @@ const SCENARIOS = {
         showHorizontalSplitter: false,
         showFocusFab: false, // gallery uses its OWN #gallery-fab
     },
-    'subj-slop': {
-        visible: ['#split-left', '#output-section'],
-        hidden: ['#split-right'],
-        showSplitDivider: false,
-        showHorizontalSplitter: true,
-        showFocusFab: true,
-    },
-    'queue-slop': {
-        visible: ['#split-right', '#output-section'],
-        hidden: ['#split-left'],
-        showSplitDivider: false,
-        showHorizontalSplitter: true,
-        showFocusFab: true,
-    },
-    'subj-queue': {
-        // Slop is visible but as a horizontal filmstrip — still has a
-        // bounding box, just compressed. Filmstrip mode hides the FAB
-        // (the strip is the layout's defining feature).
-        visible: ['#split-left', '#split-right', '#output-section'],
-        hidden: [],
-        showSplitDivider: true,
-        showHorizontalSplitter: false,
-        showFocusFab: false,
-    },
+    // 2-card layouts (subj-slop / queue-slop / subj-queue) were removed
+    // in e9ac9ea — the URL ?layout=<old> param now falls through to
+    // 'default' at the app layer (no body[data-layout] is set). No
+    // assertions remain for these stale modes.
 };
 
 for (const [layout, expected] of Object.entries(SCENARIOS)) {

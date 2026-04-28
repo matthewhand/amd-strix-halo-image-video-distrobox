@@ -68,10 +68,13 @@ const MOCK_TOOL_REPLY = {
 
 async function mockChatRoutes(page, chatRequests) {
     await page.route('**/subjects/suggest*', (route) => {
+        // Server response shape (post-23ec1b1) is a per-mode dict, not
+        // a flat array. _renderChatReplies reads dict.chat.
+        const arr = MOCK_SUGGESTIONS;
         route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ ok: true, suggestions: MOCK_SUGGESTIONS }),
+            body: JSON.stringify({ ok: true, suggestions: { story: arr, simple: arr, chat: arr } }),
         });
     });
     await page.route('**/chat', async (route) => {
@@ -124,9 +127,11 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         // Wait for replies host to be populated by _renderChatReplies.
+        // Default display count is 3 (slopfinity-chat-suggest-count) — was 4
+        // pre-v303. _renderChatReplies displays slice(0, displayCount).
         await page.waitForFunction(() => {
             const host = document.getElementById('subjects-chat-replies');
-            return host && host.querySelectorAll('button').length >= 4;
+            return host && host.querySelectorAll('button').length >= 3;
         }, null, { timeout: 5000 });
 
         // Snapshot the first chip's onclick attribute — this is the
@@ -147,7 +152,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         // the most likely shape to break the attribute parsing.
         const chips = page.locator('#subjects-chat-replies button');
         const chipCount = await chips.count();
-        expect(chipCount).toBeGreaterThanOrEqual(4);
+        expect(chipCount).toBeGreaterThanOrEqual(3);
         let targetIdx = 0;
         for (let i = 0; i < chipCount; i++) {
             const t = (await chips.nth(i).textContent() || '').trim();

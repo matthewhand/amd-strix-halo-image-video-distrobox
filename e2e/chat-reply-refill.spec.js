@@ -27,10 +27,14 @@ test.describe('chat reply chips refill (v303)', () => {
         // _renderChatReplies (triggered when we switch to chat mode) hits
         // the stub, not the live LLM.
         await page.route('**/subjects/suggest*', async (route) => {
+            // Server response shape (post-23ec1b1) is a per-mode dict, not
+            // a flat array. _renderChatReplies reads dict.chat. Mirror
+            // the same suggestions across all 3 slots to stay mode-agnostic.
+            const arr = MOCK_SUGGESTIONS.slice();
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ suggestions: MOCK_SUGGESTIONS.slice() }),
+                body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
             });
         });
         // Mock the chat send endpoint so clicking a chip doesn't actually
@@ -81,8 +85,12 @@ test.describe('chat reply chips refill (v303)', () => {
         // replaced by a NEW chip after the click.
         const firstText = (await page.locator('#subjects-chat-replies .chat-reply-chip').first().textContent() || '').trim();
 
-        // Click the first chip → animation kicks off.
-        await page.locator('#subjects-chat-replies .chat-reply-chip').first().click();
+        // Click the first chip → animation kicks off. Use force:true
+        // because the chip has an active CSS transition (transform +
+        // opacity) on hover/render that Playwright's stability check
+        // can flake on; the test is about the click handler firing,
+        // not whether the chip is animation-quiescent.
+        await page.locator('#subjects-chat-replies .chat-reply-chip').first().click({ force: true });
 
         // During the ~700ms fade window the original chip should still be
         // in the DOM with .chip-disappear.
