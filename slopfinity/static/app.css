@@ -3007,6 +3007,35 @@ body.endless-running #p-core {
 .chat-suggestions-heading {
     font-weight: 700;
     letter-spacing: 0.12em;
+    /* Compact (<640px) reclaims the heading-row vertical space:
+       - "SUGGESTIONS" label hides
+       - Reset button overlays the chip area top-right (absolute) so it
+         remains accessible without claiming a dedicated row.
+       The .chat-suggestions-box becomes position-relative so the
+       overlay anchors against it. */
+    position: relative;
+}
+@media (max-width: 639px) {
+    .chat-suggestions-heading > span:first-child {
+        display: none;
+    }
+    .chat-suggestions-heading {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        z-index: 2;
+        background: transparent;
+    }
+    .chat-suggestions-box {
+        position: relative;
+    }
+    /* The reset button gets a small dim background so it reads as
+       "tappable affordance" floating over the chips — without it,
+       the bare ✕+text would visually disappear into the chips. */
+    #subjects-chat-reset {
+        background: oklch(var(--b1) / 0.7);
+        backdrop-filter: blur(4px);
+    }
 }
 
 /* Chat reply chip enter animation — paired with .chip-disappear (defined
