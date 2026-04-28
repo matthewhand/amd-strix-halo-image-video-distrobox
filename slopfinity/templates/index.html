@@ -844,8 +844,55 @@
                                     sit inside the same border. #}
                                     <div class="chat-suggestions-box">
                                         <div
-                                            class="flex items-center justify-between text-[10px] uppercase tracking-widest text-primary chat-suggestions-heading">
-                                            <span>Suggestions</span>
+                                            class="flex items-center justify-between gap-2 text-[10px] uppercase tracking-widest text-primary chat-suggestions-heading">
+                                            {# Radio-pill cluster — three suggestion modes
+                                               (helpful / playful / terse) wired through
+                                               localStorage `slopfinity-chat-suggest-mode`.
+                                               Mirrors the slop-filter-pill pattern:
+                                               radio + has-[:checked] swaps the active
+                                               state on the inner span. The +/- stepper
+                                               adjusts how many reply chips get fetched;
+                                               persisted in `slopfinity-chat-suggest-count`
+                                               (default 3). _initChatSuggestCluster (in
+                                               app.js) hydrates from localStorage and
+                                               wires change handlers. #}
+                                            <div class="chat-suggest-cluster" role="group"
+                                                aria-label="Chat suggestions controls">
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary chat-suggest-mode flex items-center"
+                                                    title="Helpful — practical, on-topic replies">
+                                                    <input type="radio" name="chat-suggest-mode" value="helpful"
+                                                        class="hidden" data-chat-suggest-mode="helpful" checked>
+                                                    helpful
+                                                </label>
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary chat-suggest-mode flex items-center"
+                                                    title="Playful — leaning into wit / lateral leaps">
+                                                    <input type="radio" name="chat-suggest-mode" value="playful"
+                                                        class="hidden" data-chat-suggest-mode="playful">
+                                                    playful
+                                                </label>
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary chat-suggest-mode flex items-center"
+                                                    title="Terse — short, blunt one-liners">
+                                                    <input type="radio" name="chat-suggest-mode" value="terse"
+                                                        class="hidden" data-chat-suggest-mode="terse">
+                                                    terse
+                                                </label>
+                                                <div class="join ml-1" aria-label="Suggestion count">
+                                                    <button type="button"
+                                                        class="btn btn-xs btn-outline btn-primary join-item chat-suggest-step"
+                                                        title="Fetch fewer reply suggestions"
+                                                        onclick="_chatSuggestCountStep && _chatSuggestCountStep(-1)">−</button>
+                                                    <span
+                                                        class="btn btn-xs btn-ghost join-item chat-suggest-count pointer-events-none"
+                                                        id="chat-suggest-count" data-count="3">3</span>
+                                                    <button type="button"
+                                                        class="btn btn-xs btn-outline btn-primary join-item chat-suggest-step"
+                                                        title="Fetch more reply suggestions"
+                                                        onclick="_chatSuggestCountStep && _chatSuggestCountStep(1)">+</button>
+                                                </div>
+                                            </div>
                                             <button type="button" id="subjects-chat-reset"
                                                 class="btn btn-ghost btn-xs text-error gap-1" onclick="_resetChat()"
                                                 title="Clear chat history. Confirms first.">

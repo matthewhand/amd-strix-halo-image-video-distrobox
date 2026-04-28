@@ -4015,6 +4015,92 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     opacity: 0.5;
 }
 
+/* Animated gear-cogs prefix for chat-thought bubbles. Replaces the static
+   💭 glyph while tool calls are in flight — two interlocking 12px cogs,
+   one CW, one CCW, opacity 0.6 so it reads as ambient "thinking" not as
+   a control. Inline SVG (see app.js _renderChatLog) carries the
+   `chat-cog` / `chat-cog-rev` classes; rotation is CSS-only. */
+.chat-cogs {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    opacity: 0.6;
+    margin-right: 4px;
+    vertical-align: -2px;
+    color: oklch(var(--p));
+}
+
+.chat-cog,
+.chat-cog-rev {
+    width: 12px;
+    height: 12px;
+    transform-origin: 50% 50%;
+}
+
+.chat-cog {
+    animation: chat-cog-spin 3.2s linear infinite;
+}
+
+.chat-cog-rev {
+    animation: chat-cog-spin-rev 3.2s linear infinite;
+    /* Negative offset so the second cog meshes visually with the first
+       — slight overlap reads as "interlocking teeth". */
+    margin-left: -3px;
+}
+
+@keyframes chat-cog-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes chat-cog-spin-rev {
+    to {
+        transform: rotate(-360deg);
+    }
+}
+
+/* Chat suggestions header cluster — mode pills + count +/-. Mirrors the
+   slop-filter-pill pattern (daisyUI btn + has-[:checked] for the active
+   state) but laid out in a single horizontal row alongside a join-group
+   stepper. The cluster lives in `.chat-suggestions-heading` so the
+   existing primary-tinted box wraps it. */
+.chat-suggest-cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Tighter than .btn-xs so three mode pills + a stepper fit on one line in
+   the narrow chat pane without wrapping at desktop widths. Inherits the
+   primary-outline / has-[:checked] active swap from the inline classes. */
+.chat-suggest-cluster .chat-suggest-mode {
+    height: 1.4rem;
+    min-height: 1.4rem;
+    padding-inline: 0.55rem;
+    font-size: 10px;
+    line-height: 1;
+}
+
+.chat-suggest-cluster .chat-suggest-step {
+    height: 1.4rem;
+    min-height: 1.4rem;
+    width: 1.4rem;
+    min-width: 1.4rem;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.chat-suggest-cluster .chat-suggest-count {
+    font-variant-numeric: tabular-nums;
+    min-width: 1ch;
+    text-align: center;
+    font-size: 11px;
+    opacity: 0.85;
+}
+
 /* Seed-asset drag-drop overlay — fires when files are dragged anywhere
    over the page. The `seed-drag-active` class is toggled by
    _wireSeedUpload() in app.js based on dragenter/dragleave depth. */
