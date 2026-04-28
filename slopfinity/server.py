@@ -582,26 +582,17 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
             "an evocative opening scene that could anchor a longer story."
         )
         user_msg = "Give me one story-opening scene."
-    elif endless and subjects_in:
-        # Endless Story mode (Subjects card "Endless Story" toggle on).
-        # Treat the existing chips as the story-so-far and ask for the
-        # NEXT chapter — explicitly forbid restating earlier scenes.
-        user_msg = (
-            "These are the story beats already on screen, in chronological order:\n"
-            f"{subjects_in}\n\n"
-            f"Continue the story from where it leaves off. Generate {n} short "
-            "next-scene subject ideas that build on the trajectory above. "
-            "Each line must move the story forward; do NOT repeat or paraphrase "
-            "any line above. One scene per line, plain text, 3-8 words each."
-        )
-    elif use_subjects and subjects_in:
-        user_msg = (
-            "Match the style/theme of these existing subjects:\n"
-            f"{subjects_in}\n\n"
-            f"Now generate {n} more in the same vein."
-        )
-    else:
-        user_msg = f"Give me {n} subject ideas."
+    # We're now fetching THREE modes simultaneously in one payload to save LLM roundtrips.
+    user_msg_base = ""
+    if subjects_in:
+        user_msg_base = f"Current context / story beats: {subjects_in}\n\n"
+        
+    user_msg = user_msg_base + (
+        f"Generate {n} suggestions for THREE distinct contexts:\n"
+        f"1. 'story': short next-scene continuations building chronologically on the context above. Do NOT repeat beats.\n"
+        f"2. 'simple': tangential visual subjects matching the tone/theme of the context.\n"
+        f"3. 'chat': longer conversational replies or starters relating to the ongoing process."
+    )
 
     # When fresh=1 we want EACH call to give different ideas (the marquee
     # drip-feed asks for rows 2..N and they'd otherwise be identical to
@@ -617,124 +608,64 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
         ]
         chosen = random.choice(salt_themes)
         user_msg += f"\n\nNudge: lean toward {chosen}. Avoid repeating any earlier batch."
-    # JSON-schema constraint: force the LLM to return ONLY a strict
-    # {"suggestions": ["chip1", "chip2", ...]} document. LM Studio /
-    # llama.cpp / vLLM honour OpenAI-style response_format. The schema
-    # eliminates the entire class of bugs where the model emits
-    # markdown headers ("**Constraint check**", "**Generated:**"),
-    # numbered lists, code fences, scaffolding restatements, or
-    # apologetic preludes ("Here are 6 ideas:") — all of which
-    # required defensive client-side filters before. With the schema,
-    # the LLM physically cannot produce non-JSON output.
-    if endless:
-        max_len = config.get("suggest_max_len_endless") or 50
-    elif chat:
-        max_len = config.get("suggest_max_len_chat") or 200
-    else:
-        max_len = config.get("suggest_max_len_simple") or 100
+    # JSON-schema constraint: fetch all 3 KVP sets at once
+    max_len_endless = config.get("suggest_max_len_endless") or 20
+    max_len_simple = config.get("suggest_max_len_simple") or 40
+    max_len_chat = config.get("suggest_max_len_chat") or 80
 
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "suggestions",
+            "name": "suggestions_multi",
             "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {
-                    "suggestions": {
+                    "story": {
                         "type": "array",
-                        "minItems": 1,
-                        "maxItems": int(n) * 2,  # tolerate small overshoot
-                        "items": {
-                            "type": "string",
-                            "minLength": 2,
-                            "maxLength": max_len,
-                        },
+                        "items": {"type": "string", "maxLength": max_len_endless}
                     },
+                    "simple": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": max_len_simple}
+                    },
+                    "chat": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": max_len_chat}
+                    }
                 },
-                "required": ["suggestions"],
+                "required": ["story", "simple", "chat"],
                 "additionalProperties": False,
             },
         },
     }
-    # Append a one-line schema reminder to the user message so models
-    # that ignore response_format still try to format correctly.
-    user_msg += '\n\nReturn ONLY a JSON object: {"suggestions": ["...", "..."]}'
-    # Run the (blocking, network-bound) LLM call in a thread so it doesn't
-    # stall FastAPI's event loop — without this, the WS state broadcast and
-    # other endpoints (Settings open, etc.) freeze for the duration.
-    # Wrap in acquire_gpu so manual 🎲 Suggest participates in auto-suspend
-    # (resumes LM Studio if a fleet stage paused it). safety_gb=4 since
-    # this is just an LLM ping, not a multi-GB diffusion stage.
+    # Append a one-line schema reminder to the user message
+    user_msg += '\n\nReturn ONLY a JSON object: {"story": ["..."], "simple": ["..."], "chat": ["..."]}'
+    
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4):
         raw = await asyncio.to_thread(lmstudio_call, sys_p, user_msg, response_format)
-    # Parse plain-text, newline-separated lines. Strip common LLM
-    # decorations the prompt asks it not to use but sometimes still
-    # produces — leading numbers, bullets, quotes, surrounding markdown
-    # code fences. Falls back to legacy JSON-array parsing if the model
-    # ignored the plain-text instruction (so cached behaviour from older
-    # clients still works).
-    suggestions = []
+
+    suggestions_dict = {"story": [], "simple": [], "chat": []}
     text = (raw or "").strip()
-    # Strip ``` fences if present (some models still wrap JSON in code blocks).
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
-    # Schema-constrained path: expect {"suggestions": [...]}. The
-    # response_format json_schema set above forces this shape on
-    # compliant models (LM Studio / llama.cpp / vLLM all honour it).
+
     try:
         obj = json.loads(text)
-        if isinstance(obj, dict) and isinstance(obj.get("suggestions"), list):
-            suggestions = obj["suggestions"]
+        if isinstance(obj, dict):
+            if isinstance(obj.get("story"), list): suggestions_dict["story"] = [str(s).strip() for s in obj["story"] if s]
+            if isinstance(obj.get("simple"), list): suggestions_dict["simple"] = [str(s).strip() for s in obj["simple"] if s]
+            if isinstance(obj.get("chat"), list): suggestions_dict["chat"] = [str(s).strip() for s in obj["chat"] if s]
     except Exception:
         pass
-    # Fallback A: bare JSON array (older clients, model regression).
-    if not suggestions:
-        try:
-            s = json.loads(text)
-            if isinstance(s, list):
-                suggestions = s
-        except Exception:
-            pass
-    # Fallback B: extract the first {...} or [...] substring if the
-    # model wrapped its JSON in prose despite the schema constraint.
-    if not suggestions:
-        for opener_chr, closer_chr in (("{", "}"), ("[", "]")):
-            start = text.find(opener_chr)
-            end = text.rfind(closer_chr)
-            if start != -1 and end > start:
-                try:
-                    obj = json.loads(text[start:end + 1])
-                    if isinstance(obj, dict) and isinstance(obj.get("suggestions"), list):
-                        suggestions = obj["suggestions"]
-                        break
-                    if isinstance(obj, list):
-                        suggestions = obj
-                        break
-                except Exception:
-                    pass
-    # Fallback C: plain-text line-by-line. Schema should make this
-    # unreachable on compliant models, but kept as a safety net for
-    # broken / misconfigured providers.
-    if not suggestions and text and not text.startswith("[") and not text.startswith("{"):
-        for line in text.splitlines():
-            t = line.strip()
-            if not t:
-                continue
-            t = re.sub(r"^\s*(?:\d+[\.\)]|[-*•])\s+", "", t)
-            if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
-                t = t[1:-1].strip()
-            if t:
-                suggestions.append(t)
-    suggestions = [str(s).strip() for s in suggestions if str(s).strip()][:n]
     # Don't store endless / opener results in the cache — we want each
     # tick fresh, and openers are one-shot by design.
-    if suggestions and not endless and not opener:
-        subjects_suggest._cache = (now, cache_key, suggestions)
-    return {"suggestions": suggestions, "cached": False}
+    if any(suggestions_dict.values()) and not endless and not opener:
+        subjects_suggest._cache = (now, cache_key, suggestions_dict)
+    return {"suggestions": suggestions_dict, "cached": False}
 
 
 # Chat mode — tool-using assistant. Replaces the prior Variations mode.
