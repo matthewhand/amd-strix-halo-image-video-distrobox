@@ -3466,6 +3466,34 @@ body.endless-running #p-core {
     transform: scale(0.94);
 }
 
+/* Fork pill — single-thread placeholder where the branch-nav numbered
+   pills would normally sit. Reads as muted by default so it doesn't
+   compete with active conversation; lights up on hover. Includes a
+   gap for the inline svg + "fork" label. */
+.chat-branch-pill.chat-branch-fork {
+    gap: 4px;
+    padding: 0 8px;
+    color: oklch(var(--bc) / 0.55);
+    border-color: oklch(var(--bc) / 0.25);
+    text-transform: lowercase;
+    letter-spacing: 0.05em;
+}
+
+.chat-branch-pill.chat-branch-fork:hover {
+    color: oklch(var(--p));
+    border-color: oklch(var(--p) / 0.6);
+    background: oklch(var(--p) / 0.12);
+}
+
+.chat-branch-nav-fork {
+    opacity: 0.45;
+    transition: opacity 0.15s;
+}
+
+.chat-branch-nav-fork:hover {
+    opacity: 1;
+}
+
 /* Inline edit form replaces the bubble's content while editing. */
 .chat-bubble-edit-form {
     display: flex;
@@ -4039,5 +4067,11 @@ body.seed-drag-active::before {
 @media (max-width: 639px) {
     #subjects-chat-input::placeholder {
         font-size: 0.7rem;
+    }
+
+    /* Per-queue-row "Output" label — redundant on compact where the file
+       thumbnails immediately below are self-evidently the output. */
+    .q-output-label {
+        display: none;
     }
 }

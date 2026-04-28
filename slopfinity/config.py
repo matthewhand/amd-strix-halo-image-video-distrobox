@@ -146,6 +146,14 @@ DEFAULT_SUGGEST_PROMPTS = [
 # manual 🎲 Suggest button stays exempt — explicit user intent always wins.
 DEFAULT_SUGGEST_AUTO_DISABLED = False
 
+# When True, simple mode renders the per-row prompt-pill cluster (the
+# "spiffy" lead chip showing the named suggest_prompts entry — Yes-and,
+# Plot Twist, Concrete Detail, etc.) that endless mode has always had.
+# Default OFF so simple mode stays simple; toggling ON also auto-seeds
+# the first row using whichever prompt is currently selected in the
+# subjects-suggest-prompt-name dropdown.
+DEFAULT_SUGGEST_PER_ROW_PROMPTS = False
+
 # Auto-suspend list — see docs/auto-suspend-design.md. Each entry pairs a
 # co-resident service with one of four suspension methods. The scheduler
 # fires `auto_suspend.suspend_all(...)` on every GPU stage entry and
@@ -216,6 +224,7 @@ DEFAULT_CONFIG = {
     "suggest_custom_prompt": DEFAULT_SUGGEST_CUSTOM_PROMPT,
     "suggest_prompts": DEFAULT_SUGGEST_PROMPTS,
     "suggest_auto_disabled": DEFAULT_SUGGEST_AUTO_DISABLED,
+    "suggest_per_row_prompts": DEFAULT_SUGGEST_PER_ROW_PROMPTS,
     "auto_suggest_enabled": True,
     "idle_throttle_pct": 5,
     "creativity_score": 5,
