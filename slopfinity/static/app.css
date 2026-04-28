@@ -3052,6 +3052,55 @@ body.endless-running #p-core {
                 opacity 0.3s ease-out;
 }
 
+/* Tool-call argument + tool-result content rendered as a styled
+   key-value tree instead of a raw `<pre>${JSON.stringify}</pre>` blob.
+   Each row is a horizontally-aligned key-then-value pair with type-
+   aware colour for values:
+     string  → primary
+     number  → secondary
+     boolean → accent (italic)
+     null    → muted dash
+     nested  → indented sub-tree
+   Mono font + tight line-height keeps it scannable in the
+   chat-thought bubble's narrow column. */
+.kv-pretty {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1.4;
+}
+.kv-pretty .kv-pretty {
+    margin-left: 8px;
+    padding-left: 8px;
+    border-left: 1px dashed oklch(var(--bc) / 0.2);
+}
+.kv-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.kv-key {
+    color: oklch(var(--bc) / 0.6);
+    font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+}
+.kv-key::after { content: ':'; opacity: 0.4; }
+.kv-string { color: oklch(var(--p)); }
+.kv-string::before, .kv-string::after { content: '"'; opacity: 0.5; }
+.kv-number { color: oklch(var(--s)); font-variant-numeric: tabular-nums; }
+.kv-bool   { color: oklch(var(--a)); font-style: italic; }
+.kv-null   { color: oklch(var(--bc) / 0.35); }
+.kv-empty  { color: oklch(var(--bc) / 0.4); font-style: italic; }
+.kv-raw {
+    color: oklch(var(--bc) / 0.7);
+    font-family: ui-monospace, monospace;
+    margin: 0;
+}
+
 /* Chat bubble action icons — Copy + Re-ask. Dim by default; light up
    on bubble hover (host) or direct icon hover. Position absolute so
    they don't push the bubble's baseline content. */
