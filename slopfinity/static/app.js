@@ -7240,6 +7240,13 @@ async function openSettings() {
         const fresh = localStorage.getItem('slopfinity-fresh') === '1';
         const fresEl = document.getElementById('slop-fresh-toggle-modal');
         if (fresEl) fresEl.checked = fresh;
+        // Simple-mode initial-rows hydrate (default 3).
+        const rows = parseInt(localStorage.getItem('slopfinity-simple-initial-rows') || '3', 10);
+        const rowsClamped = Math.max(1, Math.min(10, isFinite(rows) ? rows : 3));
+        const rowsSlider = document.getElementById('slop-simple-rows');
+        const rowsLabel = document.getElementById('slop-simple-rows-val');
+        if (rowsSlider) rowsSlider.value = String(rowsClamped);
+        if (rowsLabel) rowsLabel.innerText = String(rowsClamped);
     } catch (_) { }
     try {
         const [sr, br] = await Promise.all([
@@ -8373,7 +8380,15 @@ async function _renderSimpleRows(n) {
     }
     try { localStorage.setItem(_SUGGEST_CACHE_KEY, JSON.stringify(arr)); } catch { }
     _renderSuggestChips(arr);
-    const TARGET_ROWS = 3;
+    // Initial-rows count is configurable in Settings (default 3, clamped
+    // 1..10). Persisted in localStorage as 'slopfinity-simple-initial-rows'.
+    // The +/- pill still adds/removes rows manually after the initial
+    // render — this just sets the starting depth.
+    let TARGET_ROWS = 3;
+    try {
+        const stored = parseInt(localStorage.getItem('slopfinity-simple-initial-rows') || '3', 10);
+        if (Number.isFinite(stored)) TARGET_ROWS = Math.max(1, Math.min(10, stored));
+    } catch (_) { }
     for (let i = 1; i < TARGET_ROWS; i++) {
         await new Promise(r => setTimeout(r, 800));
         if (!stillSimple()) return;
