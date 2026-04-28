@@ -2362,10 +2362,41 @@ function _setSubjectsMode(mode) {
     });
     // Switching out of endless ends the running story cleanly.
     if (mode !== 'endless' && _endlessRunning) _endEndlessStory();
+    // Switching INTO endless: there is no longer a separate Start Story
+    // state — entering endless mode IS starting the story. The big
+    // action button stays as the regular Queue Slop button (see
+    // _updateSubjectsActionLabel + _subjectsAction); chip clicks /
+    // manual typing append per-beat rows; the story pane stays visible
+    // for the entire duration of endless mode.
+    if (mode === 'endless' && !_endlessRunning) {
+        _endlessRunning = true;
+        document.body.classList.add('endless-running');
+        if (!window._endlessStoryStartTs) window._endlessStoryStartTs = Date.now();
+        // Make sure suggestion-row prompts are seeded so _renderEndlessRows
+        // produces at least one chip row. Idempotent — _setEndlessRowPrompts
+        // is just a localStorage write.
+        try {
+            if (!_getEndlessRowPrompts().length) {
+                const defaultId = (typeof _getDefaultPromptId === 'function')
+                    ? _getDefaultPromptId() : 'yes-and';
+                _setEndlessRowPrompts([defaultId]);
+            }
+        } catch (_) { }
+        // Seed an empty first beat if the log is empty — gives the user
+        // a row to type into / a target for the very first chip click.
+        try {
+            const existing = _loadEndlessLogLines();
+            if (!existing.length) {
+                _persistEndlessLogLines(['']);
+                _setEndlessActiveBeatIdx(0);
+            }
+        } catch (_) { }
+    }
     _updateSubjectsActionLabel();
-    // Story pane only relevant in endless+running. Re-evaluate.
+    // Story pane is always visible in endless mode now (no separate
+    // Start state — the pane IS the endless surface).
     const pane = document.getElementById('subjects-story-pane');
-    if (pane) pane.classList.toggle('hidden', !(mode === 'endless' && _endlessRunning));
+    if (pane) pane.classList.toggle('hidden', mode !== 'endless');
     // Chat pane is the inverse — visible only in chat mode.
     const chatPane = document.getElementById('subjects-chat-pane');
     if (chatPane) chatPane.classList.toggle('hidden', mode !== 'chat');
@@ -2394,7 +2425,7 @@ function _setSubjectsMode(mode) {
             // Raw hides #p-core entirely; placeholder unused but kept
             // so a mode-switch sequence doesn't leave stale copy.
             raw: '(raw mode uses the per-stage prompts above directly — no subject seed)',
-            endless: 'Write your first beat — then click Start Story.\n\nThe LLM cycles continuation suggestions below; click any chip to extend the story. Submit when you\'re done.',
+            endless: 'Optional opening seed.\n\nType beats directly into the story rows below — Enter adds the next row. Click any suggestion chip to append it as a new beat. Press Queue Slop when you\'re ready to render.',
             chat: 'Ask the assistant — e.g. "queue 3 short clips of dragons"',
         };
         ta.placeholder = placeholders[mode] || placeholders.raw;
@@ -2481,31 +2512,17 @@ function _updateSubjectsActionLabel() {
     const ta = document.getElementById('p-core');
     const seed = (ta && ta.value || '').trim();
     if (mode === 'endless') {
-        // Endless requires Suggestions to be ON — that's the cycle source.
-        // We KEEP the button rendered (the user picked endless on purpose)
-        // but disable + tooltip explains why when Suggestions is off, so
-        // toggling Suggestions on flips it back to clickable.
-        const sugInput = document.getElementById('subjects-suggestions-toggle-input');
-        const suggestOn = !!(sugInput && sugInput.checked);
+        // Endless mode no longer has a separate Start Story state —
+        // the big button is the regular Queue Slop button and behaves
+        // identically to simple/raw. Defer to the legacy queue-label
+        // builder so labels like "Queue Slop / Queue Infinite Slop /
+        // Generate ASAP …" stay consistent across modes.
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed');
+        btn.title = 'Queue clips for the current story beats';
         const txtNode = document.getElementById('btn-start-stop-inline-text') || btn;
-        if (_endlessRunning) {
-            txtNode.textContent = 'Story Running…';
-            btn.disabled = true;
-            btn.classList.add('opacity-70');
-            btn.title = 'Endless story is cycling — use Submit / Reset above to stop';
-        } else if (!suggestOn) {
-            txtNode.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
-            btn.disabled = true;
-            btn.classList.add('opacity-50', 'cursor-not-allowed');
-            btn.title = 'Endless mode requires Suggestions — toggle Suggestions ON to start';
-        } else {
-            txtNode.textContent = seed ? 'Start Story' : "I'm Feeling Lucky";
-            btn.disabled = false;
-            btn.classList.remove('opacity-70', 'opacity-50', 'cursor-not-allowed');
-            btn.title = seed
-                ? 'Lock the seed in and start the auto-cycle'
-                : "Pick a random opener and start a story";
-        }
+        txtNode.textContent = (window.__SLOPFINITY_DEFAULT_QUEUE_LABEL__ || 'Queue Slop');
+        if (typeof _updateStartBtn === 'function') _updateStartBtn();
     } else if (mode === 'chat') {
         // Big button is hidden in chat mode; nothing to update.
     } else {
@@ -3376,16 +3393,14 @@ window._sendChatMessage = _sendChatMessage;
 async function _subjectsAction() {
     const mode = _getSubjectsMode();
     if (mode === 'chat') return; // chat input is the only action; big button is hidden
-    // STORY MODE — Queue button queues the persisted beat lines as the
-    // subjects list, then runs the standard queue path. Was: clicked
-    // Queue here started a fresh endless-story session via
-    // _startEndlessStory which RESET the per-beat log to just-the-seed
-    // and toggled body.endless-running — read to the user as "UI
-    // reverted and didn't queue anything". Per their explicit ask:
-    // "we were going to replace 'Start Story' with just the usual
-    // Queue Slop button". The persisted beat lines from the editable
-    // per-beat rows become the multi-line p-core value that the
-    // standard queue path consumes.
+    // STORY MODE — sync the persisted beat lines into p-core before
+    // falling through to toggleInfinity(). Agent G's overhaul made the
+    // story pane always-visible, chip clicks append new beats, manual
+    // typing creates new rows on Enter — but toggleInfinity() reads
+    // p-core for its subjects, so we still need to materialise the
+    // beat list there at queue time. Without this sync the user would
+    // queue an empty subject list (the bug the user just reported as
+    // "Queue reverted to older UI and didn't submit").
     if (mode === 'endless') {
         const lines = (typeof _loadEndlessLogLines === 'function') ? _loadEndlessLogLines() : [];
         const cleaned = (lines || []).map(s => (s || '').trim()).filter(Boolean);
@@ -3396,12 +3411,11 @@ async function _subjectsAction() {
                 ta.dispatchEvent(new Event('input', { bubbles: true }));
             }
         }
-        // Fall through to the same toggleInfinity() path simple/raw use.
     }
-    // Simple + Raw + Story (post line-sync above) hit the legacy queue
-    // path. Raw exposes the per-stage prompt panel for power users to
-    // pre-fill via AI Magic; Simple keeps the textarea as the only input;
-    // Story turns the per-beat list into the multi-line subject list.
+    // Simple + Raw + Story all hit the legacy queue path. Raw exposes
+    // the per-stage prompt panel for power users to pre-fill via AI
+    // Magic; Simple keeps the textarea as the only input; Story turns
+    // the per-beat list into the multi-line subject list (above).
     if (typeof toggleInfinity === 'function') return toggleInfinity();
 }
 window._subjectsAction = _subjectsAction;
@@ -3475,6 +3489,11 @@ async function _startEndlessStory() {
 //   true  → reset variant: also wipes the story log (destructive,
 //           confirmed by caller)
 //   false → submit variant: leaves the log so the user can copy / inspect
+//
+// The Story-mode redesign removed the "Start Story" gate, so the pane
+// itself stays visible whenever subj-mode is endless. This function
+// only tears down ephemeral state (the running flag, the log, the
+// auto-cycle toggle); the mode pill is the boundary.
 function _endEndlessStory(clearLog) {
     if (clearLog === undefined) clearLog = true; // legacy callers
     _endlessRunning = false;
@@ -3485,7 +3504,12 @@ function _endEndlessStory(clearLog) {
         ta.classList.remove('opacity-70');
     }
     const pane = document.getElementById('subjects-story-pane');
-    if (pane && clearLog) pane.classList.add('hidden');
+    // Hide the pane only when leaving endless mode entirely (caller
+    // _setSubjectsMode handles that path). Pure Submit/Reset stays in
+    // endless and keeps the pane visible — the log just gets cleared.
+    const stillEndless = (typeof _getSubjectsMode === 'function')
+        && _getSubjectsMode() === 'endless';
+    if (pane && clearLog && !stillEndless) pane.classList.add('hidden');
     if (clearLog) {
         const log = document.getElementById('subjects-story-log');
         if (log) log.innerHTML = '';
@@ -3500,6 +3524,23 @@ function _endEndlessStory(clearLog) {
     if (t && t.checked) {
         t.checked = false;
         t.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    // If we're still in endless mode (e.g. user pressed Submit/Reset to
+    // start a fresh story), re-arm running + reseed the empty first
+    // beat so the per-beat input UI keeps the same shape after the
+    // wipe. This avoids a "blank pane" state where the user has to
+    // toggle modes to get a typeable row back.
+    if (stillEndless) {
+        _endlessRunning = true;
+        document.body.classList.add('endless-running');
+        try {
+            const existing = _loadEndlessLogLines();
+            if (!existing.length) {
+                _persistEndlessLogLines(['']);
+                _setEndlessActiveBeatIdx(0);
+                _renderEndlessLog();
+            }
+        } catch (_) { }
     }
     _updateSubjectsActionLabel();
     // + button gates on _endlessRunning — repaint so it re-disables now
@@ -3809,11 +3850,13 @@ window._getEndlessActiveBeatIdx = _getEndlessActiveBeatIdx;
 window._setEndlessActiveBeatIdx = _setEndlessActiveBeatIdx;
 
 // Render the editable beats from the persisted line list into
-// #subjects-story-log. Each row is: drag-handle (≡) + contenteditable
-// span + per-row + (add new beat below) + × (delete). The active beat
-// gets `beat-active` so CSS can outline it. Edits commit on `input` so
-// every keystroke immediately persists; deletes drop the row and re-
-// render. Add-next inserts a fresh empty beat below and makes it active.
+// #subjects-story-log. Each row is: drag-handle (≡) + single-line
+// <input type="text"> + per-row + (add new beat below) + × (delete).
+// The active beat gets `beat-active` so CSS can outline it. Edits commit
+// on `input` so every keystroke immediately persists; deletes drop the
+// row and re-render. Add-next inserts a fresh empty beat below and makes
+// it active. Pressing Enter in any input also adds a fresh empty beat
+// below + focuses it.
 function _renderEndlessLog() {
     const log = document.getElementById('subjects-story-log');
     if (!log) return;
@@ -3830,9 +3873,12 @@ function _renderEndlessLog() {
         _setEndlessActiveBeatIdx(activeIdx);
     }
     const rows = lines.map((line, idx) => {
+        // <input value> uses the attribute escape, but the HTML-string
+        // assemble here means we still want HTML-safe escaping for "&,
+        // <, >, ', ". _htmlEscape handles all five.
         const safe = _htmlEscape(line || '');
         const activeCls = idx === activeIdx ? ' beat-active' : '';
-        return `<div class="endless-row beat-row group flex items-start gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
+        return `<div class="endless-row beat-row group flex items-center gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
                      data-row-idx="${idx}" draggable="true">
             <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/40 hover:text-base-content/80 select-none cursor-grab"
                   title="Drag to reorder this beat" aria-label="Drag handle">
@@ -3843,9 +3889,11 @@ function _renderEndlessLog() {
                     <line x1="4" y1="16" x2="20" y2="16" />
                 </svg>
             </span>
-            <span contenteditable="true" spellcheck="false"
-                  class="endless-row-text beat-input flex-1 min-w-0 whitespace-pre-wrap break-words outline-none focus:bg-base-100/60 rounded px-1"
-                  data-row-idx="${idx}">${safe}</span>
+            <input type="text" spellcheck="false"
+                  class="endless-row-text beat-input flex-1 min-w-0 bg-transparent outline-none focus:bg-base-100/60 rounded px-1 text-sm"
+                  data-row-idx="${idx}"
+                  placeholder="Type a beat — Enter for next row"
+                  value="${safe}" />
             <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-50 group-hover:opacity-100 flex-none"
                     data-row-idx="${idx}" title="Add a new beat below this one" aria-label="Add beat below">+</button>
             <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-50 group-hover:opacity-100 flex-none"
@@ -3857,28 +3905,43 @@ function _renderEndlessLog() {
 }
 window._renderEndlessLog = _renderEndlessLog;
 
-// Suggestion-chip routing: in story mode, the chip text goes INTO the
-// currently-active beat input rather than appending a new line. If the
-// active beat is empty, the chip text replaces it; otherwise the text is
-// appended with a single space separator. After writing we persist + re-
-// render so the active highlight stays correct and the input box updates.
+// Suggestion-chip routing: chip click APPENDS a NEW beat row prefilled
+// with the chip text, marks it active, and focuses its input. The
+// previous behaviour wrote into the currently-active beat (replacing if
+// empty, space-appending otherwise) — that surprised users who clicked
+// a chip expecting "add this as a new beat" and instead got their
+// in-progress beat clobbered. Now every chip click is a new row;
+// manual typing in any input still edits that beat in place.
 function _storyAcceptIntoActive(text) {
-    const t = String(text || '');
+    const t = String(text || '').trim();
     if (!t) return;
     const lines = _loadEndlessLogLines();
-    if (!lines.length) {
-        lines.push(t);
+    // If the active beat is empty, fill it instead of appending — this
+    // keeps the very first chip-click after entering endless mode from
+    // leaving an orphan empty row at the top.
+    let idx = _getEndlessActiveBeatIdx();
+    if (lines.length && idx < lines.length && !String(lines[idx] || '').trim()) {
+        lines[idx] = t;
         _persistEndlessLogLines(lines);
-        _setEndlessActiveBeatIdx(0);
         _renderEndlessLog();
+        try {
+            const log = document.getElementById('subjects-story-log');
+            const inp = log && log.querySelector(`.beat-input[data-row-idx="${idx}"]`);
+            if (inp) inp.focus();
+        } catch (_) { }
         return;
     }
-    let idx = _getEndlessActiveBeatIdx();
-    if (idx >= lines.length) idx = lines.length - 1;
-    const cur = String(lines[idx] || '');
-    lines[idx] = cur.trim() ? (cur.replace(/\s+$/, '') + ' ' + t) : t;
+    // Otherwise append a NEW beat at the end + make it active + focus it.
+    lines.push(t);
     _persistEndlessLogLines(lines);
+    const newIdx = lines.length - 1;
+    _setEndlessActiveBeatIdx(newIdx);
     _renderEndlessLog();
+    try {
+        const log = document.getElementById('subjects-story-log');
+        const inp = log && log.querySelector(`.beat-input[data-row-idx="${newIdx}"]`);
+        if (inp) inp.focus();
+    } catch (_) { }
 }
 window._storyAcceptIntoActive = _storyAcceptIntoActive;
 
@@ -3931,23 +3994,39 @@ window._storyReorderBeat = _storyReorderBeat;
 // per-row on every render.
 (function _wireEndlessLogEditors() {
     document.addEventListener('input', (e) => {
-        const span = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
-        if (!span) return;
-        const row = span.closest('.endless-row');
+        const inp = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
+        if (!inp) return;
+        const row = inp.closest('.endless-row');
         const idx = row ? parseInt(row.getAttribute('data-row-idx'), 10) : -1;
         if (!Number.isInteger(idx) || idx < 0) return;
         const lines = _loadEndlessLogLines();
         if (idx >= lines.length) return;
-        // textContent strips any HTML the user might paste in — keeps
-        // the line shape clean (one editable string per row).
-        lines[idx] = span.textContent || '';
+        // <input>.value (single-line) — preserves text exactly without
+        // HTML-paste leaks that contenteditable used to allow.
+        lines[idx] = (inp.value !== undefined ? inp.value : (inp.textContent || ''));
         _persistEndlessLogLines(lines);
+    });
+    // Enter in an input → append a NEW empty beat below + focus it.
+    // Mirrors the per-row + button so the keyboard-only flow is fast:
+    // user types beat → Enter → keeps typing the next beat. Shift+Enter
+    // is reserved (input can't break to newline anyway, but we still
+    // skip the new-row append on shift so users with muscle-memory
+    // multi-line don't surprise themselves).
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        const inp = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
+        if (!inp) return;
+        const row = inp.closest('.endless-row');
+        const idx = row ? parseInt(row.getAttribute('data-row-idx'), 10) : -1;
+        if (!Number.isInteger(idx) || idx < 0) return;
+        e.preventDefault();
+        if (typeof _storyAddBeatAfter === 'function') _storyAddBeatAfter(idx);
     });
     // Focus → mark this beat active. focusin bubbles (focus does not).
     document.addEventListener('focusin', (e) => {
-        const span = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
-        if (!span) return;
-        const row = span.closest('.endless-row');
+        const inp = e.target.closest && e.target.closest('#subjects-story-log .endless-row-text');
+        if (!inp) return;
+        const row = inp.closest('.endless-row');
         const idx = row ? parseInt(row.getAttribute('data-row-idx'), 10) : -1;
         if (!Number.isInteger(idx) || idx < 0) return;
         _setEndlessActiveBeatIdx(idx);
