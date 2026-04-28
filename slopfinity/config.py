@@ -67,7 +67,7 @@ DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT = (
     "You are a concept artist for an AI video fleet. The user is currently "
     "working with these subjects: [{subjects_csv}]. Generate 8 NEW visual "
     "subject ideas that are TANGENTIALLY related. Encourage short, "
-    "memorable aphorisms and surreal verbal concepts. 3-8 words each. "
+    "memorable aphorisms and surreal verbal concepts. 6-14 words each. "
     "Cynical, philosophical, surreal. Output ONLY a JSON array of strings, no prose."
 )
 
@@ -100,7 +100,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a story editor. Given the SEED below, output exactly {n} short "
             "next-scene continuations that follow the seed's most natural, supportive "
-            "trajectory — 'yes, and…' improv style. Each line ≤ 8 words, plain text, "
+            "trajectory — 'yes, and…' improv style. Each line ≤ 14 words, plain text, "
             "one per line, no numbering, no bullets, no quotes."
         ),
     },
@@ -110,16 +110,27 @@ DEFAULT_SUGGEST_PROMPTS = [
             "You are a story editor. Given the SEED below, output exactly {n} short "
             "continuations that subvert its expected direction — introduce ONE "
             "unexpected element per line that recontextualizes the seed. "
-            "Each line ≤ 8 words, plain text, one per line, no numbering, no bullets."
+            "Each line ≤ 14 words, plain text, one per line, no numbering, no bullets."
         ),
     },
     {
-        "id": "concrete-detail", "title": "Concrete Detail", "active": True, "builtin": True,
+        "id": "surreal-imagination", "title": "Surreal Imagination", "active": True, "builtin": True,
         "system": (
-            "You are a sensory-detail editor. Given the SEED below, output exactly {n} "
-            "short continuations that add ONE specific tactile/sensory detail per line "
-            "(texture, scent, sound, temperature). Each line ≤ 8 words, plain text, "
-            "one per line, no numbering, no bullets, no quotes."
+            "You are a surrealist co-writer. Given the SEED below, output exactly {n} "
+            "short continuations that pull the seed into the unreal — dreamlike images, "
+            "objects behaving wrong, geometry breaking, time slipping — while keeping "
+            "ONE concrete sensory detail per line as an anchor. Each line ≤ 14 words, "
+            "plain text, one per line, no numbering, no bullets, no quotes."
+        ),
+    },
+    {
+        "id": "questioning-lens", "title": "Questioning Lens", "active": True, "builtin": True,
+        "system": (
+            "You are an inquisitive narrator. Given the SEED below, output exactly {n} "
+            "short continuations that reframe it as a QUESTION the scene is asking — "
+            "either a literal question someone in the scene voices, or a tacit question "
+            "the camera/subject poses through gesture. Each line ≤ 14 words, plain "
+            "text, one per line, no numbering, no bullets, no quotes."
         ),
     },
     {
@@ -127,7 +138,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a deadpan cynic. Given the SEED below, output exactly {n} short "
             "continuations that reframe it through a wry, slightly nihilist lens — "
-            "without being mean. Each line ≤ 8 words, plain text, one per line, "
+            "without being mean. Each line ≤ 14 words, plain text, one per line, "
             "no numbering, no bullets, no quotes."
         ),
     },
@@ -136,7 +147,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a wide-eyed first-encounter narrator. Given the SEED below, "
             "output exactly {n} short continuations that reframe it as if seen for "
-            "the first time, with awe. Each line ≤ 8 words, plain text, one per line, "
+            "the first time, with awe. Each line ≤ 14 words, plain text, one per line, "
             "no numbering, no bullets, no quotes."
         ),
     },
@@ -239,9 +250,14 @@ DEFAULT_CONFIG = {
     # entries, so this is a forward-compatible toggle — see TODO in
     # static/app.js (filterProviderDropdown) for the client gate.
     "allow_cloud_endpoints": False,
-    "suggest_max_len_endless": 20,
-    "suggest_max_len_simple": 40,
-    "suggest_max_len_chat": 80,
+    # Per-mode suggestion-length budgets (chars, enforced via JSON-schema
+    # maxLength). Doubled v323→v324 after user feedback "the short
+    # suggestions are too short". Endless beats can now run to short
+    # sentences instead of telegraphic fragments; simple chips have room
+    # for a real concept; chat replies can be a complete one-liner.
+    "suggest_max_len_endless": 40,
+    "suggest_max_len_simple": 80,
+    "suggest_max_len_chat": 160,
 }
 
 

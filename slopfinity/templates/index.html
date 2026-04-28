@@ -873,6 +873,12 @@
                                                 aria-label="Chat suggestions controls">
                                                 <div id="chat-suggest-prompt-pills"
                                                     class="flex items-center gap-1 flex-wrap"></div>
+                                                {# Per-mode chip-count stepper REMOVED in v324 per user
+                                                request "under chat mode the tally counter should be
+                                                removed". The +/- buttons + count badge that sat here
+                                                are gone; chat replies now render whatever the server
+                                                returns (capped server-side via suggest_max_len_chat)
+                                                without a client-side display-count gate. #}
                                                 <div class="join ml-1" aria-label="Suggestion count">
                                                     <button type="button"
                                                         class="btn btn-xs btn-outline btn-primary join-item chat-suggest-step"

@@ -620,9 +620,9 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
         chosen = random.choice(salt_themes)
         user_msg += f"\n\nNudge: lean toward {chosen}. Avoid repeating any earlier batch."
     # JSON-schema constraint: fetch all 3 KVP sets at once
-    max_len_endless = config.get("suggest_max_len_endless") or 20
-    max_len_simple = config.get("suggest_max_len_simple") or 40
-    max_len_chat = config.get("suggest_max_len_chat") or 80
+    max_len_endless = config.get("suggest_max_len_endless") or 40
+    max_len_simple = config.get("suggest_max_len_simple") or 80
+    max_len_chat = config.get("suggest_max_len_chat") or 160
 
     response_format = {
         "type": "json_schema",
