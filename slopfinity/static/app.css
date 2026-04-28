@@ -1,3 +1,18 @@
+/* Visuals density — global multiplier driven by Settings → General →
+   Visuals slider. 1.0 = current spacing; 0.5 = tight (~half padding +
+   border thickness); 1.5 = roomy. Applied to the surfaces that benefit
+   most: card padding, navbar margin, gap between major sections. Other
+   spacing stays fixed (it's already tuned for legibility and would
+   become weird at extremes). */
+:root { --slop-density: 1; }
+.card .card-body { padding: calc(1rem * var(--slop-density)); }
+#stats-navbar { margin-bottom: calc(1.5rem * var(--slop-density)); }
+main { padding: calc(1rem * var(--slop-density)); }
+@media (min-width: 768px) {
+    main { padding: calc(1.5rem * var(--slop-density)); }
+}
+.ui-split-card { border-width: calc(2px * var(--slop-density)); }
+
 /* Stats-navbar tickers — bars use DaisyUI bg-primary/secondary/accent utility
    classes (assigned from JS based on the parent's data-tone) so they re-skin
    with the active theme. The .over modifier swaps to the danger color when
@@ -28,21 +43,34 @@
    `.ticker-label-extra` is the parenthetical bit on the Disk pill ("(1hr)")
    that's only useful when there's room. `.ticker-label-short` is the
    compact form (default hidden, revealed at tight). */
-.ticker-label-short { display: none; }
+.ticker-label-short {
+    display: none;
+}
+
 .ticker-label-icon {
     width: 0.95rem;
     height: 0.95rem;
     color: hsl(var(--p));
     vertical-align: middle;
 }
+
 @media (max-width: 1279px) {
-    .ticker-bar { display: none; }
+    .ticker-bar {
+        display: none;
+    }
 }
+
 @media (max-width: 639px) {
+
     .ticker-label-full,
     .ticker-label-extra,
-    .ticker-sub { display: none; }
-    .ticker-label-short { display: inline-block; }
+    .ticker-sub {
+        display: none;
+    }
+
+    .ticker-label-short {
+        display: inline-block;
+    }
 }
 
 /* Ticker label celebration animations — applied by app.js when a value
@@ -51,38 +79,111 @@
    re-randomizes. Animation duration is a touch longer than the WS-tick
    cadence so each cycle reads as a single coherent gesture rather than
    restarting mid-loop. respect prefers-reduced-motion. */
-.celebrate-bounce { animation: celebrate-bounce 1.2s ease-in-out infinite; }
-.celebrate-wobble { animation: celebrate-wobble 1.4s ease-in-out infinite; }
-.celebrate-pulse  { animation: celebrate-pulse 1.0s ease-in-out infinite; }
-.celebrate-jump   { animation: celebrate-jump 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
-.celebrate-wave   { animation: celebrate-wave 1.8s ease-in-out infinite; }
+.celebrate-bounce {
+    animation: celebrate-bounce 1.2s ease-in-out infinite;
+}
+
+.celebrate-wobble {
+    animation: celebrate-wobble 1.4s ease-in-out infinite;
+}
+
+.celebrate-pulse {
+    animation: celebrate-pulse 1.0s ease-in-out infinite;
+}
+
+.celebrate-jump {
+    animation: celebrate-jump 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.celebrate-wave {
+    animation: celebrate-wave 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .celebrate-bounce, .celebrate-wobble, .celebrate-pulse,
-    .celebrate-jump, .celebrate-wave { animation: none; }
+
+    .celebrate-bounce,
+    .celebrate-wobble,
+    .celebrate-pulse,
+    .celebrate-jump,
+    .celebrate-wave {
+        animation: none;
+    }
 }
+
 @keyframes celebrate-bounce {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-3px); }
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-3px);
+    }
 }
+
 @keyframes celebrate-wobble {
-    0%, 100% { transform: rotate(0deg); }
-    25%      { transform: rotate(-4deg); }
-    75%      { transform: rotate(4deg); }
+
+    0%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    25% {
+        transform: rotate(-4deg);
+    }
+
+    75% {
+        transform: rotate(4deg);
+    }
 }
+
 @keyframes celebrate-pulse {
-    0%, 100% { transform: scale(1); }
-    50%      { transform: scale(1.12); }
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.12);
+    }
 }
+
 @keyframes celebrate-jump {
-    0%, 100% { transform: translateY(0) scale(1); }
-    40%      { transform: translateY(-4px) scale(1.05); }
-    60%      { transform: translateY(0) scale(0.95); }
-    80%      { transform: translateY(-1px) scale(1); }
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+
+    40% {
+        transform: translateY(-4px) scale(1.05);
+    }
+
+    60% {
+        transform: translateY(0) scale(0.95);
+    }
+
+    80% {
+        transform: translateY(-1px) scale(1);
+    }
 }
+
 @keyframes celebrate-wave {
-    0%, 100% { transform: skewX(0deg); }
-    25%      { transform: skewX(-6deg); }
-    75%      { transform: skewX(6deg); }
+
+    0%,
+    100% {
+        transform: skewX(0deg);
+    }
+
+    25% {
+        transform: skewX(-6deg);
+    }
+
+    75% {
+        transform: skewX(6deg);
+    }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -896,10 +997,12 @@ textarea.subjects-autogrow {
    respective edges as overlay sheets. Default state: hidden translateX.
    .mobile-sheet-open-{left,right} on body slides the matching pane in. */
 @media (max-width: 767px) {
+
     body[data-layout="gallery"] #split-left,
     body[data-layout="gallery"] #split-right {
         position: fixed !important;
-        top: 4rem;            /* below the top stat bar */
+        top: 4rem;
+        /* below the top stat bar */
         bottom: 0;
         width: 86vw;
         max-width: 28rem;
@@ -909,20 +1012,25 @@ textarea.subjects-autogrow {
         transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
         overflow-y: auto;
     }
+
     body[data-layout="gallery"] #split-left {
         left: 0;
         transform: translateX(-105%);
     }
+
     body[data-layout="gallery"] #split-right {
         right: 0;
         transform: translateX(105%);
     }
+
     body[data-layout="gallery"].mobile-sheet-open-left #split-left {
         transform: translateX(0);
     }
+
     body[data-layout="gallery"].mobile-sheet-open-right #split-right {
         transform: translateX(0);
     }
+
     /* Backdrop dim while a sheet is open. */
     body[data-layout="gallery"].mobile-sheet-open-left::after,
     body[data-layout="gallery"].mobile-sheet-open-right::after {
@@ -934,7 +1042,9 @@ textarea.subjects-autogrow {
         pointer-events: none;
     }
 }
+
 @media (prefers-reduced-motion: reduce) {
+
     body[data-layout="gallery"] #split-left,
     body[data-layout="gallery"] #split-right {
         transition: none;
@@ -961,12 +1071,15 @@ textarea.subjects-autogrow {
    ancestors say about height. Inner chat-log / story-log scroll
    internally as designed. */
 @media (max-width: 767px) {
+
     body[data-layout="subjects"] #split-left,
     body[data-layout="queue"] #split-right,
     body[data-layout="gallery"] #ui-split-lower {
         position: fixed !important;
-        top: 88px !important;             /* clear of the top stat bar */
-        bottom: 60px !important;          /* clear of the bottom nav bar */
+        top: 88px !important;
+        /* clear of the top stat bar */
+        bottom: 60px !important;
+        /* clear of the bottom nav bar */
         left: 8px !important;
         right: 8px !important;
         height: calc(100vh - 88px - 60px) !important;
@@ -978,15 +1091,17 @@ textarea.subjects-autogrow {
         flex-direction: column !important;
         overflow: hidden !important;
     }
+
     /* Card-body inside the fixed pane fills its parent so the
        inner flex children (panes, input row, chat-log) can
        claim their share via flex:1 + min-height:0. */
-    body[data-layout="subjects"] #split-left > .card-body,
-    body[data-layout="queue"] #split-right > .card-body {
+    body[data-layout="subjects"] #split-left>.card-body,
+    body[data-layout="queue"] #split-right>.card-body {
         flex: 1 1 auto;
         min-height: 0;
         overflow: hidden;
     }
+
     /* Slop section in gallery-only layout — the slop-collapsible
        div + #output-section need to fill the fixed pane too. */
     body[data-layout="gallery"] #ui-split-lower #slop-collapsible,
@@ -995,6 +1110,7 @@ textarea.subjects-autogrow {
         min-height: 0;
         overflow-y: auto;
     }
+
     /* Hide the now-hidden pane's leftover content so it doesn't
        paint behind the fixed one. */
     body[data-layout="subjects"] #split-right,
@@ -2190,9 +2306,11 @@ body.no-card-fabs #gallery-fab {
         flex-direction: column !important;
         align-items: stretch !important;
     }
-    #subjects-need-ideas-row > * {
+
+    #subjects-need-ideas-row>* {
         width: 100%;
     }
+
     #subjects-need-ideas-row .btn {
         justify-content: center;
     }
@@ -2338,10 +2456,10 @@ body[data-layout="subj-queue"] #split-right {
     flex-direction: column;
 }
 
-body[data-layout="subjects"] #split-left > .card-body,
-body[data-layout="queue"] #split-right > .card-body,
-body[data-layout="subj-queue"] #split-left > .card-body,
-body[data-layout="subj-queue"] #split-right > .card-body {
+body[data-layout="subjects"] #split-left>.card-body,
+body[data-layout="queue"] #split-right>.card-body,
+body[data-layout="subj-queue"] #split-left>.card-body,
+body[data-layout="subj-queue"] #split-right>.card-body {
     flex: 1 1 auto;
     min-height: 0;
 }
@@ -2385,10 +2503,12 @@ body.subj-mode-raw .subjects-pane[data-pane-mode="raw"] {
     flex: 1 1 auto;
     min-height: 0;
 }
-body.subj-mode-raw .subjects-pane[data-pane-mode="raw"] > .flex.gap-2.items-stretch {
+
+body.subj-mode-raw .subjects-pane[data-pane-mode="raw"]>.flex.gap-2.items-stretch {
     flex: 1 1 auto;
     min-height: 0;
 }
+
 body.subj-mode-raw #subjects-per-stage {
     display: flex;
     flex-direction: column;
@@ -2397,16 +2517,19 @@ body.subj-mode-raw #subjects-per-stage {
     min-height: 0;
     overflow-y: auto;
 }
-body.subj-mode-raw #subjects-per-stage > div {
+
+body.subj-mode-raw #subjects-per-stage>div {
     display: flex;
     flex-direction: column;
     flex: 1 1 0;
     min-height: 0;
 }
-body.subj-mode-raw #subjects-per-stage > div > .flex.items-center {
+
+body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
     flex: 1 1 auto;
     min-height: 0;
 }
+
 body.subj-mode-raw #subjects-per-stage textarea {
     flex: 1 1 auto !important;
     min-height: 0 !important;
@@ -2425,6 +2548,7 @@ body.subj-mode-raw #subjects-per-stage textarea {
     width: 100%;
     height: 100%;
 }
+
 .raw-rewrite-host textarea {
     width: 100%;
     height: 100%;
@@ -2432,6 +2556,7 @@ body.subj-mode-raw #subjects-per-stage textarea {
        button. 28 px ≈ button width + small gap. */
     padding-right: 32px !important;
 }
+
 .raw-rewrite-btn {
     position: absolute;
     top: 4px;
@@ -2442,23 +2567,32 @@ body.subj-mode-raw #subjects-per-stage textarea {
     align-items: center;
     justify-content: center;
     border-radius: 4px;
-    color: hsl(var(--p));
-    background: hsl(var(--b1) / 0.6);
-    border: 1px solid hsl(var(--p) / 0.4);
-    opacity: 0.1;
+    color: oklch(var(--p));
+    background: oklch(var(--b1) / 0.6);
+    border: 1px solid oklch(var(--p) / 0.4);
+    /* Was 0.1 — too transparent to discover (QA agent flagged invisible
+       without hover, undiscoverable on touch). Bumped to 0.45 to match
+       the standard "dim affordance" opacity used elsewhere in the app
+       (chat bubble actions, etc.). Still rises to 1.0 on hover/focus. */
+    opacity: 0.45;
     transition: opacity 0.15s, background 0.15s, transform 0.05s;
     cursor: pointer;
 }
+
 .raw-rewrite-host:hover .raw-rewrite-btn,
 .raw-rewrite-host:focus-within .raw-rewrite-btn,
 .raw-rewrite-btn:hover,
 .raw-rewrite-btn:focus {
     opacity: 1;
 }
+
 .raw-rewrite-btn:hover {
     background: hsl(var(--p) / 0.15);
 }
-.raw-rewrite-btn:active { transform: scale(0.92); }
+
+.raw-rewrite-btn:active {
+    transform: scale(0.92);
+}
 
 /* Endless-row lead cluster — right-aligned via flex order:2 (the marquee
    mask is order:1 so it occupies the leftmost flex space). The fold
@@ -2470,26 +2604,40 @@ body.subj-mode-raw #subjects-per-stage textarea {
     padding-left: 4px;
     padding-right: 4px;
 }
+
 .suggest-marquee-row.with-lead .suggest-marquee-mask {
     order: 1;
 }
+
 .endless-row-fold {
     display: none;
 }
+
 .endless-row-fold:hover {
     background: hsl(var(--p) / 0.18);
 }
+
 /* When expanded, the fold button inverts to primary fill / primary-content
    stroke so the user reads "this is the active control row" at a glance. */
 .endless-row-lead.lead-expanded .endless-row-fold {
     background: hsl(var(--p));
     color: hsl(var(--pc));
 }
+
 @media (max-width: 767px) {
+
     /* Compact: fold button shows; the three controls collapse until tapped. */
-    .endless-row-fold { display: inline-flex; }
-    .endless-row-lead .endless-row-controls { display: none; }
-    .endless-row-lead.lead-expanded .endless-row-controls { display: flex; }
+    .endless-row-fold {
+        display: inline-flex;
+    }
+
+    .endless-row-lead .endless-row-controls {
+        display: none;
+    }
+
+    .endless-row-lead.lead-expanded .endless-row-controls {
+        display: flex;
+    }
 }
 
 /* ─── Marquee row entry-bump fix — three layered defenses ───────────────
@@ -2513,23 +2661,27 @@ body.subj-mode-raw #subjects-per-stage textarea {
     animation: suggest-row-enter-smooth 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
     overflow: hidden;
 }
+
 @keyframes suggest-row-enter-smooth {
     0% {
         max-height: 0;
         transform: translateX(100%);
         opacity: 0;
     }
+
     40% {
         max-height: 28px;
         transform: translateX(60%);
         opacity: 0.4;
     }
+
     100% {
         max-height: 28px;
         transform: translateX(0);
         opacity: 1;
     }
 }
+
 /* (C) is JS-side: see the FLIP block in _appendSuggestBatchRow. */
 
 body[data-layout="subjects"].subj-mode-simple #subjects-input-row,
@@ -2596,12 +2748,15 @@ main.layout-sliding-left,
 main.layout-sliding-right {
     transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 main.layout-sliding-left {
     transform: translateX(-30%);
 }
+
 main.layout-sliding-right {
     transform: translateX(30%);
 }
+
 /* Counter-translate the stats navbar so it appears glued in place
    while the rest of <main> slides under it. Same easing/duration so
    the cancellation is exact frame-by-frame. The navbar is full-width
@@ -2611,9 +2766,11 @@ main.layout-sliding-left #stats-navbar,
 main.layout-sliding-right #stats-navbar {
     transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 main.layout-sliding-left #stats-navbar {
     transform: translateX(30%);
 }
+
 main.layout-sliding-right #stats-navbar {
     transform: translateX(-30%);
 }
@@ -2635,11 +2792,12 @@ main.layout-sliding-right #stats-navbar {
     border: 2px solid hsl(var(--b1));
     border-radius: 9999px;
     padding: 6px 8px;
-    display: none;                        /* shown via body[data-layout=…] below */
+    display: none;
+    /* shown via body[data-layout=…] below */
     align-items: center;
     gap: 8px;
     box-shadow: 0 8px 24px hsl(var(--bc) / 0.25),
-                0 2px 8px hsl(var(--bc) / 0.15);
+        0 2px 8px hsl(var(--bc) / 0.15);
 }
 
 /* Show the pill on focused layouts. _focusFabNav handles the
@@ -2668,16 +2826,22 @@ body[data-layout="gallery"] #focus-fab-pill {
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
+
 .focus-fab:hover {
     transform: scale(1.06);
     background: hsl(var(--pf, var(--p)));
 }
-.focus-fab:active { transform: scale(0.96); }
+
+.focus-fab:active {
+    transform: scale(0.96);
+}
+
 .focus-fab .fab-label {
     font-size: 0.7rem;
     font-weight: 700;
     line-height: 1;
 }
+
 .focus-fab .fab-arrow {
     flex: none;
     opacity: 0.85;
@@ -2693,9 +2857,12 @@ body[data-layout="gallery"] #focus-fab-next {
 }
 
 @media (max-width: 767px) {
+
     /* Mobile uses the bottom nav bar for navigation — hide the
        desktop flanking pill to avoid overlap with that bar. */
-    #focus-fab-pill { display: none !important; }
+    #focus-fab-pill {
+        display: none !important;
+    }
 }
 
 body[data-layout="subjects"] #focus-slop-fab,
@@ -2807,7 +2974,7 @@ body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
 /* Settings tabs — DaisyUI's default .tab has 16px lateral padding which,
    combined with 9 tabs, blows past the modal width. Tighten to 8px and
    shrink the font to fit comfortably on a max-w-4xl modal. */
-.tabs.settings-tabs > .tab {
+.tabs.settings-tabs>.tab {
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
     font-size: 0.72rem !important;
@@ -2824,7 +2991,7 @@ body[data-layout="subj-queue"] #preview-grid>[data-slop-kind] .card-body {
    width to the modal-box max width (max-w-4xl = 56rem) so it can never
    exceed its visible container. white-space:normal also undoes the
    nowrap inheritance from the tab-strip's nowrap. */
-.tabs.settings-tabs > .tab-content {
+.tabs.settings-tabs>.tab-content {
     white-space: normal !important;
     max-width: min(56rem, 95vw) !important;
     width: 100%;
@@ -2857,8 +3024,8 @@ body.no-card-wm .card-wm-bar {
    keeps simple / raw / endless rendering predictably — raw's per-
    stage panel is ~200 px and should always be visible at its
    natural height, not crushed into a flex:1 box. */
-body.subj-mode-simple  .subjects-pane[data-pane-mode="simple"],
-body.subj-mode-raw     .subjects-pane[data-pane-mode="raw"],
+body.subj-mode-simple .subjects-pane[data-pane-mode="simple"],
+body.subj-mode-raw .subjects-pane[data-pane-mode="raw"],
 body.subj-mode-endless .subjects-pane[data-pane-mode="endless"] {
     display: flex;
     flex-direction: column;
@@ -2928,6 +3095,7 @@ body.subj-mode-raw #subjects-input-row {
 body.subj-mode-raw #subjects-input-row {
     justify-content: stretch;
 }
+
 body.subj-mode-raw #btn-start-stop-inline {
     width: 100% !important;
     margin-left: 0 !important;
@@ -2938,12 +3106,13 @@ body.subj-mode-raw #btn-start-stop-inline {
    than capping at max-height. Now keyed off the pane wrapper so
    the rules apply only when their owning pane is visible. */
 .subjects-pane[data-pane-mode="endless"] #subjects-story-pane,
-.subjects-pane[data-pane-mode="chat"]    #subjects-chat-pane {
+.subjects-pane[data-pane-mode="chat"] #subjects-chat-pane {
     flex: 1 1 auto;
     min-height: 0;
 }
+
 .subjects-pane[data-pane-mode="endless"] #subjects-story-log,
-.subjects-pane[data-pane-mode="chat"]    #subjects-chat-log {
+.subjects-pane[data-pane-mode="chat"] #subjects-chat-log {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
@@ -2966,10 +3135,12 @@ body.endless-running .subjects-pane[data-pane-mode="endless"] {
     min-height: 0;
     overflow: hidden;
 }
+
 body.endless-running #subjects-input-row {
     flex: 0 0 auto !important;
     align-items: flex-start !important;
 }
+
 body.endless-running #p-core {
     flex: 0 0 auto !important;
     min-height: 0 !important;
@@ -2999,11 +3170,13 @@ body.endless-running #p-core {
     max-height: 30vh;
     overflow: hidden;
 }
+
 #subjects-chat-replies {
     overflow-y: auto;
     flex: 1 1 auto;
     min-height: 0;
 }
+
 .chat-suggestions-heading {
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -3015,10 +3188,12 @@ body.endless-running #p-core {
        overlay anchors against it. */
     position: relative;
 }
+
 @media (max-width: 639px) {
-    .chat-suggestions-heading > span:first-child {
+    .chat-suggestions-heading>span:first-child {
         display: none;
     }
+
     .chat-suggestions-heading {
         position: absolute;
         top: 4px;
@@ -3026,9 +3201,11 @@ body.endless-running #p-core {
         z-index: 2;
         background: transparent;
     }
+
     .chat-suggestions-box {
         position: relative;
     }
+
     /* The reset button gets a small dim background so it reads as
        "tappable affordance" floating over the chips — without it,
        the bare ✕+text would visually disappear into the chips. */
@@ -3047,9 +3224,10 @@ body.endless-running #p-core {
     transform: translateY(-6px);
     opacity: 0;
 }
+
 .chat-reply-chip {
     transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
-                opacity 0.3s ease-out;
+        opacity 0.3s ease-out;
 }
 
 /* Tool-call argument + tool-result content rendered as a styled
@@ -3071,30 +3249,61 @@ body.endless-running #p-core {
     font-size: 10px;
     line-height: 1.4;
 }
+
 .kv-pretty .kv-pretty {
     margin-left: 8px;
     padding-left: 8px;
     border-left: 1px dashed oklch(var(--bc) / 0.2);
 }
+
 .kv-row {
     display: flex;
     align-items: baseline;
     gap: 6px;
     flex-wrap: wrap;
 }
+
 .kv-key {
     color: oklch(var(--bc) / 0.6);
     font-weight: 600;
     text-transform: lowercase;
     letter-spacing: 0.02em;
 }
-.kv-key::after { content: ':'; opacity: 0.4; }
-.kv-string { color: oklch(var(--p)); }
-.kv-string::before, .kv-string::after { content: '"'; opacity: 0.5; }
-.kv-number { color: oklch(var(--s)); font-variant-numeric: tabular-nums; }
-.kv-bool   { color: oklch(var(--a)); font-style: italic; }
-.kv-null   { color: oklch(var(--bc) / 0.35); }
-.kv-empty  { color: oklch(var(--bc) / 0.4); font-style: italic; }
+
+.kv-key::after {
+    content: ':';
+    opacity: 0.4;
+}
+
+.kv-string {
+    color: oklch(var(--p));
+}
+
+.kv-string::before,
+.kv-string::after {
+    content: '"';
+    opacity: 0.5;
+}
+
+.kv-number {
+    color: oklch(var(--s));
+    font-variant-numeric: tabular-nums;
+}
+
+.kv-bool {
+    color: oklch(var(--a));
+    font-style: italic;
+}
+
+.kv-null {
+    color: oklch(var(--bc) / 0.35);
+}
+
+.kv-empty {
+    color: oklch(var(--bc) / 0.4);
+    font-style: italic;
+}
+
 .kv-raw {
     color: oklch(var(--bc) / 0.7);
     font-family: ui-monospace, monospace;
@@ -3109,6 +3318,7 @@ body.endless-running #p-core {
        doesn't overlap the last word of the message text. */
     padding-right: 32px;
 }
+
 .chat-bubble-actions {
     position: absolute;
     top: 4px;
@@ -3118,13 +3328,16 @@ body.endless-running #p-core {
     opacity: 0;
     transition: opacity 0.15s ease-out;
 }
+
 .chat-bubble-host:hover .chat-bubble-actions,
 .chat-bubble-host:focus-within .chat-bubble-actions {
     opacity: 0.55;
 }
+
 .chat-bubble-actions:hover {
     opacity: 1;
 }
+
 .chat-bubble-action {
     display: inline-flex;
     align-items: center;
@@ -3139,12 +3352,15 @@ body.endless-running #p-core {
     cursor: pointer;
     transition: background 0.12s, transform 0.05s;
 }
+
 .chat-bubble-action:hover {
     background: oklch(var(--bc) / 0.18);
 }
+
 .chat-bubble-action:active {
     transform: scale(0.92);
 }
+
 /* Brief check-flash after a successful copy. */
 .chat-bubble-action.copied {
     color: oklch(var(--su));
@@ -3158,16 +3374,19 @@ body.endless-running #p-core {
     display: inline-flex;
     gap: 4px;
     margin-top: 4px;
-    margin-right: 4px;       /* tucks under right-aligned chat-end */
+    margin-right: 4px;
+    /* tucks under right-aligned chat-end */
     align-self: flex-end;
     align-items: center;
 }
+
 .chat-branch-nav::before {
     content: '⑂';
     color: oklch(var(--bc) / 0.4);
     font-size: 11px;
     margin-right: 2px;
 }
+
 .chat-branch-pill {
     display: inline-flex;
     align-items: center;
@@ -3184,15 +3403,20 @@ body.endless-running #p-core {
     cursor: pointer;
     transition: background 0.12s, transform 0.05s;
 }
+
 .chat-branch-pill:hover {
     background: oklch(var(--p) / 0.18);
 }
+
 .chat-branch-pill.chat-branch-active {
     background: oklch(var(--p));
     color: oklch(var(--pc));
     border-color: oklch(var(--p));
 }
-.chat-branch-pill:active { transform: scale(0.94); }
+
+.chat-branch-pill:active {
+    transform: scale(0.94);
+}
 
 /* Inline edit form replaces the bubble's content while editing. */
 .chat-bubble-edit-form {
@@ -3202,6 +3426,7 @@ body.endless-running #p-core {
     width: 100%;
     min-width: 200px;
 }
+
 .chat-bubble-edit-input {
     color: oklch(var(--bc));
     background: oklch(var(--b1) / 0.85);
@@ -3224,10 +3449,18 @@ body:has(#splash-overlay) #focus-fab-pill {
    default, short form revealed under the breakpoint). 640 px matches
    the existing tight-tier breakpoint so the queue and stats navbar
    compact in lockstep. */
-.frames-short { display: none; }
+.frames-short {
+    display: none;
+}
+
 @media (max-width: 639px) {
-    .frames-long { display: none; }
-    .frames-short { display: inline; }
+    .frames-long {
+        display: none;
+    }
+
+    .frames-short {
+        display: inline;
+    }
 }
 
 /* Settings tab strip — left/right arrow overlays for scroll-paging.
@@ -3239,39 +3472,52 @@ body:has(#splash-overlay) #focus-fab-pill {
     display: flex;
     align-items: stretch;
     position: relative;
+    max-width: 100%;
 }
-.tabs-scroll-wrap > .tabs {
+
+.tabs-scroll-wrap>.tabs {
     flex: 1 1 auto;
     min-width: 0;
     /* Smooth scroll for keyboard / arrow-button paging. */
     scroll-behavior: smooth;
 }
+
 .tabs-scroll-arrow {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    background: hsl(var(--b1) / 0.85);
-    border: none;
-    color: hsl(var(--p));
+    width: 32px;
+    height: 32px;
+    align-self: center;
+    margin: 0 4px;
+    border-radius: 9999px;
+    background: oklch(var(--b2) / 0.95);
+    border: 1px solid oklch(var(--bc) / 0.2);
+    color: oklch(var(--bc) / 0.7);
     cursor: pointer;
-    transition: opacity 0.15s, background 0.15s;
+    transition: all 0.15s;
     z-index: 2;
+    box-shadow: 0 2px 5px rgb(0 0 0 / 10%);
 }
+
 .tabs-scroll-arrow:hover {
-    background: hsl(var(--p) / 0.18);
+    background: oklch(var(--p));
+    color: oklch(var(--pc));
+    border-color: oklch(var(--p));
 }
-.tabs-scroll-prev {
-    border-right: 1px solid hsl(var(--bc) / 0.15);
-}
-.tabs-scroll-next {
-    border-left: 1px solid hsl(var(--bc) / 0.15);
-}
+
 /* Hide the matching arrow when at-edge — JS sets these classes on the
    wrap element on scroll. */
-.tabs-scroll-wrap.at-start .tabs-scroll-prev { opacity: 0; pointer-events: none; }
-.tabs-scroll-wrap.at-end   .tabs-scroll-next { opacity: 0; pointer-events: none; }
+.tabs-scroll-wrap.at-start .tabs-scroll-prev {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.tabs-scroll-wrap.at-end .tabs-scroll-next {
+    opacity: 0;
+    pointer-events: none;
+}
 
 /* Default-kind toast — uses primary theme accent rather than the daisyUI
    info-blue so the dashboard's "live signal" colour palette stays
@@ -3283,9 +3529,11 @@ body:has(#splash-overlay) #focus-fab-pill {
     color: hsl(var(--pc));
     border-color: hsl(var(--p));
 }
+
 .toast-themed-primary .btn-ghost {
     color: hsl(var(--pc));
 }
+
 .toast-themed-primary .btn-ghost:hover {
     background-color: hsl(var(--pc) / 0.15);
 }
@@ -3300,6 +3548,7 @@ textarea,
 select {
     color: hsl(var(--bc));
 }
+
 input::placeholder,
 textarea::placeholder {
     color: hsl(var(--bc) / 0.45);
@@ -3317,64 +3566,47 @@ textarea::placeholder {
    how high the count grows — user explicitly wanted high-count
    never to break theme). */
 @keyframes queue-count-pulse {
-    0%   { transform: scale(1);    color: oklch(var(--p)); }
-    20%  { transform: scale(1.35); color: oklch(var(--p)); text-shadow: 0 0 12px oklch(var(--p) / 0.6); }
-    40%  { transform: scale(1);    color: oklch(var(--p)); }
-    60%  { transform: scale(1.18); color: oklch(var(--p)); }
-    100% { transform: scale(1);    color: inherit; text-shadow: none; }
+    0% {
+        transform: scale(1);
+        color: oklch(var(--p));
+    }
+
+    20% {
+        transform: scale(1.35);
+        color: oklch(var(--p));
+        text-shadow: 0 0 12px oklch(var(--p) / 0.6);
+    }
+
+    40% {
+        transform: scale(1);
+        color: oklch(var(--p));
+    }
+
+    60% {
+        transform: scale(1.18);
+        color: oklch(var(--p));
+    }
+
+    100% {
+        transform: scale(1);
+        color: inherit;
+        text-shadow: none;
+    }
 }
+
 .queue-count-pulse {
     display: inline-block;
     transform-origin: center;
     animation: queue-count-pulse 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
 }
+
 @media (prefers-reduced-motion: reduce) {
-    .queue-count-pulse { animation: none; }
+    .queue-count-pulse {
+        animation: none;
+    }
 }
 
-/* Slop filter — secondary 'frames' chip is gated by the master 'assets'
-   chip. When assets is OFF, frames toggling is meaningless (frames are
-   already excluded under the assets gate), so the chip reads as
-   inert: greyed-out, no pointer cursor, click-blocked. _applySlopFilters
-   adds/removes .slop-filter-disabled on the surrounding label every
-   time the assets state changes. */
-.slop-filter-disabled {
-    opacity: 0.35;
-    cursor: not-allowed !important;
-    pointer-events: none;
-}
-.slop-filter-disabled .badge {
-    text-decoration: line-through;
-}
-
-/* Round both edges of the slop-filter join clusters so the pill cluster
-   reads as a continuous capsule rather than a button-chain with sharp
-   middle joints. daisyUI's .join only rounds the FIRST/LAST item by
-   default — but inside the kind-filter cluster (4 items) and the
-   intermediates fieldset cluster (2 items), the user wants the OUTER
-   ends curved like the Subjects-mode pill. .join already handles this
-   IF the children are direct .join-item — in our markup the joinable
-   buttons are nested inside <label> wrappers, so we have to apply the
-   radius to the outer label's first/last instances explicitly. */
-/* Use LOGICAL properties (border-start-start-radius / border-end-start-radius)
-   to match daisyUI's own `:where(.join-item)` rule. Without this, daisyUI's
-   logical-property `0` wins over a physical-property `9999px` for the same
-   visual edge — observed at runtime: the kind-filter pill rendered with a
-   flat LEFT edge despite this rule (per QA agent's CDP getMatchedStyles).
-   Logical longhands are physical-longhand-equivalents under the LTR text
-   direction the dashboard runs in. */
-.slop-filter-pill > label:first-child .join-item,
-fieldset[aria-label="Intermediate assets filter"] .join > label:first-child .join-item {
-    border-start-start-radius: 9999px;
-    border-end-start-radius: 9999px;
-    padding-inline-start: 0.85rem;
-}
-.slop-filter-pill > label:last-child .join-item,
-fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join-item {
-    border-start-end-radius: 9999px;
-    border-end-end-radius: 9999px;
-    padding-inline-end: 0.85rem;
-}
+/* Keep spacing around slop filters tight since they are now independent capsules */
 
 /* Quick-spin feedback on every refresh-icon click. _wireRefreshTapSpin
    in app.js delegates pointerdown events to any element matching a
@@ -3382,8 +3614,13 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
    for the animation duration. Visible whether or not the underlying
    action completes — purely a click-acknowledgement gesture. */
 @keyframes refresh-tap-spin {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .refresh-tapping {
@@ -3419,6 +3656,7 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
         box-shadow: 0 -4px 16px hsl(var(--bc) / 0.25);
         min-height: 52px;
     }
+
     /* Body: removed the padding-bottom hack that pushed every page
        up by 60 px. The mobile single-card constraint chain (above
        in the @media block for body[data-layout=*]) handles the
@@ -3443,16 +3681,22 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
     justify-content: center;
     gap: 6px;
     flex: 0 0 auto;
-    background: hsl(var(--p) / 0.12);
-    color: hsl(var(--p));
-    border: 1px solid hsl(var(--p) / 0.5);
+    background: hsl(var(--p));
+    color: hsl(var(--pc));
+    border: 1px solid hsl(var(--p));
     padding: 6px 14px;
     border-radius: 999px;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, transform 0.05s;
     min-height: 36px;
 }
-.mobile-nav-icon { width: 1.1rem; height: 1.1rem; flex: 0 0 auto; }
+
+.mobile-nav-icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: 0 0 auto;
+}
+
 .mobile-nav-label {
     font-size: 0.75rem;
     font-weight: 600;
@@ -3465,6 +3709,7 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
     background: hsl(var(--p) / 0.22);
     border-color: hsl(var(--p) / 0.8);
 }
+
 .mobile-nav-btn:not(:disabled):active {
     transform: scale(0.97);
 }
@@ -3491,10 +3736,12 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
     overflow: hidden;
     white-space: nowrap;
 }
+
 .mobile-nav-cycle .is-current {
     color: hsl(var(--p));
     font-weight: 700;
 }
+
 .mobile-nav-cycle .sep {
     opacity: 0.4;
 }
@@ -3503,7 +3750,7 @@ fieldset[aria-label="Intermediate assets filter"] .join > label:last-child .join
    [data-row-refresh] button while its batch is in flight (endless mode
    add-row + per-row regen). Spins the inner SVG continuously, distinct
    from .refresh-tapping (one-shot click acknowledgement). */
-.row-refresh-spinning > svg {
+.row-refresh-spinning>svg {
     animation: refresh-tap-spin 900ms linear infinite;
     transform-origin: 50% 50%;
 }
@@ -3569,6 +3816,7 @@ body.endless-pill-locked #subjects-need-ideas-row {
     pointer-events: none;
     transition: opacity 150ms ease-out;
 }
+
 body.endless-pill-locked #subjects-need-ideas-row .opacity-40,
 body.endless-pill-locked #subjects-need-ideas-row [disabled] {
     opacity: 1 !important;
@@ -3590,6 +3838,7 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #subj
     min-height: 0;
     align-items: stretch;
 }
+
 body.subj-mode-simple:not([data-layout="subjects"]) #p-core,
 body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-core {
     flex: 1 1 auto;
@@ -3644,6 +3893,7 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     margin-left: 14px;
     color: oklch(var(--bc) / 0.85);
 }
+
 /* Two trailing dots leading from the bubble back toward the
    speaker (the chat-start side / left edge), shrinking as they
    go — the visual cue for an internal monologue. Sized + spaced
@@ -3656,12 +3906,14 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     border: 1px dashed oklch(var(--bc) / 0.35);
     border-radius: 50%;
 }
+
 .chat-thought::before {
     width: 8px;
     height: 8px;
     left: -10px;
     bottom: 4px;
 }
+
 .chat-thought::after {
     width: 4px;
     height: 4px;
