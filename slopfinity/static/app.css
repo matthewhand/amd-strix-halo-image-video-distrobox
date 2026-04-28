@@ -884,7 +884,11 @@ textarea.subjects-autogrow {
     width: 100%;
     min-height: 0;
     flex: 1 1 auto;
-    border-top: none;
+    /* `border-top: none` lived here from a pre-card-chrome era. With
+       the new `border-2 border-primary` Tailwind classes on the same
+       element, the explicit `none` was killing the top edge of the
+       card border. Removed; the card now reads as a fully-bordered
+       peer to the Prompt + Queue cards. */
 }
 
 /* Mobile sheets — when the user edge-swipes on a phone (gallery layout),

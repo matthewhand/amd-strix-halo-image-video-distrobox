@@ -1471,25 +1471,18 @@ function _refreshSuggestBadge() {
     if (addBtn) {
         // Show + in: endless, simple-pre-first-batch. Hide otherwise.
         addBtn.classList.toggle('hidden', !(isEndless || simpleNeedsAdd));
-        // Enable rules differ by mode:
-        //   endless: Suggestions ON + story running (idle = nothing to
-        //            seed continuations from)
+        // Enable rules:
+        //   endless: ALWAYS enabled — the user wants the + to never look
+        //            disappeared/dimmed while endless mode is selected.
+        //            _addEndlessRow is no-op-safe before Start Story
+        //            (just appends to the saved row prompts; renders when
+        //            the story actually starts).
         //   simple:  Suggestions ON (no story concept)
-        // _endlessRunning is module-scoped (declared `let` later in this
-        // file). Reading it directly works because by the time any user
-        // click reaches this function, module-level init has finished.
         let allow = isOn;
         let titleText = '';
         if (isEndless) {
-            const storyRunning = !!_endlessRunning;
-            allow = allow && storyRunning;
-            if (!isOn) {
-                titleText = 'Suggestions are off — turn them on to add a story-beat row';
-            } else if (!storyRunning) {
-                titleText = 'Start a story first — then + adds another beat row';
-            } else {
-                titleText = 'Add another story-beat row using the default prompt';
-            }
+            allow = true;  // never gate in endless — see comment above
+            titleText = 'Add another story-beat row using the default prompt';
         } else if (simpleNeedsAdd) {
             // Simple mode pre-first-batch — + bootstraps the initial
             // suggestion stack. Badge swaps to ↻ refresh once the
@@ -2565,15 +2558,26 @@ function _updateQueueStatusChip(d) {
     const queue = (d && d.queue) || [];
     const pending = queue.filter(x => x && (x.status === 'pending' || x.status == null)).length;
     const working = queue.filter(x => x && x.status === 'working').length;
+    // Infinity-mode tally — count how many of the visible queue items
+    // are flagged infinity (will auto-re-loop after each completion).
+    // Surfaces as a small ∞ marker after the count so the user knows
+    // "of the N queued, K of them won't stop on their own". Empty
+    // string when none are infinity-flagged, so the chip stays clean
+    // for the common case.
+    const infinityCount = queue.filter(x => x && x.infinity
+        && (x.status === 'pending' || x.status === 'working' || x.status == null)).length;
+    const infinityMark = infinityCount > 0
+        ? ` <span class="text-primary" title="${infinityCount} infinity-mode item${infinityCount === 1 ? '' : 's'} (auto-re-loop)">∞${infinityCount}</span>`
+        : '';
     // Drop the leading "0+" noise when nothing is in-flight — the user
     // pointed out that "0+49 queued" reads as weird math. Keep the split
     // ONLY when both counts are non-zero so the chip still distinguishes
     // working-vs-pending at a glance during active runs.
     let depthText;
     if (pending === 0 && working === 0) depthText = 'queue empty';
-    else if (working === 0) depthText = `${pending} queued`;
-    else if (pending === 0) depthText = `${working} running`;
-    else depthText = `${working} running · ${pending} queued`;
+    else if (working === 0) depthText = `${pending} queued${infinityMark}`;
+    else if (pending === 0) depthText = `${working} running${infinityMark}`;
+    else depthText = `${working} running · ${pending} queued${infinityMark}`;
     // Detect a count INCREASE (item just queued) so we can pulse the chip
     // — pure-grow visual feedback that the click did something. We pulse
     // the depth element specifically (it's the count, not the status),
@@ -2585,7 +2589,11 @@ function _updateQueueStatusChip(d) {
     const grew = total > prevTotal;
     _updateQueueStatusChip._prevTotal = total;
     depthEls.forEach(el => {
-        el.textContent = depthText;
+        // innerHTML — `depthText` may include the ∞-marker span when
+        // any queued item is infinity-flagged. Other contributors are
+        // plain numbers (no XSS risk; queue is server-controlled state,
+        // not user-typed text inserted as raw HTML).
+        el.innerHTML = depthText;
         el.classList.toggle('text-primary', working > 0);
         if (grew) {
             // Restart the animation by removing + forcing reflow + re-adding.
