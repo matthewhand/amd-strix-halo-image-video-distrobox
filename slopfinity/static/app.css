@@ -3150,6 +3150,75 @@ body.endless-running #p-core {
     color: oklch(var(--su));
 }
 
+/* Chat branch nav — appears under user bubbles that have siblings
+   (forks created by editing). Pills are 1-indexed. Active pill gets
+   primary fill; others outlined. Click navigates to that branch's
+   leaf (most-recent continuation). */
+.chat-branch-nav {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 4px;
+    margin-right: 4px;       /* tucks under right-aligned chat-end */
+    align-self: flex-end;
+    align-items: center;
+}
+.chat-branch-nav::before {
+    content: '⑂';
+    color: oklch(var(--bc) / 0.4);
+    font-size: 11px;
+    margin-right: 2px;
+}
+.chat-branch-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 600;
+    background: transparent;
+    color: oklch(var(--p));
+    border: 1px solid oklch(var(--p) / 0.5);
+    cursor: pointer;
+    transition: background 0.12s, transform 0.05s;
+}
+.chat-branch-pill:hover {
+    background: oklch(var(--p) / 0.18);
+}
+.chat-branch-pill.chat-branch-active {
+    background: oklch(var(--p));
+    color: oklch(var(--pc));
+    border-color: oklch(var(--p));
+}
+.chat-branch-pill:active { transform: scale(0.94); }
+
+/* Inline edit form replaces the bubble's content while editing. */
+.chat-bubble-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    min-width: 200px;
+}
+.chat-bubble-edit-input {
+    color: oklch(var(--bc));
+    background: oklch(var(--b1) / 0.85);
+    resize: vertical;
+}
+
+/* Hide every nav button while the splash overlay is on screen.
+   The splash sits at z-100; bottom mobile-nav-bar (z=35) and
+   focus-fab-pill (z=40) bleed through. Hiding them removes the
+   half-rendered "ghost UI behind the splash" effect. The body
+   reveals everything once #splash-overlay is removed by
+   _hideSplash(). */
+body:has(#splash-overlay) #mobile-nav-bar,
+body:has(#splash-overlay) #focus-fab-pill {
+    display: none !important;
+}
+
 /* Queue-item meta — "frames" collapses to bare "f" at compact widths.
    Same idiom as the stats-navbar tight-mode icons (long form by
    default, short form revealed under the breakpoint). 640 px matches
