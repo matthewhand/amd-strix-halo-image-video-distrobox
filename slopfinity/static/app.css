@@ -3815,17 +3815,29 @@ textarea::placeholder {
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    background: hsl(var(--p));
-    color: hsl(var(--pc));
+    /* Secondary fill + themed primary border — distinguishes the bottom
+       mobile-nav circles from the focus-fab pill (which is primary-fill).
+       Two different colour roles makes it obvious at a glance that they
+       drive different scopes (focus-fab = layout, mobile-nav = card). */
+    background: hsl(var(--s));
+    color: hsl(var(--sc));
     border: 2px solid hsl(var(--p));
-    /* Filled circle — icon-only, matches the focus-fab aesthetic so the
-       compact bottom nav reads as "the same family of nav controls". */
     width: 44px;
     height: 44px;
     border-radius: 50%;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, transform 0.05s;
-    box-shadow: 0 2px 6px hsl(var(--p) / 0.25);
+    box-shadow: 0 2px 6px hsl(var(--s) / 0.3), 0 0 0 1px hsl(var(--p) / 0.15);
+}
+
+.mobile-nav-btn:hover {
+    background: hsl(var(--sf, var(--s)));
+    border-color: hsl(var(--p));
+    transform: scale(1.05);
+}
+
+.mobile-nav-btn:active {
+    transform: scale(0.94);
 }
 
 .mobile-nav-icon {
@@ -3846,14 +3858,11 @@ textarea::placeholder {
     white-space: nowrap;
 }
 
-.mobile-nav-btn:not(:disabled):hover {
-    background: hsl(var(--p) / 0.22);
-    border-color: hsl(var(--p) / 0.8);
-}
-
-.mobile-nav-btn:not(:disabled):active {
-    transform: scale(0.97);
-}
+/* Old `.mobile-nav-btn:not(:disabled):hover/active` rules removed —
+   superseded by the unscoped `.mobile-nav-btn:hover/active` rules above
+   which are part of the secondary-fill + themed-border refresh. The
+   :not(:disabled) selector was redundant since :disabled already gets
+   `visibility:hidden` below (no hover possible on hidden elements). */
 
 .mobile-nav-btn:disabled,
 .mobile-nav-btn.invisible {
