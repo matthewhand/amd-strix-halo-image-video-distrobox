@@ -8597,7 +8597,9 @@ async function _fetchSuggestBatch(opts) {
     try {
         const r = await fetch('/subjects/suggest' + qs);
         const data = await r.json();
-        const arr = (data && data.suggestions) || [];
+        const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
+        const dict = (data && data.suggestions) || {};
+        const arr = mode === 'endless' ? (dict.story || []) : (dict.simple || []);
         // Filter out anything that looks like an error string from the
         // LLM / HTTP layer leaking through as a "suggestion". Errors
         // are NOT suggestions — they shouldn't render as clickable
@@ -9063,7 +9065,8 @@ async function _renderChatReplies() {
             + (promptId ? '&prompt_id=' + encodeURIComponent(promptId) : '');
         const r = await fetch('/subjects/suggest' + qs);
         const d = await r.json();
-        arr = (d && d.suggestions) || [];
+        const dict = (d && d.suggestions) || {};
+        arr = dict.chat || [];
     } catch (_) { }
     if (!arr.length) {
         host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
@@ -9281,8 +9284,10 @@ function _maybePrefetch() {
     fetch('/subjects/suggest' + qs)
         .then(r => r.json())
         .then(d => {
-            if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
-                _prefetchedBatches.push({ promptId, suggestions: d.suggestions });
+            const dict = (d && d.suggestions) || {};
+            const arr = dict.simple || [];
+            if (arr.length) {
+                _prefetchedBatches.push({ promptId, suggestions: arr });
                 _prefetchStats.fetched += 1;
             } else {
                 _prefetchBackoffUntil = Date.now() + _PREFETCH_BACKOFF_MS;
