@@ -8541,9 +8541,25 @@ window._removeSimpleRow = _removeSimpleRow;
             host.innerHTML = '<span class="text-[10px] italic opacity-60">no replies (LLM unreachable)</span>';
             return;
         }
+        // Reply chips share the same primary-outline aesthetic as every
+        // OTHER suggestion chip in the dashboard (simple-mode marquee
+        // chips via _buildSuggestChip, endless-row chips). Was btn-ghost
+        // (no border, faded text) which read as "different cluster" and
+        // visually drifted from the rest of the suggestion language.
+        // Layout overrides (full-width left-justified text, normal-case
+        // for sentence-fragment readability) layered on top of the
+        // shared `btn btn-outline btn-primary btn-xs` base.
+        // CRITICAL: single-quote outer onclick — JSON.stringify produces
+        // a "-wrapped string, so a "-wrapped onclick attribute would
+        // close the attribute at the first inner ". The '-wrapped form
+        // is the same idiom used by every other inline-onclick handler
+        // in this file (search for ${JSON.stringify} in app.js and
+        // they're all single-quote outer). Was broken with double quotes
+        // — every chat suggestion click threw "Unexpected end of input"
+        // and the message never sent (caught by chat-suggestion-send.spec.js).
         host.innerHTML = arr.slice(0, 4).map(s =>
-            `<button type="button" class="btn btn-ghost btn-xs w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
-            onclick="(function(t){const i=document.getElementById('subjects-chat-input');if(i){i.value=t;i.focus();_sendChatMessage();}})(${JSON.stringify(s)})">
+            `<button type="button" class="btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick='(function(t){const i=document.getElementById("subjects-chat-input");if(i){i.value=t;i.focus();_sendChatMessage();}})(${JSON.stringify(s)})'>
             ${_htmlEscape(s)}
         </button>`).join('');
     }

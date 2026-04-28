@@ -3326,8 +3326,15 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
    the rendered HTML. */
 .chat-thought {
     position: relative;
-    background: hsl(var(--b2) / 0.6);
-    border: 1px dashed hsl(var(--bc) / 0.35);
+    /* CRITICAL: oklch(), not hsl(). daisyUI 4.10 ships theme tokens
+       (--b2, --bc) as OKLCH triples (e.g. `97.7% 0.0079 106.55`), not
+       HSL triples. Wrapping them in `hsl(var(--bc) / 0.35)` produces
+       invalid hsl() syntax → the entire shorthand is invalidated at
+       compute time → border-style: solid; border-width: 0 → no border.
+       Was thus invisible. oklch() consumes the tokens correctly and
+       matches daisyUI's own internal idiom. */
+    background: oklch(var(--b2) / 0.6);
+    border: 1px dashed oklch(var(--bc) / 0.35);
     /* Asymmetric border-radius gives a cloudy / lobed silhouette
        so it reads as a THOUGHT bubble, not a flat speech rectangle.
        Pairs with the two trailing dots below for the classic
@@ -3336,7 +3343,7 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     padding: 0.5rem 0.85rem;
     max-width: 90%;
     margin-left: 14px;
-    color: hsl(var(--bc) / 0.85);
+    color: oklch(var(--bc) / 0.85);
 }
 /* Two trailing dots leading from the bubble back toward the
    speaker (the chat-start side / left edge), shrinking as they
@@ -3346,8 +3353,8 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
 .chat-thought::after {
     content: '';
     position: absolute;
-    background: hsl(var(--b2) / 0.6);
-    border: 1px dashed hsl(var(--bc) / 0.35);
+    background: oklch(var(--b2) / 0.6);
+    border: 1px dashed oklch(var(--bc) / 0.35);
     border-radius: 50%;
 }
 .chat-thought::before {

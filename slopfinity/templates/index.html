@@ -1342,64 +1342,75 @@
                            the section is expanded. Filter chips stay here as
                            the only inline header content. #}
                         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-                            <div class="flex flex-wrap gap-1 items-center" id="slop-filters">
-                                {# Filter chip colors aligned to PR #58 token map: video=primary, image=info,
-                                audio=secondary #}
-                                {# Chip on/off colors mirror the Need Suggestions toggle:
-                                ON = solid badge-primary (Queue button color);
-                                OFF = badge-outline + badge-secondary at 40% opacity.
-                                The 'assets' chip toggles whether non-final intermediate
-                                assets (chain mp4s, base pngs, bridge frames) are shown.
-                                Default OFF = only FINAL_*.mp4 visible. Filtering is
-                                handled in _applySlopFilters() in app.js. #}
-                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                        data-slop-filter="video" checked><span
-                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
-                                        branding.labels.slop_video or 'video' }} <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="video">0</span></span></label>
-                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                        data-slop-filter="image" checked><span
-                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">{{
-                                        branding.labels.slop_image or 'image' }} <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="image">0</span></span></label>
-                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                        data-slop-filter="music" checked><span
-                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">music
-                                        <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="music">0</span></span></label>
-                                <label class="cursor-pointer"><input type="checkbox" class="peer hidden"
-                                        data-slop-filter="speech" checked><span
-                                        class="badge badge-sm badge-primary peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-secondary peer-[:not(:checked)]:opacity-40">speech
-                                        <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="speech">0</span></span></label>
-                                {# Vertical separator between the kind chips (video / image /
-                                audio — what TYPE of asset) and the meta chip (assets —
-                                whether to show partial intermediates at all). The visual
-                                gap signals "this chip is a different axis of filtering". #}
-                                <span class="inline-block w-px h-4 bg-base-content/30 mx-1 self-center"
-                                    aria-hidden="true"></span>
-                                <label class="cursor-pointer"
-                                    title="Show intermediate assets (chain mp4s, base pngs, bridge frames). Off = only final products."><input
-                                        type="checkbox" class="peer hidden" data-slop-filter="assets"><span
-                                        class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">assets
-                                        <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="assets">0</span></span></label>
-                                {# Secondary 'frames' filter — bridge PNGs that ffmpeg
-                                   extracts as the LAST FRAME of one video chain to
-                                   feed as the first frame of the NEXT chain. They're
-                                   technically images and qualify as intermediate
-                                   assets, but visually they're just stills FROM the
-                                   videos already in the grid, so they're noisy.
-                                   Default OFF; only meaningful when 'assets' is ON
-                                   (a frame is itself an intermediate asset). The
-                                   chip's enabled/disabled state is owned by
-                                   _applySlopFilters (greys out when assets is OFF). #}
-                                <label class="cursor-pointer slop-filter-frames-label"
-                                    title="Show ffmpeg bridge frames (the last-frame stills extracted from each video chain to feed the next chain's first frame). Only meaningful when 'assets' is on."><input
-                                        type="checkbox" class="peer hidden" data-slop-filter="frames"><span
-                                        class="badge badge-sm badge-accent peer-[:not(:checked)]:badge-outline peer-[:not(:checked)]:badge-accent peer-[:not(:checked)]:opacity-50">frames
-                                        <span class="ml-1 font-mono opacity-70"
-                                            data-chip-count="frames">0</span></span></label>
+                            <div class="flex flex-wrap gap-2 items-center" id="slop-filters">
+                                {# Slop kind filter — pill-radio cluster matching the
+                                   Subjects-mode pill aesthetic across the dashboard.
+                                   Each label wraps a hidden checkbox + a `.join-item
+                                   btn btn-xs btn-primary btn-outline` styled span.
+                                   When the checkbox is :checked, peer- tailwind
+                                   utilities drop the outline so the chip reads as
+                                   the active filled-primary state — same on/off
+                                   contract as the prompt-mode pill. JS handler
+                                   `_applySlopFilters` reads the checkbox state via
+                                   `[data-slop-filter]` so no JS change required. #}
+                                <div class="join slop-filter-pill" role="group" aria-label="Slop kind filter">
+                                    <label class="cursor-pointer">
+                                        <input type="checkbox" class="peer hidden" data-slop-filter="video" checked>
+                                        <span class="join-item btn btn-xs btn-primary btn-outline normal-case peer-checked:btn-active peer-checked:btn-primary peer-checked:no-outline">
+                                            {{ branding.labels.slop_video or 'video' }}
+                                            <span class="ml-1 font-mono opacity-70" data-chip-count="video">0</span>
+                                        </span>
+                                    </label>
+                                    <label class="cursor-pointer">
+                                        <input type="checkbox" class="peer hidden" data-slop-filter="image" checked>
+                                        <span class="join-item btn btn-xs btn-primary btn-outline normal-case peer-checked:btn-active peer-checked:btn-primary peer-checked:no-outline">
+                                            {{ branding.labels.slop_image or 'image' }}
+                                            <span class="ml-1 font-mono opacity-70" data-chip-count="image">0</span>
+                                        </span>
+                                    </label>
+                                    <label class="cursor-pointer">
+                                        <input type="checkbox" class="peer hidden" data-slop-filter="music" checked>
+                                        <span class="join-item btn btn-xs btn-primary btn-outline normal-case peer-checked:btn-active peer-checked:btn-primary peer-checked:no-outline">
+                                            music
+                                            <span class="ml-1 font-mono opacity-70" data-chip-count="music">0</span>
+                                        </span>
+                                    </label>
+                                    <label class="cursor-pointer">
+                                        <input type="checkbox" class="peer hidden" data-slop-filter="speech" checked>
+                                        <span class="join-item btn btn-xs btn-primary btn-outline normal-case peer-checked:btn-active peer-checked:btn-primary peer-checked:no-outline">
+                                            speech
+                                            <span class="ml-1 font-mono opacity-70" data-chip-count="speech">0</span>
+                                        </span>
+                                    </label>
+                                </div>
+                                {# Assets + frames grouped in a fieldset — same treatment
+                                   as the Insert-priority fieldset on the Prompt card.
+                                   Frames is a sub-filter that only applies when assets
+                                   is on (handled by _applySlopFilters disabling the
+                                   frames chip's interactivity); grouping makes that
+                                   relationship visually obvious. #}
+                                <fieldset class="border border-base-content/30 rounded-md px-2 py-1 flex items-center gap-2"
+                                          aria-label="Intermediate assets filter">
+                                    <legend class="text-[9px] uppercase tracking-widest text-base-content/60 px-1">Intermediates</legend>
+                                    <div class="join" role="group">
+                                        <label class="cursor-pointer"
+                                               title="Show intermediate assets (chain mp4s, base pngs). Off = only final products.">
+                                            <input type="checkbox" class="peer hidden" data-slop-filter="assets">
+                                            <span class="join-item btn btn-xs btn-accent btn-outline normal-case peer-checked:btn-active peer-checked:no-outline">
+                                                assets
+                                                <span class="ml-1 font-mono opacity-70" data-chip-count="assets">0</span>
+                                            </span>
+                                        </label>
+                                        <label class="cursor-pointer slop-filter-frames-label"
+                                               title="Show ffmpeg bridge frames (last-frame extracts between video chains). Only meaningful when 'assets' is on.">
+                                            <input type="checkbox" class="peer hidden" data-slop-filter="frames">
+                                            <span class="join-item btn btn-xs btn-accent btn-outline normal-case peer-checked:btn-active peer-checked:no-outline">
+                                                frames
+                                                <span class="ml-1 font-mono opacity-70" data-chip-count="frames">0</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </fieldset>
                                 {# Preview size pill — S / M / L. Persists in localStorage
                                 and flips body[data-slop-size]; CSS rules below resize
                                 #preview-grid columns + each card's figure height.
@@ -1916,10 +1927,6 @@
                         </details>
                 </div>
             </div>
-
-            <p class="text-[11px] text-base-content/60 italic mb-2">Per-stage prompt overrides, LLM provider, frames,
-                quality ramp, post-processing — moved to <button type="button" class="link link-primary"
-                    onclick="$('pipeline-modal').close(); openSettings();">Settings → Pipeline</button>.</p>
 
             {# Per-stage prompt overrides + LLM provider/Frames/Quality/Music gain/
             Voice preset/Post-processing — relocated to Settings → Pipeline
