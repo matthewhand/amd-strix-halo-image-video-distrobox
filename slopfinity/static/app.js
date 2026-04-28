@@ -2953,7 +2953,18 @@ function _renderChatLog() {
                         title="Switch to branch ${i + 1} of ${sibs.length}"
                         onclick="_chatSwitchActiveTo('${sid}'); _renderChatLog();">${i + 1}</button>`;
             }).join('')}
-            </div>` : '';
+            </div>` : (nodeId ? `<div class="chat-branch-nav chat-branch-nav-fork" data-pos-idx="${idx}">
+                <button type="button" class="chat-branch-pill chat-branch-fork"
+                        title="Fork conversation from this message — creates a new branch you can edit"
+                        onclick='_chatBeginEdit("${nodeId}", this)'>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                         stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
+                        <circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="9" r="2"/>
+                        <path d="M6 5v6a4 4 0 0 0 4 4h4"/><path d="M6 13v6"/>
+                    </svg>
+                    <span>fork</span>
+                </button>
+            </div>` : '');
             const editBtn = nodeId ? `<button type="button" class="chat-bubble-action chat-bubble-edit"
                 title="Edit + fork conversation"
                 onclick='_chatBeginEdit("${nodeId}", this)'>
@@ -5422,6 +5433,39 @@ function _isAutoSuggestDisabled() {
     return !!c.suggest_auto_disabled;
 }
 
+// Spiffy mode: per-row prompt-name pill cluster in simple mode. The
+// `endless` mode renders this cluster unconditionally; simple mode opts
+// in via the Settings → Generation toggle. Default off. The override
+// captures the optimistic state when the user toggles the checkbox so
+// effects are immediate (no Save → tick round-trip needed for feedback).
+let _perRowPromptsOverride = null;
+function _isPerRowPromptsEnabled() {
+    if (_perRowPromptsOverride !== null) return _perRowPromptsOverride;
+    if (!_lastTick || !_lastTick.config) return false;
+    return !!_lastTick.config.suggest_per_row_prompts;
+}
+window._isPerRowPromptsEnabled = _isPerRowPromptsEnabled;
+
+// Inline handler invoked from the Settings → Generation checkbox.
+// Captures the optimistic override and, when flipping OFF→ON in simple
+// mode with no rows yet, auto-seeds an empty row using the currently
+// selected prompt so the user immediately sees the cluster's effect.
+function _onPerRowPromptsToggle(checked) {
+    _perRowPromptsOverride = !!checked;
+    if (!checked) return;
+    const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : '';
+    if (mode !== 'simple') return;
+    const stack = document.getElementById('subject-chips-stack');
+    if (!stack) return;
+    if (stack.querySelector('.suggest-marquee-row')) return;
+    const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : null;
+    if (!promptId) return;
+    if (typeof _appendSuggestBatchRow === 'function') {
+        _appendSuggestBatchRow([], { promptId, rowIdx: 0 });
+    }
+}
+window._onPerRowPromptsToggle = _onPerRowPromptsToggle;
+
 function _isGpuIdleEnough() {
     const now = Date.now();
     const windowMs = _GPU_IDLE_REQUIRED_SECONDS * 1000;
@@ -6362,7 +6406,7 @@ function connect() {
                 // function now returns the completed-stages history block only.
                 const hasOutput = !!(completedLines || activeBridgesHtml);
                 return hasOutput
-                    ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2">Output</div>${completedLines}${activeBridgesHtml}`
+                    ? `<div class="text-[9px] uppercase tracking-widest text-base-content/50 mt-2 q-output-label">Output</div>${completedLines}${activeBridgesHtml}`
                     : '';
             };
             const renderItem = (q, opts) => {
@@ -7675,6 +7719,8 @@ async function openSettings() {
         }
         const sugCustom = $('set-suggest-custom-prompt');
         if (sugCustom) sugCustom.value = sr.suggest_custom_prompt || '';
+        const sugPerRow = $('set-suggest-per-row-prompts');
+        if (sugPerRow) sugPerRow.checked = !!sr.suggest_per_row_prompts;
 
         // Part 3 — Positive/Scored config hydration
         const sugAutoEn = $('set-suggest-auto-enabled');
@@ -7937,6 +7983,7 @@ async function saveSettings() {
         philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
         suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
         suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',
+        suggest_per_row_prompts: $('set-suggest-per-row-prompts') ? $('set-suggest-per-row-prompts').checked : false,
         suggest_auto_disabled: !$('set-suggest-auto-enabled').checked,
         auto_suggest_enabled: $('set-suggest-auto-enabled').checked,
         idle_throttle_pct: parseInt($('set-idle-throttle').value, 10),
@@ -8406,7 +8453,9 @@ function _appendSuggestBatchRow(items, opts) {
 
     const row = document.createElement('div');
     const isEndless = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'endless';
-    const hasLead = isEndless && opts && typeof opts.rowIdx === 'number' && opts.promptId;
+    const isSimple = (typeof _getSubjectsMode === 'function') && _getSubjectsMode() === 'simple';
+    const spiffySimple = isSimple && (typeof _isPerRowPromptsEnabled === 'function') && _isPerRowPromptsEnabled();
+    const hasLead = (isEndless || spiffySimple) && opts && typeof opts.rowIdx === 'number' && opts.promptId;
     row.className = 'suggest-marquee-row entering' + (hasLead ? ' with-lead' : '');
     // Endless mode rows get a leading prompt-name chip + per-row refresh
     // icon. Click chip → popover picker scoped to THIS row's prompt; click

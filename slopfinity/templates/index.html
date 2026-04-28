@@ -2508,6 +2508,21 @@
 
                                 <div class="form-control md:col-span-2">
                                     <label class="label cursor-pointer py-1">
+                                        <span class="label-text text-xs">Per-row prompt pills in Simple mode (spiffy)</span>
+                                        <input id="set-suggest-per-row-prompts" type="checkbox"
+                                            class="toggle toggle-primary toggle-sm"
+                                            onchange="_onPerRowPromptsToggle(this.checked)" />
+                                    </label>
+                                    <div class="label-text-alt text-[10px] opacity-60 leading-snug">
+                                        When ON, Simple mode adopts Story mode's per-row cluster — each
+                                        suggestion row gets a labelled prompt-style pill (Yes-and, Plot Twist,
+                                        Concrete Detail …) plus refresh + minus controls. Toggling on also
+                                        auto-seeds the first row using the currently-selected prompt.
+                                    </div>
+                                </div>
+
+                                <div class="form-control md:col-span-2">
+                                    <label class="label cursor-pointer py-1">
                                         <span class="label-text text-xs">Derive suggestions from current Prompt</span>
                                         <input id="set-suggest-use-subjects" type="checkbox"
                                             class="toggle toggle-primary toggle-sm" checked />
