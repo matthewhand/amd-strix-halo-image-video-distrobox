@@ -765,34 +765,9 @@ document.addEventListener('DOMContentLoaded', () => {
 }, { once: true });
 
 
-const _galleryReturn = { subjects: null, queue: null };
-
-function openGalleryFabDialog(which) {
-    const cardId = which === 'subjects' ? 'split-left' : 'split-right';
-    const mountId = which === 'subjects' ? 'gallery-subjects-mount' : 'gallery-queue-mount';
-    const dialogId = which === 'subjects' ? 'gallery-subjects-modal' : 'gallery-queue-modal';
-    const card = document.getElementById(cardId);
-    const mount = document.getElementById(mountId);
-    const dialog = document.getElementById(dialogId);
-    if (!card || !mount || !dialog) return;
-    // Remember original parent + nextSibling so we can restore exactly.
-    if (!_galleryReturn[which]) {
-        _galleryReturn[which] = { parent: card.parentNode, next: card.nextSibling };
-    }
-    mount.appendChild(card);
-    // Re-bind one-shot close listener that moves the card back.
-    const onClose = () => {
-        const r = _galleryReturn[which];
-        if (r && r.parent && card.parentNode === mount) {
-            r.parent.insertBefore(card, r.next || null);
-        }
-        dialog.removeEventListener('close', onClose);
-    };
-    dialog.addEventListener('close', onClose);
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-    else dialog.setAttribute('open', '');
-}
-window.openGalleryFabDialog = openGalleryFabDialog;
+// openGalleryFabDialog + #gallery-fab pair removed — flanking focus-fab
+// pill + bottom mobile-nav circles now cover prompt/queue access in
+// gallery layout. The split-left/split-right cards stay where they are.
 
 // Sibling helper for the Slop FAB. In Subjects-focused / Queue-focused
 // view modes the inline Slop card is hidden by CSS; the FAB lets the
@@ -4522,7 +4497,10 @@ async function openAssetInfo(filename) {
         const r = await fetch('/asset/' + encodeURIComponent(filename));
         const m = await r.json();
         if (!m.ok) {
-            body.innerHTML = `<div class="alert alert-error text-xs">${m.error || 'error'}</div>`;
+            // Surface the filename so the user can confirm what was
+            // requested. "not found" with no filename is undebuggable.
+            console.warn('[asset-info] failed:', filename, m);
+            body.innerHTML = `<div class="alert alert-error text-xs"><div>${m.error || 'error'}</div><div class="font-mono text-[10px] mt-1 opacity-70">${_htmlEscape(filename)}</div></div>`;
             return;
         }
         const isV = filename.endsWith('.mp4');
@@ -4667,8 +4645,14 @@ document.addEventListener('click', (e) => {
     if (!card) return;
     // Avoid opening info when clicking the native media controls
     if (e.target.closest('video, audio')) return;
-    const nameSpan = card.querySelector('[title]');
-    const filename = nameSpan ? nameSpan.getAttribute('title') : null;
+    // Prefer the explicit data-slop-file dataset (set by both SSR cards
+    // at index.html:1685 and JS-built cards in _buildSlopCard). Fall back
+    // to the [title] attribute scan for any legacy markup. Reading
+    // dataset.slopFile first dodges the case where querySelector('[title]')
+    // picks up a nested control's title (e.g. native media-control
+    // tooltips or future hover-FAB tooltips) instead of the filename span.
+    const filename = card.dataset.slopFile
+        || (card.querySelector('[title]') && card.querySelector('[title]').getAttribute('title'));
     if (filename) openAssetInfo(filename);
 });
 
@@ -9330,7 +9314,11 @@ function _setChatSuggestCount(n) {
         lbl.textContent = String(clamped);
         lbl.setAttribute('data-count', String(clamped));
     }
-    if (typeof _renderChatReplies === 'function') _renderChatReplies();
+    // Re-slice synchronously from the cached batch first so the rows
+    // update IMMEDIATELY in lockstep with the tally. Only re-fetch when
+    // we don't have enough cached suggestions to satisfy the new count.
+    const synced = (typeof _resliceChatReplies === 'function') ? _resliceChatReplies(clamped) : false;
+    if (!synced && typeof _renderChatReplies === 'function') _renderChatReplies();
     return clamped;
 }
 function _chatSuggestCountStep(delta) {
@@ -9431,6 +9419,9 @@ async function _renderChatReplies() {
     // to [1, 6]). Whatever's left over after the displayed slice is the
     // prefetch buffer for consume-and-refill.
     const displayCount = (typeof _getChatSuggestCount === 'function') ? _getChatSuggestCount() : 3;
+    // Stash the full fetched batch so the +/- stepper can re-slice
+    // synchronously without re-fetching when the user changes count.
+    host._chatReplyArr = arr;
     host._chatReplyBuffer = arr.slice(displayCount);
     // Reply chips share the same primary-outline aesthetic as every
     // OTHER suggestion chip in the dashboard (simple-mode marquee
@@ -9454,6 +9445,26 @@ async function _renderChatReplies() {
         </button>`).join('');
 }
 window._renderChatReplies = _renderChatReplies;
+
+// Re-render the chat replies row from the cached batch (no network).
+// Returns true when it was able to render the requested count from cache,
+// false when we don't have enough cached items and a fresh fetch is needed.
+// Drives the synchronous half of the +/- stepper UX so tally and chips
+// update in lockstep without waiting on /subjects/suggest.
+function _resliceChatReplies(displayCount) {
+    const host = document.getElementById('subjects-chat-replies');
+    if (!host) return false;
+    const arr = host._chatReplyArr;
+    if (!Array.isArray(arr) || arr.length < displayCount) return false;
+    host._chatReplyBuffer = arr.slice(displayCount);
+    host.innerHTML = arr.slice(0, displayCount).map(s =>
+        `<button type="button" class="chat-reply-chip btn btn-outline btn-primary btn-xs normal-case w-full justify-start text-xs whitespace-normal text-left h-auto py-1.5"
+            onclick='_consumeChatReply(this, ${JSON.stringify(s)})'>
+            ${_htmlEscape(s)}
+        </button>`).join('');
+    return true;
+}
+window._resliceChatReplies = _resliceChatReplies;
 
 // Consume one chat reply chip:
 //   1. fade the clicked chip out (CSS class .chip-disappear, ~700 ms)

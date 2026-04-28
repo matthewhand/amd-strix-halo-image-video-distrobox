@@ -3613,59 +3613,10 @@
         </div> {# /.drawer-side #}
     </div> {# /#settings-drawer #}
 
-    {# Gallery-mode floating action buttons + modal hosts. Hidden by default;
-    CSS reveals when body[data-layout="gallery"]. The dialogs serve as
-    relocation targets — when opened, the existing #split-left / #split-right
-    cards are MOVED into them so handlers + state stay intact. #}
-    <div id="gallery-fab" aria-hidden="true">
-        <button class="btn btn-circle btn-primary shadow-xl" title="Prompt" aria-label="Open Prompt"
-            onclick="openGalleryFabDialog('subjects')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
-            </svg>
-        </button>
-        <button class="btn btn-circle btn-secondary shadow-xl" title="Queue" aria-label="Open Queue"
-            onclick="openGalleryFabDialog('queue')">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6" />
-                <line x1="8" y1="12" x2="21" y2="12" />
-                <line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" />
-                <line x1="3" y1="12" x2="3.01" y2="12" />
-                <line x1="3" y1="18" x2="3.01" y2="18" />
-            </svg>
-        </button>
-    </div>
-    {# Gallery-mode FAB popups for Subjects + Queue. Sized to take the full
-    viewport width up to 5xl (~1024 px) and ~85 vh tall, so the queue list
-    and subject textarea actually have room to breathe. The mounted content
-    uses w-full so the textarea + queue items expand to fill, not sit at
-    their default narrow width. #}
-    <dialog id="gallery-subjects-modal" class="modal">
-        <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
-            <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Prompt</h3>
-            <div id="gallery-subjects-mount" class="w-full flex-1 overflow-y-auto"></div>
-            <div class="modal-action flex-none">
-                <form method="dialog"><button class="btn btn-sm">Close</button></form>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
-    <dialog id="gallery-queue-modal" class="modal">
-        <div class="modal-box w-[95vw] max-w-[1600px] h-[92vh] max-h-[92vh] flex flex-col">
-            <h3 class="font-bold text-lg uppercase tracking-widest mb-2 flex-none">Queue</h3>
-            <div id="gallery-queue-mount" class="w-full flex-1 overflow-y-auto"></div>
-            <div class="modal-action flex-none">
-                <form method="dialog"><button class="btn btn-sm">Close</button></form>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    {# Gallery-mode prompt/queue popup FABs were removed — the focus-fab
+    flanking-nav pill at the bottom + the bottom mobile-nav circles now
+    cover prompt/queue navigation in every layout, so the gallery-only
+    redundant FAB pair was pure clutter. #}
 
     {# Focused-mode FAB — visible in Subjects-focused / Queue-focused modes
     (the inverse of the gallery FAB). Shows quick-jump buttons to the OTHER

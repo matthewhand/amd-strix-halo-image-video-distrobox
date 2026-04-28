@@ -1386,18 +1386,7 @@ body[data-layout="gallery"] #ui-split-lower {
     min-height: calc(100vh - 88px);
 }
 
-#gallery-fab {
-    display: none;
-}
-
-body[data-layout="gallery"] #gallery-fab {
-    display: flex;
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    gap: 8px;
-    z-index: 40;
-}
+/* #gallery-fab removed — see template comment + dead-code stub at app.js. */
 
 /* ---------------------------------------------------------------------------
    Card close (×) button — sits in the top-right of each primary card body
@@ -2342,8 +2331,7 @@ body[data-slop-size="l"] #preview-grid>[data-slop-kind] figure {
    gets .no-card-fabs and every focused-mode FAB cluster collapses
    regardless of layout. View dropdown still works as the recovery
    path. */
-body.no-card-fabs #focus-slop-fab,
-body.no-card-fabs #gallery-fab {
+body.no-card-fabs #focus-slop-fab {
     display: none !important;
 }
 
@@ -3756,8 +3744,7 @@ textarea::placeholder {
        viewport directly. */
     /* Hide the desktop FAB cluster on mobile — the bottom nav serves
        the same purpose and the FABs would just clutter the corner. */
-    #focus-slop-fab,
-    #gallery-fab {
+    #focus-slop-fab {
         display: none !important;
     }
 }
@@ -3770,30 +3757,36 @@ textarea::placeholder {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     flex: 0 0 auto;
     background: hsl(var(--p));
     color: hsl(var(--pc));
-    border: 1px solid hsl(var(--p));
-    padding: 6px 14px;
-    border-radius: 999px;
+    border: 2px solid hsl(var(--p));
+    /* Filled circle — icon-only, matches the focus-fab aesthetic so the
+       compact bottom nav reads as "the same family of nav controls". */
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, transform 0.05s;
-    min-height: 36px;
+    box-shadow: 0 2px 6px hsl(var(--p) / 0.25);
 }
 
 .mobile-nav-icon {
-    width: 1.1rem;
-    height: 1.1rem;
+    width: 1.25rem;
+    height: 1.25rem;
     flex: 0 0 auto;
 }
 
+/* Label hidden inside the circle — kept in DOM for screen-reader/aria
+   continuity but visually collapsed since the circle already conveys the
+   action via the chevron icon. */
 .mobile-nav-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    line-height: 1;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .mobile-nav-btn:not(:disabled):hover {
