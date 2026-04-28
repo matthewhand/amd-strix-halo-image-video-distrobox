@@ -2538,6 +2538,11 @@ async def settings_post(data: dict = Body(...)):
         c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
     if "suggest_auto_disabled" in data:
         c["suggest_auto_disabled"] = bool(data.get("suggest_auto_disabled"))
+    # Spiffy mode — per-row prompt-pill cluster in simple mode. Default
+    # False. Plumbed in v316 but the settings POST branch was missing
+    # (Agent C's e2e spec flagged this with a .fixme).
+    if "suggest_per_row_prompts" in data:
+        c["suggest_per_row_prompts"] = bool(data.get("suggest_per_row_prompts"))
     # Auto-suspend list (Settings → LLM → Auto-suspend during GPU inference).
     # Stored as a top-level list of {id, label, enabled, method, ...} entries.
     # Each entry's method-specific fields are preserved verbatim.
