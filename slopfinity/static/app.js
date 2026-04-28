@@ -6099,18 +6099,34 @@ function connect() {
                         const age = nowSec - (q.cancelled_ts || 0);
                         return age < 5;
                     });
-                    // Cap the inline queue at 6 items so the card stays
-                    // glanceable; the "View all →" button opens the drawer
-                    // which shows the entire queue.
-                    // Pending items first (max 6 visible inline).
+                    // Inline queue cap is dynamic by layout:
+                    //   default / multi-pane → 6 (glanceable, drawer for rest)
+                    //   queue-focused        → up to ~30 to fill the card's
+                    //                          full vertical real estate the
+                    //                          user gave it. Math: viewport
+                    //                          minus header/footer reserve
+                    //                          divided by ~70 px row height.
+                    //                          Floor at 6, ceiling at 30 so
+                    //                          we don't render thousands on
+                    //                          a giant 4k display either.
+                    // Done items get the SAME cap so they fill the bottom of
+                    // the card too rather than always trailing 6 deep.
+                    const isQueueFocused = document.body.dataset.layout === 'queue'
+                        || document.body.dataset.layout === 'subj-queue'
+                        || document.body.dataset.layout === 'queue-slop';
+                    let inlineCap = 6;
+                    if (isQueueFocused) {
+                        const avail = Math.max(0, window.innerHeight - 220);
+                        inlineCap = Math.max(6, Math.min(30, Math.floor(avail / 70)));
+                    }
                     const pendingOnly = visibleQueue.filter(q => q.status !== 'done');
-                    items.push(...pendingOnly.slice(0, 6).map(q => renderItem(q, {})));
+                    items.push(...pendingOnly.slice(0, inlineCap).map(q => renderItem(q, {})));
                     // Done items (newest first) — full audit log of completed
-                    // iters, each with its actual duration and an asset link.
-                    // Limit to most-recent 6 inline; the drawer shows them all.
+                    // iters. Same dynamic cap so done rows can also fill
+                    // available height in the focused layout.
                     const doneOnly = visibleQueue.filter(q => q.status === 'done')
                         .slice().sort((a, b) => (b.completed_ts || 0) - (a.completed_ts || 0));
-                    doneOnly.slice(0, 6).forEach(q => {
+                    doneOnly.slice(0, inlineCap).forEach(q => {
                         items.push(_renderDoneItem(q));
                     });
                     qList.innerHTML = items.join('');
