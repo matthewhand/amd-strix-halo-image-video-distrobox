@@ -100,7 +100,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a story editor. Given the SEED below, output exactly {n} short "
             "next-scene continuations that follow the seed's most natural, supportive "
-            "trajectory — 'yes, and…' improv style. Each line ≤ 14 words, plain text, "
+            "trajectory — 'yes, and…' improv style. Each line ≤ 28 words, plain text, "
             "one per line, no numbering, no bullets, no quotes."
         ),
     },
@@ -110,7 +110,7 @@ DEFAULT_SUGGEST_PROMPTS = [
             "You are a story editor. Given the SEED below, output exactly {n} short "
             "continuations that subvert its expected direction — introduce ONE "
             "unexpected element per line that recontextualizes the seed. "
-            "Each line ≤ 14 words, plain text, one per line, no numbering, no bullets."
+            "Each line ≤ 28 words, plain text, one per line, no numbering, no bullets."
         ),
     },
     {
@@ -119,7 +119,7 @@ DEFAULT_SUGGEST_PROMPTS = [
             "You are a surrealist co-writer. Given the SEED below, output exactly {n} "
             "short continuations that pull the seed into the unreal — dreamlike images, "
             "objects behaving wrong, geometry breaking, time slipping — while keeping "
-            "ONE concrete sensory detail per line as an anchor. Each line ≤ 14 words, "
+            "ONE concrete sensory detail per line as an anchor. Each line ≤ 28 words, "
             "plain text, one per line, no numbering, no bullets, no quotes."
         ),
     },
@@ -129,7 +129,7 @@ DEFAULT_SUGGEST_PROMPTS = [
             "You are an inquisitive narrator. Given the SEED below, output exactly {n} "
             "short continuations that reframe it as a QUESTION the scene is asking — "
             "either a literal question someone in the scene voices, or a tacit question "
-            "the camera/subject poses through gesture. Each line ≤ 14 words, plain "
+            "the camera/subject poses through gesture. Each line ≤ 28 words, plain "
             "text, one per line, no numbering, no bullets, no quotes."
         ),
     },
@@ -138,7 +138,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a deadpan cynic. Given the SEED below, output exactly {n} short "
             "continuations that reframe it through a wry, slightly nihilist lens — "
-            "without being mean. Each line ≤ 14 words, plain text, one per line, "
+            "without being mean. Each line ≤ 28 words, plain text, one per line, "
             "no numbering, no bullets, no quotes."
         ),
     },
@@ -147,7 +147,7 @@ DEFAULT_SUGGEST_PROMPTS = [
         "system": (
             "You are a wide-eyed first-encounter narrator. Given the SEED below, "
             "output exactly {n} short continuations that reframe it as if seen for "
-            "the first time, with awe. Each line ≤ 14 words, plain text, one per line, "
+            "the first time, with awe. Each line ≤ 28 words, plain text, one per line, "
             "no numbering, no bullets, no quotes."
         ),
     },
@@ -258,6 +258,7 @@ DEFAULT_CONFIG = {
     "suggest_max_len_endless": 40,
     "suggest_max_len_simple": 80,
     "suggest_max_len_chat": 160,
+    "show_date_time": False,
 }
 
 

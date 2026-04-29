@@ -1182,6 +1182,7 @@ textarea.subjects-autogrow {
     max-height: 50vh;
     min-height: 0;
     overflow-y: auto;
+    padding: 2px; /* Prevent clipping of ring-2 / focus borders on items */
 }
 
 @media (min-width: 1280px) {
@@ -2365,6 +2366,19 @@ body.no-card-fabs #focus-slop-fab {
     flex: none;
 }
 
+/* Fix width in desktop mode so switching modes doesn't resize the pill.
+   In compact mode we use standard button sizing to save space. */
+.subjects-mode-pill button {
+    transition: min-width 150ms ease;
+    justify-content: center;
+}
+
+@media (min-width: 768px) {
+    .subjects-mode-pill button {
+        min-width: 5.5rem;
+    }
+}
+
 .subjects-mode-pill button:not(.subj-mode-active) .subj-mode-full {
     display: none;
 }
@@ -2743,6 +2757,14 @@ body.subj-mode-raw #subjects-per-stage textarea {
 #subjects-story-log .endless-row-add:hover {
     color: oklch(var(--p));
     background-color: oklch(var(--p) / 0.12);
+}
+
+#subjects-story-log .endless-row-rewrite {
+    color: oklch(var(--a) / 0.7);
+}
+#subjects-story-log .endless-row-rewrite:hover {
+    color: oklch(var(--a));
+    background-color: oklch(var(--a) / 0.12);
 }
 
 /* ─── Marquee row entry-bump fix — three layered defenses ───────────────
@@ -3165,45 +3187,29 @@ body.subj-mode-chat .subjects-pane[data-pane-mode="chat"] {
    consistency across all four modes. */
 
 /* Chat mode — the shared input row + suggestions cluster + chip
-   stack are all hidden. Chat owns its own input inside its pane,
+   stack + action cluster are all hidden. Chat owns its own input inside its pane,
    and its own 4-reply strip replaces the marquee. */
 body.subj-mode-chat #subjects-input-row,
 body.subj-mode-chat #subjects-need-ideas-row,
-body.subj-mode-chat #subjects-suggestions-area {
+body.subj-mode-chat #subjects-suggestions-area,
+body.subj-mode-chat #subjects-action-cluster {
     display: none !important;
 }
 
-/* Endless + story running — hide the seed textarea row; the seed
-   lives in the story log inside the endless pane, and the textarea
-   isn't editable in this state anyway. */
-body.subj-mode-endless.endless-running #subjects-input-row {
+/* Endless + story running — hide the shared action cluster and textarea;
+   the story footer owns its own compact Queue button. */
+body.subj-mode-endless.endless-running #subjects-input-row,
+body.subj-mode-endless.endless-running #subjects-action-cluster {
     display: none !important;
 }
 
-/* Raw mode — LLM-free, suggestions don't apply. Hide the unified
-   Suggestions badge + the chip-stack marquee. Also hide the shared
-   subject textarea (#p-core) — raw doesn't use a subject seed at
-   all; the per-stage prompts above ARE the queue payload. The
-   Queue Slop button stays visible (still inside #subjects-input-row)
-   and now stretches to fill the row since the textarea is gone. */
+/* Raw mode — hide the shared action cluster and textarea; the raw
+   pane owns its own Queue button pinned to the prompts. */
 body.subj-mode-raw #subjects-need-ideas-row,
 body.subj-mode-raw #subjects-suggestions-area,
-body.subj-mode-raw #p-core,
-body.subj-mode-raw #subjects-input-row {
+body.subj-mode-raw #subjects-input-row,
+body.subj-mode-raw #subjects-action-cluster {
     display: none !important;
-}
-
-/* With #p-core hidden, the Queue Slop button is the only child of
-   #subjects-input-row. Drop the ml-auto right-pin and let it
-   stretch full-width so it reads as the primary action affordance,
-   not a stranded button on the right edge. */
-body.subj-mode-raw #subjects-input-row {
-    justify-content: stretch;
-}
-
-body.subj-mode-raw #btn-start-stop-inline {
-    width: 100% !important;
-    margin-left: 0 !important;
 }
 
 /* Endless story log + chat log + chat pane — let them flex-grow
@@ -4001,18 +4007,24 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
    either overflow the card silently or push the upper pane past its
    max-height. flex-1 + min-height:0 lets it claim leftover vertical
    space inside the Subjects card body before scrolling kicks in. */
-#subject-chips-stack {
+.subject-chips-stack {
     flex: 1 1 auto;
     min-height: 0;
     max-height: min(40vh, 320px);
     overflow-y: auto;
 }
 
-#subject-chips-stack::-webkit-scrollbar {
+body:not(.subj-mode-simple) #subject-chips-stack-simple { display: none !important; }
+body.subj-mode-simple #subject-chips-stack-simple { display: flex !important; }
+
+body:not(.subj-mode-endless) #subject-chips-stack-endless { display: none !important; }
+body.subj-mode-endless #subject-chips-stack-endless { display: flex !important; }
+
+.subject-chips-stack::-webkit-scrollbar {
     width: 6px;
 }
 
-#subject-chips-stack::-webkit-scrollbar-thumb {
+.subject-chips-stack::-webkit-scrollbar-thumb {
     background: hsl(var(--bc) / 0.25);
     border-radius: 3px;
 }
