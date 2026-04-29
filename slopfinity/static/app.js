@@ -1431,7 +1431,8 @@ function _refreshSuggestBadge() {
     // back to ↻ refresh (regenSuggestions overwrites the stack). User
     // never sees both at once. Endless owns the + permanently. Other
     // modes (chat/raw) don't apply.
-    const stackHasRows = !!(document.querySelector('#subject-chips-stack .suggest-marquee-row'));
+    const { stack } = _getSuggestStack();
+    const stackHasRows = !!(stack && stack.querySelector('.suggest-marquee-row'));
     const simpleNeedsAdd = (mode === 'simple') && !stackHasRows;
     // Simple mode +/- row-stack pill — visible only in simple mode WITH
     // existing rows (you can't − a row that doesn't exist; the
@@ -1446,8 +1447,8 @@ function _refreshSuggestBadge() {
             removeBtn.classList.toggle('opacity-40', !stackHasRows);
         }
         const countEl = document.getElementById('subjects-simple-row-count');
-        if (countEl) {
-            countEl.innerText = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length;
+        if (countEl && stack) {
+            countEl.innerText = stack.querySelectorAll('.suggest-marquee-row').length;
         }
     }
     if (refreshBtn) {
@@ -2274,8 +2275,9 @@ function _wireEndlessStoryCycle() {
                 // LLM to extend the story rather than generate isolated
                 // fresh subjects. `endless=1` flips the server's
                 // user-message wording.
+                const { stack } = _getSuggestStack();
                 const recentChips = Array.from(
-                    document.querySelectorAll('#subject-chips-stack button[data-suggest]')
+                    stack ? stack.querySelectorAll('button[data-suggest]') : []
                 ).map(b => b.dataset.suggest).filter(Boolean);
                 // Dedupe (chips are duplicated in each row for the
                 // marquee wraparound) and keep the last 6 unique.
@@ -2296,7 +2298,6 @@ function _wireEndlessStoryCycle() {
                     // these opts the row would render as a bare marquee
                     // (no dropdown), which read as "the simple-mode
                     // suggestions are leaking into endless".
-                    const stack = document.getElementById('subject-chips-stack');
                     const existingRows = stack ? stack.querySelectorAll('.suggest-marquee-row').length : 0;
                     const promptId = (typeof _getDefaultPromptId === 'function')
                         ? _getDefaultPromptId() : 'yes-and';
@@ -2349,6 +2350,15 @@ function _getSubjectsMode() {
         if (v === 'raw') return 'raw';
         return 'simple';  // default: single textarea, LLM rewrites at queue time
     } catch (_) { return 'simple'; }
+}
+
+function _getSuggestStack() {
+    const mode = _getSubjectsMode();
+    const isEndless = mode === 'endless';
+    return {
+        stack: document.getElementById(isEndless ? 'subject-chips-stack-endless' : 'subject-chips-stack-simple'),
+        placeholder: document.getElementById(isEndless ? 'subject-chips-empty-endless' : 'subject-chips-empty-simple')
+    };
 }
 
 function _setSubjectsMode(mode) {
@@ -2479,7 +2489,7 @@ function _setSubjectsMode(mode) {
     // endless suggestions only exist while a story is in flight.
     // Switching OUT of endless: re-render the cached chips so simple
     // mode isn't stuck with an empty stack until the user clicks ↻.
-    const stackBox = document.getElementById('subject-chips-stack');
+    const { stack: stackBox } = _getSuggestStack();
     if (mode === 'endless' && !_endlessRunning) {
         if (stackBox) stackBox.innerHTML =
             "";
@@ -5899,7 +5909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const _curMode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
     const _endlessIdle = (_curMode === 'endless' && !_endlessRunning);
     if (_endlessIdle) {
-        const box = document.getElementById('subject-chips-stack');
+        const { stack: box } = _getSuggestStack();
         if (box) box.innerHTML = "";
     } else {
         _renderCachedSuggestions(); // simple-mode-only; no-op for raw/chat
@@ -6078,7 +6088,8 @@ function _onPerRowPromptsToggle(checked) {
     if (!checked) return;
     const mode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : '';
     if (mode !== 'simple') return;
-    const stack = document.getElementById('subject-chips-stack');
+
+    const { stack } = _getSuggestStack();
     if (!stack) return;
     if (stack.querySelector('.suggest-marquee-row')) return;
     const promptId = (typeof _getDefaultPromptId === 'function') ? _getDefaultPromptId() : null;
@@ -7047,6 +7058,10 @@ function connect() {
                 const promptEsc = _htmlEscape(q.prompt || '');
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
+                const showDateTime = (cfg && cfg.show_date_time) || (snap && snap.show_date_time);
+                const tsHtml = (showDateTime && q.ts)
+                    ? `<span class="opacity-40 font-mono text-[9px] mr-1">${new Date(q.ts * 1000).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>`
+                    : '';
                 // ♾ / polymorphic: transparent (icon-only) — they're decorative
                 // status hints, not call-to-action chips.
                 const infBadge = q.infinity
@@ -7153,7 +7168,7 @@ function connect() {
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
                             ${chevronHTML}
                             <span class="flex items-center gap-1 flex-none">
-                                ${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
+                                ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
                             </span>
                             <span class="flex-1 min-w-0">
                                 <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
@@ -7795,6 +7810,7 @@ async function updatePipeline() {
     if ($('cfg-fade-s')) body.fade_s = parseFloat($('cfg-fade-s').value);
     if ($('chaos-on')) body.chaos_mode = $('chaos-on').checked;
     if ($('when-idle-on')) body.when_idle = $('when-idle-on').checked;
+    if ($('date-time-on')) body.show_date_time = $('date-time-on').checked;
     await fetch('/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -8957,7 +8973,9 @@ function _refreshChipHighlights() {
     // Walks every marquee row in the stack — chips appear duplicated in
     // each row's track for the seamless loop, so the same data-suggest may
     // map to multiple buttons; toggling them all keeps the visual in sync.
-    document.querySelectorAll('#subject-chips-stack button[data-suggest]').forEach(btn => {
+    const { stack } = _getSuggestStack();
+    if (!stack) return;
+    stack.querySelectorAll('button[data-suggest]').forEach(btn => {
         const here = lines.has((btn.dataset.suggest || '').toLowerCase());
         btn.classList.toggle('btn-primary', !here);
         btn.classList.toggle('btn-outline', here);
@@ -9030,8 +9048,8 @@ function _buildSuggestChip(s) {
                         // Wait for the chip-disappear animation (~2.2 s) so
                         // the user sees pulse → collapse → fresh row arrive.
                         const rowEl = e.target.closest('.suggest-marquee-row');
-                        const allRows = Array.from(document.querySelectorAll(
-                            '#subject-chips-stack .suggest-marquee-row'));
+                        const { stack } = _getSuggestStack();
+                        const allRows = stack ? Array.from(stack.querySelectorAll('.suggest-marquee-row')) : [];
                         const rowIdx = rowEl ? allRows.indexOf(rowEl) : -1;
                         if (rowIdx >= 0 && typeof _regenEndlessRow === 'function') {
                             setTimeout(() => _regenEndlessRow(rowIdx), 2300);
@@ -9052,7 +9070,8 @@ function _buildSuggestChip(s) {
             // marquee animation continues uninterrupted because the
             // track is still flex-row and translateX(-50%) still loops
             // the remaining content.
-            const matches = document.querySelectorAll(`#subject-chips-stack button[data-suggest="${CSS.escape(s)}"]`);
+            const { stack: matchStack } = _getSuggestStack();
+            const matches = matchStack ? matchStack.querySelectorAll(`button[data-suggest="${CSS.escape(s)}"]`) : [];
             matches.forEach(el => el.classList.add('chip-disappear'));
             // Snapshot which tracks need re-measuring AFTER removal — the
             // marquee duration is set as a CSS var based on track width, so
@@ -9126,7 +9145,7 @@ function _appendSuggestBatchRow(items, opts) {
             }, new Error('stack').stack);
         }
     } catch (_) { /* never block render on diagnostic */ }
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     if (!stack || !items) return;
     // Empty items is allowed when opts has a promptId/rowIdx (endless
     // mode placeholder row — render the lead cluster + empty mask so
@@ -9137,7 +9156,6 @@ function _appendSuggestBatchRow(items, opts) {
     const hasLeadOpts = opts && typeof opts.rowIdx === 'number' && opts.promptId;
     if (!items.length && !hasLeadOpts) return;
     // First batch — drop the placeholder span if present.
-    const placeholder = document.getElementById('subject-chips-empty');
     if (placeholder) placeholder.remove();
 
     // Fresh OFF + at cap → drop the new batch instead of evicting old
@@ -9326,7 +9344,7 @@ function _appendSuggestBatchRow(items, opts) {
 // 🎲 click). Additive use cases (auto-suggest top-up, prefetch consume)
 // call _appendSuggestBatchRow directly.
 function _renderSuggestChips(arr) {
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     if (!stack) return;
     stack.innerHTML = '';
     if (!arr.length) {
@@ -9425,7 +9443,18 @@ async function _fetchSuggestBatch(opts) {
             if (/^(here\s+(are|is)|i'?ll|i\s+will|let\s+me)\s+/i.test(t)) return true;
             return false;
         };
-        return arr.filter(s => !looksLikeJunk(s));
+        const unique = [];
+        const seen = new Set();
+        arr.forEach(s => {
+            if (!s || typeof s !== 'string') return;
+            const t = s.trim();
+            const low = t.toLowerCase();
+            if (seen.has(low)) return;
+            if (looksLikeJunk(t)) return;
+            seen.add(low);
+            unique.push(t);
+        });
+        return unique;
     } catch (_) { return []; }
 }
 window._fetchSuggestBatch = _fetchSuggestBatch;
@@ -9461,7 +9490,7 @@ async function regenSuggestions(n = 6) {
     if (refreshSvg) refreshSvg.classList.add('refresh-spinning');
     try {
         if (mode === 'chat') return await _renderChatReplies();
-        const box = document.getElementById('subject-chips-stack');
+        const { stack: box } = _getSuggestStack();
         if (!box) return;
         if (mode === 'endless') return await _renderEndlessRows(n);
         return await _renderSimpleRows(n);
@@ -9482,7 +9511,7 @@ async function _renderSimpleRows(n) {
     const startMode = (typeof _getSubjectsMode === 'function') ? _getSubjectsMode() : 'simple';
     const stillSimple = () => (typeof _getSubjectsMode === 'function')
         ? _getSubjectsMode() === startMode : true;
-    const box = document.getElementById('subject-chips-stack');
+    const { stack: box } = _getSuggestStack();
     if (!box) return;
     const promptId = _getDefaultPromptId();
     // SWAP-ON-SUCCESS: only clear the existing chips AFTER the new
@@ -9558,7 +9587,7 @@ async function _renderEndlessRows(n) {
     // before painting (otherwise endless rows leak into simple/chat).
     const stillEndless = () => (typeof _getSubjectsMode === 'function')
         && _getSubjectsMode() === 'endless' && _endlessRunning;
-    const box = document.getElementById('subject-chips-stack');
+    const { stack: box } = _getSuggestStack();
     if (!box) return;
     if (!_endlessRunning) {
         box.innerHTML = "";
@@ -9614,7 +9643,7 @@ async function _regenEndlessRow(rowIdx) {
     }
 }
 async function _regenEndlessRowImpl(rowIdx) {
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     if (!stack) return;
     const rowPrompts = _getEndlessRowPrompts();
     const promptId = rowPrompts[rowIdx];
@@ -9684,7 +9713,7 @@ async function _addEndlessRow() {
         // marquee duplicator turned into [' ', ' '] = two visible empty
         // chips next to the lead cluster.
         _appendSuggestBatchRow([], { promptId: newId, rowIdx: idx });
-        const stack = document.getElementById('subject-chips-stack');
+        const { stack, placeholder } = _getSuggestStack();
         // BUG FIX: previously looked up the placeholder by `[idx]` where
         // idx came from the prompt-array length. If the prompt array
         // and DOM row count had drifted (e.g. a dead-code endless cycle
@@ -9787,7 +9816,7 @@ async function _addSimpleRow() {
     if (typeof _refreshSuggestBadge === 'function') _refreshSuggestBadge();
 }
 function _removeSimpleRow() {
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     if (!stack) return;
     const rows = stack.querySelectorAll('.suggest-marquee-row');
     if (rows.length) rows[rows.length - 1].remove();
@@ -9804,7 +9833,7 @@ function _removeEndlessRow(rowIdx) {
     if (rowIdx < 0 || rowIdx >= arr.length) return;
     arr.splice(rowIdx, 1);
     _setEndlessRowPrompts(arr);
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     if (!stack) return;
     const rows = stack.querySelectorAll('.suggest-marquee-row');
     if (rows[rowIdx]) rows[rowIdx].remove();
@@ -10288,7 +10317,7 @@ function _resetPrefetchIdleTimer() {
 let _suggestPrefetchWired = false;
 function _wireSuggestPrefetch() {
     if (_suggestPrefetchWired) return;
-    const stack = document.getElementById('subject-chips-stack');
+    const { stack, placeholder } = _getSuggestStack();
     const ta = document.getElementById('p-core');
     if (!stack) return;
     _suggestPrefetchWired = true;
