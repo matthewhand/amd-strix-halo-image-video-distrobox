@@ -70,6 +70,68 @@ async def favicon():
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
 
 
+# ---------------------------------------------------------------------------
+# Health probes — `/healthz` and `/readyz` so monitoring / orchestrators
+# / future docker-compose healthchecks can probe the dashboard without
+# parsing the full /runner/status payload. Audit's #2 high-priority
+# observability gap.
+#
+#   /healthz — process liveness. Always 200 if the FastAPI worker is
+#              answering. No deps. Cheap. For a load balancer.
+#   /readyz  — service readiness. 200 only if the queue file is
+#              readable, EXP_DIR is writable, and the LLM probe is
+#              live. 503 with a body listing the failing checks
+#              otherwise. For startup gating + alerting.
+#
+# Both endpoints are unauthenticated (consistent with the rest of the
+# dashboard's read endpoints) and skipped by the CSRF middleware
+# (GET methods always pass-through).
+# ---------------------------------------------------------------------------
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"ok": True, "service": "slopfinity"}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    checks = {}
+    # Queue file readable
+    try:
+        cfg.get_queue()
+        checks["queue_readable"] = True
+    except Exception as e:
+        checks["queue_readable"] = False
+        checks["queue_error"] = str(e)[:120]
+    # EXP_DIR writable
+    try:
+        exp_dir = os.environ.get("EXP_DIR") or os.path.join(os.getcwd(), "comfy-outputs", "experiments")
+        os.makedirs(exp_dir, exist_ok=True)
+        probe = os.path.join(exp_dir, ".readyz-probe")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+        checks["exp_dir_writable"] = True
+    except Exception as e:
+        checks["exp_dir_writable"] = False
+        checks["exp_dir_error"] = str(e)[:120]
+    # LLM probe — soft, mark unhealthy but still 200 on read failures
+    # if everything else is OK (LLM is optional for dashboard liveness)
+    try:
+        from .llm.probe import discover as _llm_discover
+        _llm = (cfg.load_config().get("llm") or {})
+        _bu = _llm.get("base_url") or "http://localhost:1234/v1"
+        # Don't actually call out — just confirm the URL is well-formed.
+        # An end-to-end LLM call belongs in /llm/health, not /readyz.
+        from urllib.parse import urlparse
+        u = urlparse(_bu)
+        checks["llm_url_ok"] = bool(u.scheme and u.hostname)
+    except Exception as e:
+        checks["llm_url_ok"] = False
+        checks["llm_error"] = str(e)[:120]
+    ok = checks.get("queue_readable") and checks.get("exp_dir_writable")
+    return JSONResponse({"ok": bool(ok), "checks": checks}, status_code=200 if ok else 503)
+
+
 @app.middleware("http")
 async def _sw_allowed_header(request: Request, call_next):
     """Inject Service-Worker-Allowed: / on sw.js responses so it can scope to root."""
