@@ -2121,14 +2121,41 @@ async def queue_requeue_failed():
     return {"ok": True, "requeued": requeued}
 
 
-def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
-    """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
+def _resolve_tts_worker_url() -> str:
+    """Pick the TTS worker URL: settings config > env > hardcoded default.
+
+    Settings → Endpoints stores `tts_worker_url` to config.json; the env
+    `TTS_WORKER_URL` is the bootstrap default for headless deployments
+    that don't go through the Settings UI. Closing this gap was a real
+    bug — users could enter a URL in Settings, see it persist, but
+    /tts proxied to the env default. Now Settings wins; env is the
+    fallback when config is absent or empty.
+    """
+    cfg_url = (cfg.load_config().get("tts_worker_url") or "").strip()
+    if cfg_url:
+        return cfg_url
+    return TTS_WORKER_URL
+
+
+def _call_tts_worker(text: str, voice: str, timeout: float = 600.0,
+                     engine: str | None = None, lang: str | None = None,
+                     speed: float | None = None) -> dict:
+    """POST to the TTS worker (kokoro / qwen multi-engine since v337).
+
+    URL resolved per-call from `tts_worker_url` config (Settings →
+    Endpoints) so users can re-point without restart. Optional
+    engine/lang/speed pass through to the worker; the worker's own
+    dispatcher decides which launcher to invoke.
 
     Isolated for test mocking.
     """
-    payload = json.dumps({"text": text, "voice": voice}).encode("utf-8")
+    body = {"text": text, "voice": voice}
+    if engine: body["engine"] = engine
+    if lang: body["lang"] = lang
+    if speed is not None: body["speed"] = speed
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
-        TTS_WORKER_URL,
+        _resolve_tts_worker_url(),
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -2136,6 +2163,64 @@ def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     return json.loads(body)
+
+
+@app.get("/tts/voices")
+async def tts_voices():
+    """List voices the configured TTS worker exposes.
+
+    Forwards a GET to `<tts_worker_url>/voices` (which the multi-engine
+    serve.py answers with the union of qwen + kokoro voice ids). On
+    transport failure returns the bundled-stack defaults so the UI
+    can still render a dropdown — never returns an empty list silently.
+    """
+    fallback = {
+        "ok": True,
+        "engines": {
+            "kokoro": {
+                "default_voice": "af_heart",
+                "voices": [
+                    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
+                    "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+                    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
+                    "am_michael", "am_onyx", "am_puck", "am_santa",
+                    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+                    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+                    "ef_dora", "em_alex", "em_santa",
+                    "ff_siwis",
+                    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+                    "if_sara", "im_nicola",
+                    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+                    "pf_dora", "pm_alex", "pm_santa",
+                    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+                    "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+                ],
+            },
+            "qwen": {
+                "default_voice": "ryan",
+                "voices": [
+                    "aiden", "dylan", "eric", "ono_anna", "ryan",
+                    "serena", "sohee", "uncle_fu", "vivian",
+                ],
+            },
+        },
+        "source": "fallback (worker unreachable)",
+    }
+    base_url = _resolve_tts_worker_url()
+    # Strip trailing /tts to get the worker root, then append /voices
+    voices_url = base_url.rstrip("/")
+    if voices_url.endswith("/tts"):
+        voices_url = voices_url[:-4]
+    voices_url = voices_url.rstrip("/") + "/voices"
+    try:
+        req = urllib.request.Request(voices_url, method="GET",
+                                     headers={"accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            body = json.loads(r.read().decode("utf-8"))
+            body.setdefault("source", "worker")
+            return body
+    except Exception:
+        return fallback
 
 
 @app.post("/tts")
@@ -2147,16 +2232,46 @@ async def tts(data: dict = Body(...)):
     to a sine-wave stub.
     """
     text = (data.get("text") or "").strip()
-    voice = data.get("voice") or "ryan"
+    voice = data.get("voice") or "af_heart"  # kokoro default; qwen voice names also accepted
+    engine = data.get("engine")               # optional: 'kokoro' / 'qwen' override
+    lang = data.get("lang")                   # optional: kokoro lang code override
+    speed_raw = data.get("speed")
+    try:
+        speed = float(speed_raw) if speed_raw is not None else None
+    except (TypeError, ValueError):
+        speed = None
+
+    # Input validation — refuses empty, oversized, and non-string content
+    # before we burn ANY GPU budget or wake the worker. The worker has
+    # its own validation but the dashboard's job is to be friendly to
+    # the end user with clear 400 errors instead of "synthesis failed"
+    # 30 seconds later.
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
+    MAX_TEXT_CHARS = 5000  # ~5min Kokoro audio, ~30min Qwen — sane upper bound
+    if len(text) > MAX_TEXT_CHARS:
+        return JSONResponse(
+            {"ok": False, "error": f"text too long ({len(text)} > {MAX_TEXT_CHARS} chars)"},
+            status_code=413,
+        )
+    # Strip control chars beyond \r\n\t — bare \0 / form-feed etc. are
+    # never legitimate in user-facing speech and break some launchers.
+    if any(ord(c) < 32 and c not in "\r\n\t" for c in text):
+        return JSONResponse({"ok": False, "error": "text contains control characters"}, status_code=400)
+    if speed is not None and not (0.5 <= speed <= 2.0):
+        return JSONResponse({"ok": False, "error": "speed must be 0.5–2.0"}, status_code=400)
+
     # Manual TTS preview — route through acquire_gpu with a TTS-shaped budget
     # so a mid-fleet click queues correctly and LM Studio gets suspended
     # (Qwen-TTS shares the GPU). safety_gb=4: the worker already lives in
     # its own process holding ~10 GB, this lock just gates concurrent demand.
+    # Kokoro engine doesn't need GPU but the lock is cheap.
     try:
         async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
-            result = await asyncio.to_thread(_call_tts_worker, text, voice)
+            result = await asyncio.to_thread(
+                _call_tts_worker, text, voice,
+                engine=engine, lang=lang, speed=speed,
+            )
     except urllib.error.URLError as e:
         return JSONResponse(
             {
@@ -2180,6 +2295,7 @@ async def tts(data: dict = Body(...)):
         "status": result.get("status", "ok" if result.get("ok") else "error"),
         "url": url,
         "audio_path": url,
+        "engine": result.get("engine") or engine,
         "voice": result.get("voice", voice),
         "error": result.get("error"),
     }

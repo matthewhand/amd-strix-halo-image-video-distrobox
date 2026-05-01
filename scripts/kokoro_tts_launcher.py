@@ -106,6 +106,32 @@ def _resolve_model_files(model_dir: str) -> tuple[str, str]:
     return str(model), str(voices)
 
 
+# Per-voice-prefix → kokoro language code. The `voice` ids encode their
+# language by prefix: af_/am_ → American English, bf_/bm_ → British,
+# etc. When the caller doesn't supply --lang explicitly we auto-pick
+# the right G2P/phonemizer language; otherwise English IPA conversion
+# of e.g. Japanese text gives wrong pronunciation. en-us is the safe
+# fallback for unrecognized prefixes.
+LANG_BY_VOICE_PREFIX = {
+    "af_": "en-us", "am_": "en-us",
+    "bf_": "en-gb", "bm_": "en-gb",
+    "ef_": "es",    "em_": "es",
+    "ff_": "fr-fr",
+    "hf_": "hi",    "hm_": "hi",
+    "if_": "it",    "im_": "it",
+    "jf_": "ja",    "jm_": "ja",
+    "pf_": "pt-br", "pm_": "pt-br",
+    "zf_": "cmn",   "zm_": "cmn",
+}
+
+
+def _auto_lang(voice: str) -> str:
+    for prefix, lang in LANG_BY_VOICE_PREFIX.items():
+        if voice.startswith(prefix):
+            return lang
+    return "en-us"
+
+
 def synthesize(text: str, voice: str, out_path: str, lang: str, speed: float, model_dir: str) -> None:
     _disk_guard(model_dir)
     model_path, voices_path = _resolve_model_files(model_dir)
@@ -113,6 +139,9 @@ def synthesize(text: str, voice: str, out_path: str, lang: str, speed: float, mo
     from kokoro_onnx import Kokoro  # type: ignore
     import soundfile as sf  # type: ignore
 
+    if lang == "auto":
+        lang = _auto_lang(voice)
+        print(f"[kokoro-tts] auto-lang from voice prefix '{voice[:3]}' → {lang}", file=sys.stderr)
     print(f"[kokoro-tts] voice={voice} lang={lang} speed={speed} out={out_path}", file=sys.stderr)
     t0 = time.time()
     k = Kokoro(model_path, voices_path)
@@ -138,7 +167,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="Voice id (af_heart, am_eric, bf_emma, etc.). "
                          "Set to 'list' to print all 54 voices and exit.")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--lang", default=DEFAULT_LANG)
+    # Default lang is "auto" → derived from voice prefix at synthesize-time.
+    # Pass an explicit code (en-us / en-gb / ja / cmn / ...) to override.
+    ap.add_argument("--lang", default="auto")
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--model-dir", default=os.environ.get("KOKORO_MODEL_DIR", DEFAULT_DIR))
     args = ap.parse_args(argv)

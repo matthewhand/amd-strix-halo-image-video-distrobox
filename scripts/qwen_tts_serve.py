@@ -99,6 +99,41 @@ def health():
     }
 
 
+@app.get("/voices")
+def voices():
+    """Enumerate voices each engine knows about. The kokoro path lazy-
+    loads the model files (~325 MB) so the first call may pay a small
+    download/disk cost; subsequent calls hit the in-process cache."""
+    out = {
+        "ok": True,
+        "default_engine": DEFAULT_ENGINE,
+        "engines": {
+            "qwen": {
+                "default_voice": "ryan",
+                "voices": sorted(QWEN_VOICES),
+            },
+        },
+    }
+    try:
+        from kokoro_onnx import Kokoro  # type: ignore
+        # Touch the kokoro launcher's model resolver so we share the
+        # download path. Avoid double-downloading.
+        import importlib.util as _u
+        spec = _u.spec_from_file_location("_kkl", KOKORO_LAUNCHER)
+        if spec and spec.loader:
+            mod = _u.module_from_spec(spec); spec.loader.exec_module(mod)
+            mp, vp = mod._resolve_model_files(os.environ.get("KOKORO_MODEL_DIR", mod.DEFAULT_DIR))
+            k = Kokoro(mp, vp)
+            kokoro_voices = sorted(k.get_voices())
+            out["engines"]["kokoro"] = {
+                "default_voice": "af_heart",
+                "voices": kokoro_voices,
+            }
+    except Exception as e:
+        out["engines"]["kokoro"] = {"error": f"{type(e).__name__}: {e}", "voices": []}
+    return out
+
+
 def _pick_engine(voice: str, requested: str | None) -> str:
     """Decide which TTS engine to use:
        1. Explicit `engine` field in the request body wins.
