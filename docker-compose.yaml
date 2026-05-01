@@ -152,15 +152,33 @@ services:
           sleep 30
           exit 0
         fi
-        mkdir -p /workspace/tts
+        # /workspace/tts is the bind-mount that the slopfinity dashboard
+        # serves at /files/tts/<name>. The compose `mkdir -p` is
+        # idempotent; the chown attempt is best-effort (it works for
+        # the first container ever to run with this UID, but if the
+        # host dir is already owned by a different UID, the in-
+        # container chown can't escalate).
+        #
+        # Operator one-time setup (only if /tts files end up at
+        # /tmp/slopfinity-tts/ instead of /workspace/tts/):
+        #   sudo chown -R $(id -u):$(id -g) ./comfy-outputs/experiments/tts
+        # The dashboard's /files/tts/<name> route reads from EXP_DIR
+        # on the host; if the chown isn't done, _first_writable in
+        # qwen_tts_serve.py falls back to /tmp/slopfinity-tts inside
+        # the container — files are generated but the dashboard can't
+        # serve them.
+        mkdir -p /workspace/tts && chown -R $(id -u):$(id -g) /workspace/tts 2>/dev/null || true
         # Multi-engine TTS: kokoro-onnx is the default (CPU, no ROCm
         # kernel issues on gfx1151) and is pip-installed on every
         # container start since the toolbox image doesn't bake it in.
         # Persists as long as the container's overlay fs lives; recreate
         # = reinstall (~10s, cheap).
         echo '📦 Installing kokoro-onnx (default engine)...'
-        pip install --quiet kokoro-onnx || echo "WARN: kokoro install failed; only qwen path will work"
-        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro)...'
+        pip install --quiet kokoro-onnx || echo 'WARN: kokoro install failed; only qwen path will work'
+        # Force the worker to use /workspace/tts so files are served by
+        # the dashboard at /files/tts/<name>. Avoids the /tmp fallback.
+        export TTS_OUT_DIR=/workspace/tts
+        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro, out=/workspace/tts)...'
         exec python3 /opt/qwen_tts_serve.py
       "
 
