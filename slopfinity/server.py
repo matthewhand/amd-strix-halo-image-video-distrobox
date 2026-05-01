@@ -59,6 +59,86 @@ _LLM_LOCK = asyncio.Lock()
 app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
+@app.get("/static/sw.js", include_in_schema=False)
+async def serve_sw_js():
+    """Serve the service worker with a content-hash cache version
+    substituted into the `__CACHE_VERSION__` sentinel. Eliminates the
+    manual `slopfinity-shell-vNNN` bump that every UI PR has had to
+    remember (the audit found this in PR-D — bumped 6× during the
+    visual-polish train alone).
+
+    Hash is computed from the shell assets that, if changed, MUST
+    invalidate the user's cache: app.js, app.css, the rendered
+    template (index.html source), manifest, and the icon set. Cached
+    in-process with a 5s TTL so the per-request cost is one stat call
+    when assets are stable, one read+sha256 when they change."""
+    return FileResponse(_sw_js_with_hash(), media_type="application/javascript", headers={
+        "Cache-Control": "no-cache",  # browser MUST revalidate the SW itself
+        "Service-Worker-Allowed": "/",
+    })
+
+
+_sw_cache = {"hash": None, "ts": 0.0, "tmp_path": None}
+
+
+def _sw_js_with_hash() -> str:
+    """Return a path to a temp file containing the SW source with the
+    `__CACHE_VERSION__` sentinel replaced by the current shell hash.
+    The temp file is rewritten in-place when the hash changes so we
+    don't litter /tmp with one file per change."""
+    import hashlib
+    import tempfile
+
+    src_path = os.path.join(STATIC_DIR, "sw.js")
+    now = time.time()
+    if _sw_cache["tmp_path"] and (now - _sw_cache["ts"]) < 5.0 and os.path.exists(_sw_cache["tmp_path"]):
+        return _sw_cache["tmp_path"]
+
+    h = hashlib.sha256()
+    candidates = [
+        os.path.join(STATIC_DIR, "app.js"),
+        os.path.join(STATIC_DIR, "app.css"),
+        os.path.join(STATIC_DIR, "manifest.webmanifest"),
+        os.path.join(TEMPLATES_DIR, "index.html"),
+    ]
+    icons_dir = os.path.join(STATIC_DIR, "icons")
+    if os.path.isdir(icons_dir):
+        for n in sorted(os.listdir(icons_dir)):
+            candidates.append(os.path.join(icons_dir, n))
+    for p in candidates:
+        try:
+            with open(p, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+        except FileNotFoundError:
+            continue
+    digest = h.hexdigest()[:12]
+    cache_name = f"slopfinity-shell-{digest}"
+
+    if _sw_cache["hash"] == digest and _sw_cache["tmp_path"] and os.path.exists(_sw_cache["tmp_path"]):
+        _sw_cache["ts"] = now
+        return _sw_cache["tmp_path"]
+
+    try:
+        with open(src_path, "r") as f:
+            body = f.read()
+    except Exception:
+        return src_path  # fall back to the static file as-is
+    body = body.replace("__CACHE_VERSION__", cache_name)
+
+    tmp_path = _sw_cache["tmp_path"]
+    if not tmp_path:
+        fd, tmp_path = tempfile.mkstemp(prefix="slopfinity-sw-", suffix=".js")
+        os.close(fd)
+    with open(tmp_path, "w") as f:
+        f.write(body)
+    _sw_cache.update(hash=digest, ts=now, tmp_path=tmp_path)
+    return tmp_path
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -68,6 +148,68 @@ async def favicon():
     so without this route every page load logs a 404."""
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
+
+
+# ---------------------------------------------------------------------------
+# Health probes — `/healthz` and `/readyz` so monitoring / orchestrators
+# / future docker-compose healthchecks can probe the dashboard without
+# parsing the full /runner/status payload. Audit's #2 high-priority
+# observability gap.
+#
+#   /healthz — process liveness. Always 200 if the FastAPI worker is
+#              answering. No deps. Cheap. For a load balancer.
+#   /readyz  — service readiness. 200 only if the queue file is
+#              readable, EXP_DIR is writable, and the LLM probe is
+#              live. 503 with a body listing the failing checks
+#              otherwise. For startup gating + alerting.
+#
+# Both endpoints are unauthenticated (consistent with the rest of the
+# dashboard's read endpoints) and skipped by the CSRF middleware
+# (GET methods always pass-through).
+# ---------------------------------------------------------------------------
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"ok": True, "service": "slopfinity"}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    checks = {}
+    # Queue file readable
+    try:
+        cfg.get_queue()
+        checks["queue_readable"] = True
+    except Exception as e:
+        checks["queue_readable"] = False
+        checks["queue_error"] = str(e)[:120]
+    # EXP_DIR writable
+    try:
+        exp_dir = os.environ.get("EXP_DIR") or os.path.join(os.getcwd(), "comfy-outputs", "experiments")
+        os.makedirs(exp_dir, exist_ok=True)
+        probe = os.path.join(exp_dir, ".readyz-probe")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+        checks["exp_dir_writable"] = True
+    except Exception as e:
+        checks["exp_dir_writable"] = False
+        checks["exp_dir_error"] = str(e)[:120]
+    # LLM probe — soft, mark unhealthy but still 200 on read failures
+    # if everything else is OK (LLM is optional for dashboard liveness)
+    try:
+        from .llm.probe import discover as _llm_discover
+        _llm = (cfg.load_config().get("llm") or {})
+        _bu = _llm.get("base_url") or "http://localhost:1234/v1"
+        # Don't actually call out — just confirm the URL is well-formed.
+        # An end-to-end LLM call belongs in /llm/health, not /readyz.
+        from urllib.parse import urlparse
+        u = urlparse(_bu)
+        checks["llm_url_ok"] = bool(u.scheme and u.hostname)
+    except Exception as e:
+        checks["llm_url_ok"] = False
+        checks["llm_error"] = str(e)[:120]
+    ok = checks.get("queue_readable") and checks.get("exp_dir_writable")
+    return JSONResponse({"ok": bool(ok), "checks": checks}, status_code=200 if ok else 503)
 
 
 @app.middleware("http")

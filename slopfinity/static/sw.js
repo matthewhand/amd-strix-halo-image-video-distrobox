@@ -1,9 +1,16 @@
 // Slopfinity minimal service worker — cache-first app shell.
 // Network falls through for API, WS, files, branding, config, tts, etc.
-// Bump whenever shell assets (app.js, app.css, templates/index.html) change
-// in a way that must invalidate users' caches. Browsers delete any cache
-// whose name differs on next activate.
-const CACHE = 'slopfinity-shell-v334';
+//
+// CACHE versioning: the literal `__CACHE_VERSION__` token below is
+// substituted by the server's `/static/sw.js` handler with a content
+// hash of (app.js, app.css, templates/index.html, manifest, icons)
+// at request time. So users get an automatic cache invalidation on
+// every shell-asset change, with no manual `vNNN` bump required.
+// If the file is served raw (e.g. via the AppImage that ships static
+// assets with no FastAPI override), the literal sentinel falls back
+// to a static `slopfinity-shell-static` cache — works, just doesn't
+// invalidate on shell change. Acceptable for offline bundles.
+const CACHE = '__CACHE_VERSION__'.startsWith('__') ? 'slopfinity-shell-static' : '__CACHE_VERSION__';
 const SHELL = [
   '/',
   '/static/app.css',
