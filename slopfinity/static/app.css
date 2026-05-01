@@ -3685,7 +3685,11 @@ body:has(#splash-overlay) #focus-fab-pill {
    classes on the wrap so they hide automatically at the edges. */
 .tabs-scroll-wrap {
     display: flex;
-    align-items: stretch;
+    /* flex-start aligns the scroll arrows with the tab strip at the top
+       of the wrap. Without this they `align-self: center`-ed against the
+       full panel height (~700px) and floated in the middle of the
+       content, clipping section dividers like INTERFACE / DISK GUARD. */
+    align-items: flex-start;
     position: relative;
     max-width: 100%;
 }
@@ -3695,6 +3699,25 @@ body:has(#splash-overlay) #focus-fab-pill {
     min-width: 0;
     /* Smooth scroll for keyboard / arrow-button paging. */
     scroll-behavior: smooth;
+    /* container-type: inline-size lets the panel below size itself to
+       the visible (.tabs) width via 100cqi instead of inheriting the
+       grid-auto-columns:max-content sum of all tab labels (which was
+       blowing out tab panels to 896px–20780px and clipping the right
+       edge of every settings page). */
+    container-type: inline-size;
+}
+
+/* daisyUI tabs-lifted lays panels in a CSS grid where tabpanels span
+   `1 / span 9999` of auto-sized columns; the panel renders at the
+   intrinsic width of all tab labels combined (or, in some states, of
+   every panel side-by-side — measured at 20780px on prod). Pin the
+   panel to the visible inline size of `.tabs` so right-edge content
+   stops getting clipped at the modal boundary. */
+#settings-modal .settings-tabs > [role="tabpanel"].tab-content {
+    width: 100cqi;
+    max-width: 100cqi;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .tabs-scroll-arrow {
@@ -3704,8 +3727,10 @@ body:has(#splash-overlay) #focus-fab-pill {
     justify-content: center;
     width: 32px;
     height: 32px;
-    align-self: center;
-    margin: 0 4px;
+    /* Pin arrows to the top of the wrap so they sit next to the tab
+       strip, not floating in the middle of the panel content. */
+    align-self: flex-start;
+    margin: 4px 4px 0;
     border-radius: 9999px;
     background: oklch(var(--b2) / 0.95);
     border: 1px solid oklch(var(--bc) / 0.2);

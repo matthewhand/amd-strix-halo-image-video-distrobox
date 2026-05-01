@@ -8422,14 +8422,42 @@ function _refreshSettingsTabsArrows() {
     wrap.classList.toggle('at-start', atStart);
     wrap.classList.toggle('at-end', atEnd);
 }
+// Scroll the active tab pill into view when the user picks a tab via
+// click or programmatic radio change. Without this, picking a tab past
+// the visible strip (Endpoints / Diagnostics / Layout at narrow widths)
+// leaves no visible active-tab indicator — users can't tell which tab
+// they're on.
+function _scrollActiveTabIntoView() {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    const active = strip.querySelector('input[name="settings_tabs"]:checked');
+    const label = active && active.nextElementSibling;
+    if (!label) return;
+    const target = label.getBoundingClientRect();
+    const stripBox = strip.getBoundingClientRect();
+    if (target.left < stripBox.left || target.right > stripBox.right) {
+        label.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+}
+window._scrollActiveTabIntoView = _scrollActiveTabIntoView;
+
 document.addEventListener('DOMContentLoaded', () => {
     const strip = document.getElementById('settings-tab-strip');
     if (!strip) return;
     strip.addEventListener('scroll', _refreshSettingsTabsArrows, { passive: true });
+    // Watch radio changes so the active tab auto-scrolls into view.
+    strip.addEventListener('change', (ev) => {
+        if (ev.target && ev.target.matches('input[name="settings_tabs"]')) {
+            _scrollActiveTabIntoView();
+        }
+    });
     // Also recompute when the drawer opens (strip dims may have been 0
     // before the drawer-content hydrated).
     const tog = document.getElementById('settings-drawer-toggle');
-    if (tog) tog.addEventListener('change', () => setTimeout(_refreshSettingsTabsArrows, 60));
+    if (tog) tog.addEventListener('change', () => setTimeout(() => {
+        _refreshSettingsTabsArrows();
+        _scrollActiveTabIntoView();
+    }, 60));
     _refreshSettingsTabsArrows();
 });
 

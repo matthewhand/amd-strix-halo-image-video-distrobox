@@ -616,17 +616,21 @@
                                     this in-pane button is the canonical raw-mode Queue
                                     affordance. #}
                                     <div class="flex flex-col gap-2 mt-2">
+                                        {# `space-y-2` (was -1) gives the four label+textarea rows
+                                           more visual separation now that each textarea is forced to a
+                                           single-line height — without breathing room the labels would
+                                           crash into the textarea bottoms. flex-1 + overflow stay so
+                                           the wrap respects the parent pane's fixed height. #}
                                         <div id="subjects-per-stage"
-                                            class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-1 flex-1 min-w-0">
+                                            class="bg-base-300/30 border border-base-300/60 rounded-md p-2 text-xs space-y-2 flex-1 min-w-0">
+                                            {# Placeholders MUST stay on a single line: a literal newline + the
+                                               surrounding template indentation gets baked into the placeholder
+                                               attribute and renders as awkward indented wrap inside the textarea. #}
                                             {% for stage, label, placeholder in [
-                                            ('image', 'Image prompt', 'Prompt for image model — describe lighting,
-                                            texture, mood…'),
-                                            ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing,
-                                            transitions…'),
-                                            ('music', 'Music prompt', 'Prompt for music model — instruments, tempo,
-                                            vibe…'),
-                                            ('tts', 'Voice line', 'Prompt for TTS — one or two short voiceover
-                                            sentences…'),
+                                            ('image', 'Image prompt', 'Prompt for image model — lighting, texture, mood…'),
+                                            ('video', 'Video prompt', 'Prompt for video model — camera movement, pacing, transitions…'),
+                                            ('music', 'Music prompt', 'Prompt for music model — instruments, tempo, vibe…'),
+                                            ('tts',   'Voice line',    'Prompt for TTS — one or two short voiceover sentences…'),
                                             ] %}
                                             <div>
                                                 <span
@@ -640,8 +644,12 @@
                                                 has room for actual prompt text. The .raw-rewrite-host
                                                 class drives the hover/transparency CSS. #}
                                                 <div class="raw-rewrite-host">
-                                                    <textarea id="p-{{ stage }}"
-                                                        class="textarea textarea-bordered text-xs h-9 w-full"
+                                                    {# `min-h-0 h-8` makes each row a single-line input — the
+                                                       fixed-height parent pane only fits ~4 rows total, so larger
+                                                       textareas collapse the bottom one out of view. Users can
+                                                       still type multi-line text; the field scrolls internally. #}
+                                                    <textarea id="p-{{ stage }}" rows="1"
+                                                        class="textarea textarea-bordered text-xs leading-snug w-full !min-h-0 h-8 py-1"
                                                         placeholder="{{ placeholder }}"></textarea>
                                                     <button type="button" class="raw-rewrite-btn"
                                                         onclick="enhanceStage('{{ stage }}')"
