@@ -2609,17 +2609,26 @@ body.subj-mode-raw .subjects-pane[data-pane-mode="raw"]>.flex.gap-2.items-stretc
 body.subj-mode-raw #subjects-per-stage {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    /* Comfortable separation between the four label+textarea rows.
+       8px (was 6px) gives the labels visible breathing room above
+       their textarea instead of butting against the previous one. */
+    gap: 0.5rem;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
 }
 
+/* Each row keeps its natural height (label ~1.25rem + textarea
+   `min-height: 4rem` floor). Previously `flex: 1 1 0` + `min-height: 0`
+   let rows shrink to ~31 px when the parent card was short, and the
+   textarea's `min-height: 4rem !important` then overflowed UPWARD
+   into the next row's label — the cramped, label-crashing-into-
+   textarea look the user reported at md/lg viewports. */
 body.subj-mode-raw #subjects-per-stage>div {
     display: flex;
     flex-direction: column;
-    flex: 1 1 0;
-    min-height: 0;
+    flex: 0 0 auto;
+    gap: 0.25rem;
 }
 
 body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
@@ -2650,6 +2659,33 @@ body.subj-mode-raw #split-left {
 }
 body.subj-mode-raw #split-left > .card-body {
     min-height: 0;
+}
+
+/* At md+ viewports give raw mode enough vertical room that all four
+   label+textarea rows fit without scrolling.
+     4 rows × 96px (label 20 + textarea 64 + gap 8 + padding ~4)    = 384px
+     between-row gaps + panel padding                               = ~32px
+     mode pill + Queue Slop button cluster + status chip            = ~160px
+   Floor: 38rem (608px). The card sibling (Queue) stretches with us
+   via the split row's align-items: stretch. */
+@media (min-width: 768px) {
+    body.subj-mode-raw #split-left {
+        min-height: 38rem;
+    }
+}
+
+/* At xl+ the .ui-split-row is `height: 100%; overflow: hidden` so
+   cards inherit (and get clipped to) the cramped pane height (~380
+   px). Raw mode needs more room than that — override to a min-height
+   matching the card's 38rem floor and let overflow be visible so the
+   card border isn't chopped mid-content. The Queue card sibling
+   still stretches with us. */
+@media (min-width: 1280px) {
+    body.subj-mode-raw .ui-split-row {
+        min-height: 38rem;
+        height: auto;
+        overflow: visible;
+    }
 }
 
 /* The raw pane wraps its panel + Queue button in an intermediate
