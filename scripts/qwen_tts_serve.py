@@ -134,6 +134,48 @@ def voices():
     return out
 
 
+def _prune_old_tts_files(keep: int = 0) -> int:
+    """Delete oldest TTS files beyond the keep cap.
+
+    Without this, /tmp/slopfinity-tts (or whichever OUT_DIR resolves to)
+    grows unbounded — every /tts hit writes a fresh ~100-2700 KB WAV.
+    Default keep=50 (~50 MB at the high end) tunable via env
+    TTS_KEEP_FILES. Keep=0 disables the prune entirely (operator
+    manages cleanup elsewhere).
+
+    Returns number of files removed; logs to stderr on each delete.
+    Cheap O(n log n) sort over the OUT_DIR — at 50 files this is
+    sub-millisecond. Running this after each generation amortises the
+    cost across writes rather than accumulating debt.
+    """
+    if keep <= 0:
+        return 0
+    try:
+        files = []
+        for n in os.listdir(OUT_DIR):
+            p = os.path.join(OUT_DIR, n)
+            if os.path.isfile(p) and n.endswith(".wav"):
+                files.append((os.path.getmtime(p), p))
+        if len(files) <= keep:
+            return 0
+        files.sort(reverse=True)  # newest first
+        to_delete = files[keep:]
+        for _, p in to_delete:
+            try:
+                os.unlink(p)
+            except OSError as e:
+                print(f"⚠ prune: failed to delete {p}: {e}", file=sys.stderr, flush=True)
+        if to_delete:
+            print(f"🧹 pruned {len(to_delete)} TTS file(s); kept {keep} most recent", file=sys.stderr, flush=True)
+        return len(to_delete)
+    except Exception as e:
+        print(f"⚠ prune skipped: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        return 0
+
+
+KEEP_TTS_FILES = int(os.environ.get("TTS_KEEP_FILES", "50"))
+
+
 def _pick_engine(voice: str, requested: str | None) -> str:
     """Decide which TTS engine to use:
        1. Explicit `engine` field in the request body wins.
@@ -199,12 +241,18 @@ def tts(data: dict = Body(...)):
         )
 
     url = f"/files/tts/{fname}"
+    # Storage prune — keep the OUT_DIR bounded. Runs on success path so
+    # we don't penalize errors. Worst case: a hot loop of /tts requests
+    # paying ~1ms of dirent scan + a few unlinks per call. Scales fine
+    # at the single-digit-RPS the dashboard sees.
+    _prune_old_tts_files(KEEP_TTS_FILES)
     return {
         "ok": True,
         "status": "ok",
         "url": url,
         "audio_path": url,
         "voice": voice,
+        "engine": engine,
     }
 
 
