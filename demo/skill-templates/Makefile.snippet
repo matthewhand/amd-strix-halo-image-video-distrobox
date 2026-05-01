@@ -1,0 +1,34 @@
+# static-demo-builder make target — append to your project Makefile.
+# Customize the `--src` path, `--canonical` URL, and sample-asset glob below.
+
+SKILL_TEMPLATES := $(HOME)/.claude/skills/static-demo-builder/templates
+
+.PHONY: demo demo-serve demo-clean
+
+demo:
+	@rm -rf dist/demo
+	@mkdir -p dist/demo/static dist/demo/samples dist/demo/fixtures
+	# Inject demo sentinel + shim into a copy of the entrypoint
+	@python3 $(SKILL_TEMPLATES)/build_demo.py dist/demo \
+		--src=slopfinity/templates/index.html \
+		--canonical=https://github.com/matthewhand/amd-strix-halo-image-video-distrobox \
+		--strip-jinja
+	# Copy unchanged production assets
+	@cp slopfinity/static/app.js  dist/demo/static/
+	@cp slopfinity/static/app.css dist/demo/static/
+	# Skill templates (banner + shim)
+	@cp $(SKILL_TEMPLATES)/demo-shim.js     dist/demo/static/
+	@cp $(SKILL_TEMPLATES)/demo-banner.html dist/demo/static/
+	@cp $(SKILL_TEMPLATES)/demo-banner.css  dist/demo/static/
+	# Project-specific fixtures + samples
+	@cp demo/fixtures/*.json dist/demo/fixtures/
+	@cp demo/samples/* dist/demo/samples/ 2>/dev/null || true
+	@cp demo/README.md dist/demo/ 2>/dev/null || true
+	@du -sh dist/demo
+	@echo "Demo bundle ready: dist/demo/  →  python3 -m http.server -d dist/demo 8765"
+
+demo-serve: demo
+	@cd dist/demo && python3 -m http.server 8765
+
+demo-clean:
+	@rm -rf dist/demo
