@@ -8500,6 +8500,15 @@ async function openSettings() {
         const allowCloud = $('set-allow-cloud-endpoints');
         if (allowCloud) allowCloud.checked = !!sr.allow_cloud_endpoints;
         filterProviderDropdown(!!sr.allow_cloud_endpoints);
+        // Standalone-mode endpoint URLs (Settings → Endpoints tab).
+        // Defaults match the toolbox compose stack's loopback ports;
+        // power users running outside that stack point at their own
+        // services. Mirror the server response so a fresh open never
+        // shows blanks. Server validates SSRF on save.
+        const ttsUrl = $('set-tts-url');
+        if (ttsUrl) ttsUrl.value = sr.tts_worker_url || 'http://localhost:8010/tts';
+        const comfyUrl = $('set-comfy-url');
+        if (comfyUrl) comfyUrl.value = sr.comfy_url || 'http://localhost:8188';
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const sugUseSub = $('set-suggest-use-subjects');
@@ -8804,6 +8813,8 @@ async function saveSettings() {
         allow_cloud_endpoints: $('set-allow-cloud-endpoints')
             ? !!$('set-allow-cloud-endpoints').checked
             : false,
+        tts_worker_url: $('set-tts-url') ? $('set-tts-url').value.trim() : '',
+        comfy_url: $('set-comfy-url') ? $('set-comfy-url').value.trim() : '',
         philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
         suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
         suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',

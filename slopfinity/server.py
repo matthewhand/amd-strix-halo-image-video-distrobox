@@ -2700,6 +2700,14 @@ async def settings_get():
         "llm_has_api_key": has_key,
         "providers": providers_filtered,
         "allow_cloud_endpoints": allow_cloud,
+        # Endpoint URLs for the standalone-mode Settings → Endpoints tab.
+        # Defaults match the toolbox compose stack's loopback ports; users
+        # running outside the bundled image override here. The fields are
+        # mirrored under their own keys (not nested under llm) so the UI
+        # can surface them in a single Endpoints tab without scraping the
+        # legacy LLM provider/host/port form.
+        "tts_worker_url": c.get("tts_worker_url") or "http://localhost:8010/tts",
+        "comfy_url": c.get("comfy_url") or "http://localhost:8188",
         "branding": {
             "active": branding_cfg.get("active") or "slopfinity",
             "profiles": _branding.list_profiles(),
@@ -2843,6 +2851,21 @@ async def settings_post(data: dict = Body(...)):
     # so adding a cloud provider later doesn't require a UI hop.
     if "allow_cloud_endpoints" in data:
         c["allow_cloud_endpoints"] = bool(data.get("allow_cloud_endpoints"))
+    # Endpoint URLs (standalone-mode, Settings → Endpoints tab).
+    # Reuse the SSRF guard that protects llm.base_url so an attacker who
+    # gets past CSRF (#142) can't repoint TTS / ComfyUI at internal
+    # admin panels or cloud-metadata. Empty string falls back to default.
+    for _url_key in ("tts_worker_url", "comfy_url"):
+        if _url_key in data:
+            v = (data.get(_url_key) or "").strip()
+            if v:
+                ok, err = _validate_llm_base_url(v)
+                if not ok:
+                    return JSONResponse({"ok": False, "error": f"{_url_key}: {err}"}, status_code=400)
+                c[_url_key] = v
+            else:
+                # Empty string explicitly resets to default (next GET pulls the default)
+                c.pop(_url_key, None)
     # Auto-suggest LLM controls (Settings → LLM → Generation).
     if "suggest_use_subjects" in data:
         c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))

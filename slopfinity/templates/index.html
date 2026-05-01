@@ -3291,6 +3291,53 @@
                                 </div>
                         </div><!-- /Scheduler tabpanel -->
 
+                        <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Endpoints" />
+                        <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
+                            {# Standalone-mode endpoint config. The bundled
+                               docker-compose stack exposes these on loopback by
+                               default; users running Slopfinity outside the
+                               toolbox image (e.g. Pinokio, bare metal, or a
+                               different rendering backend) override here.
+                               LLM URL is configured on the LLM tab — the
+                               provider/host/port builder there persists into
+                               `llm.base_url`; this tab is the simpler edit
+                               surface for the two endpoints that don't have
+                               a dedicated tab. SSRF guard (#144) validates on
+                               save: scheme must be http(s); non-loopback hosts
+                               require Allow Cloud Endpoints; metadata
+                               services always blocked. #}
+                            <p class="text-[11px] opacity-70 italic leading-snug mb-3">
+                                Slopfinity reaches three external services: an LLM (configured under the <strong>LLM</strong> tab), a TTS worker, and a ComfyUI server. Defaults match the bundled toolbox compose stack on loopback. Edit here when running standalone or pointing at remote services.
+                            </p>
+                            <fieldset class="border border-base-content/30 rounded-md p-3 mb-3">
+                                <legend class="text-[10px] uppercase tracking-widest text-base-content/60 px-1">TTS worker</legend>
+                                <label class="form-control">
+                                    <span class="label-text text-xs">URL</span>
+                                    <input id="set-tts-url" type="url" class="input input-bordered input-sm font-mono"
+                                        placeholder="http://localhost:8010/tts"
+                                        value="http://localhost:8010/tts" />
+                                    <span class="label-text-alt text-[10px] opacity-60 leading-snug mt-1">
+                                        HTTP endpoint of your TTS service (e.g. Qwen3-TTS at <code>:8010/tts</code>). Loopback hosts always allowed; non-loopback requires <em>Allow Cloud Endpoints</em> on the LLM tab.
+                                    </span>
+                                </label>
+                            </fieldset>
+                            <fieldset class="border border-base-content/30 rounded-md p-3 mb-3">
+                                <legend class="text-[10px] uppercase tracking-widest text-base-content/60 px-1">ComfyUI server</legend>
+                                <label class="form-control">
+                                    <span class="label-text text-xs">URL</span>
+                                    <input id="set-comfy-url" type="url" class="input input-bordered input-sm font-mono"
+                                        placeholder="http://localhost:8188"
+                                        value="http://localhost:8188" />
+                                    <span class="label-text-alt text-[10px] opacity-60 leading-snug mt-1">
+                                        ComfyUI's API base URL (no trailing path). Workflow submits go to <code>$URL/prompt</code>; status to <code>$URL/queue</code>. Default is the in-stack ComfyUI container at <code>:8188</code>.
+                                    </span>
+                                </label>
+                            </fieldset>
+                            <p class="text-[10px] opacity-60 italic leading-snug">
+                                Looking for the LLM URL? It lives on the <strong>LLM</strong> tab via the provider+scheme+host+port builder, since LLM connections often need an API key and provider-specific quirks. The tab there persists into <code>llm.base_url</code>; this tab covers the two URL-only services.
+                            </p>
+                        </div><!-- /Endpoints tabpanel -->
+
                         <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="Diagnostics" />
                         <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">

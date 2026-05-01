@@ -250,6 +250,17 @@ DEFAULT_CONFIG = {
     # entries, so this is a forward-compatible toggle — see TODO in
     # static/app.js (filterProviderDropdown) for the client gate.
     "allow_cloud_endpoints": False,
+    # Standalone-mode endpoint URLs. When non-empty, override the env-var
+    # / hardcoded defaults so a user running Slopfinity outside the
+    # bundled toolbox docker image can point it at their own services.
+    # Defaults are the loopback URLs the toolbox compose file exposes;
+    # the dashboard works out-of-the-box on the bundled stack and can
+    # be re-pointed via Settings → Endpoints (or env vars at startup
+    # for headless deployments). Validated through _validate_llm_base_url
+    # at save time so an attacker who slips past CSRF (#142) can't
+    # repoint TTS / ComfyUI at internal admin panels.
+    "tts_worker_url": "http://localhost:8010/tts",
+    "comfy_url": "http://localhost:8188",
     # Per-mode suggestion-length budgets (chars, enforced via JSON-schema
     # maxLength). Doubled v323→v324 after user feedback "the short
     # suggestions are too short". Endless beats can now run to short
