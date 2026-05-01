@@ -3872,7 +3872,10 @@ function _renderEndlessLog() {
     if (!log) return;
     const lines = _loadEndlessLogLines();
     if (!lines.length) {
-        log.innerHTML = '';
+        log.innerHTML = `<div class="endless-empty-state flex flex-col items-center justify-center gap-1 py-6 text-center text-xs text-base-content/50 italic select-none">
+            <span class="text-2xl opacity-60" aria-hidden="true">📜</span>
+            <span>No beats yet — type your first one above, or click a suggestion chip to seed it.</span>
+        </div>`;
         return;
     }
     // Clamp the persisted active idx so it can't point past the end after
@@ -3890,7 +3893,7 @@ function _renderEndlessLog() {
         const activeCls = idx === activeIdx ? ' beat-active' : '';
         return `<div class="endless-row beat-row group flex items-center gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
                      data-row-idx="${idx}" draggable="true">
-            <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/40 hover:text-base-content/80 select-none cursor-grab"
+            <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/60 hover:text-base-content/90 select-none cursor-grab"
                   title="Drag to reorder this beat" aria-label="Drag handle">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
@@ -3904,9 +3907,9 @@ function _renderEndlessLog() {
                   data-row-idx="${idx}"
                   placeholder="Type a beat — Enter for next row"
                   value="${safe}" />
-            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-50 group-hover:opacity-100 flex-none"
+            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-75 group-hover:opacity-100 flex-none"
                     data-row-idx="${idx}" title="Add a new beat below this one" aria-label="Add beat below">+</button>
-            <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-50 group-hover:opacity-100 flex-none"
+            <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-75 group-hover:opacity-100 flex-none"
                     data-row-idx="${idx}" title="Delete this beat" aria-label="Delete beat">×</button>
         </div>`;
     });
