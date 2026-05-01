@@ -2629,7 +2629,7 @@ body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
 
 body.subj-mode-raw #subjects-per-stage textarea {
     flex: 1 1 auto !important;
-    min-height: 0 !important;
+    min-height: 4rem !important;
     height: auto !important;
     resize: none;
 }
@@ -2950,38 +2950,32 @@ main.layout-sliding-right #stats-navbar {
    The cards behind can extend full-height (calc(100vh - 88px)) since
    the pill is overlay, not in the document flow. */
 #focus-fab-pill {
-    position: fixed;
-    bottom: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 40;
-    /* Was `hsl(var(--b1))` (page-bg-blended) which made the pill
-       disappear into the body when it overlapped slop tiles or the
-       gallery strip. Use the slightly-lighter `--b2` with a touch of
-       transparency + backdrop blur so the pill always reads as a
-       distinct floating control surface, even on top of busy content. */
-    background: hsl(var(--b2) / 0.92);
-    border: 1px solid hsl(var(--bc) / 0.18);
-    backdrop-filter: blur(10px) saturate(1.2);
-    -webkit-backdrop-filter: blur(10px) saturate(1.2);
-    border-radius: 9999px;
-    padding: 6px 8px;
+#focus-fab-pill {
+    /* The container itself is now just a wrapper; children are positioned fixed */
     display: none;
-    /* shown via body[data-layout=…] below */
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 12px 32px hsl(var(--bc) / 0.35),
-        0 2px 8px hsl(var(--bc) / 0.18);
 }
 
-/* Show the pill on focused layouts. _focusFabNav handles the
-   directional sequencing inside; individual buttons hide themselves
-   with .fab-end-stop when there's no prev/next to navigate to. */
 body[data-layout="subjects"] #focus-fab-pill,
 body[data-layout="queue"] #focus-fab-pill,
 body[data-layout="gallery"] #focus-fab-pill {
-    display: inline-flex;
+    display: block;
 }
+
+#focus-fab-prev {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 3rem;
+    z-index: 40;
+}
+
+#focus-fab-next {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 3rem;
+    z-index: 40;
+}
+
+/* Pill rules removed since we broke them out to fixed flank buttons */
 
 .focus-fab {
     width: 4.25rem;
@@ -3276,6 +3270,7 @@ body.subj-mode-raw #subjects-action-cluster {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
+    padding-bottom: 6rem;
 }
 
 /* Endless STARTED — make the whole flex chain grow so the "Story so

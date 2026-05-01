@@ -818,9 +818,24 @@ function selectLayoutView(v) {
 }
 window.selectLayoutView = selectLayoutView;
 
+let _lastSingleView = 'subjects';
+function toggleSingleDashboard() {
+    const cur = document.body.dataset.layout || 'default';
+    if (cur !== 'default') {
+        _lastSingleView = cur;
+    }
+    selectLayoutView(_lastSingleView);
+}
+window.toggleSingleDashboard = toggleSingleDashboard;
+
 function _refreshLayoutViewIndicator(v) {
     document.querySelectorAll('[data-view-check]').forEach(el => {
-        el.classList.toggle('hidden', el.getAttribute('data-view-check') !== v);
+        const check = el.getAttribute('data-view-check');
+        let active = (check === v);
+        if (check === 'single') {
+            active = (v === 'subjects' || v === 'queue' || v === 'gallery');
+        }
+        el.classList.toggle('hidden', !active);
     });
 }
 
