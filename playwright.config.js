@@ -35,15 +35,32 @@ module.exports = defineConfig({
     timeout: 30_000,
     expect: { timeout: 5_000 },
     fullyParallel: false, // dashboard is shared state
-    reporter: [
-        ['list'],
-        ['html', { outputFolder: 'playwright-report', open: 'never' }],
-    ],
+    // CI lane vs local lane:
+    //   * Local: 'list' reporter (per-test inline pass/fail) + html for review
+    //   * CI:    'dot' (concise) + json/junit (machine-readable) + html
+    //            (uploaded as artifact only on failure). Reading the JSON
+    //            programmatically lets the failure-extractor build a
+    //            compact `failure-packet.md` instead of model-flooding the
+    //            raw 600-line CI log.
+    reporter: process.env.CI
+        ? [
+            ['dot'],
+            ['json', { outputFile: 'artifacts/results.json' }],
+            ['junit', { outputFile: 'artifacts/results.xml' }],
+            ['html', { outputFolder: 'playwright-report', open: 'never' }],
+        ]
+        : [
+            ['list'],
+            ['html', { outputFolder: 'playwright-report', open: 'never' }],
+        ],
     outputDir: 'test-results',
     use: {
         baseURL: process.env.SLOPFINITY_URL || 'http://localhost:9099',
+        // CI keeps screenshots/videos only on failure to keep artifacts
+        // small. Local keeps the full visual catalogue ('on') so the
+        // HTML report is browsable for green runs too.
         trace: 'retain-on-failure',
-        screenshot: 'on',
+        screenshot: process.env.CI ? 'only-on-failure' : 'on',
         video: 'retain-on-failure',
         viewport: { width: 1440, height: 900 },
         // Block the Slopfinity service worker — its activate handler

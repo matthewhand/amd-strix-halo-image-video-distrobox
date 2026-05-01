@@ -1,0 +1,145 @@
+name: Playwright Tests
+
+# Two-lane CI per the failure-packet pattern:
+#   * Concise dot reporter to terminal
+#   * Structured JSON + JUnit to artifacts/ (always uploaded)
+#   * Markdown failure-packet (always uploaded)
+#   * Heavy debug artifacts (HTML report, traces, videos, screenshots)
+#     uploaded only on failure
+#
+# Reads-in-order for any agent triaging a failure:
+#   1. failure-packet.md (compact, ≤20 failures, error first lines)
+#   2. failed-tests.json (structured per-test data)
+#   3. playwright-report/ (only when packet is insufficient)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'slopfinity/static/**'
+      - 'slopfinity/templates/**'
+      - 'slopfinity/server.py'
+      - 'e2e/**'
+      - 'playwright.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/playwright.yml'
+      - 'scripts/extract-failures.mjs'
+  pull_request:
+    paths:
+      - 'slopfinity/static/**'
+      - 'slopfinity/templates/**'
+      - 'slopfinity/server.py'
+      - 'e2e/**'
+      - 'playwright.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/playwright.yml'
+      - 'scripts/extract-failures.mjs'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Install Playwright + browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Set up Python (for the dashboard the e2e suite hits)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Slopfinity Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi 'uvicorn[standard]' jinja2 python-multipart httpx psutil pyyaml
+
+      - name: Make artifacts dir
+        run: mkdir -p artifacts
+
+      - name: Boot Slopfinity dashboard in background
+        run: |
+          # Bind to loopback (matches default since #142). The Playwright
+          # config picks up SLOPFINITY_URL=http://localhost:9099 by
+          # default, so no env override needed.
+          (python3 dark_server.py >artifacts/slopfinity.log 2>&1 &)
+          # Wait until the FastAPI worker answers /healthz. Bounded by
+          # 60s — if the server fails to boot, fail the workflow fast
+          # rather than letting Playwright eat its 30s per-test timeouts.
+          for i in $(seq 1 60); do
+            curl -fs http://localhost:9099/healthz >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::Slopfinity did not respond on :9099 within 60s"
+          tail -50 artifacts/slopfinity.log
+          exit 1
+
+      - name: Run Playwright tests
+        env:
+          CI: '1'
+        run: npx playwright test
+
+      - name: Extract failed tests + build markdown packet
+        if: always()
+        run: node scripts/extract-failures.mjs
+
+      - name: Upload structured results (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-structured-results
+          path: |
+            artifacts/results.json
+            artifacts/results.xml
+            artifacts/failed-tests.json
+          retention-days: 14
+
+      - name: Upload markdown failure packet (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-packet
+          path: artifacts/failure-packet.md
+          retention-days: 14
+
+      - name: Build human-readable test summary
+        if: always()
+        uses: test-summary/action@v2
+        with:
+          paths: 'artifacts/results.xml'
+          output: artifacts/test-summary.md
+        continue-on-error: true
+
+      - name: Append summary to GitHub job summary
+        if: always()
+        run: |
+          if [ -f artifacts/test-summary.md ]; then
+            cat artifacts/test-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f artifacts/failure-packet.md ]; then
+            echo '## Failure packet' >> "$GITHUB_STEP_SUMMARY"
+            cat artifacts/failure-packet.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload rich failure artifacts (HTML report, traces, screenshots)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-artifacts
+          path: |
+            playwright-report/
+            test-results/
+            artifacts/slopfinity.log
+          retention-days: 7
