@@ -143,6 +143,7 @@ services:
       - ./comfy-outputs/experiments:/workspace
       - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
       - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
+      - ./scripts/kokoro_tts_launcher.py:/opt/kokoro_tts_launcher.py:ro
     command: >
       bash -c "
         if (echo > /dev/tcp/127.0.0.1/8010) 2>/dev/null ; then
@@ -152,7 +153,14 @@ services:
           exit 0
         fi
         mkdir -p /workspace/tts
-        echo '🎙️  Starting Qwen3-TTS worker on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)...'
+        # Multi-engine TTS: kokoro-onnx is the default (CPU, no ROCm
+        # kernel issues on gfx1151) and is pip-installed on every
+        # container start since the toolbox image doesn't bake it in.
+        # Persists as long as the container's overlay fs lives; recreate
+        # = reinstall (~10s, cheap).
+        echo '📦 Installing kokoro-onnx (default engine)...'
+        pip install --quiet kokoro-onnx || echo "WARN: kokoro install failed; only qwen path will work"
+        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro)...'
         exec python3 /opt/qwen_tts_serve.py
       "
 

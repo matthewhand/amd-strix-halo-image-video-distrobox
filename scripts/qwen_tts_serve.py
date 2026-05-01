@@ -47,48 +47,103 @@ OUT_DIR = _first_writable([
 ])
 print(f"🎙️  TTS output dir: {OUT_DIR}", flush=True)
 
-LAUNCHER = os.environ.get(
+QWEN_LAUNCHER = os.environ.get(
     "QWEN_TTS_LAUNCHER",
     "/opt/qwen_tts_launcher.py",
 )
-if not os.path.exists(LAUNCHER):
-    # Dev fallback: resolve next to this file.
-    _local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qwen_tts_launcher.py")
-    if os.path.exists(_local):
-        LAUNCHER = _local
+KOKORO_LAUNCHER = os.environ.get(
+    "KOKORO_TTS_LAUNCHER",
+    "/opt/kokoro_tts_launcher.py",
+)
+for _name in ("QWEN_LAUNCHER", "KOKORO_LAUNCHER"):
+    _path = locals()[_name]
+    if not os.path.exists(_path):
+        # Dev fallback: resolve next to this file.
+        _local = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            os.path.basename(_path),
+        )
+        if os.path.exists(_local):
+            globals()[_name] = _local
+            locals()[_name] = _local
 
 DEFAULT_MODEL = os.environ.get(
     "QWEN_TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 )
+
+# Voices that route to the qwen-tts launcher. Anything else goes to
+# kokoro by default. Qwen voices are short proper names; kokoro voices
+# follow the `xx_yyy` pattern (af_heart, am_eric, bm_lewis, ...).
+QWEN_VOICES = {
+    "aiden", "dylan", "eric", "ono_anna", "ryan",
+    "serena", "sohee", "uncle_fu", "vivian",
+}
+
+# Default engine when the operator hasn't pinned per-call. `kokoro`
+# because Qwen3-TTS hits a HIP kernel mismatch on Strix Halo gfx1151
+# and Kokoro-82M ONNX runs cleanly on CPU. Operators can flip back to
+# Qwen via TTS_ENGINE=qwen if they have working kernels.
+DEFAULT_ENGINE = os.environ.get("TTS_ENGINE", "kokoro").lower()
 
 app = FastAPI(title="Qwen3-TTS Worker")
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "launcher": LAUNCHER, "out": OUT_DIR}
+    return {
+        "ok": True,
+        "default_engine": DEFAULT_ENGINE,
+        "qwen_launcher": QWEN_LAUNCHER,
+        "kokoro_launcher": KOKORO_LAUNCHER,
+        "out": OUT_DIR,
+    }
+
+
+def _pick_engine(voice: str, requested: str | None) -> str:
+    """Decide which TTS engine to use:
+       1. Explicit `engine` field in the request body wins.
+       2. Else: known qwen voice names route to qwen.
+       3. Else: DEFAULT_ENGINE (kokoro by default)."""
+    if requested:
+        v = requested.strip().lower()
+        if v in ("qwen", "kokoro"):
+            return v
+    if voice and voice.strip().lower() in QWEN_VOICES:
+        return "qwen"
+    return DEFAULT_ENGINE
 
 
 @app.post("/tts")
 def tts(data: dict = Body(...)):
     text = (data.get("text") or "").strip()
-    voice = data.get("voice") or "ryan"
+    voice = data.get("voice") or "af_heart"
+    engine = _pick_engine(voice, data.get("engine"))
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
 
-    fname = f"tts_{voice}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.wav"
+    fname = f"tts_{engine}_{voice}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.wav"
     out_path = os.path.join(OUT_DIR, fname)
 
-    cmd = [
-        sys.executable,
-        LAUNCHER,
-        "--text", text,
-        "--voice", voice,
-        "--out", out_path,
-        "--model", DEFAULT_MODEL,
-    ]
-    env = os.environ.copy()
-    env["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+    if engine == "qwen":
+        cmd = [
+            sys.executable, QWEN_LAUNCHER,
+            "--text", text,
+            "--voice", voice,
+            "--out", out_path,
+            "--model", DEFAULT_MODEL,
+        ]
+        env = os.environ.copy()
+        env["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+    else:  # kokoro
+        cmd = [
+            sys.executable, KOKORO_LAUNCHER,
+            "--text", text,
+            "--voice", voice,
+            "--out", out_path,
+            "--lang", data.get("lang") or "en-us",
+            "--speed", str(float(data.get("speed") or 1.0)),
+        ]
+        env = os.environ.copy()  # no HSA override needed; kokoro is CPU ONNX
 
     try:
         proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
