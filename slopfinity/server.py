@@ -59,6 +59,86 @@ _LLM_LOCK = asyncio.Lock()
 app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
+@app.get("/static/sw.js", include_in_schema=False)
+async def serve_sw_js():
+    """Serve the service worker with a content-hash cache version
+    substituted into the `__CACHE_VERSION__` sentinel. Eliminates the
+    manual `slopfinity-shell-vNNN` bump that every UI PR has had to
+    remember (the audit found this in PR-D — bumped 6× during the
+    visual-polish train alone).
+
+    Hash is computed from the shell assets that, if changed, MUST
+    invalidate the user's cache: app.js, app.css, the rendered
+    template (index.html source), manifest, and the icon set. Cached
+    in-process with a 5s TTL so the per-request cost is one stat call
+    when assets are stable, one read+sha256 when they change."""
+    return FileResponse(_sw_js_with_hash(), media_type="application/javascript", headers={
+        "Cache-Control": "no-cache",  # browser MUST revalidate the SW itself
+        "Service-Worker-Allowed": "/",
+    })
+
+
+_sw_cache = {"hash": None, "ts": 0.0, "tmp_path": None}
+
+
+def _sw_js_with_hash() -> str:
+    """Return a path to a temp file containing the SW source with the
+    `__CACHE_VERSION__` sentinel replaced by the current shell hash.
+    The temp file is rewritten in-place when the hash changes so we
+    don't litter /tmp with one file per change."""
+    import hashlib
+    import tempfile
+
+    src_path = os.path.join(STATIC_DIR, "sw.js")
+    now = time.time()
+    if _sw_cache["tmp_path"] and (now - _sw_cache["ts"]) < 5.0 and os.path.exists(_sw_cache["tmp_path"]):
+        return _sw_cache["tmp_path"]
+
+    h = hashlib.sha256()
+    candidates = [
+        os.path.join(STATIC_DIR, "app.js"),
+        os.path.join(STATIC_DIR, "app.css"),
+        os.path.join(STATIC_DIR, "manifest.webmanifest"),
+        os.path.join(TEMPLATES_DIR, "index.html"),
+    ]
+    icons_dir = os.path.join(STATIC_DIR, "icons")
+    if os.path.isdir(icons_dir):
+        for n in sorted(os.listdir(icons_dir)):
+            candidates.append(os.path.join(icons_dir, n))
+    for p in candidates:
+        try:
+            with open(p, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+        except FileNotFoundError:
+            continue
+    digest = h.hexdigest()[:12]
+    cache_name = f"slopfinity-shell-{digest}"
+
+    if _sw_cache["hash"] == digest and _sw_cache["tmp_path"] and os.path.exists(_sw_cache["tmp_path"]):
+        _sw_cache["ts"] = now
+        return _sw_cache["tmp_path"]
+
+    try:
+        with open(src_path, "r") as f:
+            body = f.read()
+    except Exception:
+        return src_path  # fall back to the static file as-is
+    body = body.replace("__CACHE_VERSION__", cache_name)
+
+    tmp_path = _sw_cache["tmp_path"]
+    if not tmp_path:
+        fd, tmp_path = tempfile.mkstemp(prefix="slopfinity-sw-", suffix=".js")
+        os.close(fd)
+    with open(tmp_path, "w") as f:
+        f.write(body)
+    _sw_cache.update(hash=digest, ts=now, tmp_path=tmp_path)
+    return tmp_path
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
