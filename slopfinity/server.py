@@ -775,9 +775,9 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     try:
         obj = json.loads(text)
         if isinstance(obj, dict):
-            if isinstance(obj.get("story"), list): suggestions_dict["story"] = [str(s).strip() for s in obj["story"] if s]
-            if isinstance(obj.get("simple"), list): suggestions_dict["simple"] = [str(s).strip() for s in obj["simple"] if s]
-            if isinstance(obj.get("chat"), list): suggestions_dict["chat"] = [str(s).strip() for s in obj["chat"] if s]
+            if isinstance(obj.get("story"), list): suggestions_dict["story"] = list(dict.fromkeys([str(s).strip() for s in obj["story"] if s]))
+            if isinstance(obj.get("simple"), list): suggestions_dict["simple"] = list(dict.fromkeys([str(s).strip() for s in obj["simple"] if s]))
+            if isinstance(obj.get("chat"), list): suggestions_dict["chat"] = list(dict.fromkeys([str(s).strip() for s in obj["chat"] if s]))
     except Exception:
         pass
     # Don't store endless / opener results in the cache — we want each

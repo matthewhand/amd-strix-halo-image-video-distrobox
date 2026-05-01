@@ -39,7 +39,7 @@
         })();
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/static/app.css" />
+    <link rel="stylesheet" href="/static/app.css?v=6" />
     {# Aesthetics — full-page background driven by branding.aesthetics.
     Image URL or inline SVG (SVG wins). Cards sit on top; their parent
     is dimmed via a fixed pseudo-overlay so card text reads cleanly
@@ -325,87 +325,14 @@
                             </button>
                         </li>
                         <li>
-                            <button type="button" data-view-option="subjects"
-                                onclick="selectLayoutView('subjects'); document.activeElement.blur();"
+                            <button type="button" data-view-option="single"
+                                onclick="toggleSingleDashboard(); document.activeElement.blur();"
                                 class="flex items-center gap-2">
                                 <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor" opacity="0.5" />
-                                    <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
-                                        opacity="0.7" />
+                                    <rect x="2" y="2" width="76" height="46" rx="2" fill="currentColor" opacity="0.5" />
                                 </svg>
-                                <span class="flex-1 text-xs">Prompt focused</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="subjects">●</span>
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" data-view-option="queue"
-                                onclick="selectLayoutView('queue'); document.activeElement.blur();"
-                                class="flex items-center gap-2">
-                                <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor" opacity="0.5" />
-                                    <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
-                                        opacity="0.7" />
-                                    <line x1="6" y1="8" x2="74" y2="8" stroke="currentColor" stroke-width="1.5" />
-                                    <line x1="6" y1="14" x2="60" y2="14" stroke="currentColor" stroke-width="1.5" />
-                                </svg>
-                                <span class="flex-1 text-xs">Queue focused</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="queue">●</span>
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" data-view-option="gallery"
-                                onclick="selectLayoutView('gallery'); document.activeElement.blur();"
-                                class="flex items-center gap-2">
-                                <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="76" height="46" rx="2" fill="currentColor" opacity="0.7" />
-                                    <circle cx="64" cy="40" r="4" fill="currentColor" />
-                                    <circle cx="74" cy="40" r="4" fill="currentColor" />
-                                </svg>
-                                <span class="flex-1 text-xs">Slop focused</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="gallery">●</span>
-                            </button>
-                        </li>
-                        <li class="menu-title pt-1 pb-0"><span class="text-[10px] uppercase opacity-50">Two-card</span>
-                        </li>
-                        <li>
-                            <button type="button" data-view-option="subj-slop"
-                                onclick="selectLayoutView('subj-slop'); document.activeElement.blur();"
-                                class="flex items-center gap-2">
-                                <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor" opacity="0.5" />
-                                    <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
-                                        opacity="0.7" />
-                                </svg>
-                                <span class="flex-1 text-xs">Prompt + Slop</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="subj-slop">●</span>
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" data-view-option="queue-slop"
-                                onclick="selectLayoutView('queue-slop'); document.activeElement.blur();"
-                                class="flex items-center gap-2">
-                                <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="76" height="18" rx="2" fill="currentColor" opacity="0.5" />
-                                    <rect x="2" y="24" width="76" height="24" rx="2" fill="currentColor"
-                                        opacity="0.7" />
-                                    <line x1="6" y1="8" x2="74" y2="8" stroke="currentColor" stroke-width="1.5" />
-                                    <line x1="6" y1="14" x2="60" y2="14" stroke="currentColor" stroke-width="1.5" />
-                                </svg>
-                                <span class="flex-1 text-xs">Queue + Slop</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="queue-slop">●</span>
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" data-view-option="subj-queue"
-                                onclick="selectLayoutView('subj-queue'); document.activeElement.blur();"
-                                class="flex items-center gap-2">
-                                <svg viewBox="0 0 80 50" class="w-8 h-5 opacity-70" xmlns="http://www.w3.org/2000/svg">
-                                    <rect x="2" y="2" width="36" height="46" rx="2" fill="currentColor" opacity="0.5" />
-                                    <rect x="42" y="2" width="36" height="46" rx="2" fill="currentColor"
-                                        opacity="0.5" />
-                                </svg>
-                                <span class="flex-1 text-xs">Prompt + Queue</span>
-                                <span class="text-[10px] text-primary hidden" data-view-check="subj-queue">●</span>
+                                <span class="flex-1 text-xs">Single dashboard</span>
+                                <span class="text-[10px] text-primary hidden" data-view-check="single">●</span>
                             </button>
                         </li>
                     </ul>
@@ -504,7 +431,7 @@
                 <div id="ui-split-upper" class="ui-split-pane custom-scrollbar">
 
                     <!-- Subjects + Queue side-by-side; draggable divider lets the user re-balance the split. -->
-                    <div id="split-row" class="ui-split-row flex flex-col xl:flex-row xl:items-stretch gap-3 mb-6">
+                    <div id="split-row" class="ui-split-row flex flex-col xl:flex-row xl:items-stretch mb-6 mt-2">
                         <section id="split-left"
                             class="ui-split-card card bg-base-100 border-2 border-primary shadow-xl xl:flex-1 xl:basis-1/2 min-w-0">
                             {# Hover window-controls (Non-OSX style): close / restore / maximize #}
@@ -864,19 +791,6 @@
                                                     are gone; chat replies now render whatever the server
                                                     returns (capped server-side via suggest_max_len_chat)
                                                     without a client-side display-count gate. #}
-                                                    <div class="join ml-1" aria-label="Suggestion count">
-                                                        <button type="button"
-                                                            class="btn btn-xs btn-outline btn-primary join-item chat-suggest-step"
-                                                            title="Fetch fewer reply suggestions"
-                                                            onclick="_chatSuggestCountStep && _chatSuggestCountStep(-1)">−</button>
-                                                        <span
-                                                            class="btn btn-xs btn-ghost join-item chat-suggest-count pointer-events-none"
-                                                            id="chat-suggest-count" data-count="3">3</span>
-                                                        <button type="button"
-                                                            class="btn btn-xs btn-outline btn-primary join-item chat-suggest-step"
-                                                            title="Fetch more reply suggestions"
-                                                            onclick="_chatSuggestCountStep && _chatSuggestCountStep(1)">+</button>
-                                                    </div>
                                                 </div>
                                                 <button type="button" id="subjects-chat-reset"
                                                     class="btn btn-ghost btn-xs text-error gap-1" onclick="_resetChat()"
