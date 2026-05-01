@@ -3228,10 +3228,12 @@ body.subj-mode-chat #subjects-action-cluster {
     display: none !important;
 }
 
-/* Endless + story running — hide the shared action cluster and textarea;
-   the story footer owns its own compact Queue button. */
-body.subj-mode-endless.endless-running #subjects-input-row,
-body.subj-mode-endless.endless-running #subjects-action-cluster {
+/* Endless mode — hide the shared textarea (the story-pane has its own
+   per-beat inputs). Keep the shared #subjects-action-cluster (Queue Slop
+   button) visible so it sits BELOW the suggestion chips in the natural
+   flex order (chips → button), matching simple-mode and removing the
+   duplicate Queue Slop that used to live inside the story pane. */
+body.subj-mode-endless #subjects-input-row {
     display: none !important;
 }
 
