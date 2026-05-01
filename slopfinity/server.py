@@ -2619,6 +2619,16 @@ async def settings_post(data: dict = Body(...)):
     c = cfg.load_config()
     llm_in = data.get("llm") or {}
     if isinstance(llm_in, dict):
+        # SSRF guard: validate base_url BEFORE persisting. Without this,
+        # an attacker who lands a single same-origin POST (e.g. via XSS
+        # bypassing the CSRF middleware in #142) can flip llm.base_url
+        # to http://169.254.169.254/ and have the dashboard exfil cloud
+        # metadata on the next /chat call.
+        nb = (llm_in.get("base_url") or "").strip()
+        if nb:
+            ok, err = _validate_llm_base_url(nb)
+            if not ok:
+                return JSONResponse({"ok": False, "error": f"llm.base_url: {err}"}, status_code=400)
         current_llm = dict(DEFAULT_LLM_CONFIG)
         current_llm.update(c.get("llm") or {})
         for k, v in llm_in.items():
@@ -2736,12 +2746,64 @@ async def settings_post(data: dict = Body(...)):
     return {"ok": True}
 
 
+def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
+    """Reject SSRF-prone llm.base_url values BEFORE the URL hits urlopen.
+
+    The llm.base_url is user-controlled via /settings POST. Without
+    validation, a hostile setter (or attacker who slipped past the
+    CSRF gate via a same-origin XSS) can repoint LLM calls at:
+      * cloud-metadata services (http://169.254.169.254/)
+      * RFC1918 / link-local internal admin panels
+      * file:// or gopher:// or ftp:// schemes that return readable
+        bytes Python's urlopen happily handles
+    The dashboard's own integrations only ever target localhost/loopback
+    LLM endpoints (LM Studio, Ollama, etc.) or — when explicitly opted
+    in via `allow_cloud_endpoints=true` — public cloud APIs.
+
+    Returns (ok, error_msg). Empty error_msg on ok=True.
+    """
+    from urllib.parse import urlparse
+    if not base_url:
+        return False, "missing base_url"
+    try:
+        u = urlparse(base_url)
+    except Exception as e:
+        return False, f"unparseable: {e}"
+    if u.scheme not in ("http", "https"):
+        return False, f"scheme '{u.scheme}' not allowed (use http or https)"
+    host = (u.hostname or "").lower()
+    if not host:
+        return False, "missing host"
+    # When cloud endpoints are NOT explicitly enabled, restrict to
+    # loopback hostnames. This is the safe default.
+    cfg_dict = cfg.load_config()
+    if not bool(cfg_dict.get("allow_cloud_endpoints", False)):
+        if host not in ("localhost", "127.0.0.1", "::1"):
+            return False, (
+                f"host '{host}' blocked: enable Settings → Allow Cloud Endpoints "
+                "to permit non-loopback LLM endpoints"
+            )
+    # Even with cloud endpoints enabled, block link-local and metadata
+    # endpoints that no legitimate LLM provider uses but are common
+    # SSRF probe targets.
+    if host in (
+        "169.254.169.254",     # AWS / GCP / Azure metadata
+        "metadata.google.internal",
+        "100.100.100.200",     # Alibaba metadata
+    ):
+        return False, f"host '{host}' is a cloud-metadata endpoint and is always blocked"
+    return True, ""
+
+
 @app.get("/settings/models")
 async def settings_models(base_url: str = "", provider: str = "lmstudio", api_key: str = ""):
     """Proxy list_models to the chosen local provider (never call from browser)."""
     from .llm.providers import get_provider
     if not base_url:
         return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
+    ok, err = _validate_llm_base_url(base_url)
+    if not ok:
+        return JSONResponse({"ok": False, "error": err, "models": []}, status_code=400)
     # If the api_key arrives as the mask, resolve it from stored config.
     if api_key in ("***",):
         api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
@@ -2763,6 +2825,9 @@ async def settings_test(data: dict = Body(...)):
         api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
     if not base_url or not model_id:
         return {"ok": False, "error": "base_url and model_id required", "latency_ms": 0}
+    ok, err = _validate_llm_base_url(base_url)
+    if not ok:
+        return {"ok": False, "error": err, "latency_ms": 0}
     # Also count models to enrich the ✓ badge
     from .llm.providers import get_provider
     count = None
