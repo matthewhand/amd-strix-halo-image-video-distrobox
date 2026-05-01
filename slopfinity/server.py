@@ -80,6 +80,114 @@ async def _sw_allowed_header(request: Request, call_next):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
+
+# ---------------------------------------------------------------------------
+# CSRF / cross-site mitigations
+#
+# The dashboard ships zero auth and a wide mutating API surface (queue,
+# settings, /inject, /upload, /runner/terminate, etc.). Without an Origin
+# / Referer check, ANY page the user browses while the dashboard is open
+# can drive the dashboard via cross-site form-POST or fetch (no preflight
+# is required for `text/plain` bodies; FastAPI accepts those into JSON
+# handlers via `Body(...)`). Combined with the persistent `auto_suspend`
+# settings path (which can run shell commands), that's a CSRF→RCE chain
+# reachable from a drive-by browse.
+#
+# This middleware rejects mutating requests whose Origin/Referer host
+# isn't in the allowlist. By default the allowlist is just the bind
+# host:port (same-origin). Operators who proxy the dashboard or embed
+# it can add hosts via SLOPFINITY_TRUSTED_ORIGINS (comma-separated, full
+# scheme://host[:port]).
+#
+# Read endpoints (GET/HEAD/OPTIONS) are not gated — they're either
+# public-by-design (favicon, static) or already exposed to any visitor.
+# ---------------------------------------------------------------------------
+_TRUSTED_ORIGINS_ENV = "SLOPFINITY_TRUSTED_ORIGINS"
+_CSRF_DISABLE_ENV = "SLOPFINITY_DISABLE_CSRF"  # opt-out for legacy automation
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _trusted_origin_set(request_host_header: str) -> set[str]:
+    """Build the allow-set on each request: same-origin always, plus
+    any explicit additions from the env var. Cheap (env read + split)."""
+    allow = set()
+    # Same-origin: derive from the Host header. We accept both http and
+    # https variants since the dashboard runs http on localhost in dev
+    # and may sit behind a TLS-terminating proxy in deploys.
+    if request_host_header:
+        for scheme in ("http", "https"):
+            allow.add(f"{scheme}://{request_host_header}")
+    # Env-var additions
+    extra = os.environ.get(_TRUSTED_ORIGINS_ENV, "").strip()
+    if extra:
+        for piece in extra.split(","):
+            piece = piece.strip().rstrip("/")
+            if piece:
+                allow.add(piece)
+    return allow
+
+
+@app.middleware("http")
+async def _csrf_origin_check(request: Request, call_next):
+    """Reject cross-site mutating requests by Origin/Referer mismatch.
+
+    Allows the request if:
+      - Method is GET/HEAD/OPTIONS, OR
+      - SLOPFINITY_DISABLE_CSRF=1 is set (escape hatch), OR
+      - Origin (preferred) or Referer (fallback) matches the same host
+        the request came in on, OR an entry in SLOPFINITY_TRUSTED_ORIGINS.
+
+    Rejects with 403 otherwise. The error body is JSON so frontend
+    fetch wrappers can surface a useful toast.
+    """
+    if os.environ.get(_CSRF_DISABLE_ENV) == "1":
+        return await call_next(request)
+    if request.method.upper() not in _MUTATING_METHODS:
+        return await call_next(request)
+
+    host = request.headers.get("host", "")
+    allow = _trusted_origin_set(host)
+
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+
+    def _origin_match(value: str) -> bool:
+        if not value:
+            return False
+        # Strip path/query from referer; keep scheme://host[:port]
+        try:
+            from urllib.parse import urlparse
+            u = urlparse(value)
+            if not u.scheme or not u.netloc:
+                return False
+            return f"{u.scheme}://{u.netloc}" in allow
+        except Exception:
+            return False
+
+    if _origin_match(origin) or _origin_match(referer):
+        return await call_next(request)
+
+    # No Origin AND no Referer: rare for browser-driven traffic, common
+    # for curl / scripts / pytest harnesses on the loopback. Allow when
+    # the request is hitting loopback (the attacker model is "drive-by
+    # cross-site browse" — those attacks ALWAYS carry an Origin header,
+    # so absent-Origin from loopback is safe). For non-loopback hosts
+    # (LAN bind, behind a proxy) the absent header is suspicious and
+    # we still reject.
+    if not origin and not referer:
+        host_lower = host.split(":", 1)[0].lower()
+        if host_lower in ("127.0.0.1", "localhost", "::1"):
+            return await call_next(request)
+        return JSONResponse(
+            {"ok": False, "error": "csrf: missing Origin/Referer header"},
+            status_code=403,
+        )
+
+    return JSONResponse(
+        {"ok": False, "error": "csrf: cross-origin mutating request rejected"},
+        status_code=403,
+    )
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Custom Jinja filter — `{{ s | regex_match(pattern) }}` returns truthy
@@ -2920,6 +3028,32 @@ async def coordinator_status():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Origin check — the WebSocket /ws fan-outs full state (prompts,
+    # queue, chat replies). Without an origin check, any web page the
+    # user browses can `new WebSocket("ws://localhost:9099/ws")` and
+    # harvest those events. Mirror the http CSRF middleware: allow
+    # same-origin + the env-var allowlist; reject everything else.
+    if os.environ.get(_CSRF_DISABLE_ENV) != "1":
+        host = websocket.headers.get("host", "")
+        allow = _trusted_origin_set(host)
+        origin = websocket.headers.get("origin", "")
+        if origin:
+            try:
+                from urllib.parse import urlparse
+                u = urlparse(origin)
+                if f"{u.scheme}://{u.netloc}" not in allow:
+                    await websocket.close(code=4403)
+                    return
+            except Exception:
+                await websocket.close(code=4403)
+                return
+        # Permit no-Origin for non-browser clients only when the host
+        # header is loopback. A LAN cross-origin browser always sends
+        # Origin; absent + non-loopback means we should reject.
+        elif not (host.startswith("127.0.0.1") or host.startswith("localhost")):
+            await websocket.close(code=4403)
+            return
+
     await websocket.accept()
     clients.append(websocket)
     try:
@@ -3158,4 +3292,12 @@ async def startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9099)
+    # Default to loopback so the dashboard (which has no auth and a wide
+    # mutating API surface) is not exposed to the LAN by default. Operators
+    # who explicitly want LAN / docker / proxy access set
+    # `SLOPFINITY_BIND_HOST=0.0.0.0` (or the specific interface) — and
+    # should pair that with `SLOPFINITY_TRUSTED_ORIGINS` so the CSRF
+    # middleware accepts the new host.
+    _bind_host = os.environ.get("SLOPFINITY_BIND_HOST", "127.0.0.1")
+    _bind_port = int(os.environ.get("SLOPFINITY_BIND_PORT", "9099"))
+    uvicorn.run(app, host=_bind_host, port=_bind_port)
