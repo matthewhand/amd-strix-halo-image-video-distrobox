@@ -3348,13 +3348,59 @@ window._refreshAssistantTurn = function (msgIdx) {
     }
 };
 
+// ---------------------------------------------------------------------------
+// Chat send + pending-message queue
+//
+// When the LLM is in-flight (`_chatInflight === true`), pressing Send
+// stashes the new text into `_chatPendingMessage` instead of dropping it.
+// On completion, _sendChatMessage drains the pending slot by recursing
+// once with the queued text. Single-slot, replace-with-newest semantics:
+// double-types preserve the most recent intent. Cancel via the × button
+// on the pending bubble before the in-flight call returns.
+// ---------------------------------------------------------------------------
+let _chatInflight = false;
+let _chatPendingMessage = null;
+
+function _renderPendingChat() {
+    const el = document.getElementById('subjects-chat-pending');
+    const txt = document.getElementById('subjects-chat-pending-text');
+    if (!el || !txt) return;
+    if (_chatPendingMessage) {
+        txt.textContent = _chatPendingMessage;
+        el.classList.remove('hidden');
+    } else {
+        el.classList.add('hidden');
+        txt.textContent = '';
+    }
+}
+
+function _cancelPendingChat() {
+    _chatPendingMessage = null;
+    _renderPendingChat();
+}
+window._cancelPendingChat = _cancelPendingChat;
+
 async function _sendChatMessage() {
     const input = document.getElementById('subjects-chat-input');
     const sendBtn = document.getElementById('subjects-chat-send');
     if (!input) return;
     const text = (input.value || '').trim();
     if (!text) return;
+
+    // If the LLM is already thinking, queue this message instead of
+    // dropping it. Single-slot: replace-with-newest preserves the
+    // latest intent (rapid retypes win). Clear input so the user can
+    // see their message was accepted; show the pending bubble so they
+    // know it'll fire after the current reply lands.
+    if (_chatInflight) {
+        _chatPendingMessage = text;
+        input.value = '';
+        _renderPendingChat();
+        return;
+    }
+
     input.value = '';
+    _chatInflight = true;
     if (sendBtn) {
         sendBtn.disabled = true;
         let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
@@ -3387,6 +3433,7 @@ async function _sendChatMessage() {
         _setChatHistory(after);
         _renderChatLog();
     }
+    _chatInflight = false;
     if (sendBtn) {
         sendBtn.disabled = false;
         let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
@@ -3396,6 +3443,17 @@ async function _sendChatMessage() {
     // Refresh reply suggestions against the new latest assistant turn so
     // the user has 4 contextual continuation chips ready.
     if (typeof _renderChatReplies === 'function') _renderChatReplies();
+
+    // Drain pending: if the user queued another message during this
+    // turn, fire it now. Stash + clear the slot before recursing so a
+    // network error in the queued send doesn't loop on stale state.
+    if (_chatPendingMessage) {
+        const queued = _chatPendingMessage;
+        _chatPendingMessage = null;
+        _renderPendingChat();
+        if (input) input.value = queued;
+        await _sendChatMessage();
+    }
 }
 window._sendChatMessage = _sendChatMessage;
 

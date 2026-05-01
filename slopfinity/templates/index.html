@@ -899,6 +899,20 @@
                                         <div id="subjects-chat-log"
                                             class="text-xs leading-snug bg-base-200/60 border border-base-300/60 rounded p-2 overflow-y-auto flex flex-col gap-2 m-0 flex-1 min-h-0">
                                         </div>
+                                        {# Pending-message indicator — shown when the user
+                                        sends a new message while the LLM is still
+                                        thinking. Single-slot replace-with-newest queue.
+                                        Hidden by default; _sendChatMessage shows + clears
+                                        on its own. The × button cancels the pending
+                                        send before the current LLM call completes. #}
+                                        <div id="subjects-chat-pending" class="hidden flex-none flex items-center gap-2 px-2 py-1 rounded bg-warning/10 border border-warning/30 text-[11px] text-warning-content"
+                                             role="status" aria-live="polite">
+                                            <span class="opacity-70 flex-none">→ Will send next:</span>
+                                            <span id="subjects-chat-pending-text" class="flex-1 min-w-0 truncate italic"></span>
+                                            <button type="button" id="subjects-chat-pending-cancel"
+                                                class="btn btn-ghost btn-xs btn-square text-error/80 hover:text-error flex-none"
+                                                onclick="_cancelPendingChat()" title="Cancel queued message">×</button>
+                                        </div>
                                         <div class="flex gap-2 flex-none">
                                             <input type="text" id="subjects-chat-input"
                                                 class="input input-bordered input-sm flex-1 min-w-0"
