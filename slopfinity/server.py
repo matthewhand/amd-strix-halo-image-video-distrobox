@@ -1008,6 +1008,114 @@ _CHAT_TOOLS_MANIFEST = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    # ---------------------------------------------------------------
+    # À-la-carte single-asset tools. These let the LLM build outputs
+    # in stages: generate music, generate video, mux them together —
+    # rather than firing the full pipeline via queue_clip and getting
+    # whatever bundle the fleet config produces. Pairs with the
+    # duration-matched mux logic so the music length isn't truncated
+    # to the video length (or vice versa) by `-shortest`.
+    # ---------------------------------------------------------------
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": "Generate ONE image from a prompt. Queues a task with image_only=True so the fleet runs concept+image and skips video/music/tts. Returns the queue ts; poll with list_queue or recent_finals.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Visual subject in plain text."},
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "synthesize_tts",
+            "description": "Synthesize speech from text via the configured TTS worker. Returns a /files/tts/<name>.wav URL on success. Default voice af_heart (Kokoro) — use list_tts_voices to see the full set across both engines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "1-5000 chars to speak."},
+                    "voice": {"type": "string", "description": "Voice id (e.g. af_heart, am_eric, jf_alpha). Defaults to af_heart."},
+                    "lang": {"type": "string", "description": "Optional language override (en-us, ja, cmn, etc.). Default: auto-pick from voice prefix."},
+                    "speed": {"type": "number", "description": "Speech speed 0.5-2.0. Default 1.0."},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tts_voices",
+            "description": "List voices available across the kokoro + qwen TTS engines. Use this when the user asks 'what voices can you use?'.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mux_assets",
+            "description": "Combine a video file and an audio file into a single MP4 via ffmpeg. Pass /files/<…>.mp4 and /files/<…>.wav paths from previous tool outputs. Pads/trims audio to match video duration so neither stream is wasted (no -shortest truncation).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Path or /files URL of the video stream (mp4)."},
+                    "audio_path": {"type": "string", "description": "Path or /files URL of the audio stream (wav/mp3)."},
+                    "out_name": {"type": "string", "description": "Output basename (no path). Default 'muxed_<ts>.mp4'."},
+                },
+                "required": ["video_path", "audio_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "concat_videos",
+            "description": "Concatenate multiple MP4 clips into one output via ffmpeg concat demuxer (stream copy, fast, no re-encode). All inputs must share codec / size / fps. Used to stitch story-mode FINAL_*.mp4 clips into one continuous video.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Ordered list of /files paths or basenames to concat."},
+                    "out_name": {"type": "string", "description": "Output basename. Default 'concat_<ts>.mp4'."},
+                },
+                "required": ["paths"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_music",
+            "description": "[NOT YET WIRED] Generate a music WAV via heartmula. Currently invoked via queue_clip with audio bundled into the full pipeline; standalone music gen is a planned follow-up. Returns a structured pointer to the open issue rather than firing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Tags/description (genre, instruments, mood)."},
+                    "duration_s": {"type": "number", "description": "Target length in seconds (3-180)."},
+                },
+                "required": ["prompt", "duration_s"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_video",
+            "description": "[NOT YET WIRED] Generate ONE video clip without music/tts via LTX-2. Currently invoked via queue_clip with the full pipeline; standalone video gen is a planned follow-up requiring run_fleet.py task_opt extensions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Visual subject."},
+                    "duration_s": {"type": "number", "description": "Target length in seconds; converted to chains internally."},
+                },
+                "required": ["prompt", "duration_s"],
+            },
+        },
+    },
 ]
 
 
@@ -1134,6 +1242,196 @@ def _chat_tool_describe_config(_args: dict) -> dict:
     return {k: c.get(k) for k in keys}
 
 
+def _chat_tool_generate_image(args: dict) -> dict:
+    """Queue an image-only task. Reuses queue_clip's plumbing but pins
+    image_only=True + chains=1 so the fleet skips video/music/tts."""
+    prompt = (args.get("prompt") or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "empty prompt"}
+    q = cfg.get_queue()
+    task = {
+        "prompt": prompt,
+        "priority": "next",
+        "status": "pending",
+        "ts": time.time(),
+        "image_only": True,
+        "chaos": False,
+    }
+    pending = [x for x in q if x.get("status") in (None, "pending")]
+    working = [x for x in q if x.get("status") == "working"]
+    done = [x for x in q if x.get("status") == "done"]
+    cancelled = [x for x in q if x.get("status") == "cancelled"]
+    pending.insert(0, task)
+    cfg.save_queue(working + pending + done + cancelled)
+    return {"ok": True, "ts": task["ts"], "prompt": prompt, "kind": "image_only"}
+
+
+def _chat_tool_synthesize_tts(args: dict) -> dict:
+    """Direct passthrough to /tts. Same validation as the HTTP path:
+    1-5000 chars, sane speed, optional lang/voice override."""
+    text = (args.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "error": "empty text"}
+    if len(text) > 5000:
+        return {"ok": False, "error": f"text too long ({len(text)} > 5000 chars)"}
+    voice = args.get("voice") or "af_heart"
+    lang = args.get("lang")
+    speed_raw = args.get("speed")
+    try:
+        speed = float(speed_raw) if speed_raw is not None else None
+    except (TypeError, ValueError):
+        speed = None
+    if speed is not None and not (0.5 <= speed <= 2.0):
+        return {"ok": False, "error": "speed must be 0.5-2.0"}
+    try:
+        result = _call_tts_worker(text, voice, engine=None, lang=lang, speed=speed)
+    except urllib.error.URLError as e:
+        return {"ok": False, "error": f"TTS worker unreachable: {e}"}
+    except Exception as e:
+        return {"ok": False, "error": f"TTS error: {type(e).__name__}: {e}"}
+    return {
+        "ok": bool(result.get("ok")),
+        "url": result.get("url") or result.get("audio_path"),
+        "voice": voice,
+        "engine": result.get("engine"),
+    }
+
+
+def _chat_tool_list_tts_voices(_args: dict) -> dict:
+    """Mirror /tts/voices for chat consumption — same fallback shape if
+    the worker is unreachable so the LLM always sees a list."""
+    base = _resolve_tts_worker_url().rstrip("/")
+    if base.endswith("/tts"):
+        base = base[:-4]
+    voices_url = base.rstrip("/") + "/voices"
+    try:
+        req = urllib.request.Request(voices_url, method="GET",
+                                     headers={"accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"voices endpoint unreachable ({e}); try af_heart for kokoro or ryan for qwen",
+        }
+
+
+def _resolve_files_path(p: str) -> str:
+    """Map /files/<x> URLs back to absolute disk paths under EXP_DIR.
+    Bare basenames also resolve. Refuses any path that escapes EXP_DIR
+    (no `..` or absolute paths outside)."""
+    if not p:
+        return ""
+    rel = p[len("/files/"):] if p.startswith("/files/") else p
+    rel = rel.lstrip("/")
+    if ".." in rel.split("/"):
+        raise ValueError("path traversal not allowed")
+    abs_path = os.path.realpath(os.path.join(EXP_DIR, rel))
+    real_root = os.path.realpath(EXP_DIR)
+    if not abs_path.startswith(real_root + os.sep) and abs_path != real_root:
+        raise ValueError(f"path escapes EXP_DIR: {p}")
+    return abs_path
+
+
+def _chat_tool_mux_assets(args: dict) -> dict:
+    """ffmpeg mux without -shortest. Audio shorter than video → pad
+    with apad. Audio longer → trim to video duration via -t. Either
+    way the output matches the VIDEO duration exactly so a 30s music
+    on a 20s video produces 20s of muxed video (the music gets
+    trimmed to fit, no truncation to whichever ends first)."""
+    try:
+        video_abs = _resolve_files_path(args.get("video_path") or "")
+        audio_abs = _resolve_files_path(args.get("audio_path") or "")
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if not (os.path.isfile(video_abs) and os.path.isfile(audio_abs)):
+        return {"ok": False, "error": f"missing input file(s): video={video_abs} audio={audio_abs}"}
+    out_name = (args.get("out_name") or "").strip() or f"muxed_{int(time.time())}.mp4"
+    out_name = os.path.basename(out_name)  # paranoia
+    out_abs = os.path.join(EXP_DIR, out_name)
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", video_abs,
+        "-i", audio_abs,
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        # Pad audio with silence if shorter than video; -t caps to video
+        # length so longer audio gets trimmed to exact video duration.
+        "-af", "apad",
+        "-shortest",  # combined with apad: video drives length, audio is pad-then-trim to fit
+        out_abs,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "ffmpeg timeout (120s)"}
+    if proc.returncode != 0:
+        tail = (proc.stderr or "").strip().splitlines()[-5:]
+        return {"ok": False, "error": "ffmpeg failed", "stderr": "\n".join(tail)}
+    return {"ok": True, "url": f"/files/{out_name}", "size": os.path.getsize(out_abs)}
+
+
+def _chat_tool_concat_videos(args: dict) -> dict:
+    """ffmpeg concat demuxer. All inputs must share codec/size/fps —
+    fast stream copy, no re-encode. Writes a temp concat list file
+    inside EXP_DIR/.concat-lists/ then runs ffmpeg."""
+    paths = args.get("paths") or []
+    if not isinstance(paths, list) or len(paths) < 2:
+        return {"ok": False, "error": "need at least 2 paths"}
+    try:
+        abs_paths = [_resolve_files_path(p) for p in paths]
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    missing = [p for p in abs_paths if not os.path.isfile(p)]
+    if missing:
+        return {"ok": False, "error": f"missing files: {missing}"}
+    out_name = (args.get("out_name") or "").strip() or f"concat_{int(time.time())}.mp4"
+    out_name = os.path.basename(out_name)
+    out_abs = os.path.join(EXP_DIR, out_name)
+    list_dir = os.path.join(EXP_DIR, ".concat-lists")
+    os.makedirs(list_dir, exist_ok=True)
+    list_path = os.path.join(list_dir, f"concat_{int(time.time())}.txt")
+    with open(list_path, "w") as f:
+        for p in abs_paths:
+            # ffmpeg concat list format: file 'path' (single-quoted, escaped)
+            f.write(f"file '{p.replace(chr(39), chr(92) + chr(39))}'\n")
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "concat", "-safe", "0",
+        "-i", list_path,
+        "-c", "copy",
+        out_abs,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "ffmpeg timeout (120s)"}
+    finally:
+        try: os.unlink(list_path)
+        except OSError: pass
+    if proc.returncode != 0:
+        tail = (proc.stderr or "").strip().splitlines()[-5:]
+        return {"ok": False, "error": "ffmpeg concat failed", "stderr": "\n".join(tail)}
+    return {"ok": True, "url": f"/files/{out_name}", "n_clips": len(abs_paths), "size": os.path.getsize(out_abs)}
+
+
+def _chat_tool_not_yet_wired(args: dict) -> dict:
+    """Stub for tools whose backend integration is planned but not
+    yet shipped. Returns a structured pointer so the LLM can tell
+    the user 'this isn't available yet, here's what to do instead'
+    instead of silently failing."""
+    return {
+        "ok": False,
+        "status": "not-yet-wired",
+        "error": "Standalone music/video generation isn't wired yet. "
+                 "Use queue_clip for the full pipeline (image+video+music+tts), "
+                 "or wait for a follow-up PR that adds run_fleet.py task_opts "
+                 "for audio_only / video_only flows.",
+        "alternative_tools": ["queue_clip", "generate_image", "synthesize_tts"],
+    }
+
+
 _CHAT_TOOL_HANDLERS = {
     "queue_clip": _chat_tool_queue_clip,
     "list_queue": _chat_tool_list_queue,
@@ -1141,6 +1439,13 @@ _CHAT_TOOL_HANDLERS = {
     "cancel_item": _chat_tool_cancel_item,
     "recent_finals": _chat_tool_recent_finals,
     "describe_config": _chat_tool_describe_config,
+    "generate_image": _chat_tool_generate_image,
+    "synthesize_tts": _chat_tool_synthesize_tts,
+    "list_tts_voices": _chat_tool_list_tts_voices,
+    "mux_assets": _chat_tool_mux_assets,
+    "concat_videos": _chat_tool_concat_videos,
+    "generate_music": _chat_tool_not_yet_wired,
+    "generate_video": _chat_tool_not_yet_wired,
 }
 
 _CHAT_SYSTEM_PROMPT = (
