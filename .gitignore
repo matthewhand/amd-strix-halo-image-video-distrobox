@@ -1,7 +1,10 @@
 # Ignore all markdown files except essential docs
 *.md
 !README.md
+!README.slopfinity.md
 !COMFYUI_SETUP_GUIDE.md
+!CONTRIBUTING.md
+!docs/*.md
 # AGENTS.md is a local agent playbook, intentionally not committed —
 # contents drift per-machine and per-session.
 
@@ -87,3 +90,8 @@ test-results/
 playwright-report/
 e2e/artifacts/
 dist/
+# CI artifact lane (results.json/xml, failure-packet.md, failed-tests.json
+# from .github/workflows/playwright.yml + scripts/extract-failures.mjs).
+# Local devs running `npx playwright test` won't generate these unless
+# they set CI=1, but the dir is conventional — gitignore it.
+artifacts/
