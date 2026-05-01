@@ -128,6 +128,17 @@ services:
       # /tts call to crash with PermissionError. /workspace is the slopfinity
       # bind mount of ./comfy-outputs/experiments on the host.
       - HF_HOME=/workspace/.hf-tts-cache
+      # USER + LOGNAME — Qwen3-TTS's CustomVoice loader calls
+      # `getpass.getuser()` to derive a sanitized voice-bank dirname.
+      # In containers without /etc/passwd entries for the runtime UID
+      # (or with USER/LOGNAME unset), getpass raises
+      # `OSError: No username set in the environment`, returning HTTP
+      # 500 on every /tts request. Setting either env var resolves
+      # without needing to rebuild the image. "slopfinity" is just a
+      # stable identifier — the dirname becomes
+      # /workspace/.hf-tts-cache/.../slopfinity_<voice>/.
+      - USER=slopfinity
+      - LOGNAME=slopfinity
     volumes:
       - ./comfy-outputs/experiments:/workspace
       - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
