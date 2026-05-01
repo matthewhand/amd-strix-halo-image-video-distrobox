@@ -18,6 +18,14 @@ services:
     environment:
       - PYTHONPATH=/
       - SLOPFINITY_STATE_DIR=/workspace
+      # Bind defaults to 127.0.0.1 so the dashboard isn't exposed to the
+      # LAN by default. Uncomment + customize to allow LAN access.
+      # The CSRF middleware accepts only same-origin (the bind host) by
+      # default — set SLOPFINITY_TRUSTED_ORIGINS to a comma-separated
+      # list of full scheme://host[:port] entries for any other hosts
+      # that should be allowed (e.g. a reverse proxy or kiosk URL).
+      # - SLOPFINITY_BIND_HOST=0.0.0.0
+      # - SLOPFINITY_TRUSTED_ORIGINS=http://my-lan-host:9099,http://kiosk.local
     volumes:
       - ./comfy-outputs/experiments:/workspace
       - ./slopfinity:/slopfinity
