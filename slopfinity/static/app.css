@@ -2358,6 +2358,33 @@ body.no-card-fabs #focus-slop-fab {
     }
 }
 
+/* Tablet single-card layouts: the sub-1024 viewports auto-redirect
+   to a single-pane layout (`data-layout="subjects" | "queue" |
+   "gallery"`) but on a >=768 tablet the active card was sized only
+   to its content, leaving a giant void below it before the bottom
+   focus-fab pill. Stretch the active pane to fill the available
+   vertical space so the card occupies the page instead of floating
+   in dead grey space. (Mobile <768 already gets a `position:fixed`
+   fill via the @max-width:767 block above.) */
+@media (min-width: 768px) and (max-width: 1023px) {
+
+    body[data-layout="subjects"] #split-left,
+    body[data-layout="queue"] #split-right {
+        min-height: calc(100vh - 88px - 96px);
+        /* 88px top stat bar + ~96px clearance for the bottom pill */
+        display: flex;
+        flex-direction: column;
+    }
+
+    body[data-layout="subjects"] #split-left>.card,
+    body[data-layout="subjects"] #split-left>.card-body,
+    body[data-layout="queue"] #split-right>.card,
+    body[data-layout="queue"] #split-right>.card-body {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
 /* Subjects mode pill — each button shows a theme-tinted icon plus a
    text label. At narrow widths the LABEL collapses but the icon stays
    visible (icon-only mode). The .subj-mode-active class is toggled
@@ -2913,16 +2940,23 @@ main.layout-sliding-right #stats-navbar {
     left: 50%;
     transform: translateX(-50%);
     z-index: 40;
-    background: hsl(var(--b1));
-    border: 2px solid hsl(var(--b1));
+    /* Was `hsl(var(--b1))` (page-bg-blended) which made the pill
+       disappear into the body when it overlapped slop tiles or the
+       gallery strip. Use the slightly-lighter `--b2` with a touch of
+       transparency + backdrop blur so the pill always reads as a
+       distinct floating control surface, even on top of busy content. */
+    background: hsl(var(--b2) / 0.92);
+    border: 1px solid hsl(var(--bc) / 0.18);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
     border-radius: 9999px;
     padding: 6px 8px;
     display: none;
     /* shown via body[data-layout=…] below */
     align-items: center;
     gap: 8px;
-    box-shadow: 0 8px 24px hsl(var(--bc) / 0.25),
-        0 2px 8px hsl(var(--bc) / 0.15);
+    box-shadow: 0 12px 32px hsl(var(--bc) / 0.35),
+        0 2px 8px hsl(var(--bc) / 0.18);
 }
 
 /* Show the pill on focused layouts. _focusFabNav handles the
