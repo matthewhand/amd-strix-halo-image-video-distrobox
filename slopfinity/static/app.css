@@ -828,6 +828,7 @@ body.layout-locked #layout-lock-toggle {
     flex: 1 1 auto;
     min-width: 0;
     height: 100%;
+    order: 1;
     -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
     mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
 }
@@ -2662,10 +2663,6 @@ body.subj-mode-raw #subjects-per-stage textarea {
     padding-right: 4px;
 }
 
-.suggest-marquee-row.with-lead .suggest-marquee-mask {
-    order: 1;
-}
-
 .endless-row-fold {
     display: none;
 }
@@ -2784,6 +2781,7 @@ body.subj-mode-raw #subjects-per-stage textarea {
    full-height at insertion. Existing rows translate predictably; no
    sudden full-height jump means no bump. The keyframe overrides the
    inline-animation `entering` rule that lives further up in this file. */
+/* stylelint-disable-next-line no-duplicate-selectors */
 .suggest-marquee-row.entering {
     animation: suggest-row-enter-smooth 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
     overflow: hidden;
@@ -4164,10 +4162,6 @@ body.subj-mode-endless #subject-chips-stack-endless { display: flex !important; 
     width: 12px;
     height: 12px;
     transform-origin: 50% 50%;
-}
-
-.chat-cog,
-.chat-cog-rev {
     animation: none;
 }
 

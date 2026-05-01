@@ -100,7 +100,7 @@ jobs:
           Comment=Local dashboard for the AMD Strix Halo image+video toolbox
           Exec=slopfinity-server
           Icon=slopfinity
-          Categories=Network;Audio;Video;
+          Categories=AudioVideo;Network;
           Terminal=false
           EOF
 
@@ -120,7 +120,13 @@ jobs:
         # name embeds the tag/SHA so multiple build artifacts don't
         # collide on the release page.
         run: |
-          VERSION="${GITHUB_REF_NAME:-dev-${GITHUB_SHA::7}}"
+          # GITHUB_REF_NAME for a pull_request event is e.g. "137/merge" —
+          # the slash would be interpreted as a directory in the output path
+          # and mksquashfs fails ("Could not create destination file").
+          # Strip slashes (and anything else weird) so the artifact name is
+          # always filesystem-safe.
+          RAW_VERSION="${GITHUB_REF_NAME:-dev-${GITHUB_SHA::7}}"
+          VERSION="${RAW_VERSION//\//-}"
           ARCH=x86_64 ./appimagetool --appimage-extract-and-run \
             AppDir "Slopfinity-${VERSION}-x86_64.AppImage"
           ls -lh Slopfinity-*.AppImage

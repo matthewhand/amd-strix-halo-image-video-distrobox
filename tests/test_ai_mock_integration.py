@@ -253,14 +253,18 @@ def test_enhance_distribute():
 
 def test_subjects_suggest():
     base = _setup_module_once()
-    # /subjects/suggest is a GET in the current server.
+    # /subjects/suggest is a GET in the current server. Response shape is a
+    # per-mode dict ({"story": [...], "simple": [...], "chat": [...]}); the
+    # legacy flat-list shape was retired alongside the per-mode budgets.
     status, body = _get_json(base + "/subjects/suggest?n=3", timeout=5)
     assert status == 200, body
     assert "suggestions" in body, body
     sug = body["suggestions"]
-    assert isinstance(sug, list), body
-    assert len(sug) == 3, body
-    assert all(isinstance(s, str) and s for s in sug), body
+    assert isinstance(sug, dict), body
+    for mode in ("story", "simple", "chat"):
+        assert mode in sug, (mode, body)
+        assert isinstance(sug[mode], list), (mode, body)
+        assert all(isinstance(s, str) for s in sug[mode]), (mode, body)
 
 
 def test_tts_proxy():
