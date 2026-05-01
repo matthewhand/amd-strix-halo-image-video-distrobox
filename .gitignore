@@ -86,3 +86,4 @@ node_modules/
 test-results/
 playwright-report/
 e2e/artifacts/
+dist/

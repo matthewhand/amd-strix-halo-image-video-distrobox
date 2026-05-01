@@ -120,3 +120,45 @@ e2e:
 	@test -d node_modules/playwright/.local-browsers 2>/dev/null || npx playwright install chromium
 	npx playwright test --reporter=list
 	@echo "→ e2e OK"
+
+# ─────────────────────────────────────────────────────────────────────
+# Static demo bundle (static-demo-builder skill)
+# Produces dist/demo/ — a self-hosted interactive demo of the dashboard
+# that runs entirely from canned fixtures with no backend.
+# ─────────────────────────────────────────────────────────────────────
+
+SKILL_TEMPLATES := demo/skill-templates
+
+.PHONY: demo demo-serve demo-clean demo-smoke
+
+demo:
+	@rm -rf dist/demo
+	@mkdir -p dist/demo/static dist/demo/samples dist/demo/fixtures
+	@python3 $(SKILL_TEMPLATES)/build_demo.py dist/demo \
+		--src=slopfinity/templates/index.html \
+		--canonical=https://github.com/matthewhand/amd-strix-halo-image-video-distrobox \
+		--strip-jinja
+	@cp slopfinity/static/app.js  dist/demo/static/
+	@cp slopfinity/static/app.css dist/demo/static/
+	@cp -r slopfinity/static/icons dist/demo/static/icons 2>/dev/null || true
+	@cp slopfinity/static/manifest.webmanifest dist/demo/static/ 2>/dev/null || true
+	@echo "// no-op SW for demo bundle" > dist/demo/static/sw.js
+	@cp $(SKILL_TEMPLATES)/demo-shim.js     dist/demo/static/
+	@cp $(SKILL_TEMPLATES)/demo-banner.html dist/demo/static/
+	@cp $(SKILL_TEMPLATES)/demo-banner.css  dist/demo/static/
+	@cp demo/fixtures/*.json dist/demo/fixtures/
+	@cp demo/samples/* dist/demo/samples/ 2>/dev/null || true
+	@cp demo/README.md dist/demo/
+	@echo "Demo bundle ready: $$(du -sh dist/demo | cut -f1) at dist/demo/"
+	@echo "  → make demo-serve   (or)   python3 -m http.server -d dist/demo 8765"
+
+demo-serve: demo
+	@cd dist/demo && python3 -m http.server 8765
+
+demo-smoke: demo
+	@(cd dist/demo && python3 -m http.server 8766 >/dev/null 2>&1 &) && sleep 1
+	@DEMO_URL=http://localhost:8766/ npx playwright test e2e/demo-smoke.spec.js --reporter=list || true
+	@pkill -f "http.server 8766" 2>/dev/null || true
+
+demo-clean:
+	@rm -rf dist/demo

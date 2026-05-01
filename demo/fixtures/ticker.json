@@ -1,0 +1,34 @@
+{
+  "_comment": "Slopfinity demo ticker config. Drives the queue + assets state machine via the WS shim.",
+  "stage_timeline": [
+    { "stage": "concept",   "dur_ticks": 1 },
+    { "stage": "image",     "dur_ticks": 2 },
+    { "stage": "video",     "dur_ticks": 3 },
+    { "stage": "merge",     "dur_ticks": 1 }
+  ],
+  "completed_pool": [
+    "slop_lighthouse.png",
+    "slop_dragon_unicorn.png",
+    "slop_neon_garden.png",
+    "slop_fox_bicycle.png",
+    "slop_octopus_chess.png",
+    "slop_aurora_city.png",
+    "slop_robot_garden.png",
+    "slop_dance_loop.png"
+  ],
+  "fake_stats": {
+    "gpu": 0,
+    "vram": 0,
+    "ram_u": 79.9,
+    "ram_t": 125,
+    "load_pct": 7,
+    "load_1m": 0.6,
+    "load_5m": 0.8,
+    "load_15m": 0.7,
+    "gpu_name": "Demo GPU (samples — no real device)",
+    "cpu_name": "Demo CPU",
+    "queue_pending": 0,
+    "queue_running": 0,
+    "queue_done": 0
+  }
+}

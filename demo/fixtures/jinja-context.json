@@ -1,0 +1,38 @@
+{
+  "branding": {
+    "app": {
+      "name": "Slopfinity Demo",
+      "short_name": "Demo",
+      "tagline": "Pre-recorded sandbox of the AMD Strix Halo image+video dashboard",
+      "logo_emoji": "🎞"
+    },
+    "colors": {
+      "primary": "#ff79c6",
+      "secondary": "#bd93f9",
+      "accent": "#50fa7b",
+      "neutral": "#414558",
+      "base_100": "#282a36"
+    },
+    "labels": {
+      "queue": "Queue",
+      "gallery_completed": "Slop",
+      "infinity_mode": "Endless",
+      "loading_default": "Demo loading…"
+    },
+    "background": { "svg": "" },
+    "aesthetics": {}
+  },
+  "_bg_url": "",
+  "outputs_disk": { "used_gb": 374.6, "free_gb": 91.4, "total_gb": 466.0, "pct": 76.3 },
+  "ram": { "used_gb": 79.9, "total_gb": 125, "pct": 64 },
+  "gpu": { "name": "Radeon 8060S Graphics", "pct": 0 },
+  "cpu": { "name": "AMD RYZEN AI MAX+ 395", "load_pct": 7 },
+  "config": {
+    "infinity_themes": ["lighthouse keeper", "neon garden", "dragon and unicorn"],
+    "frames": 49,
+    "size": "768x768",
+    "consolidation": "ffmpeg"
+  },
+  "queue": [],
+  "settings": {}
+}

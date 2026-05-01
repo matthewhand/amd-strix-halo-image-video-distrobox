@@ -1,0 +1,57 @@
+name: Demo bundle (deploy to gh-pages)
+
+# static-demo-builder skill — copy this to .github/workflows/demo.yml
+# Builds dist/demo/ on tag push or manual dispatch and publishes to
+# the gh-pages branch (which GitHub Pages serves at
+# https://<user>.github.io/<repo>/).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-and-publish-demo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Install the skill templates locally so the make target finds them.
+      # Alternative: vendor the skill templates under demo/templates/ in
+      # the repo and edit the Makefile.snippet's SKILL_TEMPLATES path.
+      - name: Stage skill templates
+        run: |
+          mkdir -p $HOME/.claude/skills/static-demo-builder
+          cp -r demo/skill-templates/* $HOME/.claude/skills/static-demo-builder/
+
+      - name: Build demo bundle
+        run: make demo
+
+      - name: Verify bundle weight
+        run: |
+          SIZE=$(du -sb dist/demo | cut -f1)
+          echo "Bundle size: $SIZE bytes"
+          if [ $SIZE -gt 31457280 ]; then
+            echo "::warning::Demo bundle exceeds 30 MB target"
+          fi
+
+      - name: Smoke test bundle
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+          (cd dist/demo && python3 -m http.server 8765 &)
+          sleep 2
+          npx playwright test e2e/demo-smoke.spec.js --reporter=list
+
+      - uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist/demo
+          destination_dir: ./
+          keep_files: false
