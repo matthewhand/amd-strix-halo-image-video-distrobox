@@ -2950,7 +2950,6 @@ main.layout-sliding-right #stats-navbar {
    The cards behind can extend full-height (calc(100vh - 88px)) since
    the pill is overlay, not in the document flow. */
 #focus-fab-pill {
-#focus-fab-pill {
     /* The container itself is now just a wrapper; children are positioned fixed */
     display: none;
 }
