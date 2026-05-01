@@ -2358,6 +2358,21 @@ body.no-card-fabs #focus-slop-fab {
     }
 }
 
+/* Touch-input devices have no hover state, so the per-row drag-handle /
+   add / delete controls in the story log can't be revealed by hover.
+   Promote them to full opacity on coarse-pointer devices so they're
+   permanently visible. Mouse users still get the subtle 60-75%
+   baseline + hover-100% pattern from app.js. */
+@media (pointer: coarse) {
+    #subjects-story-log .beat-drag-handle {
+        color: hsl(var(--bc) / 0.95) !important;
+    }
+    #subjects-story-log .endless-row-add,
+    #subjects-story-log .endless-row-del {
+        opacity: 1 !important;
+    }
+}
+
 /* Tablet single-card layouts: the sub-1024 viewports auto-redirect
    to a single-pane layout (`data-layout="subjects" | "queue" |
    "gallery"`) but on a >=768 tablet the active card was sized only

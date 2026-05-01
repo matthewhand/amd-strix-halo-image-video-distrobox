@@ -776,6 +776,13 @@
                                                 Story beats
                                             </div>
                                             <div class="flex items-center gap-1">
+                                                <label id="subjects-story-auto-stitch-pill"
+                                                    class="btn btn-ghost btn-xs gap-1 text-info cursor-pointer px-2 h-6 min-h-0 rounded-full border border-info/30 hover:bg-info/10 transition-colors"
+                                                    title="Auto-Stitch: Automatically concatenate FINAL_*.mp4 clips after every completion.">
+                                                    <input type="checkbox" id="subjects-story-auto-stitch" class="hidden peer" onchange="_updateAutoStitch(this.checked)">
+                                                    <span class="w-2 h-2 rounded-full bg-base-content/20 peer-checked:bg-info transition-all shadow-[0_0_4px_oklch(var(--in)/0.5)] peer-checked:shadow-[0_0_8px_oklch(var(--in))]"></span>
+                                                    <span class="text-[10px] font-bold uppercase tracking-tighter opacity-70 peer-checked:opacity-100">Auto-Stitch</span>
+                                                </label>
                                                 <button type="button" id="subjects-story-copy"
                                                     class="btn btn-ghost btn-xs gap-1" onclick="_copyEndlessStory()"
                                                     title="Copy the seed + every accepted suggestion to the clipboard">
@@ -812,15 +819,6 @@
                                         `slopfinity-endless-active-beat-idx`. #}
                                         <div id="subjects-story-log"
                                             class="text-xs font-mono leading-snug bg-base-200/60 border border-base-300/60 rounded p-1 max-h-40 overflow-y-auto m-0 flex flex-col gap-1"></div>
-                                        <div class="flex items-center justify-end gap-1 mt-1">
-                                            <label id="subjects-story-auto-stitch-pill"
-                                                class="btn btn-ghost btn-xs gap-1 text-info cursor-pointer px-2 h-6 min-h-0 rounded-full border border-info/30 hover:bg-info/10 transition-colors"
-                                                title="Auto-Stitch: Automatically concatenate FINAL_*.mp4 clips after every completion.">
-                                                <input type="checkbox" id="subjects-story-auto-stitch" class="hidden peer" onchange="_updateAutoStitch(this.checked)">
-                                                <span class="w-2 h-2 rounded-full bg-base-content/20 peer-checked:bg-info transition-all shadow-[0_0_4px_oklch(var(--in)/0.5)] peer-checked:shadow-[0_0_8px_oklch(var(--in))]"></span>
-                                                <span class="text-[10px] font-bold uppercase tracking-tighter opacity-70 peer-checked:opacity-100">Auto-Stitch</span>
-                                            </label>
-                                        </div>
                                     </div>
                                 </div>
 
