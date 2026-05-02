@@ -397,6 +397,58 @@ def set_state(mode="Idle", step="Waiting", video=0, total=0, chain=0, total_chai
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
     with open(STATE_FILE, "w") as f: json.dump(s, f)
 
+# Queue file is the IPC layer between the dashboard handlers, the worker
+# fleet, and the legacy run_fleet runner. Multiple writers race today —
+# `_claim_sync` in workers/base.py reads-mutates-writes without a lock,
+# and ~12 FastAPI endpoints (/inject, /queue/cancel, /queue/edit,
+# /queue/requeue, /queue/clear-failed, /queue/clear-completed,
+# /queue/toggle-infinity, /queue/toggle-polymorphic, /queue/pause, etc.)
+# do the same get-modify-save dance. Two writers in the same window
+# silently overwrite each other: stage status flips back to "pending"
+# after a worker just claimed it, edits get wiped by a finalizer, jobs
+# run twice. The audit's #1 high-priority correctness bug.
+#
+# Two complementary locks:
+#   * _QUEUE_LOCK_FILE  — flock-based filesystem mutex. Survives across
+#     processes (host run_fleet vs container slopfinity dashboard) and
+#     across worker restarts. Cheap on Linux. Held only for the read +
+#     write window; doesn't serialize unrelated callers.
+#   * _QUEUE_TMPFILE    — atomic write-rename so a torn write (process
+#     killed mid-fwrite) can't leave a corrupt JSON on disk. Readers
+#     either see the previous valid state or the new one — never half.
+#
+# `queue_lock()` is a context manager — call sites do
+#     with cfg.queue_lock():
+#         q = cfg.get_queue()
+#         ...mutate...
+#         cfg.save_queue(q)
+# to safely round-trip. Existing call sites that don't hold the lock
+# remain functional (the file lock + atomic write still cover the
+# torn-write case); they're just exposed to the read-then-write race
+# until updated.
+import contextlib
+import fcntl
+
+_QUEUE_LOCK_FILE = QUEUE_FILE + ".lock"
+
+
+@contextlib.contextmanager
+def queue_lock():
+    """Hold an OS-level advisory lock around a get_queue → save_queue
+    round-trip. Cooperative across processes (host runner + container
+    dashboard + worker subprocesses) since they all open the same
+    .lock file. Non-recursive: nesting will deadlock — keep critical
+    sections short and avoid calling out to other queue operations
+    while holding."""
+    os.makedirs(os.path.dirname(_QUEUE_LOCK_FILE), exist_ok=True)
+    with open(_QUEUE_LOCK_FILE, "a+") as fd:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def get_queue():
     if os.path.exists(QUEUE_FILE):
         try:
@@ -415,6 +467,16 @@ def get_queue():
             pass
     return []
 
+
 def save_queue(q):
+    """Atomic write-rename. Eliminates the torn-write window where a
+    crash mid-write leaves the queue file as partial JSON.
+    `os.replace` is POSIX atomic on the same filesystem (which is
+    where QUEUE_FILE lives by construction)."""
     os.makedirs(os.path.dirname(QUEUE_FILE), exist_ok=True)
-    with open(QUEUE_FILE, "w") as f: json.dump(q, f)
+    tmp = QUEUE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(q, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, QUEUE_FILE)

@@ -2738,9 +2738,39 @@ body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
 
 body.subj-mode-raw #subjects-per-stage textarea {
     flex: 1 1 auto !important;
+    /* 4rem (~64px) floor — enough for ~3 lines of the 0.75rem text-xs
+       font, which matches the typical "describe lighting, mood…"
+       per-stage prompt length. Larger floors (5rem+) push the four
+       textareas past the parent card's bounded height and the panel's
+       overflow-y kicks in, hiding the textareas behind a scrollbar.
+       Pairs with the raw-mode Queue Slop button being btn-md not
+       btn-lg so the per-stage panel keeps its share of vertical room. */
     min-height: 4rem !important;
     height: auto !important;
     resize: none;
+}
+
+/* Let the prompt card claim more vertical room in raw mode so the
+   four per-stage textareas have somewhere to live. Without this the
+   card sizes to its other-mode content (a single textarea), and raw's
+   four stacked textareas + Queue button overflow into a scroll. */
+body.subj-mode-raw #split-left {
+    flex: 1 1 auto;
+}
+body.subj-mode-raw #split-left > .card-body {
+    min-height: 0;
+}
+
+/* The raw pane wraps its panel + Queue button in an intermediate
+   `<div class="flex flex-col gap-2 mt-2">`. Without flex-grow the
+   panel can't bubble height up — even though the outer pane is
+   `flex: 1 1 auto`, the intermediate stays at content-height and
+   the per-stage panel (with its overflow:auto) compresses into a
+   tiny scrollable box. Make the intermediate grow too so the panel
+   gets the full available height. */
+body.subj-mode-raw .subjects-pane[data-pane-mode="raw"] > .flex.flex-col {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Raw mode rewrite-overlay — the rewrite button hovers over the top-right

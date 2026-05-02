@@ -161,6 +161,61 @@ function _seedToast(msg, kind) {
 // "we did the thing" message without having to know the seed origin.
 window._toast = _seedToast;
 
+// ---------------------------------------------------------------------------
+// `apiFetch(url, opts, label)` — wrapper around fetch() that auto-toasts
+// on non-2xx + network errors. The audit found ~30 silent failure sites
+// across the dashboard (settings save, queue cancel/edit/requeue, prompts
+// save, asset delete, etc.) that swallowed errors with `console.warn`.
+// User-perceived effect: clicked a button, nothing happened, no signal.
+//
+// Use:
+//   try {
+//     const data = await apiFetch('/queue/cancel', {method:'POST', body: ...}, 'Cancel job');
+//     // success path
+//   } catch (e) {
+//     // toast already fired; only catch if you need to react beyond the toast
+//   }
+//
+// Behavior:
+// - Fires the underlying fetch unchanged.
+// - Network error → toast `${label}: network error` and re-throw.
+// - HTTP non-2xx → toast `${label}: HTTP <code>` (or server-supplied
+//   `error` field) and throw with the parsed body for callers that
+//   want to react. The CSRF middleware (#142) returns 403 with
+//   `{ok:false, error:"csrf: ..."}` which surfaces as a clear toast.
+// - 2xx → return parsed JSON (or null for empty body).
+//
+// ---------------------------------------------------------------------------
+async function apiFetch(url, opts, label) {
+    label = label || 'Request';
+    let r;
+    try {
+        r = await fetch(url, opts || {});
+    } catch (e) {
+        if (window._toast) window._toast(`${label}: network error — ${e.message || e}`, 'error');
+        throw e;
+    }
+    let body = null;
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('json')) {
+        try { body = await r.json(); } catch (e) { body = null; }
+    } else {
+        try { body = await r.text(); } catch (e) { body = null; }
+    }
+    if (!r.ok) {
+        const errMsg = (body && typeof body === 'object' && body.error)
+            ? body.error
+            : `HTTP ${r.status}`;
+        if (window._toast) window._toast(`${label}: ${errMsg}`, 'error');
+        const err = new Error(`${label}: ${errMsg}`);
+        err.status = r.status;
+        err.body = body;
+        throw err;
+    }
+    return body;
+}
+window.apiFetch = apiFetch;
+
 async function _uploadSeedFiles(fileList) {
     const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith('image/'));
     if (!files.length) return { saved: [], skipped: [] };
@@ -3475,13 +3530,58 @@ async function _fetchChatWithRetry(messages, maxRetries) {
 }
 window._fetchChatWithRetry = _fetchChatWithRetry;
 
+// Chat send + pending-message queue
+//
+// When the LLM is in-flight (`_chatInflight === true`), pressing Send
+// stashes the new text into `_chatPendingMessage` instead of dropping it.
+// On completion, _sendChatMessage drains the pending slot by recursing
+// once with the queued text. Single-slot, replace-with-newest semantics:
+// double-types preserve the most recent intent. Cancel via the × button
+// on the pending bubble before the in-flight call returns.
+// ---------------------------------------------------------------------------
+let _chatInflight = false;
+let _chatPendingMessage = null;
+
+function _renderPendingChat() {
+    const el = document.getElementById('subjects-chat-pending');
+    const txt = document.getElementById('subjects-chat-pending-text');
+    if (!el || !txt) return;
+    if (_chatPendingMessage) {
+        txt.textContent = _chatPendingMessage;
+        el.classList.remove('hidden');
+    } else {
+        el.classList.add('hidden');
+        txt.textContent = '';
+    }
+}
+
+function _cancelPendingChat() {
+    _chatPendingMessage = null;
+    _renderPendingChat();
+}
+window._cancelPendingChat = _cancelPendingChat;
+
 async function _sendChatMessage() {
     const input = document.getElementById('subjects-chat-input');
     const sendBtn = document.getElementById('subjects-chat-send');
     if (!input) return;
     const text = (input.value || '').trim();
     if (!text) return;
+
+    // If the LLM is already thinking, queue this message instead of
+    // dropping it. Single-slot: replace-with-newest preserves the
+    // latest intent (rapid retypes win). Clear input so the user can
+    // see their message was accepted; show the pending bubble so they
+    // know it'll fire after the current reply lands.
+    if (_chatInflight) {
+        _chatPendingMessage = text;
+        input.value = '';
+        _renderPendingChat();
+        return;
+    }
+
     input.value = '';
+    _chatInflight = true;
     if (sendBtn) {
         sendBtn.disabled = true;
         let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
@@ -3509,6 +3609,7 @@ async function _sendChatMessage() {
         _setChatHistory(after);
         _renderChatLog();
     }
+    _chatInflight = false;
     if (sendBtn) {
         sendBtn.disabled = false;
         let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
@@ -3518,6 +3619,17 @@ async function _sendChatMessage() {
     // Refresh reply suggestions against the new latest assistant turn so
     // the user has 4 contextual continuation chips ready.
     if (typeof _renderChatReplies === 'function') _renderChatReplies();
+
+    // Drain pending: if the user queued another message during this
+    // turn, fire it now. Stash + clear the slot before recursing so a
+    // network error in the queued send doesn't loop on stale state.
+    if (_chatPendingMessage) {
+        const queued = _chatPendingMessage;
+        _chatPendingMessage = null;
+        _renderPendingChat();
+        if (input) input.value = queued;
+        await _sendChatMessage();
+    }
 }
 window._sendChatMessage = _sendChatMessage;
 

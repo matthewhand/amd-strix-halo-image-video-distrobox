@@ -161,6 +161,20 @@ cd amd-strix-halo-image-video-distrobox
 docker build -t amd-strix-halo-image-video-distrobox .
 ```
 
+Ensure distrobox has access to the image:
+
+```bash
+podman images | grep amd-strix-halo-image-video-distrobox
+```
+
+If no results are found, export the image from docker and import to podman:
+
+```bash
+docker save -o strix_image.tar amd-strix-halo-image-video-distrobox:latest
+
+podman load -i strix_image.tar
+```
+
 Then create the distrobox:
 
 ```bash
