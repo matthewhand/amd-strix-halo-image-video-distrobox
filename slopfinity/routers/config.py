@@ -1,15 +1,50 @@
 import os
 import json
+import random
 from fastapi import APIRouter, Request, Body
 from fastapi.responses import JSONResponse, HTMLResponse
 import slopfinity.config as cfg
 from slopfinity.llm.probe import discover as llm_discover, ping as llm_ping
+from slopfinity.llm import DEFAULT_LLM_CONFIG, list_providers
 from fastapi.templating import Jinja2Templates
 from slopfinity.paths import TEMPLATES_DIR
+import slopfinity.branding as _branding
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Real-model candidate pools per role. `__random__` picks uniformly from
+# the role's pool when /config arrives.
+_RANDOM_CANDIDATES = {
+    "base_model": ["qwen", "ernie"],
+    "audio_model": ["heartmula"],
+    "tts_model": ["qwen-tts", "kokoro"],
+}
+
+
+def _coerce_cpu_mode(raw) -> str:
+    """Normalize CPU mode input to 'gpu', 'smart', or 'cpu'."""
+    if raw is None:
+        return "smart"
+    if isinstance(raw, bool):
+        return "cpu" if raw else "gpu"
+    s = str(raw).lower().strip()
+    if s in ("cpu", "smart", "gpu"):
+        return s
+    return "smart"
+
+
+def _cpu_mode_to_bool(raw) -> bool | None:
+    """Convert cpu mode string back to boolean for backward compat."""
+    mode = _coerce_cpu_mode(raw)
+    if mode == "cpu":
+        return True
+    if mode == "gpu":
+        return False
+    return None
 
 
 router = APIRouter()
+
 
 @router.post("/config")
 async def update_config(data: dict = Body(...)):
@@ -27,6 +62,7 @@ async def update_config(data: dict = Body(...)):
     config.update(data)
     cfg.save_config(config)
     return {"status": "ok"}
+
 
 @router.get("/settings")
 async def settings_get():
@@ -77,21 +113,33 @@ async def settings_get():
         "chaos_suggest_system_prompt_default": cfg.DEFAULT_CHAOS_SUGGEST_SYSTEM_PROMPT,
         "void_fallback_template": c.get("void_fallback_template") or "",
         "void_fallback_template_default": cfg.DEFAULT_VOID_FALLBACK_TEMPLATE,
-        "suggest_use_subjects": bool(c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)),
+        "suggest_use_subjects": bool(
+            c.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS)
+        ),
         "suggest_custom_prompt": c.get("suggest_custom_prompt") or "",
-        "suggest_auto_disabled": bool(c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)),
-        "disk_min_pct": float(c.get("disk_min_pct") if c.get("disk_min_pct") is not None else 1),
-        "disk_min_gb": float(c.get("disk_min_gb") if c.get("disk_min_gb") is not None else 5),
+        "suggest_auto_disabled": bool(
+            c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)
+        ),
+        "disk_min_pct": float(
+            c.get("disk_min_pct") if c.get("disk_min_pct") is not None else 1
+        ),
+        "disk_min_gb": float(
+            c.get("disk_min_gb") if c.get("disk_min_gb") is not None else 5
+        ),
         # Named suggestion prompts. Active entries appear in the unified
         # Suggestions badge dropdown + drive Endless per-row selectors.
-        "suggest_prompts": list(c.get("suggest_prompts") or cfg.DEFAULT_SUGGEST_PROMPTS),
+        "suggest_prompts": list(
+            c.get("suggest_prompts") or cfg.DEFAULT_SUGGEST_PROMPTS
+        ),
         "auto_suspend": c.get("auto_suspend") or list(cfg.DEFAULT_AUTO_SUSPEND),
         # Per-model loading prefs (Settings → Scheduler → "Per-model loading
         # preferences"). Both lists default to empty; the hydrator on the
         # client toggles checkboxes based on membership.
         "model_loading": {
             "sticky": list((c.get("model_loading") or {}).get("sticky") or []),
-            "eager_unload": list((c.get("model_loading") or {}).get("eager_unload") or []),
+            "eager_unload": list(
+                (c.get("model_loading") or {}).get("eager_unload") or []
+            ),
         },
         "scheduler": {
             "memory_safety_gb": (c.get("scheduler") or {}).get("memory_safety_gb", 10),
@@ -104,26 +152,27 @@ async def settings_get():
             # Backward compat: if the stored value is a boolean (old schema),
             # True → "cpu" and False → "gpu". Default is "smart".
             "llm_cpu_mode": _coerce_cpu_mode(
-                (c.get("scheduler") or {}).get("llm_cpu_mode") or
-                (c.get("scheduler") or {}).get("llm_cpu_only")
+                (c.get("scheduler") or {}).get("llm_cpu_mode")
+                or (c.get("scheduler") or {}).get("llm_cpu_only")
             ),
             "tts_cpu_mode": _coerce_cpu_mode(
-                (c.get("scheduler") or {}).get("tts_cpu_mode") or
-                (c.get("scheduler") or {}).get("tts_cpu_only")
+                (c.get("scheduler") or {}).get("tts_cpu_mode")
+                or (c.get("scheduler") or {}).get("tts_cpu_only")
             ),
             # Derived booleans kept for backward compat with any external
             # code that still reads them. "smart" resolves to None here —
             # callers that need the live decision should use _resolve_cpu_mode().
             "llm_cpu_only": _cpu_mode_to_bool(
-                (c.get("scheduler") or {}).get("llm_cpu_mode") or
-                (c.get("scheduler") or {}).get("llm_cpu_only")
+                (c.get("scheduler") or {}).get("llm_cpu_mode")
+                or (c.get("scheduler") or {}).get("llm_cpu_only")
             ),
             "tts_cpu_only": _cpu_mode_to_bool(
-                (c.get("scheduler") or {}).get("tts_cpu_mode") or
-                (c.get("scheduler") or {}).get("tts_cpu_only")
+                (c.get("scheduler") or {}).get("tts_cpu_mode")
+                or (c.get("scheduler") or {}).get("tts_cpu_only")
             ),
         },
     }
+
 
 @router.post("/settings")
 async def settings_post(data: dict = Body(...)):
@@ -151,7 +200,9 @@ async def settings_post(data: dict = Body(...)):
         except Exception:
             current_llm["temperature"] = 0.7
         try:
-            current_llm["max_retries"] = max(0, min(5, int(current_llm.get("max_retries", 2))))
+            current_llm["max_retries"] = max(
+                0, min(5, int(current_llm.get("max_retries", 2)))
+            )
         except Exception:
             current_llm["max_retries"] = 2
         try:
@@ -252,10 +303,14 @@ async def settings_post(data: dict = Body(...)):
     cfg.save_config(c)
     return {"ok": True}
 
+
 @router.get("/settings/models")
-async def settings_models(base_url: str = "", provider: str = "lmstudio", api_key: str = ""):
+async def settings_models(
+    base_url: str = "", provider: str = "lmstudio", api_key: str = ""
+):
     """Proxy list_models to the chosen local provider (never call from browser)."""
     from slopfinity.llm.providers import get_provider
+
     if not base_url:
         return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
     # If the api_key arrives as the mask, resolve it from stored config.
@@ -266,7 +321,10 @@ async def settings_models(base_url: str = "", provider: str = "lmstudio", api_ke
         models = p.list_models(base_url, api_key=api_key or None, timeout=5)
         return {"ok": True, "models": [m["id"] for m in models]}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e), "models": []}, status_code=200)
+        return JSONResponse(
+            {"ok": False, "error": str(e), "models": []}, status_code=200
+        )
+
 
 @router.post("/settings/test")
 async def settings_test(data: dict = Body(...)):
@@ -280,14 +338,20 @@ async def settings_test(data: dict = Body(...)):
         return {"ok": False, "error": "base_url and model_id required", "latency_ms": 0}
     # Also count models to enrich the ✓ badge
     from slopfinity.llm.providers import get_provider
+
     count = None
     try:
-        count = len(get_provider(provider).list_models(base_url, api_key=api_key or None, timeout=3))
+        count = len(
+            get_provider(provider).list_models(
+                base_url, api_key=api_key or None, timeout=3
+            )
+        )
     except Exception:
         count = None
     res = llm_ping(base_url, provider, model_id, api_key=api_key or None, timeout=15)
     res["model_count"] = count
     return res
+
 
 @router.get("/settings/probe")
 async def settings_probe():
