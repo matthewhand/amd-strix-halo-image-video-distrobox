@@ -3159,11 +3159,13 @@ function _renderChatLog() {
             <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm9.4 3.5c0-.5 0-1-.1-1.5l2-1.5-2-3.4-2.3.8c-.8-.7-1.7-1.2-2.7-1.5L15.8 2h-3.6l-.5 2.4c-1 .3-1.9.8-2.7 1.5l-2.3-.8-2 3.4 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.4 2.3-.8c.8.7 1.7 1.2 2.7 1.5l.5 2.4h3.6l.5-2.4c1-.3 1.9-.8 2.7-1.5l2.3.8 2-3.4-2-1.5c.1-.5.1-1 .1-1.5z"/>
         </svg>
     </span>`;
-    const isThinkingMsg = (m) => {
-        if (!m) return false;
-        const r = m.role || '';
-        return r === 'tool' || (r === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
-    };
+     const isThinkingMsg = (m) => {
+         if (!m) return false;
+         // Treat retry placeholders as thinking so we show cogs during retries
+         if (m._retry_placeholder) return true;
+         const r = m.role || '';
+         return r === 'tool' || (r === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
+     };
     // Two-pass render: walk history fusing consecutive thinking-run
     // messages (assistant w/ tool_calls + tool results) into ONE bubble,
     // emit standalone bubbles for user + assistant-text turns. The fused
