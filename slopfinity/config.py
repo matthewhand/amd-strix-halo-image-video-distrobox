@@ -175,6 +175,8 @@ DEFAULT_SUGGEST_PER_ROW_PROMPTS = False
 DEFAULT_SCHEDULER = {
     "use_planner": False,
     "memory_safety_gb": 10,
+    "llm_cpu_mode": "smart",
+    "tts_cpu_mode": "smart",
 }
 
 
@@ -259,6 +261,12 @@ DEFAULT_CONFIG = {
     "suggest_max_len_simple": 80,
     "suggest_max_len_chat": 160,
     "show_date_time": False,
+    # Badge and progress-bar colour mode.
+    # "themed" (default): each stage uses its DaisyUI token (accent/secondary/
+    #   warning/info/success) and naturally follows the active theme.
+    # "custom": all model badges + progress-bar fills use badge_custom_color.
+    "badge_theme": "themed",
+    "badge_custom_color": "#7c3aed",
 }
 
 

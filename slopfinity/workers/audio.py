@@ -1,34 +1,53 @@
-"""AudioWorker — Heartmula music generation (stub for Phase 3).
+"""AudioWorker — Heartmula music generation (Phase 4 wired).
 
-Heartmula isn't easily callable from the dashboard process today (the
-launcher lives in the toolbox container and is invoked by the fleet
-runner). Per the Phase 3 spec we ship this as a no-op that lets the
-queue advance; Phase 4's coordinator will wire in the real call.
+Calls run_audio_heartmula() which shells out to the heartmula_launcher
+inside the amd-strix-halo-image-video-toolbox Docker container. If that
+container / script isn't present, the call returns a non-zero exit code
+and the queue item is marked failed (not silently skipped).
 
-Output WAV path will land in `item.stages.audio.asset` once wired.
+Output WAV path lands in `item.stages.audio.asset`.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
-from ._compat import StageWorker
+from ._compat import StageWorker, stage_get, item_v_idx
 
 
 class AudioWorker(StageWorker):
-    """Stage worker for the `audio` role — Heartmula music. STUB."""
+    """Stage worker for the `audio` role — Heartmula music."""
 
     role = "audio"
 
     def __init__(self, role: str = "audio") -> None:
         super().__init__(role=role)
 
-    async def run_stage(self, item: Any) -> Dict[str, Any]:  # noqa: ARG002
-        # TODO(phase-4): replace with real Heartmula docker run via
-        #   `slopfinity.workers.run_audio_heartmula(prompt, out)` once the
-        #   coordinator passes through prompt/out paths from queue items.
-        return {
-            "ok": True,
-            "output": None,
-            "asset": None,
-            "skipped": "audio worker stub — Phase 4 wires in HeartMuLa",
-        }
+    async def run_stage(self, item: Any) -> Dict[str, Any]:
+        from slopfinity.workers import run_audio_heartmula  # lazy import avoids circular
+
+        prompt = stage_get(item, "concept", "output") or ""
+        if not prompt:
+            # No concept output — fall through silently so the queue advances.
+            return {
+                "ok": True,
+                "output": None,
+                "asset": None,
+                "skipped": "audio skipped — no concept prompt available",
+            }
+
+        v_idx = item_v_idx(item)
+        out_dir = (
+            (item.get("config_snapshot") or {}).get("out_dir")
+            or os.environ.get("SLOPFINITY_OUT_DIR", "/tmp")
+        )
+        out_path = os.path.join(out_dir, f"v{v_idx}_audio.wav")
+
+        try:
+            rc = await run_audio_heartmula(prompt, out_path)
+        except Exception as exc:
+            return {"ok": False, "error": f"heartmula launch error: {exc}"}
+
+        if rc == 0:
+            return {"ok": True, "asset": out_path}
+        return {"ok": False, "error": f"heartmula exited with code {rc}"}
