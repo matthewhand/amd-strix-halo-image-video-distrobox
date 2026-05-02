@@ -3,6 +3,7 @@
 Coordination layer so the fleet pipeline runs safely on AMD Strix Halo's
 128 GB unified memory without OOM-ing. Stdlib only.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,10 +17,12 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
+from collections import deque
 from typing import Optional, Tuple
 
 from . import config as _config
 from . import auto_suspend as _auto_suspend
+
 # Phase 5: optional planner consultation. Defensive import so the scheduler
 # still works even if memory_planner is missing or partially refactored.
 try:
@@ -46,6 +49,7 @@ STAGE_BUDGETS = {
 OVERHEAD_GB = 6
 SAFETY_GB = 10
 COMFY_URL = "http://localhost:8188"
+
 
 # Global singletons. asyncio primitives bind to the running loop at first use.
 #
@@ -76,14 +80,26 @@ class GPUReservation:
         # skip the reservation entirely (the model is already loaded).
         # Maps model name -> last_used_ts (for LRU-ish eviction).
         self.resident_models: dict[str, float] = {}
+        # Rolling history of GPU usage percentages.
+        self.gpu_history: deque[int] = deque()
+
+    def record_gpu_usage(self, pct: int, max_samples: int = 5) -> None:
+        """Add a GPU usage sample and notify any waiting stages."""
+        self.gpu_history.append(pct)
+        while len(self.gpu_history) > max_samples:
+            self.gpu_history.popleft()
+
+    def get_gpu_avg(self) -> float:
+        """Return the average GPU usage from the rolling history."""
+        if not self.gpu_history:
+            return 0.0
+        return sum(self.gpu_history) / len(self.gpu_history)
 
     def snapshot(self) -> dict:
         """Diagnostic snapshot — never raises, never blocks."""
         return {
             "resident_gb": round(self.resident_gb, 2),
-            "in_flight": [
-                {"job_id": k, **v} for k, v in self.in_flight.items()
-            ],
+            "in_flight": [{"job_id": k, **v} for k, v in self.in_flight.items()],
             "resident_models": list(self.resident_models.keys()),
         }
 
@@ -109,11 +125,12 @@ def _ensure_loop_bound() -> None:
         return
     cond_loop = getattr(GPU.cond, "_loop", None)
     if cond_loop is not None and cond_loop is not running:
-        # Preserve resident_gb / in_flight (they're plain Python state).
+        # Preserve resident_gb / in_flight / gpu_history (they're plain Python state).
         old = GPU
         GPU = GPUReservation()
         GPU.resident_gb = old.resident_gb
         GPU.in_flight = dict(old.in_flight)
+        GPU.gpu_history = deque(old.gpu_history)
         gpu_lock = GPU.cond
     paused_loop = getattr(paused, "_loop", None)
     if paused_loop is not None and paused_loop is not running:
@@ -121,6 +138,7 @@ def _ensure_loop_bound() -> None:
         paused = asyncio.Event()
         if was_set:
             paused.set()
+
 
 # Monotonic id generator for anonymous reservations (callers without a job_id).
 _RESERVATION_ID = itertools.count(1)
@@ -152,7 +170,9 @@ def stage_budget_gb(stage: str, model: str) -> float:
     return float(base + OVERHEAD_GB)
 
 
-def check_budget(stage: str, model: str, safety_gb: int = SAFETY_GB) -> Tuple[bool, float, float]:
+def check_budget(
+    stage: str, model: str, safety_gb: int = SAFETY_GB
+) -> Tuple[bool, float, float]:
     """Return (ok, available_gb, needed_gb).
 
     `needed_gb` = stage peak + overhead + safety margin.
@@ -178,7 +198,9 @@ async def free_between(comfy_url: str = COMFY_URL) -> dict:
     before = _mem_available_gb()
     ok = False
     try:
-        payload = json.dumps({"unload_models": True, "free_memory": True}).encode("utf-8")
+        payload = json.dumps({"unload_models": True, "free_memory": True}).encode(
+            "utf-8"
+        )
         req = urllib.request.Request(
             f"{comfy_url}/free",
             data=payload,
@@ -221,14 +243,16 @@ async def emergency_free() -> dict:
         except Exception:
             pass
     result["killed"] = killed
-    await _emit({
-        "type": "emergency_free",
-        "stage": None,
-        "model": None,
-        "freed_gb": result.get("freed_gb", 0.0),
-        "killed": killed,
-        "ts": _now(),
-    })
+    await _emit(
+        {
+            "type": "emergency_free",
+            "stage": None,
+            "model": None,
+            "freed_gb": result.get("freed_gb", 0.0),
+            "killed": killed,
+            "ts": _now(),
+        }
+    )
     return result
 
 
@@ -276,13 +300,15 @@ async def acquire_gpu(
         # Only the OVERHEAD_GB safety pad is "fresh"; the model weights are
         # already accounted for in resident_gb.
         need = float(OVERHEAD_GB)
-        await _emit({
-            "type": "planner_hit",
-            "stage": stage,
-            "model": model,
-            "saved_gb": round(base_need - need, 2),
-            "ts": _now(),
-        })
+        await _emit(
+            {
+                "type": "planner_hit",
+                "stage": stage,
+                "model": model,
+                "saved_gb": round(base_need - need, 2),
+                "ts": _now(),
+            }
+        )
     else:
         need = base_need
 
@@ -297,18 +323,43 @@ async def acquire_gpu(
             # (no other stage running) this collapses to the legacy
             # check_budget() formula and is fully backwards compatible.
             ok = projected_resident <= max(0.0, available - float(safety_gb))
+
+            # GPU Guard rule: if enabled, we also wait for GPU usage to be low.
+            conf = _load_scheduler_config()
+            guard_enabled = bool(conf.get("pause_for_idle_gpu", False))
+            if guard_enabled and ok:
+                max_pct = float(conf.get("pause_idle_max_pct", 50))
+                # Only wait if we have at least one sample.
+                if GPU.gpu_history:
+                    avg = GPU.get_gpu_avg()
+                    if avg > max_pct:
+                        ok = False
+                        if blocks % 10 == 0:  # Throttled notification
+                            await _emit(
+                                {
+                                    "type": "gpu_idle_wait",
+                                    "stage": stage,
+                                    "model": model,
+                                    "gpu_avg_pct": round(avg, 1),
+                                    "max_pct": max_pct,
+                                    "ts": _now(),
+                                }
+                            )
+
             if ok:
                 break
             blocks += 1
-            await _emit({
-                "type": "budget_block",
-                "stage": stage,
-                "model": model,
-                "available_gb": available,
-                "needed_gb": round(projected_resident + float(safety_gb), 2),
-                "resident_gb": round(GPU.resident_gb, 2),
-                "ts": _now(),
-            })
+            await _emit(
+                {
+                    "type": "budget_block",
+                    "stage": stage,
+                    "model": model,
+                    "available_gb": available,
+                    "needed_gb": round(projected_resident + float(safety_gb), 2),
+                    "resident_gb": round(GPU.resident_gb, 2),
+                    "ts": _now(),
+                }
+            )
             # On the first block, attempt a free pass (releases ComfyUI cached
             # weights without holding the cond mutex while doing network I/O).
             if blocks == 1:
@@ -327,14 +378,16 @@ async def acquire_gpu(
             except asyncio.TimeoutError:
                 pass
             if blocks >= 30:  # ~30s — bail out and let caller OOM-retry
-                await _emit({
-                    "type": "oom_retry",
-                    "stage": stage,
-                    "model": model,
-                    "available_gb": available,
-                    "needed_gb": round(projected_resident + float(safety_gb), 2),
-                    "ts": _now(),
-                })
+                await _emit(
+                    {
+                        "type": "oom_retry",
+                        "stage": stage,
+                        "model": model,
+                        "available_gb": available,
+                        "needed_gb": round(projected_resident + float(safety_gb), 2),
+                        "ts": _now(),
+                    }
+                )
                 break
 
         # Reserve our slice while still holding cond.
@@ -353,16 +406,18 @@ async def acquire_gpu(
             GPU.resident_models[model] = _now()
 
     wait_seconds = round(_now() - wait_start, 2)
-    await _emit({
-        "type": "stage_start",
-        "stage": stage,
-        "model": model,
-        "budget_gb": need,
-        "available_gb": _mem_available_gb(),
-        "resident_gb": round(GPU.resident_gb, 2),
-        "wait_seconds": wait_seconds,
-        "ts": _now(),
-    })
+    await _emit(
+        {
+            "type": "stage_start",
+            "stage": stage,
+            "model": model,
+            "budget_gb": need,
+            "available_gb": _mem_available_gb(),
+            "resident_gb": round(GPU.resident_gb, 2),
+            "wait_seconds": wait_seconds,
+            "ts": _now(),
+        }
+    )
 
     # Auto-suspend co-resident services (LM Studio, ComfyUI, Qwen-TTS, ...)
     # via the configured `auto_suspend` list. See auto_suspend.py.
@@ -372,13 +427,15 @@ async def acquire_gpu(
     try:
         sus_results = await _auto_suspend.suspend_all(as_entries)
         if sus_results:
-            await _emit({
-                "type": "auto_suspend_start",
-                "stage": stage,
-                "model": model,
-                "results": sus_results,
-                "ts": _now(),
-            })
+            await _emit(
+                {
+                    "type": "auto_suspend_start",
+                    "stage": stage,
+                    "model": model,
+                    "results": sus_results,
+                    "ts": _now(),
+                }
+            )
     except Exception:
         sus_results = []
 
@@ -413,24 +470,28 @@ async def acquire_gpu(
         try:
             res_results = await _auto_suspend.resume_all(as_entries)
             if res_results:
-                await _emit({
-                    "type": "auto_suspend_end",
-                    "stage": stage,
-                    "model": model,
-                    "results": res_results,
-                    "ts": _now(),
-                })
+                await _emit(
+                    {
+                        "type": "auto_suspend_end",
+                        "stage": stage,
+                        "model": model,
+                        "results": res_results,
+                        "ts": _now(),
+                    }
+                )
         except Exception:
             pass
-        await _emit({
-            "type": "stage_end",
-            "stage": stage,
-            "model": model,
-            "peak_mem_gb": peak_used,
-            "resident_gb": round(GPU.resident_gb, 2),
-            "duration_seconds": round(_now() - start, 2),
-            "ts": _now(),
-        })
+        await _emit(
+            {
+                "type": "stage_end",
+                "stage": stage,
+                "model": model,
+                "peak_mem_gb": peak_used,
+                "resident_gb": round(GPU.resident_gb, 2),
+                "duration_seconds": round(_now() - start, 2),
+                "ts": _now(),
+            }
+        )
 
 
 async def pause() -> None:
@@ -450,6 +511,7 @@ def is_paused() -> bool:
 # methods (sigstop / rest_unload / docker_stop / sigterm) and
 # docs/auto-suspend-design.md for the design rationale.
 # ---------------------------------------------------------------------------
+
 
 def _load_scheduler_config() -> dict:
     """Read the `scheduler` block from config.json. Defaults on any error."""
@@ -485,6 +547,7 @@ def _load_auto_suspend_entries() -> list[dict]:
 # and the fleet runner / external callers may still import them. They now
 # dispatch through the new framework's lmstudio entry. New code should call
 # `slopfinity.auto_suspend.suspend_all(...)` directly with the desired list.
+
 
 async def suspend_llm_async() -> dict:
     return await _auto_suspend.legacy_suspend_lmstudio()

@@ -49,6 +49,7 @@ from slopfinity.paths import EXP_DIR, TTS_OUT_DIR, STATIC_DIR, TEMPLATES_DIR
 # enhance traffic into a sequential queue from the model's POV. Each
 # call still runs off-loop (asyncio.to_thread), so FastAPI's event loop
 # stays responsive — only the LLM-backed coroutines wait their turn.
+_LLM_LOCK = asyncio.Lock()
 
 
 app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
