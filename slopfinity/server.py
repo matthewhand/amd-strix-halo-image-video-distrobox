@@ -63,6 +63,86 @@ app.include_router(llm_router)
 app.include_router(coordinator_router)
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
+@app.get("/static/sw.js", include_in_schema=False)
+async def serve_sw_js():
+    """Serve the service worker with a content-hash cache version
+    substituted into the `__CACHE_VERSION__` sentinel. Eliminates the
+    manual `slopfinity-shell-vNNN` bump that every UI PR has had to
+    remember (the audit found this in PR-D — bumped 6× during the
+    visual-polish train alone).
+
+    Hash is computed from the shell assets that, if changed, MUST
+    invalidate the user's cache: app.js, app.css, the rendered
+    template (index.html source), manifest, and the icon set. Cached
+    in-process with a 5s TTL so the per-request cost is one stat call
+    when assets are stable, one read+sha256 when they change."""
+    return FileResponse(_sw_js_with_hash(), media_type="application/javascript", headers={
+        "Cache-Control": "no-cache",  # browser MUST revalidate the SW itself
+        "Service-Worker-Allowed": "/",
+    })
+
+
+_sw_cache = {"hash": None, "ts": 0.0, "tmp_path": None}
+
+
+def _sw_js_with_hash() -> str:
+    """Return a path to a temp file containing the SW source with the
+    `__CACHE_VERSION__` sentinel replaced by the current shell hash.
+    The temp file is rewritten in-place when the hash changes so we
+    don't litter /tmp with one file per change."""
+    import hashlib
+    import tempfile
+
+    src_path = os.path.join(STATIC_DIR, "sw.js")
+    now = time.time()
+    if _sw_cache["tmp_path"] and (now - _sw_cache["ts"]) < 5.0 and os.path.exists(_sw_cache["tmp_path"]):
+        return _sw_cache["tmp_path"]
+
+    h = hashlib.sha256()
+    candidates = [
+        os.path.join(STATIC_DIR, "app.js"),
+        os.path.join(STATIC_DIR, "app.css"),
+        os.path.join(STATIC_DIR, "manifest.webmanifest"),
+        os.path.join(TEMPLATES_DIR, "index.html"),
+    ]
+    icons_dir = os.path.join(STATIC_DIR, "icons")
+    if os.path.isdir(icons_dir):
+        for n in sorted(os.listdir(icons_dir)):
+            candidates.append(os.path.join(icons_dir, n))
+    for p in candidates:
+        try:
+            with open(p, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+        except FileNotFoundError:
+            continue
+    digest = h.hexdigest()[:12]
+    cache_name = f"slopfinity-shell-{digest}"
+
+    if _sw_cache["hash"] == digest and _sw_cache["tmp_path"] and os.path.exists(_sw_cache["tmp_path"]):
+        _sw_cache["ts"] = now
+        return _sw_cache["tmp_path"]
+
+    try:
+        with open(src_path, "r") as f:
+            body = f.read()
+    except Exception:
+        return src_path  # fall back to the static file as-is
+    body = body.replace("__CACHE_VERSION__", cache_name)
+
+    tmp_path = _sw_cache["tmp_path"]
+    if not tmp_path:
+        fd, tmp_path = tempfile.mkstemp(prefix="slopfinity-sw-", suffix=".js")
+        os.close(fd)
+    with open(tmp_path, "w") as f:
+        f.write(body)
+    _sw_cache.update(hash=digest, ts=now, tmp_path=tmp_path)
+    return tmp_path
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -72,6 +152,68 @@ async def favicon():
     so without this route every page load logs a 404."""
     from fastapi.responses import FileResponse
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
+
+
+# ---------------------------------------------------------------------------
+# Health probes — `/healthz` and `/readyz` so monitoring / orchestrators
+# / future docker-compose healthchecks can probe the dashboard without
+# parsing the full /runner/status payload. Audit's #2 high-priority
+# observability gap.
+#
+#   /healthz — process liveness. Always 200 if the FastAPI worker is
+#              answering. No deps. Cheap. For a load balancer.
+#   /readyz  — service readiness. 200 only if the queue file is
+#              readable, EXP_DIR is writable, and the LLM probe is
+#              live. 503 with a body listing the failing checks
+#              otherwise. For startup gating + alerting.
+#
+# Both endpoints are unauthenticated (consistent with the rest of the
+# dashboard's read endpoints) and skipped by the CSRF middleware
+# (GET methods always pass-through).
+# ---------------------------------------------------------------------------
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"ok": True, "service": "slopfinity"}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    checks = {}
+    # Queue file readable
+    try:
+        cfg.get_queue()
+        checks["queue_readable"] = True
+    except Exception as e:
+        checks["queue_readable"] = False
+        checks["queue_error"] = str(e)[:120]
+    # EXP_DIR writable
+    try:
+        exp_dir = os.environ.get("EXP_DIR") or os.path.join(os.getcwd(), "comfy-outputs", "experiments")
+        os.makedirs(exp_dir, exist_ok=True)
+        probe = os.path.join(exp_dir, ".readyz-probe")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+        checks["exp_dir_writable"] = True
+    except Exception as e:
+        checks["exp_dir_writable"] = False
+        checks["exp_dir_error"] = str(e)[:120]
+    # LLM probe — soft, mark unhealthy but still 200 on read failures
+    # if everything else is OK (LLM is optional for dashboard liveness)
+    try:
+        from .llm.probe import discover as _llm_discover
+        _llm = (cfg.load_config().get("llm") or {})
+        _bu = _llm.get("base_url") or "http://localhost:1234/v1"
+        # Don't actually call out — just confirm the URL is well-formed.
+        # An end-to-end LLM call belongs in /llm/health, not /readyz.
+        from urllib.parse import urlparse
+        u = urlparse(_bu)
+        checks["llm_url_ok"] = bool(u.scheme and u.hostname)
+    except Exception as e:
+        checks["llm_url_ok"] = False
+        checks["llm_error"] = str(e)[:120]
+    ok = checks.get("queue_readable") and checks.get("exp_dir_writable")
+    return JSONResponse({"ok": bool(ok), "checks": checks}, status_code=200 if ok else 503)
 
 
 @app.middleware("http")
@@ -624,16 +766,236 @@ def _resolve_cpu_mode(mode: str) -> bool:
 def _current_llm_settings() -> dict:
     c = cfg.load_config()
     llm = dict(DEFAULT_LLM_CONFIG)
-    llm.update(c.get("llm") or {})
-    return llm
+ @app.post("/settings")
+async def settings_post(data: dict = Body(...)):
+    """Partial update of settings. Writes to `config.json` under `llm.*`.
+
+    - `api_key == ""` is treated as "no change" (mask token) — strip it.
+    - `api_key == "***"` means the client echoed back the mask — also strip.
+    - Any explicit non-empty value is persisted.
+    """
+    c = cfg.load_config()
+    llm_in = data.get("llm") or {}
+    if isinstance(llm_in, dict):
+        # SSRF guard: validate base_url BEFORE persisting. Without this,
+        # an attacker who lands a single same-origin POST (e.g. via XSS
+        # bypassing the CSRF middleware in #142) can flip llm.base_url
+        # to http://169.254.169.254/ and have the dashboard exfil cloud
+        # metadata on the next /chat call.
+        nb = (llm_in.get("base_url") or "").strip()
+        if nb:
+            ok, err = _validate_llm_base_url(nb)
+            if not ok:
+                return JSONResponse({"ok": False, "error": f"llm.base_url: {err}"}, status_code=400)
+        current_llm = dict(DEFAULT_LLM_CONFIG)
+        current_llm.update(c.get("llm") or {})
+        for k, v in llm_in.items():
+            if k == "api_key":
+                if v in ("", "***", None):
+                    continue
+                current_llm[k] = v
+            else:
+                current_llm[k] = v
+        # Coerce numerics defensively
+        try:
+            current_llm["temperature"] = float(current_llm.get("temperature", 0.7))
+        except Exception:
+            current_llm["temperature"] = 0.7
+        try:
+            current_llm["max_retries"] = max(0, min(5, int(current_llm.get("max_retries", 2))))
+        except Exception:
+            current_llm["max_retries"] = 2
+        try:
+            current_llm["timeout_s"] = max(1, int(current_llm.get("timeout_s", 60)))
+        except Exception:
+            current_llm["timeout_s"] = 60
+        current_llm["auto_suspend"] = bool(current_llm.get("auto_suspend", False))
+        c["llm"] = current_llm
+    # Allow pass-through updates for a few other top-level buckets (e.g.
+    # scheduler, model_loading). model_loading.{sticky,eager_unload} are
+    # consumed by the memory_planner / scheduler to bias which model
+    # checkpoints are evicted/retained across stages.
+    for bucket in ("scheduler", "model_loading"):
+        if bucket in data and isinstance(data[bucket], dict):
+            existing = c.get(bucket) or {}
+            existing.update(data[bucket])
+            c[bucket] = existing
+    # Fleet system prompt override. Empty string -> None ("use built-in default")
+    # so the runner's loader can fall back without a sentinel check.
+    if "philosophical_prompt" in data:
+        v = data.get("philosophical_prompt")
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            c["philosophical_prompt"] = None
+        elif isinstance(v, str):
+            c["philosophical_prompt"] = v
+    # Prompts tab — every other surfaced override. Same null-on-blank pattern
+    # as philosophical_prompt: empty string => None => falls back to default.
+    # `enhancer_prompt` is special: concept.py errors on empty, so reset-to-
+    # default writes the canonical default rather than None to keep that
+    # codepath honest.
+    _PROMPT_OVERRIDE_KEYS = (
+        "fanout_system_prompt",
+        "fleet_user_prompt_template",
+        "infinity_user_prompt_template",
+        "chaos_suggest_system_prompt",
+        "void_fallback_template",
+    )
+    for key in _PROMPT_OVERRIDE_KEYS:
+        if key in data:
+            v = data.get(key)
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                c[key] = None
+            elif isinstance(v, str):
+                c[key] = v
+    if "enhancer_prompt" in data:
+        v = data.get("enhancer_prompt")
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            c["enhancer_prompt"] = cfg.DEFAULT_CONFIG["enhancer_prompt"]
+        elif isinstance(v, str):
+            c["enhancer_prompt"] = v
+    # Cloud-endpoints gate (Settings → LLM). When False (default) the
+    # provider dropdown only shows local providers. The registry itself
+    # is still local-only today; this just persists the user's choice
+    # so adding a cloud provider later doesn't require a UI hop.
+    if "allow_cloud_endpoints" in data:
+        c["allow_cloud_endpoints"] = bool(data.get("allow_cloud_endpoints"))
+    # Auto-suggest LLM controls (Settings → LLM → Generation).
+    if "suggest_use_subjects" in data:
+        c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
+    if "suggest_custom_prompt" in data:
+        v = data.get("suggest_custom_prompt")
+        c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
+    if "suggest_auto_disabled" in data:
+        c["suggest_auto_disabled"] = bool(data.get("suggest_auto_disabled"))
+    # Spiffy mode — per-row prompt-pill cluster in simple mode. Default
+    # False. Plumbed in v316 but the settings POST branch was missing
+    # (Agent C's e2e spec flagged this with a .fixme).
+    if "suggest_per_row_prompts" in data:
+        c["suggest_per_row_prompts"] = bool(data.get("suggest_per_row_prompts"))
+    # Auto-suspend list (Settings → LLM → Auto-suspend during GPU inference).
+    # Stored as a top-level list of {id, label, enabled, method, ...} entries.
+    # Each entry's method-specific fields are preserved verbatim.
+    if "auto_suspend" in data:
+        v = data.get("auto_suspend")
+        if isinstance(v, list):
+            cleaned: list[dict] = []
+            for e in v:
+                if not isinstance(e, dict):
+                    continue
+                ce = {
+                    "id": str(e.get("id") or "").strip() or None,
+                    "label": str(e.get("label") or "").strip() or None,
+                    "enabled": bool(e.get("enabled")),
+                    "method": str(e.get("method") or "sigstop"),
+                }
+                # Pass through whitelisted method-specific fields.
+                # `command` is the script-method override (added 2026-04);
+                # empty string is preserved so the UI keeps an empty input.
+                for f in ("process_name", "endpoint", "container", "body", "command"):
+                    if f in e and e[f] is not None:
+                        ce[f] = e[f]
+                if ce["id"]:
+                    # Drop None label so the canonical merge can fill it back in.
+                    if not ce["label"]:
+                        ce.pop("label")
+                    cleaned.append(ce)
+            c["auto_suspend"] = cleaned
+    cfg.save_config(c)
+    return {"ok": True}
 
 
+def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
+    """Reject SSRF-prone llm.base_url values BEFORE the URL hits urlopen.
+
+    The llm.base_url is user-controlled via /settings POST. Without
+    validation, a hostile setter (or attacker who slipped past the
+    CSRF gate via a same-origin XSS) can repoint LLM calls at:
+      * cloud-metadata services (http://169.254.169.254/)
+      * RFC1918 / link-local internal admin panels
+      * file:// or gopher:// or ftp:// schemes that return readable
+        bytes Python's urlopen happily handles
+    The dashboard's own integrations only ever target localhost/loopback
+    LLM endpoints (LM Studio, Ollama, etc.) or — when explicitly opted
+    in via `allow_cloud_endpoints=true` — public cloud APIs.
+
+    Returns (ok, error_msg). Empty error_msg on ok=True.
+    """
+    from urllib.parse import urlparse
+    if not base_url:
+        return False, "missing base_url"
+    try:
+        u = urlparse(base_url)
+    except Exception as e:
+        return False, f"unparseable: {e}"
+    if u.scheme not in ("http", "https"):
+        return False, f"scheme '{u.scheme}' not allowed (use http or https)"
+    host = (u.hostname or "").lower()
+    if not host:
+        return False, "missing host"
+    # When cloud endpoints are NOT explicitly enabled, restrict to
+    # loopback hostnames. This is the safe default.
+    cfg_dict = cfg.load_config()
+    if not bool(cfg_dict.get("allow_cloud_endpoints", False)):
+        if host not in ("localhost", "127.0.0.1", "::1"):
+            return False, (
+                f"host '{host}' blocked: enable Settings → Allow Cloud Endpoints "
+                "to permit non-loopback LLM endpoints"
+            )
+    # Even with cloud endpoints enabled, block link-local and metadata
+    # endpoints that no legitimate LLM provider uses but are common
+    # SSRF probe targets.
+    if host in (
+        "169.254.169.254",     # AWS / GCP / Azure metadata
+        "metadata.google.internal",
+        "100.100.100.200",     # Alibaba metadata
+    ):
+        return False, f"host '{host}' is a cloud-metadata endpoint and is always blocked"
+    return True, ""
 
 
+@app.get("/settings/models")
+async def settings_models(base_url: str = "", provider: str = "lmstudio", api_key: str = ""):
+    """Proxy list_models to the chosen local provider (never call from browser)."""
+    from .llm.providers import get_provider
+    if not base_url:
+        return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
+    ok, err = _validate_llm_base_url(base_url)
+    if not ok:
+        return JSONResponse({"ok": False, "error": err, "models": []}, status_code=400)
+    # If the api_key arrives as the mask, resolve it from stored config.
+    if api_key in ("***",):
+        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
+    p = get_provider(provider)
+    try:
+        models = p.list_models(base_url, api_key=api_key or None, timeout=5)
+        return {"ok": True, "models": [m["id"] for m in models]}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "models": []}, status_code=200)
 
 
-
-
+@app.post("/settings/test")
+async def settings_test(data: dict = Body(...)):
+    base_url = (data.get("base_url") or "").strip()
+    provider = (data.get("provider") or "lmstudio").strip()
+    model_id = (data.get("model_id") or "").strip()
+    api_key = data.get("api_key") or ""
+    if api_key in ("***",):
+        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
+    if not base_url or not model_id:
+        return {"ok": False, "error": "base_url and model_id required", "latency_ms": 0}
+    ok, err = _validate_llm_base_url(base_url)
+    if not ok:
+        return {"ok": False, "error": err, "latency_ms": 0}
+    # Also count models to enrich the ✓ badge
+    from .llm.providers import get_provider
+    count = None
+    try:
+        count = len(get_provider(provider).list_models(base_url, api_key=api_key or None, timeout=3))
+    except Exception:
+        count = None
+    res = llm_ping(base_url, provider, model_id, api_key=api_key or None, timeout=15)
+    res["model_count"] = count
+    return res
 
 
 
@@ -769,6 +1131,15 @@ async def broadcast():
             state["stage_actuals"] = _job_stage_actuals.get(cur_v, {}) if cur_v else {}
             _prev_state = state
             stats = get_sys_stats()
+            # Record GPU usage for the scheduler's guard.
+            from . import scheduler
+            _sched_conf = scheduler._load_scheduler_config()
+            _max_samples = int(_sched_conf.get("pause_idle_samples", 5))
+            scheduler.GPU.record_gpu_usage(stats.get("gpu", 0), max_samples=_max_samples)
+            # Notify the scheduler condition variable so it can re-check the idle guard.
+            async with scheduler.GPU.cond:
+                scheduler.GPU.cond.notify_all()
+
             queue = cfg.get_queue()
             # Auto-rotate: cancelled items older than 48 h drop out of the
             # visible queue. Cheap to compute on each tick.

@@ -33,18 +33,23 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _IMPORT_ERROR: Optional[Exception] = None
 
-try:  # pragma: no cover - import shape varies until phases 1-3 land
-    from .workers.stage_workers import (  # type: ignore
-        ConceptWorker,
-        ImageWorker,
-        VideoWorker,
-        AudioWorker,
-        TTSWorker,
-        PostWorker,
-        MergeWorker,
-    )
+try:
+    # Phases 1-3 of the queueing refactor have shipped — each worker
+    # class lives in its own module under slopfinity.workers.* (not the
+    # `stage_workers` aggregate the original PR speculatively imported).
+    # Without this fix the defensive `except` below permanently set
+    # `_WORKERS_AVAILABLE = False` and `Coordinator.run()` raised
+    # "Land Phases 1-3 first" forever — i.e. the entire Phase-4
+    # concurrent-mode codepath was dead.
+    from .workers.concept import ConceptWorker
+    from .workers.image import ImageWorker
+    from .workers.video import VideoWorker
+    from .workers.audio import AudioWorker
+    from .workers.tts import TTSWorker
+    from .workers.post import PostWorker
+    from .workers.merge import MergeWorker
     _WORKERS_AVAILABLE = True
-except Exception as e:  # ImportError or AttributeError if phases 1-3 missing
+except Exception as e:  # ImportError or AttributeError if a worker disappears
     _IMPORT_ERROR = e
     _WORKERS_AVAILABLE = False
 
