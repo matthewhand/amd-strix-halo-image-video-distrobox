@@ -1,5 +1,15 @@
 """Slopfinity FastAPI dashboard — packaged entry point."""
-from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Body, UploadFile, File
+
+from fastapi import (
+    FastAPI,
+    Request,
+    Form,
+    WebSocket,
+    WebSocketDisconnect,
+    Body,
+    UploadFile,
+    File,
+)
 from slopfinity.routers.assets import _list_outputs, router as assets_router
 from slopfinity.routers.queue import router as queue_router
 from slopfinity.routers.chat import router as chat_router
@@ -24,7 +34,13 @@ from typing import List
 
 from . import config as cfg
 from . import branding as _branding
-from .stats import get_sys_stats, get_storage, get_outputs_disk, get_ram_estimate, get_output_counts
+from .stats import (
+    get_sys_stats,
+    get_storage,
+    get_outputs_disk,
+    get_ram_estimate,
+    get_output_counts,
+)
 from .llm import lmstudio_call, lmstudio_chat_raw, DEFAULT_LLM_CONFIG, list_providers
 from .llm.probe import discover as llm_discover, ping as llm_ping
 from . import scheduler as sched
@@ -40,6 +56,7 @@ def _load_branding():
 
 
 from slopfinity.paths import EXP_DIR, TTS_OUT_DIR, STATIC_DIR, TEMPLATES_DIR
+
 # Module-level mutex serializing LLM calls. The local providers
 # (LM Studio / llama.cpp / Ollama) are typically single-GPU and a single
 # in-flight request; firing concurrent requests at them either rejects
@@ -63,6 +80,8 @@ app.include_router(llm_router)
 app.include_router(coordinator_router)
 
 app.mount("/files", StaticFiles(directory=EXP_DIR), name="files")
+
+
 @app.get("/static/sw.js", include_in_schema=False)
 async def serve_sw_js():
     """Serve the service worker with a content-hash cache version
@@ -76,10 +95,14 @@ async def serve_sw_js():
     template (index.html source), manifest, and the icon set. Cached
     in-process with a 5s TTL so the per-request cost is one stat call
     when assets are stable, one read+sha256 when they change."""
-    return FileResponse(_sw_js_with_hash(), media_type="application/javascript", headers={
-        "Cache-Control": "no-cache",  # browser MUST revalidate the SW itself
-        "Service-Worker-Allowed": "/",
-    })
+    return FileResponse(
+        _sw_js_with_hash(),
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache",  # browser MUST revalidate the SW itself
+            "Service-Worker-Allowed": "/",
+        },
+    )
 
 
 _sw_cache = {"hash": None, "ts": 0.0, "tmp_path": None}
@@ -95,7 +118,11 @@ def _sw_js_with_hash() -> str:
 
     src_path = os.path.join(STATIC_DIR, "sw.js")
     now = time.time()
-    if _sw_cache["tmp_path"] and (now - _sw_cache["ts"]) < 5.0 and os.path.exists(_sw_cache["tmp_path"]):
+    if (
+        _sw_cache["tmp_path"]
+        and (now - _sw_cache["ts"]) < 5.0
+        and os.path.exists(_sw_cache["tmp_path"])
+    ):
         return _sw_cache["tmp_path"]
 
     h = hashlib.sha256()
@@ -122,7 +149,11 @@ def _sw_js_with_hash() -> str:
     digest = h.hexdigest()[:12]
     cache_name = f"slopfinity-shell-{digest}"
 
-    if _sw_cache["hash"] == digest and _sw_cache["tmp_path"] and os.path.exists(_sw_cache["tmp_path"]):
+    if (
+        _sw_cache["hash"] == digest
+        and _sw_cache["tmp_path"]
+        and os.path.exists(_sw_cache["tmp_path"])
+    ):
         _sw_cache["ts"] = now
         return _sw_cache["tmp_path"]
 
@@ -151,6 +182,7 @@ async def favicon():
     """Serve the multi-res favicon. Browsers fetch /favicon.ico unconditionally
     so without this route every page load logs a 404."""
     from fastapi.responses import FileResponse
+
     return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"))
 
 
@@ -188,7 +220,9 @@ async def readyz():
         checks["queue_error"] = str(e)[:120]
     # EXP_DIR writable
     try:
-        exp_dir = os.environ.get("EXP_DIR") or os.path.join(os.getcwd(), "comfy-outputs", "experiments")
+        exp_dir = os.environ.get("EXP_DIR") or os.path.join(
+            os.getcwd(), "comfy-outputs", "experiments"
+        )
         os.makedirs(exp_dir, exist_ok=True)
         probe = os.path.join(exp_dir, ".readyz-probe")
         with open(probe, "w") as f:
@@ -202,18 +236,22 @@ async def readyz():
     # if everything else is OK (LLM is optional for dashboard liveness)
     try:
         from .llm.probe import discover as _llm_discover
-        _llm = (cfg.load_config().get("llm") or {})
+
+        _llm = cfg.load_config().get("llm") or {}
         _bu = _llm.get("base_url") or "http://localhost:1234/v1"
         # Don't actually call out — just confirm the URL is well-formed.
         # An end-to-end LLM call belongs in /llm/health, not /readyz.
         from urllib.parse import urlparse
+
         u = urlparse(_bu)
         checks["llm_url_ok"] = bool(u.scheme and u.hostname)
     except Exception as e:
         checks["llm_url_ok"] = False
         checks["llm_error"] = str(e)[:120]
     ok = checks.get("queue_readable") and checks.get("exp_dir_writable")
-    return JSONResponse({"ok": bool(ok), "checks": checks}, status_code=200 if ok else 503)
+    return JSONResponse(
+        {"ok": bool(ok), "checks": checks}, status_code=200 if ok else 503
+    )
 
 
 @app.middleware("http")
@@ -303,6 +341,7 @@ async def _csrf_origin_check(request: Request, call_next):
         # Strip path/query from referer; keep scheme://host[:port]
         try:
             from urllib.parse import urlparse
+
             u = urlparse(value)
             if not u.scheme or not u.netloc:
                 return False
@@ -334,6 +373,7 @@ async def _csrf_origin_check(request: Request, call_next):
         status_code=403,
     )
 
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Custom Jinja filter — `{{ s | regex_match(pattern) }}` returns truthy
@@ -343,6 +383,8 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 # secondary 'frames' filter chip can hide them by default. Re-using
 # Python's compiled re cache means repeated calls are cheap.
 import re as _re_for_jinja
+
+
 def _jinja_regex_match(s, pattern):
     if s is None:
         return False
@@ -350,7 +392,9 @@ def _jinja_regex_match(s, pattern):
         return bool(_re_for_jinja.search(pattern, s))
     except _re_for_jinja.error:
         return False
-templates.env.filters['regex_match'] = _jinja_regex_match
+
+
+templates.env.filters["regex_match"] = _jinja_regex_match
 
 clients: List[WebSocket] = []
 
@@ -358,16 +402,6 @@ clients: List[WebSocket] = []
 # sched.SchedulerEvents each broadcast tick.
 _recent_events: List[dict] = []
 _RECENT_EVENTS_MAX = 20
-
-
-
-
-
-
-
-
-
-
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -393,10 +427,14 @@ async def index(request: Request):
             "config": config,
             "state": state,
             "queue": queue,
-            "vids": vids[:16],       # Completed Gallery (FINAL_*.mp4)
-            "live": live[:64],        # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
-            "imgs": imgs[:10],        # back-compat (hidden i-grid)
-            "mixed": mixed[:64],      # Finals interleaved with components by mtime — render path uses this when assets-filter is ON
+            "vids": vids[:16],  # Completed Gallery (FINAL_*.mp4)
+            "live": live[
+                :64
+            ],  # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
+            "imgs": imgs[:10],  # back-compat (hidden i-grid)
+            "mixed": mixed[
+                :64
+            ],  # Finals interleaved with components by mtime — render path uses this when assets-filter is ON
             "storage": storage,
             "outputs_disk": outputs_disk,
             "ram": ram,
@@ -404,10 +442,6 @@ async def index(request: Request):
             "branding_profiles": _branding.list_profiles(),
         },
     )
-
-
-
-
 
 
 def _default_suggest_system_prompt(n: int) -> str:
@@ -424,8 +458,6 @@ def _default_suggest_system_prompt(n: int) -> str:
     )
 
 
-
-
 # Chat mode — tool-using assistant. Replaces the prior Variations mode.
 # The LLM (configured local provider, OpenAI-compat) gets a tools manifest
 # describing actions it can take. When the model emits tool_calls in its
@@ -433,7 +465,6 @@ def _default_suggest_system_prompt(n: int) -> str:
 # message, and re-call the LLM. Loop is bounded so a confused model can't
 # run away. Returns the full updated message list to the client; the
 # client keeps history in localStorage and renders tool-call chips inline.
-
 
 
 async def _broadcast_chat_thinking(phase: str) -> None:
@@ -468,18 +499,14 @@ async def _chat_thinking_heartbeat(stop_evt: asyncio.Event) -> None:
         pass
 
 
-
-
 # Real-model candidate pools per role. `__random__` picks uniformly from
 # the role's pool when /config arrives. Keep these in sync with the option
 # lists in templates/index.html.
 _RANDOM_CANDIDATES = {
-    "base_model":  ["qwen", "ernie"],
+    "base_model": ["qwen", "ernie"],
     "audio_model": ["heartmula"],
-    "tts_model":   ["qwen-tts", "kokoro"],
+    "tts_model": ["qwen-tts", "kokoro"],
 }
-
-
 
 
 # File-extension filters for the slopped sub-select per role. Voice (TTS) and
@@ -487,10 +514,8 @@ _RANDOM_CANDIDATES = {
 _SLOPPED_EXTS = {
     "image": (".png", ".jpg", ".jpeg", ".webp"),
     "audio": (".wav", ".mp3", ".flac", ".ogg"),
-    "tts":   (".wav", ".mp3", ".flac", ".ogg"),
+    "tts": (".wav", ".mp3", ".flac", ".ogg"),
 }
-
-
 
 
 def _check_disk_guard():
@@ -517,10 +542,6 @@ def _check_disk_guard():
     return True, ""
 
 
-
-
-
-
 def _find_pids_by_cmdline(needle: str) -> list[int]:
     """Scan /proc for processes whose argv contains a leaf matching `needle`.
 
@@ -543,7 +564,11 @@ def _find_pids_by_cmdline(needle: str) -> list[int]:
                         raw = f.read()
                     if not raw:
                         continue  # kernel thread
-                    args = [a.decode("utf-8", errors="replace") for a in raw.split(b"\x00") if a]
+                    args = [
+                        a.decode("utf-8", errors="replace")
+                        for a in raw.split(b"\x00")
+                        if a
+                    ]
                     if any(os.path.basename(a) == needle for a in args):
                         pids.append(int(entry.name))
                 except (FileNotFoundError, PermissionError, ProcessLookupError):
@@ -566,46 +591,8 @@ def _find_pids_by_cmdline(needle: str) -> list[int]:
         return []
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-_SEED_IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
+_SEED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 _SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
@@ -623,24 +610,6 @@ def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read().decode("utf-8")
     return json.loads(body)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @app.get("/manifest.webmanifest")
@@ -662,8 +631,18 @@ async def manifest_webmanifest():
         "background_color": background_color,
         "theme_color": theme_color,
         "icons": [
-            {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
-            {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+            {
+                "src": "/static/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
+            {
+                "src": "/static/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable",
+            },
         ],
     }
     return JSONResponse(manifest, media_type="application/manifest+json")
@@ -684,7 +663,8 @@ async def service_worker():
 async def branding_endpoint():
     """Return the active branding profile + the list of available profiles."""
     return {
-        "active": (cfg.load_config().get("branding") or {}).get("active") or "slopfinity",
+        "active": (cfg.load_config().get("branding") or {}).get("active")
+        or "slopfinity",
         "profiles": _branding.list_profiles(),
         "resolved": _load_branding(),
     }
@@ -697,13 +677,13 @@ async def branding_switch(data: dict = Body(...)):
     if not name:
         return JSONResponse({"ok": False, "error": "missing 'active'"}, status_code=400)
     if name not in _branding.list_profiles():
-        return JSONResponse({"ok": False, "error": f"unknown profile '{name}'"}, status_code=404)
+        return JSONResponse(
+            {"ok": False, "error": f"unknown profile '{name}'"}, status_code=404
+        )
     config = cfg.load_config()
     config.setdefault("branding", {})["active"] = name
     cfg.save_config(config)
     return {"ok": True, "active": name, "resolved": _branding.load(name)}
-
-
 
 
 def _coerce_cpu_mode(raw) -> str:
@@ -756,6 +736,7 @@ def _resolve_cpu_mode(mode: str) -> bool:
     # smart -- read live GPU %
     try:
         from .stats import get_sys_stats
+
         stats = get_sys_stats()
         gpu_pct = int(stats.get("gpu") or 0)
         return gpu_pct > 0
@@ -766,7 +747,14 @@ def _resolve_cpu_mode(mode: str) -> bool:
 def _current_llm_settings() -> dict:
     c = cfg.load_config()
     llm = dict(DEFAULT_LLM_CONFIG)
- @app.post("/settings")
+    llm.update(c.get("llm") or {})
+    has_key = bool(llm.get("api_key"))
+    llm_safe = dict(llm)
+    llm_safe["api_key"] = "***" if has_key else ""
+    return llm_safe
+
+
+@app.post("/settings")
 async def settings_post(data: dict = Body(...)):
     """Partial update of settings. Writes to `config.json` under `llm.*`.
 
@@ -786,7 +774,9 @@ async def settings_post(data: dict = Body(...)):
         if nb:
             ok, err = _validate_llm_base_url(nb)
             if not ok:
-                return JSONResponse({"ok": False, "error": f"llm.base_url: {err}"}, status_code=400)
+                return JSONResponse(
+                    {"ok": False, "error": f"llm.base_url: {err}"}, status_code=400
+                )
         current_llm = dict(DEFAULT_LLM_CONFIG)
         current_llm.update(c.get("llm") or {})
         for k, v in llm_in.items():
@@ -802,7 +792,9 @@ async def settings_post(data: dict = Body(...)):
         except Exception:
             current_llm["temperature"] = 0.7
         try:
-            current_llm["max_retries"] = max(0, min(5, int(current_llm.get("max_retries", 2))))
+            current_llm["max_retries"] = max(
+                0, min(5, int(current_llm.get("max_retries", 2)))
+            )
         except Exception:
             current_llm["max_retries"] = 2
         try:
@@ -921,6 +913,7 @@ def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
     Returns (ok, error_msg). Empty error_msg on ok=True.
     """
     from urllib.parse import urlparse
+
     if not base_url:
         return False, "missing base_url"
     try:
@@ -945,18 +938,24 @@ def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
     # endpoints that no legitimate LLM provider uses but are common
     # SSRF probe targets.
     if host in (
-        "169.254.169.254",     # AWS / GCP / Azure metadata
+        "169.254.169.254",  # AWS / GCP / Azure metadata
         "metadata.google.internal",
-        "100.100.100.200",     # Alibaba metadata
+        "100.100.100.200",  # Alibaba metadata
     ):
-        return False, f"host '{host}' is a cloud-metadata endpoint and is always blocked"
+        return (
+            False,
+            f"host '{host}' is a cloud-metadata endpoint and is always blocked",
+        )
     return True, ""
 
 
 @app.get("/settings/models")
-async def settings_models(base_url: str = "", provider: str = "lmstudio", api_key: str = ""):
+async def settings_models(
+    base_url: str = "", provider: str = "lmstudio", api_key: str = ""
+):
     """Proxy list_models to the chosen local provider (never call from browser)."""
     from .llm.providers import get_provider
+
     if not base_url:
         return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
     ok, err = _validate_llm_base_url(base_url)
@@ -970,7 +969,9 @@ async def settings_models(base_url: str = "", provider: str = "lmstudio", api_ke
         models = p.list_models(base_url, api_key=api_key or None, timeout=5)
         return {"ok": True, "models": [m["id"] for m in models]}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e), "models": []}, status_code=200)
+        return JSONResponse(
+            {"ok": False, "error": str(e), "models": []}, status_code=200
+        )
 
 
 @app.post("/settings/test")
@@ -988,35 +989,19 @@ async def settings_test(data: dict = Body(...)):
         return {"ok": False, "error": err, "latency_ms": 0}
     # Also count models to enrich the ✓ badge
     from .llm.providers import get_provider
+
     count = None
     try:
-        count = len(get_provider(provider).list_models(base_url, api_key=api_key or None, timeout=3))
+        count = len(
+            get_provider(provider).list_models(
+                base_url, api_key=api_key or None, timeout=3
+            )
+        )
     except Exception:
         count = None
     res = llm_ping(base_url, provider, model_id, api_key=api_key or None, timeout=15)
     res["model_count"] = count
     return res
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1030,12 +1015,6 @@ except Exception as _coord_imp_err:  # pragma: no cover
     _coord_imp_err_repr = repr(_coord_imp_err)
 else:
     _coord_imp_err_repr = None
-
-
-
-
-
-
 
 
 @app.websocket("/ws")
@@ -1052,6 +1031,7 @@ async def websocket_endpoint(websocket: WebSocket):
         if origin:
             try:
                 from urllib.parse import urlparse
+
                 u = urlparse(origin)
                 if f"{u.scheme}://{u.netloc}" not in allow:
                     await websocket.close(code=4403)
@@ -1122,7 +1102,9 @@ async def broadcast():
                         "started_ts": _job_track["since"],
                     }
                 # Drop stale per-job actuals for old jobs (keep only the new one).
-                _job_stage_actuals = {cur_v: _job_stage_actuals.get(cur_v, {})} if cur_v else {}
+                _job_stage_actuals = (
+                    {cur_v: _job_stage_actuals.get(cur_v, {})} if cur_v else {}
+                )
                 _job_track["video_index"] = cur_v
                 _job_track["since"] = now_ts
             state["stage_started_ts"] = _stage_track["since"]
@@ -1133,9 +1115,12 @@ async def broadcast():
             stats = get_sys_stats()
             # Record GPU usage for the scheduler's guard.
             from . import scheduler
+
             _sched_conf = scheduler._load_scheduler_config()
             _max_samples = int(_sched_conf.get("pause_idle_samples", 5))
-            scheduler.GPU.record_gpu_usage(stats.get("gpu", 0), max_samples=_max_samples)
+            scheduler.GPU.record_gpu_usage(
+                stats.get("gpu", 0), max_samples=_max_samples
+            )
             # Notify the scheduler condition variable so it can re-check the idle guard.
             async with scheduler.GPU.cond:
                 scheduler.GPU.cond.notify_all()
@@ -1145,8 +1130,12 @@ async def broadcast():
             # visible queue. Cheap to compute on each tick.
             cutoff = time.time() - 48 * 3600
             kept = [
-                x for x in queue
-                if not (x.get("status") == "cancelled" and (x.get("cancelled_ts") or 0) < cutoff)
+                x
+                for x in queue
+                if not (
+                    x.get("status") == "cancelled"
+                    and (x.get("cancelled_ts") or 0) < cutoff
+                )
             ]
             if len(kept) != len(queue):
                 cfg.save_queue(kept)
@@ -1202,20 +1191,20 @@ async def broadcast():
             # as a TTL: if the next heartbeat doesn't arrive within ~15 s
             # the label hides itself client-side.
             try:
-                if state.get('mode') != 'Idle' and state.get('step'):
+                if state.get("mode") != "Idle" and state.get("step"):
                     # No trailing "…" — the per-character assembly-line animation
                     # in the queue header is its own activity indicator; an
                     # ellipsis on top of bouncing letters reads as redundant.
                     _step_text_map = {
-                        'Concept': 'rewriting prompt',
-                        'Base Image': 'rendering image',
-                        'Video Chains': 'rendering video',
-                        'Audio': 'composing music',
-                        'TTS': 'recording voiceover',
-                        'Post Process': 'upscaling',
-                        'Final Merge': 'merging final',
+                        "Concept": "rewriting prompt",
+                        "Base Image": "rendering image",
+                        "Video Chains": "rendering video",
+                        "Audio": "composing music",
+                        "TTS": "recording voiceover",
+                        "Post Process": "upscaling",
+                        "Final Merge": "merging final",
                     }
-                    _hb_text = _step_text_map.get(state['step'], 'working')
+                    _hb_text = _step_text_map.get(state["step"], "working")
                     _hb_msg = {
                         "type": "render_heartbeat",
                         "text": _hb_text,
@@ -1234,7 +1223,7 @@ async def broadcast():
                 curr = known
             new = curr - known
             for f in new:
-                if f.endswith('.mp4') or f.endswith('.png'):
+                if f.endswith(".mp4") or f.endswith(".png"):
                     for c in list(clients):
                         try:
                             await c.send_json({"type": "new_file", "file": f})
@@ -1282,17 +1271,21 @@ async def chaos_rotator():
             except Exception:
                 sys_p = tmpl  # malformed user template — fall back to raw
             async with _LLM_LOCK:
-                raw = await asyncio.to_thread(lmstudio_call, sys_p, "Give me 8 tangentially-related subject ideas.")
+                raw = await asyncio.to_thread(
+                    lmstudio_call,
+                    sys_p,
+                    "Give me 8 tangentially-related subject ideas.",
+                )
             arr = []
             try:
                 parsed = json.loads(raw)
                 if isinstance(parsed, list):
                     arr = parsed
             except Exception:
-                a, b = raw.find('['), raw.rfind(']')
+                a, b = raw.find("["), raw.rfind("]")
                 if a != -1 and b > a:
                     try:
-                        arr = json.loads(raw[a:b + 1])
+                        arr = json.loads(raw[a : b + 1])
                     except Exception:
                         arr = []
             arr = [str(x).strip() for x in arr if str(x).strip()][:8]
@@ -1313,6 +1306,7 @@ async def startup():
 
 if __name__ == "__main__":
     import uvicorn
+
     # Default to loopback so the dashboard (which has no auth and a wide
     # mutating API surface) is not exposed to the LAN by default. Operators
     # who explicitly want LAN / docker / proxy access set
