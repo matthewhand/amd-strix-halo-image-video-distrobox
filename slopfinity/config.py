@@ -267,6 +267,7 @@ DEFAULT_CONFIG = {
     # "custom": all model badges + progress-bar fills use badge_custom_color.
     "badge_theme": "themed",
     "badge_custom_color": "#7c3aed",
+    "pausing_anim_style": "pulse",
 }
 
 
