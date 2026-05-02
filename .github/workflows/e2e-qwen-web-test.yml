@@ -90,7 +90,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-        python -m pip install requests pytest fastapi 'uvicorn[standard]' jinja2 python-multipart
+        python -m pip install requests pytest fastapi 'uvicorn[standard]' jinja2 python-multipart sqlmodel tiktoken
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Run syntax validation
       run: |

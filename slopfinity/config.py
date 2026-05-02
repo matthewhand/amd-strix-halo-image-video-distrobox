@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime
 
 from . import queue_schema
 
@@ -252,12 +253,23 @@ DEFAULT_CONFIG = {
     # entries, so this is a forward-compatible toggle — see TODO in
     # static/app.js (filterProviderDropdown) for the client gate.
     "allow_cloud_endpoints": False,
+    # Standalone-mode endpoint URLs. When non-empty, override the env-var
+    # / hardcoded defaults so a user running Slopfinity outside the
+    # bundled toolbox docker image can point it at their own services.
+    # Defaults are the loopback URLs the toolbox compose file exposes;
+    # the dashboard works out-of-the-box on the bundled stack and can
+    # be re-pointed via Settings → Endpoints (or env vars at startup
+    # for headless deployments). Validated through _validate_llm_base_url
+    # at save time so an attacker who slips past CSRF (#142) can't
+    # repoint TTS / ComfyUI at internal admin panels.
+    "tts_worker_url": "http://localhost:8010/tts",
+    "comfy_url": "http://localhost:8188",
     # Per-mode suggestion-length budgets (chars, enforced via JSON-schema
     # maxLength). Doubled v323→v324 after user feedback "the short
     # suggestions are too short". Endless beats can now run to short
     # sentences instead of telegraphic fragments; simple chips have room
     # for a real concept; chat replies can be a complete one-liner.
-    "suggest_max_len_endless": 40,
+    "suggest_max_len_endless": 80,
     "suggest_max_len_simple": 80,
     "suggest_max_len_chat": 160,
     "show_date_time": False,
@@ -269,6 +281,41 @@ DEFAULT_CONFIG = {
     "badge_custom_color": "#7c3aed",
     "pausing_anim_style": "pulse",
 }
+
+
+def _coerce_cpu_mode(raw) -> str:
+    """Normalise any stored CPU-mode value to a canonical string.
+
+    Accepts:
+      - "smart" / "cpu" / "gpu"  -- returned as-is
+      - True (old boolean)        -- "cpu"
+      - False (old boolean)       -- "gpu"
+      - None / missing            -- "smart"  (new default)
+    """
+    if raw is True:
+        return "cpu"
+    if raw is False:
+        return "gpu"
+    if isinstance(raw, str) and raw in ("smart", "cpu", "gpu"):
+        return raw
+    return "smart"
+
+
+def _cpu_mode_to_bool(raw):
+    """Return a backward-compat boolean for the old llm_cpu_only field.
+
+    "cpu"   -- True
+    "gpu"   -- False
+    "smart" -- None  (callers should call _resolve_cpu_mode for a live decision)
+    """
+    if isinstance(raw, bool):
+        return raw
+    mode = _coerce_cpu_mode(raw)
+    if mode == "cpu":
+        return True
+    if mode == "gpu":
+        return False
+    return None  # smart -- resolved at runtime
 
 
 def get_philosophical_prompt(config=None):
@@ -340,34 +387,76 @@ def _merge_auto_suspend(stored):
     return out
 
 
+from .db import engine, init_db as _init_db_raw
+from .models import Configuration, QueueItem, ChatSession, ChatMessage, StoryLog
+from sqlmodel import Session, select
+
+_DB_INITIALIZED = False
+
+def init_db():
+    """Idempotent database initialization."""
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
+        return
+    _init_db_raw()
+    _DB_INITIALIZED = True
+
+
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                c = json.load(f)
-                for k, v in DEFAULT_CONFIG.items():
-                    if k not in c: c[k] = v
-                c["auto_suspend"] = _merge_auto_suspend(c.get("auto_suspend"))
-                # Merge scheduler defaults so older configs gain new keys.
-                stored_sched = c.get("scheduler") if isinstance(c.get("scheduler"), dict) else {}
-                c["scheduler"] = {**DEFAULT_SCHEDULER, **stored_sched}
-                return c
-        except: pass
-    return dict(
-        DEFAULT_CONFIG,
-        auto_suspend=list(DEFAULT_AUTO_SUSPEND),
-        scheduler=dict(DEFAULT_SCHEDULER),
-    )
+    """Load configuration from the database, falling back to JSON if available."""
+    # Ensure DB is initialized
+    init_db()
+    
+    with Session(engine) as session:
+        # Load all keys from DB
+        statement = select(Configuration)
+        results = session.exec(statement).all()
+        c = {item.key: item.value for item in results}
+        
+        # Merge defaults for missing keys
+        for k, v in DEFAULT_CONFIG.items():
+            if k not in c:
+                c[k] = v
+        
+        # Backward compat / First-time migration fallback
+        if not results and os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    file_data = json.load(f)
+                    for k, v in file_data.items():
+                        if k not in c:
+                            c[k] = v
+                            # Save to DB for future use
+                            session.add(Configuration(key=k, value=v))
+                    session.commit()
+            except Exception:
+                pass # Permission issues or malformed JSON
 
-SENSITIVE_KEYS = {"api_key"}
-
+        c["auto_suspend"] = _merge_auto_suspend(c.get("auto_suspend"))
+        # Merge scheduler defaults so older configs gain new keys.
+        stored_sched = c.get("scheduler") if isinstance(c.get("scheduler"), dict) else {}
+        c["scheduler"] = {**DEFAULT_SCHEDULER, **stored_sched}
+        return c
 
 def save_config(config):
-    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
-    # Config may contain API keys; restrict to owner-only.
+    """Save configuration to the database."""
+    init_db()
+    with Session(engine) as session:
+        for key, value in config.items():
+            existing = session.get(Configuration, key)
+            if existing:
+                existing.value = value
+                existing.updated_at = datetime.utcnow()
+                session.add(existing)
+            else:
+                session.add(Configuration(key=key, value=value))
+        session.commit()
+    
+    # Optional: Keep JSON in sync as a backup (best effort)
     try:
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
         os.chmod(CONFIG_FILE, 0o600)
     except Exception:
         pass
@@ -450,33 +539,51 @@ def queue_lock():
 
 
 def get_queue():
-    if os.path.exists(QUEUE_FILE):
-        try:
-            with open(QUEUE_FILE, "r") as f:
-                items = json.load(f)
-            changed = False
-            for item in items:
-                before = item.get("schema_version")
-                queue_schema.migrate_legacy(item)
-                if before != queue_schema.SCHEMA_VERSION:
-                    changed = True
-            if changed:
-                save_queue(items)
-            return items
-        except Exception:
-            pass
-    return []
+    """Retrieve the queue from the database, falling back to JSON for migration."""
+    init_db()
+    with Session(engine) as session:
+        statement = select(QueueItem).order_by(QueueItem.ts)
+        items = session.exec(statement).all()
+        if not items and os.path.exists(QUEUE_FILE):
+            try:
+                with open(QUEUE_FILE, "r") as f:
+                    file_data = json.load(f)
+                for item in file_data:
+                    queue_schema.migrate_legacy(item)
+                    q_item = QueueItem(**{k: v for k, v in item.items() if k in QueueItem.model_fields})
+                    session.add(q_item)
+                session.commit()
+                # Re-fetch after migration
+                items = session.exec(statement).all()
+            except Exception:
+                pass
 
+        return [m.model_dump() for m in items]
 
 def save_queue(q):
-    """Atomic write-rename. Eliminates the torn-write window where a
-    crash mid-write leaves the queue file as partial JSON.
-    `os.replace` is POSIX atomic on the same filesystem (which is
-    where QUEUE_FILE lives by construction)."""
-    os.makedirs(os.path.dirname(QUEUE_FILE), exist_ok=True)
-    tmp = QUEUE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(q, f)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, QUEUE_FILE)
+    """Save the queue to the database and sync to JSON."""
+    init_db()
+    with Session(engine) as session:
+        # Delete all existing and replace (simulates the current list behavior)
+        # In the future, we should do delta updates for performance.
+        session.exec(select(QueueItem)).all() # load for session
+        for item in session.exec(select(QueueItem)).all():
+            session.delete(item)
+        
+        for item_dict in q:
+            # Handle potential extra keys in the dict
+            filtered = {k: v for k, v in item_dict.items() if k in QueueItem.model_fields}
+            session.add(QueueItem(**filtered))
+        session.commit()
+
+    # Sync to JSON as backup
+    try:
+        os.makedirs(os.path.dirname(QUEUE_FILE), exist_ok=True)
+        tmp = QUEUE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(q, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, QUEUE_FILE)
+    except Exception:
+        pass

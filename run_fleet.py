@@ -242,11 +242,15 @@ def get_lmstudio_model():
     if cfg_model:
         print(f"🔍 LLM: using configured {cfg_model}", flush=True)
         return cfg_model
-    print("🔍 No configured LLM — polling :11434 for ≤30s...", flush=True)
+
+    base_url = (cfg.load_config().get("llm_provider_base_url") or "http://127.0.0.1:11434/v1").rstrip("/")
+    models_url = f"{base_url}/models"
+    
+    print(f"🔍 No configured LLM — polling {models_url} for ≤30s...", flush=True)
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
-            req = urllib.request.Request("http://127.0.0.1:11434/v1/models")
+            req = urllib.request.Request(models_url)
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.loads(r.read())
                 models = [

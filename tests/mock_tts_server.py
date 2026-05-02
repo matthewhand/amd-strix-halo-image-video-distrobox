@@ -60,9 +60,6 @@ def _silence_wav() -> bytes:
     return header + fmt_chunk + data_chunk
 
 
-_OUT_DIR = Path(os.environ.get("TTS_MOCK_OUT", "/tmp/mock-tts"))
-
-
 class MockHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # noqa: D401 - quiet logs
         sys.stderr.write("[mock-tts] " + (fmt % args) + "\n")
@@ -85,6 +82,10 @@ class MockHandler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    @property
+    def _out_dir(self) -> Path:
+        return Path(os.environ.get("TTS_MOCK_OUT", "/tmp/mock-tts"))
+
     def do_GET(self):  # noqa: N802
         if self.path in ("/", ""):
             self._json(200, {"status": "ok", "service": "mock-tts"})
@@ -92,7 +93,7 @@ class MockHandler(BaseHTTPRequestHandler):
         if self.path.rstrip("/") == "/health":
             self._json(
                 200,
-                {"ok": True, "launcher": "mock", "out": str(_OUT_DIR)},
+                {"ok": True, "launcher": "mock", "out": str(self._out_dir)},
             )
             return
         self._json(404, {"error": "not_found", "path": self.path})
@@ -105,10 +106,12 @@ class MockHandler(BaseHTTPRequestHandler):
             ts = int(time.time() * 1000)
             fname = f"{voice}_{ts}_{uid}.wav"
             try:
-                _OUT_DIR.mkdir(parents=True, exist_ok=True)
-                (_OUT_DIR / fname).write_bytes(_silence_wav())
+                self._out_dir.mkdir(parents=True, exist_ok=True)
+                out_file = self._out_dir / fname
+                out_file.write_bytes(_silence_wav())
             except Exception as exc:  # noqa: BLE001
-                self._json(500, {"ok": False, "error": f"persist_failed: {exc}"})
+                sys.stderr.write(f"[mock-tts] FAIL write {fname} to {self._out_dir}: {exc}\n")
+                self._json(500, {"ok": False, "error": f"persist_failed: {exc}", "dir": str(self._out_dir)})
                 return
             self._json(
                 200,

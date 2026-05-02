@@ -30,7 +30,7 @@ services:
       - ./comfy-outputs/experiments:/workspace
       - ./slopfinity:/slopfinity
       - ./branding:/branding:ro
-      - ./dark_server.py:/dark_server.py
+      - ./scripts/dark_server.py:/dark_server.py
       - ./fleet_config.py:/fleet_config.py
     working_dir: /
     command: python3 -u /dark_server.py

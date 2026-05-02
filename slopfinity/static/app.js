@@ -700,24 +700,21 @@ function _focusFabNav(delta) {
     const idx = _mobileNavCurrentIdx();
     const target = _MOBILE_NAV_ORDER[idx + delta];
     if (!target) return;
-    const main = document.querySelector('main');
-    if (!main) {
+    const slider = document.getElementById('layout-slider-wrap');
+    if (!slider) {
         _mobileNavGo(idx + delta);
         return;
     }
     const cls = delta < 0 ? 'layout-sliding-right' : 'layout-sliding-left';
-    main.classList.add(cls);
+    slider.classList.add(cls);
     // Wait for the slide-out to land, then swap layout + clear class.
-    // The new layout's <main> starts off-screen (the same translateX
-    // the dying view ended at) and transitions back to identity for
-    // a directional 'slide-in' feel.
+    // The new layout's content starts off-screen and transitions back.
     setTimeout(() => {
         if (typeof selectLayoutView === 'function') selectLayoutView(target.layout);
         else _applyLayoutView(target.layout);
-        // Wipe class on next frame so the new layout's main slides
-        // back in from the same direction.
+        // Wipe class on next frame so the new layout slides back in.
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => main.classList.remove(cls));
+            requestAnimationFrame(() => slider.classList.remove(cls));
         });
         _mobileNavRefresh();
     }, 220);
@@ -1252,41 +1249,93 @@ window._ramGuardCheck = _ramGuardCheck;
 // State persists in localStorage across reloads.
 // ---------------------------------------------------------------------------
 const _SUGGEST_HIDDEN_KEY = 'slopfinity_suggestions_hidden';
+const _INPUT_AUTOSAVE_KEY = 'slopfinity-input-autosave';
+
+function _savePromptInputs() {
+    const ids = ['p-core', 'p-image', 'p-video', 'p-music', 'p-tts', 'p-raw-title'];
+    const data = {
+        ts: Date.now(),
+        values: {}
+    };
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) data.values[id] = el.value;
+    });
+    try { localStorage.setItem(_INPUT_AUTOSAVE_KEY, JSON.stringify(data)); } catch (_) { }
+}
+
+function _loadPromptInputs() {
+    try {
+        const raw = localStorage.getItem(_INPUT_AUTOSAVE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!data || !data.values || !data.ts) return;
+        
+        // 1 week timeout (7 days)
+        if (Date.now() - data.ts > 7 * 24 * 60 * 60 * 1000) {
+            localStorage.removeItem(_INPUT_AUTOSAVE_KEY);
+            return;
+        }
+        
+        Object.entries(data.values).forEach(([id, val]) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = val;
+                // Trigger input event to update pipeline/state
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+    } catch (_) { }
+}
 
 function _isSuggestionsHidden() {
-    try { return localStorage.getItem(_SUGGEST_HIDDEN_KEY) === '1'; }
-    catch (_) { return false; }
+    try {
+        const v = localStorage.getItem(_SUGGEST_HIDDEN_KEY);
+        // Default true (hidden) for new users (v === null)
+        return v === null ? true : v === '1';
+    }
+    catch (_) { return true; }
 }
 
 function toggleSuggestionsHidden(hide) {
     try { localStorage.setItem(_SUGGEST_HIDDEN_KEY, hide ? '1' : '0'); }
     catch (_) { }
     _applySuggestionsHiddenState();
+    if (!hide) {
+        // Automatically start generating if toggled ON
+        if (typeof regenSuggestions === 'function') regenSuggestions();
+    }
 }
 window.toggleSuggestionsHidden = toggleSuggestionsHidden;
 
 function _applySuggestionsHiddenState() {
     const hidden = _isSuggestionsHidden();
     const area = document.getElementById('subjects-suggestions-area');
-    const closeBtn = document.getElementById('subjects-suggestions-close');
     const suggestBtn = document.getElementById('subjects-suggest-btn');
-    const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
+    const addBtn = document.getElementById('subjects-suggest-add-btn');
+    const promptBtn = document.getElementById('subjects-suggest-prompt-name');
     const toggleBtn = document.getElementById('subjects-suggestions-toggle');
     const toggleInput = document.getElementById('subjects-suggestions-toggle-input');
-    const endlessBtn = document.getElementById('subjects-endless-story');
+    const stepper = document.getElementById('subjects-suggest-simple-stepper');
+    const cluster = document.getElementById('subjects-suggest-cluster');
+
     if (area) area.style.display = hidden ? 'none' : '';
-    if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
+    // Use CSS class for animated reveal
+    if (cluster) cluster.classList.toggle('suggest-expanded', !hidden);
+
     // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
-    // controls. Endless toggle now stays VISIBLE alongside Suggestions but
-    // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
+    // controls.
     if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
+    if (addBtn) addBtn.style.display = hidden ? 'none' : '';
     if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
-    if (endlessBtn) endlessBtn.style.display = '';
+    if (stepper) stepper.style.display = hidden ? 'none' : '';
+    
     // Mirror state on the new switch input + the host's aria-pressed.
     if (toggleInput) toggleInput.checked = !hidden;
     if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!hidden));
     if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
 }
+window._applySuggestionsHiddenState = _applySuggestionsHiddenState;
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
 
 // Endless is a sub-toggle of Suggestions — meaningless when Suggestions
@@ -1703,6 +1752,59 @@ document.addEventListener('DOMContentLoaded', () => {
 // confirms scheduler.paused === true, or by the 5s poll.
 let _pausePending = false;
 
+// ---------------------------------------------------------------------------
+// Auto-Stitch preference — concatenates FINAL_*.mp4 clips automatically.
+// ---------------------------------------------------------------------------
+const _AUTO_STITCH_KEY = 'slopfinity-auto-stitch';
+function _updateAutoStitch(enabled) {
+    try { localStorage.setItem(_AUTO_STITCH_KEY, enabled ? '1' : '0'); } catch (_) { }
+}
+window._updateAutoStitch = _updateAutoStitch;
+
+// Initial state for auto-stitch checkbox.
+document.addEventListener('DOMContentLoaded', () => {
+    // Load autosaved prompt inputs
+    _loadPromptInputs();
+
+    // Wire up autosave for prompt inputs
+    ['p-core', 'p-image', 'p-video', 'p-music', 'p-tts', 'p-raw-title'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', _savePromptInputs);
+    });
+
+    // -----------------------------------------------------------------------
+    // Demo mode: lock all inputs and warn if typed into.
+    if (window.__IS_DEMO__) {
+        const _warnDemo = (e) => {
+            const el = e.target;
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                if (el.type === 'checkbox' || el.type === 'radio') return;
+                e.preventDefault();
+                if (typeof _toast === 'function') {
+                    _toast('Demo Mode: editing is disabled. Use the suggestion chips/pills to explore.', 'warning');
+                }
+            }
+        };
+        document.addEventListener('keydown', _warnDemo, true);
+        document.addEventListener('paste', _warnDemo, true);
+        // Also grey them out slightly via a global style
+        const style = document.createElement('style');
+        style.textContent = 'input:not([type=checkbox]):not([type=radio]), textarea { cursor: not-allowed !important; opacity: 0.8 !important; }';
+        document.head.appendChild(style);
+    }
+
+    try {
+        let val = localStorage.getItem(_AUTO_STITCH_KEY);
+        if (val === null) {
+            val = '1'; // Default ON for new users
+            localStorage.setItem(_AUTO_STITCH_KEY, '1');
+        }
+        const enabled = val === '1';
+        const chk = document.getElementById('subjects-story-auto-stitch');
+        if (chk) chk.checked = enabled;
+    } catch (_) { }
+});
+
 function _applyPauseButtonState(paused) {
     const btn = document.getElementById('btn-queue-pause');
     if (!btn) return;
@@ -2062,7 +2164,8 @@ function _renderDoneItem(q) {
     const cls = failed ? 'badge-error' : 'badge-success';
     const sym = failed ? '✗' : '✓';
     const verdict = failed ? 'failed' : 'done';
-    const promptEsc = _htmlEscape(q.prompt || '');
+    const displayTitle = q.title || q.prompt || '';
+    const promptEsc = _htmlEscape(displayTitle);
     // Backwards-compat: pre-asset-tracking done records only have v_idx /
     // image_only. Synthesize a best-guess single-asset list from that so old
     // history items still render a thumbnail.
@@ -2117,11 +2220,13 @@ function _renderDoneItem(q) {
     const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
     return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
         <details data-q-id="${qid}"${openAttr}>
-            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
-                <span class="badge badge-xs ${cls}">${sym} ${verdict}</span>
-                <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
-                ${assetCountBadge}
-                ${metaGroup}
+            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
+                <span class="badge badge-xs ${cls} flex-none">${sym} ${verdict}</span>
+                <span class="font-semibold truncate flex-1 min-w-0" title="${promptEsc}">${promptEsc}</span>
+                <span class="flex items-center gap-2 flex-none ml-auto">
+                    ${assetCountBadge}
+                    ${metaGroup}
+                </span>
             </summary>
             <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
                 ${previewList}
@@ -2670,10 +2775,12 @@ function _updateQueueStatusChip(d) {
     const depthEls = [
         document.getElementById('btn-queue-info-depth'),
         document.getElementById('btn-queue-info-depth-raw'),
+        document.getElementById('btn-queue-info-depth-story'),
     ].filter(Boolean);
     const statusEls = [
         document.getElementById('btn-queue-info-status'),
         document.getElementById('btn-queue-info-status-raw'),
+        document.getElementById('btn-queue-info-status-story'),
     ].filter(Boolean);
     if (!depthEls.length || !statusEls.length) return;
     const depthEl = depthEls[0];   // for class toggle below; both same content
@@ -2710,7 +2817,18 @@ function _updateQueueStatusChip(d) {
     const prevTotal = (typeof _updateQueueStatusChip._prevTotal === 'number')
         ? _updateQueueStatusChip._prevTotal : total;
     const grew = total > prevTotal;
+    const shrank = total < prevTotal;
     _updateQueueStatusChip._prevTotal = total;
+
+    // Auto-Stitch logic: if count decreases and auto-stitch is ON, fire a stitch.
+    if (shrank && localStorage.getItem('slopfinity-auto-stitch') === '1') {
+        const startTs = window._endlessStoryStartTs || 0;
+        if (startTs > 0 && typeof _runStitchNow === 'function') {
+            // Wait 2s for file to flush to disk
+            setTimeout(() => _runStitchNow(startTs, { confirmFirst: false }), 2000);
+        }
+    }
+
     depthEls.forEach(el => {
         // innerHTML — `depthText` may include the ∞-marker span when
         // any queued item is infinity-flagged. Other contributors are
@@ -2727,27 +2845,28 @@ function _updateQueueStatusChip(d) {
         }
     });
     // Simplified status: just Idle / Generating / Paused. Earlier the
-    // chip leaked the internal stage name ('base image' / 'video chains')
-    // which read like jargon. Three-state is enough for "is the box
-    // doing work" at a glance — Queue card has the per-stage detail.
+    // Three-state + Pausing/Paused is enough for "is the box doing work"
+    // at a glance — Queue card has the per-stage detail.
     const state = (d && d.state) || {};
     let status = 'Idle';
-    if (state.step) {
-        status = 'Generating';
-    } else if (state.mode && state.mode !== 'Idle') {
+    if (state.step || (state.mode && state.mode !== 'Idle')) {
         status = 'Generating';
     }
-    if (d && d.paused) status = 'Paused';
+    const isPaused = d.scheduler && d.scheduler.paused;
+    if (_pausePending && !isPaused) {
+        status = 'Pausing';
+    } else if (isPaused) {
+        status = 'Paused';
+    }
     statusEls.forEach(el => {
         el.textContent = status;
         // Theme-coloured status: Generating reads as the active app accent
-        // (text-primary) rather than text-success — the rest of the dashboard
-        // already uses primary as the "this is the live signal" colour
-        // (ticker bars, mode-pill active fill, etc.) so success-green stood
-        // out as a one-off semantic. Paused stays text-warning because that
-        // genuinely IS a caution state, not a theme accent.
-        el.classList.toggle('text-warning', status === 'Paused');
-        el.classList.toggle('text-primary', status === 'Generating');
+        // (text-primary). Pausing/Paused stay text-warning because they
+        // are caution/stop states.
+        el.classList.remove('text-warning', 'text-primary', 'animate-pulse');
+        if (status === 'Paused') el.classList.add('text-warning');
+        else if (status === 'Pausing') el.classList.add('text-warning', 'animate-pulse');
+        else if (status === 'Generating') el.classList.add('text-primary');
     });
     // Focus-mode FAB badges: paint the queue tally on whichever flanking
     // FAB points TOWARD queue from the user's current focused layout.
@@ -2806,20 +2925,170 @@ window._updateQueueStatusChip = _updateQueueStatusChip;
 // message list including tool-call chips.
 // ---------------------------------------------------------------------------
 const _CHAT_HISTORY_KEY = 'slopfinity-chat-history-v1';
-const _CHAT_HISTORY_MAX = 50;
+const _CHAT_HISTORY_MAX = 100;
 
 function _getChatHistory() {
     try {
         const raw = localStorage.getItem(_CHAT_HISTORY_KEY);
         const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
+        const result = Array.isArray(arr) ? arr : [];
+        
+        // Initial fetch from server if local is empty
+        if (!result.length && !window._chatSyncedFromServer) {
+            window._chatSyncedFromServer = true;
+            fetch('/chat/history')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.ok && data.messages && data.messages.length) {
+                        localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(data.messages));
+                        _renderChatLog();
+                    }
+                })
+                .catch(e => console.error('Chat history fetch failed:', e));
+        }
+        return result;
     } catch (_) { return []; }
 }
+const _CHAT_ARCHIVE_KEY = 'slopfinity-chat-archive-v1';
+
+async function _updateChatContextStats() {
+    const history = await _getChatHistory();
+    const pill = document.getElementById('chat-context-pill');
+    const tally = document.getElementById('chat-context-tally');
+    if (!pill || !tally) return;
+
+    try {
+        const res = await fetch('/chat/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: history })
+        });
+        const data = await res.json();
+        const tokens = data.tokens || 0;
+        const max = 8000;
+        const pct = Math.min(100, (tokens / max) * 100);
+        
+        tally.textContent = `${tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'k' : tokens} / 8k`;
+        
+        // Grow pill size: from scale 1.0 to 1.15 based on usage
+        const scale = 1 + (pct / 100) * 0.15;
+        pill.style.transform = `scale(${scale})`;
+        
+        // Theme based on usage
+        pill.classList.remove('context-warning', 'context-danger');
+        if (tokens > max * 1.2) pill.classList.add('context-danger');
+        else if (tokens > max * 0.8) pill.classList.add('context-warning');
+    } catch (_) {
+        // Fallback to rough estimation if server is unreachable
+        let charCount = 0;
+        history.forEach(m => {
+            charCount += (m.content || '').length;
+            if (m.tool_calls) charCount += JSON.stringify(m.tool_calls).length;
+        });
+        const tokens = Math.ceil(charCount / 4) + 1500;
+        tally.textContent = `~${tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'k' : tokens} / 8k`;
+    }
+}
+
+function _archiveChatHistory(history) {
+    if (!history || !history.length) return;
+    try {
+        const raw = localStorage.getItem(_CHAT_ARCHIVE_KEY);
+        let archive = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(archive)) archive = [];
+        
+        archive.push({
+            ts: Date.now(),
+            history: history
+        });
+        
+        // Keep only last week (7 days)
+        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        archive = archive.filter(entry => entry.ts > oneWeekAgo);
+        
+        localStorage.setItem(_CHAT_ARCHIVE_KEY, JSON.stringify(archive));
+    } catch (_) { }
+}
+
+async function _compactChat() {
+    const history = _getChatHistory();
+    if (history.length < 4) {
+        if (typeof _toast === 'function') _toast('Chat history is too short to compact.', 'warning');
+        return;
+    }
+    
+    if (!confirm('Compact history? This will ask the LLM to summarize the current conversation and start fresh with that summary.')) return;
+    
+    const btn = document.getElementById('subjects-chat-compact');
+    const originalText = btn ? btn.textContent : 'Compact';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '...';
+    }
+    
+    try {
+        // System prompt for summarization
+        const sys = "Summarize the key context, decisions, and outcomes of this conversation so far. Be concise but preserve all technical requirements and current goals. Output ONLY the summary.";
+        
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [...history, { role: 'user', content: sys }],
+                // No tools during summarization to keep it pure text
+                stream: false
+            })
+        });
+        
+        const data = await res.json();
+        const summary = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        
+        if (!summary) throw new Error('No summary returned');
+        
+        _archiveChatHistory(history); // Local backup
+        
+        // Backend archive
+        const arcRes = await fetch('/chat/history', { method: 'DELETE' });
+        const arcData = await arcRes.json();
+        if (!arcData || !arcData.ok) throw new Error('Failed to archive history on server');
+
+        const newHistory = [
+            { 
+                role: 'system', 
+                content: `COMPACTED HISTORY SUMMARY:\n\n${summary.trim()}\n\n(Conversation continues from here)` 
+            }
+        ];
+        
+        // _setChatHistory will sync this new single message to the fresh session
+        _setChatHistory(newHistory);
+        _renderChatLog();
+        if (typeof _toast === 'function') _toast('History compacted.', 'success');
+    } catch (e) {
+        console.error('Compaction failed:', e);
+        if (typeof _toast === 'function') _toast(`Compaction failed: ${e.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+window._compactChat = _compactChat;
+
 function _setChatHistory(arr) {
     const trimmed = (Array.isArray(arr) ? arr : []).slice(-_CHAT_HISTORY_MAX);
     try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(trimmed)); } catch (_) { }
+    
+    // Sync to server in background
+    fetch('/chat/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: trimmed })
+    }).catch(e => console.error('Chat history sync failed:', e));
+
     // Mirror to the tree as the active chain — see _chatTree* below.
     _chatSyncTreeFromHistory(trimmed);
+    _updateChatContextStats();
 }
 
 // ── Chat message tree (forking + branch nav) ───────────────────────────────
@@ -2998,21 +3267,45 @@ window._chatToggleFork = function (targetNodeId) {
 };
 
 function _resetChat() {
-    if (!confirm('Clear chat history? This wipes the current conversation.')) return;
-    _setChatHistory([]);
-    _renderChatLog();
-    // History wiped → don't auto-fetch starter chips. Reply suggestions
-    // are reserved for "after the assistant responds" (per the chat
-    // suggestion-cache scoping rule). User can manually regen via the
-    // refresh button if they want chips before sending.
-    const host = document.getElementById('subjects-chat-replies');
-    if (host) host.innerHTML = '';
+    const history = _getChatHistory();
+    if (!history.length) return;
+    if (!confirm('Clear chat history? This will save the current thread to your browser history and start fresh.')) return;
+    
+    _archiveChatHistory(history); // Local backup
+    
+    // Backend archive
+    fetch('/chat/history', { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.ok) {
+                localStorage.removeItem(_CHAT_HISTORY_KEY);
+                _renderChatLog();
+                
+                // Add a notice divider to the log
+                const log = document.getElementById('subjects-chat-log');
+                if (log) {
+                    const notice = document.createElement('div');
+                    notice.className = 'chat-notice-reset';
+                    notice.textContent = `Browser history reset · ${new Date().toLocaleTimeString()}`;
+                    log.prepend(notice);
+                }
+                
+                const host = document.getElementById('subjects-chat-replies');
+                if (host) host.innerHTML = '';
+            }
+        })
+        .catch(e => console.error('Chat history archive failed:', e));
 }
 window._resetChat = _resetChat;
+
+document.addEventListener('DOMContentLoaded', () => {
+    _updateChatContextStats();
+});
 
 function _renderChatLog() {
     const log = document.getElementById('subjects-chat-log');
     if (!log) return;
+    _updateChatContextStats();
     const history = _getChatHistory();
     if (!history.length) {
         log.innerHTML = '<div class="text-[10px] opacity-50 italic">no messages yet — try "queue 3 short clips of dragons" or "what\'s running?"</div>';
@@ -4023,6 +4316,24 @@ function _loadEndlessLogLines() {
     let raw;
     try { raw = localStorage.getItem(_ENDLESS_STORY_LOG_KEY); }
     catch (_) { return []; }
+    
+    // Initial fetch from server if local is empty
+    if (!raw && !window._storySyncedFromServer) {
+        window._storySyncedFromServer = true;
+        fetch('/story/log')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.ok && data.lines && data.lines.length) {
+                    localStorage.setItem(_ENDLESS_STORY_LOG_KEY, JSON.stringify(data.lines));
+                    if (data.active_idx !== undefined) {
+                        localStorage.setItem('slopfinity-endless-active-beat-idx', data.active_idx);
+                    }
+                    _renderEndlessLog();
+                }
+            })
+            .catch(e => console.error('Story log fetch failed:', e));
+    }
+
     if (!raw) return [];
     // New shape: JSON array
     if (raw.length && raw.charCodeAt(0) === 91 /* '[' */) {
@@ -4041,6 +4352,14 @@ function _loadEndlessLogLines() {
 function _persistEndlessLogLines(lines) {
     try { localStorage.setItem(_ENDLESS_STORY_LOG_KEY, _serializeEndlessLog(lines)); }
     catch (_) { }
+    
+    const activeIdx = _getEndlessActiveBeatIdx();
+    // Sync to server in background
+    fetch('/story/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: lines, active_idx: activeIdx })
+    }).catch(e => console.error('Story log sync failed:', e));
 }
 
 // Back-compat shim — older callers passed a single string. Now they
@@ -4122,11 +4441,13 @@ function _renderEndlessLog() {
         _setEndlessActiveBeatIdx(activeIdx);
     }
     const rows = lines.map((line, idx) => {
-        // <input value> uses the attribute escape, but the HTML-string
-        // assemble here means we still want HTML-safe escaping for "&,
-        // <, >, ', ". _htmlEscape handles all five.
         const safe = _htmlEscape(line || '');
         const activeCls = idx === activeIdx ? ' beat-active' : '';
+        const isLast = idx === lines.length - 1;
+        // Only the last row gets an active "+" button.
+        const addDisabled = isLast ? '' : ' disabled';
+        const addOpacity = isLast ? 'opacity-50 group-hover:opacity-100' : 'opacity-20 cursor-not-allowed';
+
         return `<div class="endless-row beat-row group flex items-center gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
                      data-row-idx="${idx}" draggable="true">
             <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/60 hover:text-base-content/90 select-none cursor-grab"
@@ -4143,12 +4464,14 @@ function _renderEndlessLog() {
                   data-row-idx="${idx}"
                   placeholder="Type a beat — Enter for next row"
                   value="${safe}" />
-            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-75 group-hover:opacity-100 flex-none"
+            <button type="button" class="endless-row-rewrite btn btn-ghost btn-xs btn-square text-accent/70 hover:text-accent opacity-50 group-hover:opacity-100 flex-none"
+                    data-row-idx="${idx}" title="Magic Rewrite (AI)" aria-label="Magic Rewrite">✨</button>
+            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary ${addOpacity} flex-none"
+                    ${addDisabled}
                     data-row-idx="${idx}" title="Add a new beat below this one" aria-label="Add beat below">+</button>
             <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-75 group-hover:opacity-100 flex-none"
                     data-row-idx="${idx}" title="Delete this beat" aria-label="Delete beat">×</button>
-        </div>`;
-    });
+        </div>`;    });
     log.innerHTML = rows.join('');
     log.scrollTop = log.scrollHeight;
 }
@@ -7397,7 +7720,8 @@ function connect() {
                 const activeRole = (opts && opts.running && opts.step) ? _STAGE_ROLE[opts.step] : null;
                 const badges = _configModelBadges(snap, llmModelId, activeRole, q.ts || 0);
                 const meta = `<span class="opacity-50">size</span> ${_htmlEscape(snap.size || '1:1')} <span class="opacity-30">·</span> ${snap.frames || 17} <span class="opacity-50">frames</span>`;
-                const promptEsc = _htmlEscape(q.prompt || '');
+                const displayTitle = q.title || q.prompt || '';
+    const promptEsc = _htmlEscape(displayTitle);
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
                 const showDateTime = (cfg && cfg.show_date_time) || (snap && snap.show_date_time);
@@ -7507,14 +7831,12 @@ function connect() {
                 const chevronHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="q-row-chevron w-3 h-3 flex-none text-base-content/60" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${_openPendingItems.has(q.ts || 0) ? 'open' : ''}>
-                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
+                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
                             ${chevronHTML}
                             <span class="flex items-center gap-1 flex-none">
                                 ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
                             </span>
-                            <span class="flex-1 min-w-0">
-                                <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
-                            </span>
+                            <span class="font-semibold truncate flex-1 min-w-0${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             <span class="flex items-center gap-2 flex-none ml-auto">
                                 ${(() => {
                         const _fpp = snap.frames || 17;
@@ -7913,7 +8235,8 @@ async function enhanceStage(stage) {
     const ta = document.getElementById(fieldId);
     if (!ta) return;
     const core = ($('p-core') && $('p-core').value) || '';
-    const seed = (ta.value || '').trim() || core.trim();
+    const title = ($('p-raw-title') && $('p-raw-title').value) || '';
+    const seed = (ta.value || '').trim() || core.trim() || title.trim();
     if (!seed) return;
     if (!(await _ramGuardCheck())) return;
     const sys = {
@@ -8071,10 +8394,20 @@ async function inject(prio, terminate, concurrent, opts) {
         console.warn('inject: no prompt available — Prompt textarea empty and no stage overrides set');
         return;
     }
+
+    const rawTitle = ($('p-raw-title') && $('p-raw-title').value || '').trim();
+
     // Send one /inject per prompt. Multiple subjects (newline-separated)
     // become multiple queue items in order.
     for (const promptText of prompts) {
         const f = new FormData();
+        // If Raw mode and a title is provided, override the display title.
+        // Otherwise use the prompt text.
+        if (stageConcat && rawTitle) {
+            f.append('title', rawTitle);
+        } else if (stageConcat) {
+            f.append('title', 'User provided SUBJECT/S');
+        }
         f.append('prompt', promptText);
         f.append('priority', prio);
         if (terminate) f.append('terminate', '1');
@@ -8096,7 +8429,7 @@ async function inject(prio, terminate, concurrent, opts) {
     }
     // Only blank the per-stage overrides — leave the Subjects textarea alone
     // so the user can re-queue the same set quickly if they want to.
-    ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
+    ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in', 'p-raw-title'].forEach(id => { if ($(id)) $(id).value = ''; });
     // Toast confirmation so the user knows the submit landed even when
     // the Queue card isn't on screen (focused layouts, mobile, etc).
     if (typeof _toast === 'function') {
@@ -8633,14 +8966,42 @@ function _refreshSettingsTabsArrows() {
     wrap.classList.toggle('at-start', atStart);
     wrap.classList.toggle('at-end', atEnd);
 }
+// Scroll the active tab pill into view when the user picks a tab via
+// click or programmatic radio change. Without this, picking a tab past
+// the visible strip (Endpoints / Diagnostics / Layout at narrow widths)
+// leaves no visible active-tab indicator — users can't tell which tab
+// they're on.
+function _scrollActiveTabIntoView() {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    const active = strip.querySelector('input[name="settings_tabs"]:checked');
+    const label = active && active.nextElementSibling;
+    if (!label) return;
+    const target = label.getBoundingClientRect();
+    const stripBox = strip.getBoundingClientRect();
+    if (target.left < stripBox.left || target.right > stripBox.right) {
+        label.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+}
+window._scrollActiveTabIntoView = _scrollActiveTabIntoView;
+
 document.addEventListener('DOMContentLoaded', () => {
     const strip = document.getElementById('settings-tab-strip');
     if (!strip) return;
     strip.addEventListener('scroll', _refreshSettingsTabsArrows, { passive: true });
+    // Watch radio changes so the active tab auto-scrolls into view.
+    strip.addEventListener('change', (ev) => {
+        if (ev.target && ev.target.matches('input[name="settings_tabs"]')) {
+            _scrollActiveTabIntoView();
+        }
+    });
     // Also recompute when the drawer opens (strip dims may have been 0
     // before the drawer-content hydrated).
     const tog = document.getElementById('settings-drawer-toggle');
-    if (tog) tog.addEventListener('change', () => setTimeout(_refreshSettingsTabsArrows, 60));
+    if (tog) tog.addEventListener('change', () => setTimeout(() => {
+        _refreshSettingsTabsArrows();
+        _scrollActiveTabIntoView();
+    }, 60));
     _refreshSettingsTabsArrows();
 });
 
@@ -8711,6 +9072,15 @@ async function openSettings() {
         const allowCloud = $('set-allow-cloud-endpoints');
         if (allowCloud) allowCloud.checked = !!sr.allow_cloud_endpoints;
         filterProviderDropdown(!!sr.allow_cloud_endpoints);
+        // Standalone-mode endpoint URLs (Settings → Endpoints tab).
+        // Defaults match the toolbox compose stack's loopback ports;
+        // power users running outside that stack point at their own
+        // services. Mirror the server response so a fresh open never
+        // shows blanks. Server validates SSRF on save.
+        const ttsUrl = $('set-tts-url');
+        if (ttsUrl) ttsUrl.value = sr.tts_worker_url || 'http://localhost:8010/tts';
+        const comfyUrl = $('set-comfy-url');
+        if (comfyUrl) comfyUrl.value = sr.comfy_url || 'http://localhost:8188';
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const sugUseSub = $('set-suggest-use-subjects');
@@ -9025,6 +9395,8 @@ async function saveSettings() {
         allow_cloud_endpoints: $('set-allow-cloud-endpoints')
             ? !!$('set-allow-cloud-endpoints').checked
             : false,
+        tts_worker_url: $('set-tts-url') ? $('set-tts-url').value.trim() : '',
+        comfy_url: $('set-comfy-url') ? $('set-comfy-url').value.trim() : '',
         philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
         suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
         suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',

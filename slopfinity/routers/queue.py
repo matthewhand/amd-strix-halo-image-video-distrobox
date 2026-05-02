@@ -8,16 +8,41 @@ from fastapi import APIRouter, Body, Form
 from fastapi.responses import JSONResponse
 
 from slopfinity.paths import EXP_DIR
+from slopfinity.stats import get_outputs_disk
 import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 
 
 router = APIRouter()
 
+def _check_disk_guard():
+    """Return (ok, reason) — False when the outputs partition is below
+    the user-configured low-water marks. Two thresholds; either trips
+    the guard. Setting either to 0 disables that check."""
+    config = cfg.load_config()
+    min_pct = float(config.get("disk_min_pct") or 0)
+    min_gb = float(config.get("disk_min_gb") or 0)
+    if min_pct <= 0 and min_gb <= 0:
+        return True, ""
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = 100 - (d.get("pct") or 0)
+    except Exception:
+        return True, ""  # fail open if we can't read disk stats
+    if min_pct > 0 and free_pct <= min_pct:
+        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
+    if min_gb > 0 and free_gb <= min_gb:
+        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
+    return True, ""
+
 @router.post("/inject")
 async def inject(
     prompt: str = Form(...),
     priority: str = Form(...),
+    title: Optional[str] = Form(default=None),
     stage_prompts: str = Form(default=""),
     terminate: str = Form(default=""),
     concurrent: str = Form(default=""),
@@ -74,6 +99,8 @@ async def inject(
         # 🏃 button (Subjects card) to flip this on per-injection.
         "fast_track": bool(fast_track),
     }
+    if title:
+        task["title"] = title
     if stage_prompts:
         try:
             task["stage_prompts"] = json.loads(stage_prompts)

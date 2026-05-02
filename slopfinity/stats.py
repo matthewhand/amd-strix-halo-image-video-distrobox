@@ -70,7 +70,8 @@ def get_sys_stats():
          "load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0, "load_pct": 0,
          "gpu_name": _GPU_NAME, "cpu_name": _CPU_NAME}
     try:
-        res = subprocess.run(["rocm-smi", "--showuse", "--showmemuse"], capture_output=True, text=True)
+        res = subprocess.run(["rocm-smi", "--showuse", "--showmemuse"], 
+                             capture_output=True, text=True, timeout=2)
         for l in res.stdout.split('\n'):
             if "GPU use (%)" in l: s["gpu"] = int(l.split(':')[-1].strip())
             if "GPU Memory Allocated (VRAM%)" in l: s["vram"] = int(l.split(':')[-1].strip())
@@ -98,6 +99,28 @@ def get_sys_stats():
         s["ram_t"] = round(int(m['MemTotal'].split()[0]) / (1024 * 1024), 1)
     except: pass
     return s
+
+
+def _resolve_cpu_mode(mode: str) -> bool:
+    """Resolve a cpu_mode string to a concrete True/False at call-time.
+
+    For "smart" mode, reads live GPU utilisation from rocm-smi:
+      - GPU at 0% -- use GPU (return False)
+      - GPU  > 0% -- use CPU (return True, avoid contention)
+    """
+    from .config import _coerce_cpu_mode
+    mode = _coerce_cpu_mode(mode)
+    if mode == "cpu":
+        return True
+    if mode == "gpu":
+        return False
+    # smart -- read live GPU %
+    try:
+        stats = get_sys_stats()
+        gpu_pct = int(stats.get("gpu") or 0)
+        return gpu_pct > 0
+    except Exception:
+        return True  # fallback to CPU on any error
 
 
 def _status_from_pct(pct):

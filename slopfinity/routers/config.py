@@ -171,6 +171,8 @@ async def settings_get():
                 or (c.get("scheduler") or {}).get("tts_cpu_only")
             ),
         },
+        "tts_worker_url": c.get("tts_worker_url") or "http://localhost:8010/tts",
+        "comfy_url": c.get("comfy_url") or "http://localhost:8188",
     }
 
 
@@ -183,6 +185,13 @@ async def settings_post(data: dict = Body(...)):
     - Any explicit non-empty value is persisted.
     """
     c = cfg.load_config()
+
+    # Endpoints tab — direct top-level keys.
+    if "tts_worker_url" in data:
+        c["tts_worker_url"] = str(data["tts_worker_url"]).strip()
+    if "comfy_url" in data:
+        c["comfy_url"] = str(data["comfy_url"]).strip()
+
     llm_in = data.get("llm") or {}
     if isinstance(llm_in, dict):
         current_llm = dict(DEFAULT_LLM_CONFIG)

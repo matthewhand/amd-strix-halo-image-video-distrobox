@@ -65,7 +65,8 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
     extra_headers = llm.get("extra_headers") or None
     
     cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
-    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
+    gpu = scheduler.get_gpu()
+    is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
     
     pool_cfg = get_env_pool_config()
     prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
@@ -145,7 +146,8 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
     extra_headers = llm.get("extra_headers") or None
     
     cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
-    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
+    gpu = scheduler.get_gpu()
+    is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
     
     pool_cfg = get_env_pool_config()
     prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
