@@ -3121,6 +3121,9 @@ function _renderChatLog() {
             const sibs = (nodeId && typeof _chatSiblingsOf === 'function')
                 ? _chatSiblingsOf(nodeId) : [];
             const isForked = sibs.length > 1;
+            // Branch-switcher pills only appear when there are already multiple
+            // forks — these are navigation, not an action, so they stay outside
+            // the bubble as before.
             const navHTML = isForked ? `<div class="chat-branch-nav" data-pos-idx="${idx}">
                 ${sibs.map((sid, j) => {
                 const isActive = sid === nodeId;
@@ -3128,18 +3131,8 @@ function _renderChatLog() {
                         title="Switch to branch ${j + 1} of ${sibs.length}"
                         onclick="_chatToggleFork('${sid}')">${j + 1}</button>`;
             }).join('')}
-            </div>` : (nodeId ? `<div class="chat-branch-nav chat-branch-nav-fork" data-pos-idx="${idx}">
-                <button type="button" class="chat-branch-pill chat-branch-fork"
-                        title="Fork conversation from this message — creates a new branch you can edit"
-                        onclick='_chatBeginEdit("${nodeId}", this)'>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                         stroke-linecap="round" stroke-linejoin="round" class="w-2.5 h-2.5">
-                        <circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="9" r="2"/>
-                        <path d="M6 5v6a4 4 0 0 0 4 4h4"/><path d="M6 13v6"/>
-                    </svg>
-                    <span>fork</span>
-                </button>
-            </div>` : '');
+            </div>` : '';
+            // Edit button (pencil) — triggers inline edit + fork.
             const editBtn = nodeId ? `<button type="button" class="chat-bubble-action chat-bubble-edit"
                 title="Edit + fork conversation"
                 onclick='_chatBeginEdit("${nodeId}", this)'>
@@ -3149,8 +3142,21 @@ function _renderChatLog() {
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                 </svg>
             </button>` : '';
+            // Fork button — now lives inside the bubble alongside copy + edit.
+            // Identical action to edit (both open the inline edit form which
+            // creates a new branch); the fork icon makes the branching intent
+            // explicit for users who haven't discovered the edit pencil yet.
+            const forkBtn = nodeId ? `<button type="button" class="chat-bubble-action"
+                title="Fork conversation from this message"
+                onclick='_chatBeginEdit("${nodeId}", this)'>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                    <circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="9" r="2"/>
+                    <path d="M6 5v6a4 4 0 0 0 4 4h4"/><path d="M6 13v6"/>
+                </svg>
+            </button>` : '';
             const baseActions = _bubbleActions(m.content || '', false, idx);
-            const actions = baseActions.replace('</div>', editBtn + '</div>');
+            const actions = baseActions.replace('</div>', editBtn + forkBtn + '</div>');
             out.push(`<div class="chat chat-end" data-msg-idx="${idx}" data-node-id="${nodeId || ''}">
                 <div class="chat-bubble chat-bubble-primary text-xs whitespace-pre-wrap relative chat-bubble-host">${_htmlEscape(m.content || '')}${actions}</div>
                 ${navHTML}
@@ -3158,6 +3164,7 @@ function _renderChatLog() {
             i++;
             continue;
         }
+
         if (role === 'assistant') {
             // tool_calls case is handled by the thinking-run walker above —
             // here we only handle the speak-only assistant turn.
@@ -3205,7 +3212,7 @@ window._chatBeginEdit = function (nodeId, btn) {
     }
 };
 
-window._chatCommitEdit = function (nodeId, btn) {
+window._chatCommitEdit = async function (nodeId, btn) {
     const ta = btn.closest('.chat-bubble-edit-form').querySelector('textarea');
     const newText = (ta && ta.value || '').trim();
     if (!newText) return;
@@ -3231,36 +3238,29 @@ window._chatCommitEdit = function (nodeId, btn) {
             stxt.textContent = '…';
         }
         const chain = _chatActiveChain();
-        fetch('/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: chain }),
-        })
-            .then(r => r.json())
-            .then(d => {
-                if (d && d.ok && Array.isArray(d.messages)) {
-                    _setChatHistory(d.messages);
-                    _renderChatLog();
-                } else {
-                    const after = _getChatHistory();
-                    after.push({ role: 'assistant', content: `Error: ${(d && d.error) || 'chat request failed'}` });
-                    _setChatHistory(after);
-                    _renderChatLog();
-                }
-            })
-            .catch(e => {
+        try {
+            const d = await _fetchChatWithRetry(chain);
+            if (d && d.ok && Array.isArray(d.messages)) {
+                _setChatHistory(d.messages);
+                _renderChatLog();
+            } else {
                 const after = _getChatHistory();
-                after.push({ role: 'assistant', content: `Network error: ${e.message}` });
+                after.push({ role: 'assistant', content: `Error: ${(d && d.error) || 'chat request failed'}` });
                 _setChatHistory(after);
                 _renderChatLog();
-            })
-            .finally(() => {
-                if (sendBtn) {
-                    sendBtn.disabled = false;
-                    let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
-                    stxt.textContent = 'Send';
-                }
-            });
+            }
+        } catch (e) {
+            const after = _getChatHistory();
+            after.push({ role: 'assistant', content: `Network error: ${e.message}` });
+            _setChatHistory(after);
+            _renderChatLog();
+        } finally {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                let stxt = document.getElementById('subjects-chat-send-text') || sendBtn;
+                stxt.textContent = 'Send';
+            }
+        }
     }
 };
 
@@ -3363,6 +3363,84 @@ window._refreshAssistantTurn = function (msgIdx) {
     }
 };
 
+// ---------------------------------------------------------------------------
+// Shared chat fetch with exponential-backoff retry.
+// Only retries on pure network failures (TypeError / Failed to fetch).
+// Application-level errors (4xx, 5xx JSON) are returned immediately.
+//
+// Between attempts we push a temporary assistant message showing the
+// retry countdown so the user knows the client is still trying. That
+// placeholder is replaced in-place once either a real response lands
+// or all retries are exhausted.
+//
+// Backoff schedule (maxRetries = 5): 2 s, 4 s, 8 s, 16 s, 32 s.
+// ---------------------------------------------------------------------------
+async function _fetchChatWithRetry(messages, maxRetries) {
+    if (maxRetries === undefined) maxRetries = 5;
+    const BASE_DELAY_MS = 2000;
+
+    // We track whether we already inserted a placeholder bubble so we
+    // can overwrite it on the next attempt instead of appending a new one.
+    let placeholderPushed = false;
+
+    const _setPlaceholder = (text) => {
+        const hist = _getChatHistory();
+        if (placeholderPushed) {
+            // Overwrite the last entry (the placeholder).
+            hist[hist.length - 1] = { role: 'assistant', content: text, _retry_placeholder: true };
+        } else {
+            hist.push({ role: 'assistant', content: text, _retry_placeholder: true });
+            placeholderPushed = true;
+        }
+        _setChatHistory(hist);
+        _renderChatLog();
+    };
+
+    const _clearPlaceholder = () => {
+        if (!placeholderPushed) return;
+        const hist = _getChatHistory();
+        if (hist.length && hist[hist.length - 1]._retry_placeholder) {
+            hist.pop();
+            _setChatHistory(hist);
+        }
+        placeholderPushed = false;
+    };
+
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const r = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages }),
+            });
+            // HTTP-level success — clear any retry placeholder and return
+            // the parsed body to the caller for normal ok/error handling.
+            _clearPlaceholder();
+            return await r.json();
+        } catch (e) {
+            lastErr = e;
+            const retriesLeft = maxRetries - attempt;
+            if (retriesLeft <= 0) break;
+
+            const delaySec = (BASE_DELAY_MS / 1000) * Math.pow(2, attempt);
+            _setPlaceholder(`⚠ Network error: ${e.message} — retrying in ${delaySec}s… (${retriesLeft} attempt${retriesLeft === 1 ? '' : 's'} left)`);
+
+            // Countdown: update the bubble every second so the user sees
+            // the timer tick down rather than a static message.
+            for (let remaining = delaySec; remaining > 0; remaining--) {
+                await new Promise(res => setTimeout(res, 1000));
+                _setPlaceholder(`⚠ Network error: ${lastErr.message} — retrying in ${remaining - 1 > 0 ? remaining - 1 + 's' : 'now'}… (${retriesLeft} attempt${retriesLeft === 1 ? '' : 's'} left)`);
+            }
+        }
+    }
+
+    // All retries exhausted — clear placeholder, let caller render final error.
+    _clearPlaceholder();
+    throw lastErr;
+}
+window._fetchChatWithRetry = _fetchChatWithRetry;
+
 async function _sendChatMessage() {
     const input = document.getElementById('subjects-chat-input');
     const sendBtn = document.getElementById('subjects-chat-send');
@@ -3380,12 +3458,7 @@ async function _sendChatMessage() {
     _setChatHistory(history);
     _renderChatLog();
     try {
-        const r = await fetch('/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: history }),
-        });
-        const d = await r.json();
+        const d = await _fetchChatWithRetry(history);
         if (d && d.ok && Array.isArray(d.messages)) {
             _setChatHistory(d.messages);
             _renderChatLog();
@@ -6254,18 +6327,28 @@ window._scanSlopForGridArtefacts = _scanSlopForGridArtefacts;
 // cards are skipped via the data-attribute guard.
 setInterval(_scanSlopForGridArtefacts, 4000);
 
-async function saveSchedCpuOffload(role, checked) {
+// Three-way CPU mode selector for LLM + TTS.
+// Persisted under scheduler.{llm_cpu_mode, tts_cpu_mode}.
+// mode: "gpu" | "smart" | "cpu"
+async function saveSchedCpuMode(role, mode) {
     if (role !== 'llm' && role !== 'tts') return;
-    const field = role === 'llm' ? 'llm_cpu_only' : 'tts_cpu_only';
+    if (!['gpu', 'smart', 'cpu'].includes(mode)) return;
+    const field = role === 'llm' ? 'llm_cpu_mode' : 'tts_cpu_mode';
     try {
         await fetch('/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scheduler: { [field]: !!checked } }),
+            body: JSON.stringify({ scheduler: { [field]: mode } }),
         });
     } catch (e) {
-        console.warn('saveSchedCpuOffload failed', e);
+        console.warn('saveSchedCpuMode failed', e);
     }
+}
+window.saveSchedCpuMode = saveSchedCpuMode;
+// Legacy alias kept for any Jinja templates that still call the old name
+// with a boolean — converts True→cpu, False→gpu, else smart.
+async function saveSchedCpuOffload(role, checked) {
+    return saveSchedCpuMode(role, checked ? 'cpu' : 'gpu');
 }
 window.saveSchedCpuOffload = saveSchedCpuOffload;
 
@@ -6956,13 +7039,17 @@ function connect() {
                         // unset, matching the Settings UI promise).
                         let _cpuBadge = '';
                         const _sched = (_lastTick && _lastTick.config && _lastTick.config.scheduler) || {};
-                        const _cpuOn = (s === 'Concept')
-                            ? (_sched.llm_cpu_only !== false)
+                        // Resolve cpu_mode: "cpu" always shows badge, "smart" shows "⚡"
+                        // badge (resolved dynamically), "gpu" shows nothing.
+                        const _cpuMode = (s === 'Concept')
+                            ? (_sched.llm_cpu_mode || (_sched.llm_cpu_only !== false ? 'cpu' : 'gpu'))
                             : (s === 'TTS')
-                                ? (_sched.tts_cpu_only !== false)
-                                : false;
-                        if (_cpuOn) {
-                            _cpuBadge = `<span class="inline-flex items-center align-middle mr-0.5 opacity-70" title="Running on CPU"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg></span>`;
+                                ? (_sched.tts_cpu_mode || (_sched.tts_cpu_only !== false ? 'cpu' : 'gpu'))
+                                : null;
+                        if (_cpuMode === 'cpu') {
+                            _cpuBadge = `<span class="inline-flex items-center align-middle mr-0.5 opacity-70" title="Running on CPU (forced)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/></svg></span>`;
+                        } else if (_cpuMode === 'smart') {
+                            _cpuBadge = `<span class="inline-flex items-center align-middle mr-0.5 opacity-70" title="Smart mode: GPU if idle, else CPU">⚡</span>`;
                         }
                         const stageLabelHtml = _settingsRole
                             ? `<button type="button" class="${_stageBadgeCls}" title="${_stageDisplayName(s)} — ${modelLabel}. Click for settings" onclick='event.stopPropagation(); openModelSettingsPopup(${JSON.stringify(_settingsRole)}, ${q.ts || 0})'>${_stageGlyph} ${_cpuBadge}${_htmlEscape(modelLabel)}</button>`
@@ -8482,16 +8569,26 @@ async function openSettings() {
         const usePlanner = !!(sr.scheduler && sr.scheduler.use_planner);
         const planEl = $('sched-use-planner');
         if (planEl) planEl.checked = usePlanner;
-        // CPU offload defaults: ON when not yet persisted (matches the
-        // "default on" UX promise). Unset → checked; explicit false →
-        // unchecked.
+        // CPU mode: 3-way "gpu" | "smart" | "cpu". Fall back to deriving
+        // from the old llm_cpu_only boolean for config files that haven't
+        // been re-saved since the migration.
         const sched = sr.scheduler || {};
-        const llmCpu = sched.llm_cpu_only === undefined ? true : !!sched.llm_cpu_only;
-        const ttsCpu = sched.tts_cpu_only === undefined ? true : !!sched.tts_cpu_only;
+        const llmMode = sched.llm_cpu_mode ||
+            (sched.llm_cpu_only === false ? 'gpu' : sched.llm_cpu_only === true ? 'cpu' : 'smart');
+        const ttsMode = sched.tts_cpu_mode ||
+            (sched.tts_cpu_only === false ? 'gpu' : sched.tts_cpu_only === true ? 'cpu' : 'smart');
+        // Hydrate a <select id="sched-llm-cpu-mode"> / <select id="sched-tts-cpu-mode">
+        // if present, otherwise fall back to the legacy checkbox.
+        const llmModeEl = $('sched-llm-cpu-mode');
+        const ttsModeEl = $('sched-tts-cpu-mode');
+        if (llmModeEl) llmModeEl.value = llmMode;
+        if (ttsModeEl) ttsModeEl.value = ttsMode;
+        // Legacy checkbox compat — keep it in sync with the mode.
         const llmEl = $('sched-llm-cpu-only');
         const ttsEl = $('sched-tts-cpu-only');
-        if (llmEl) llmEl.checked = llmCpu;
-        if (ttsEl) ttsEl.checked = ttsCpu;
+        if (llmEl) llmEl.checked = llmMode === 'cpu';
+        if (ttsEl) ttsEl.checked = ttsMode === 'cpu';
+
         // Per-model loading-prefs grid is in the same Scheduler tab.
         if (typeof _hydrateModelLoadingPrefs === 'function') _hydrateModelLoadingPrefs(sr);
         // (Endless + Fresh prefs migrated to the Subjects-card Slop

@@ -2524,6 +2524,65 @@ async def branding_switch(data: dict = Body(...)):
     return {"ok": True, "active": name, "resolved": _branding.load(name)}
 
 
+
+
+def _coerce_cpu_mode(raw) -> str:
+    """Normalise any stored CPU-mode value to a canonical string.
+
+    Accepts:
+      - "smart" / "cpu" / "gpu"  -- returned as-is
+      - True (old boolean)        -- "cpu"
+      - False (old boolean)       -- "gpu"
+      - None / missing            -- "smart"  (new default)
+    """
+    if raw is True:
+        return "cpu"
+    if raw is False:
+        return "gpu"
+    if isinstance(raw, str) and raw in ("smart", "cpu", "gpu"):
+        return raw
+    return "smart"
+
+
+def _cpu_mode_to_bool(raw):
+    """Return a backward-compat boolean for the old llm_cpu_only field.
+
+    "cpu"   -- True
+    "gpu"   -- False
+    "smart" -- None  (callers should call _resolve_cpu_mode for a live decision)
+    """
+    if isinstance(raw, bool):
+        return raw
+    mode = _coerce_cpu_mode(raw)
+    if mode == "cpu":
+        return True
+    if mode == "gpu":
+        return False
+    return None  # smart -- resolved at runtime
+
+
+def _resolve_cpu_mode(mode: str) -> bool:
+    """Resolve a cpu_mode string to a concrete True/False at call-time.
+
+    For "smart" mode, reads live GPU utilisation from rocm-smi:
+      - GPU at 0% -- use GPU (return False)
+      - GPU  > 0% -- use CPU (return True, avoid contention)
+    """
+    mode = _coerce_cpu_mode(mode)
+    if mode == "cpu":
+        return True
+    if mode == "gpu":
+        return False
+    # smart -- read live GPU %
+    try:
+        from .stats import get_sys_stats
+        stats = get_sys_stats()
+        gpu_pct = int(stats.get("gpu") or 0)
+        return gpu_pct > 0
+    except Exception:
+        return True  # fallback to CPU on any error
+
+
 def _current_llm_settings() -> dict:
     c = cfg.load_config()
     llm = dict(DEFAULT_LLM_CONFIG)
@@ -2599,13 +2658,35 @@ async def settings_get():
         "scheduler": {
             "memory_safety_gb": (c.get("scheduler") or {}).get("memory_safety_gb", 10),
             "use_planner": bool((c.get("scheduler") or {}).get("use_planner", False)),
-            # CPU offload prefs default ON — Strix Halo iGPU is the
-            # bottleneck for image/video stages, so giving the LLM + TTS
-            # to CPU lets them run alongside without competing for GPU.
-            "llm_cpu_only": bool((c.get("scheduler") or {}).get("llm_cpu_only", True)),
-            "tts_cpu_only": bool((c.get("scheduler") or {}).get("tts_cpu_only", True)),
+            # CPU offload mode for LLM and TTS stages.
+            # Three-way string: "gpu" | "smart" | "cpu"
+            #   "gpu"   — always use GPU (never offload)
+            #   "smart" — use GPU when GPU utilisation is 0%, else CPU
+            #   "cpu"   — always use CPU (original default behaviour)
+            # Backward compat: if the stored value is a boolean (old schema),
+            # True → "cpu" and False → "gpu". Default is "smart".
+            "llm_cpu_mode": _coerce_cpu_mode(
+                (c.get("scheduler") or {}).get("llm_cpu_mode") or
+                (c.get("scheduler") or {}).get("llm_cpu_only")
+            ),
+            "tts_cpu_mode": _coerce_cpu_mode(
+                (c.get("scheduler") or {}).get("tts_cpu_mode") or
+                (c.get("scheduler") or {}).get("tts_cpu_only")
+            ),
+            # Derived booleans kept for backward compat with any external
+            # code that still reads them. "smart" resolves to None here —
+            # callers that need the live decision should use _resolve_cpu_mode().
+            "llm_cpu_only": _cpu_mode_to_bool(
+                (c.get("scheduler") or {}).get("llm_cpu_mode") or
+                (c.get("scheduler") or {}).get("llm_cpu_only")
+            ),
+            "tts_cpu_only": _cpu_mode_to_bool(
+                (c.get("scheduler") or {}).get("tts_cpu_mode") or
+                (c.get("scheduler") or {}).get("tts_cpu_only")
+            ),
         },
     }
+
 
 
 @app.post("/settings")
