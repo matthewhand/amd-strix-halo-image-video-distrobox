@@ -56,23 +56,50 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
     {"suggestions": [...]} JSON document so chips can never contain
     markdown / scaffolding leaks.
     """
+    from .pool import get_env_pool_config
+    from .. import scheduler
+
     llm = _load_llm_cfg()
-    provider = get_provider(llm.get("provider") or "lmstudio")
-    base_url = llm.get("base_url") or "http://localhost:1234/v1"
-    api_key = llm.get("api_key") or None
     timeout = int(llm.get("timeout_s") or 60)
     temperature = float(llm.get("temperature") or 0.7)
-    model_id = llm.get("model_id") or ""
     extra_headers = llm.get("extra_headers") or None
+    
+    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
+    
+    pool_cfg = get_env_pool_config()
+    prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
+    
+    endpoints = []
+    if prefer_cpu and pool_cfg["cpu"]["url"]:
+        endpoints.append(pool_cfg["cpu"])
+    if pool_cfg["primary"]["url"]:
+        endpoints.append(pool_cfg["primary"])
+    for f in pool_cfg["failovers"]:
+        if f["url"]:
+            endpoints.append(f)
+            
+    seen = set()
+    unique_endpoints = []
+    for ep in endpoints:
+        if ep["url"] not in seen:
+            seen.add(ep["url"])
+            unique_endpoints.append(ep)
 
-    if not model_id:
-        model_id = _auto_pick_model(provider, base_url, api_key, timeout=5) or ""
-        if not model_id:
-            return "Error: no model available from configured provider"
-
-    max_retries = max(0, int(llm.get("max_retries") or 0))
     last_err = None
-    for _ in range(max_retries + 1):
+    for ep in unique_endpoints:
+        base_url = ep["url"].rstrip("/")
+        model_id = ep["model"]
+        
+        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        provider = get_provider(provider_name)
+        
+        if not model_id:
+            model_id = _auto_pick_model(provider, base_url, None, timeout=5) or ""
+            if not model_id:
+                last_err = f"No model available on {base_url}"
+                continue
+                
         try:
             return provider.chat(
                 base_url=base_url,
@@ -82,14 +109,16 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
                     {"role": "user", "content": user_p},
                 ],
                 temperature=temperature,
-                api_key=api_key,
+                api_key=None,
                 timeout=timeout,
                 extra_headers=extra_headers,
                 response_format=response_format,
             )
         except Exception as e:
             last_err = e
-    return f"Error: {last_err}"
+            continue
+            
+    return f"Error: All endpoints failed. Last error: {last_err}"
 
 
 def lmstudio_chat_raw(messages: list, tools: list | None = None,
@@ -107,40 +136,72 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
     import json
     from .providers import _http_json, _auth_headers
 
+    from .pool import get_env_pool_config
+    from .. import scheduler
+
     llm = _load_llm_cfg()
-    base_url = (llm.get("base_url") or "http://localhost:1234/v1").rstrip("/")
-    api_key = llm.get("api_key") or None
     timeout = int(timeout_override or llm.get("timeout_s") or 120)
     temp = float(temperature if temperature is not None else (llm.get("temperature") or 0.7))
     extra_headers = llm.get("extra_headers") or None
-    model_id = llm.get("model_id") or ""
-    if not model_id:
-        provider = get_provider(llm.get("provider") or "lmstudio")
-        model_id = _auto_pick_model(provider, base_url, api_key, timeout=5) or ""
-        if not model_id:
-            return {"role": "assistant", "content": "Error: no model available from configured provider"}
+    
+    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
+    
+    pool_cfg = get_env_pool_config()
+    prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
+    
+    endpoints = []
+    if prefer_cpu and pool_cfg["cpu"]["url"]:
+        endpoints.append(pool_cfg["cpu"])
+    if pool_cfg["primary"]["url"]:
+        endpoints.append(pool_cfg["primary"])
+    for f in pool_cfg["failovers"]:
+        if f["url"]:
+            endpoints.append(f)
+            
+    seen = set()
+    unique_endpoints = []
+    for ep in endpoints:
+        if ep["url"] not in seen:
+            seen.add(ep["url"])
+            unique_endpoints.append(ep)
 
-    payload = {
-        "model": model_id,
-        "messages": messages,
-        "temperature": temp,
-    }
-    if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
-    url = base_url + "/chat/completions"
-    try:
-        data = _http_json("POST", url, body=payload,
-                          headers=_auth_headers(api_key, extra_headers),
-                          timeout=timeout)
-        msg = data.get("choices", [{}])[0].get("message") or {}
-        # Normalize: ensure content is a string (some servers return null when
-        # only tool_calls are present).
-        if msg.get("content") is None:
-            msg["content"] = ""
-        return msg
-    except Exception as e:
-        return {"role": "assistant", "content": f"Error: {e}"}
+    last_err = None
+    for ep in unique_endpoints:
+        base_url = ep["url"].rstrip("/")
+        model_id = ep["model"]
+        
+        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        provider = get_provider(provider_name)
+        
+        if not model_id:
+            model_id = _auto_pick_model(provider, base_url, None, timeout=5) or ""
+            if not model_id:
+                last_err = f"No model available on {base_url}"
+                continue
+
+        payload = {
+            "model": model_id,
+            "messages": messages,
+            "temperature": temp,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        url = base_url + "/chat/completions"
+        try:
+            data = _http_json("POST", url, body=payload,
+                              headers=_auth_headers(None, extra_headers),
+                              timeout=timeout)
+            msg = data.get("choices", [{}])[0].get("message") or {}
+            if msg.get("content") is None:
+                msg["content"] = ""
+            return msg
+        except Exception as e:
+            last_err = e
+            continue
+
+    return {"role": "assistant", "content": f"Error: All endpoints failed. Last error: {last_err}"}
 
 
 __all__ = [

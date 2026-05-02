@@ -4559,9 +4559,25 @@ function _updateConnPill(isRendering, modeStr, step) {
     const pill = document.getElementById('conn-pill');
     const text = document.getElementById('conn-pill-text');
     if (!pill || !text) return;
-    const setPill = (cls, label) => {
+    const setPill = (cls, label, animStyle = null) => {
         pill.className = cls;
-        text.textContent = label;
+        if (!animStyle) {
+            text.textContent = label;
+            pill.removeAttribute('data-anim-style');
+        } else {
+            pill.dataset.animStyle = animStyle;
+            let html = '';
+            for (let i = 0; i < label.length; i++) {
+                const ch = label[i];
+                const isSpace = /\\s/.test(ch);
+                const pos = (i / label.length).toFixed(4);
+                html += `<span class="render-anim-char"${isSpace ? ' data-space="1"' : ''} `
+                    + `style="--char-pos:${pos};--char-i:${i};">`
+                    + (isSpace ? '&nbsp;' : _htmlEscape(ch))
+                    + '</span>';
+            }
+            text.innerHTML = html;
+        }
         pill.style.display = '';
     };
     if (!_wsConnected) {
@@ -4577,9 +4593,11 @@ function _updateConnPill(isRendering, modeStr, step) {
         _applyPauseButtonState(true);
     }
     if (_pausePending) {
+        const animStyle = window._pausingAnimStyle || 'pulse';
         return setPill(
-            'badge badge-sm badge-warning rounded-full gap-1 normal-case font-mono mx-auto animate-pulse',
-            '⏸ Pausing…'
+            `badge badge-sm badge-warning rounded-full gap-1 normal-case font-mono mx-auto render-anim`,
+            '⏸ Pausing…',
+            animStyle
         );
     }
     if (paused) {
@@ -5830,15 +5848,20 @@ function _badgeStyleAttr() {
 window.loadBadgeThemeSetting = function(cfg) {
     _badgeTheme = (cfg && cfg.badge_theme) || 'themed';
     _badgeCustomColor = (cfg && cfg.badge_custom_color) || '#7c3aed';
+    window._pausingAnimStyle = (cfg && cfg.pausing_anim_style) || 'pulse';
+
     // Sync the settings UI controls if they're already in the DOM.
     const modeThemed  = document.getElementById('badge-theme-themed');
     const modeCustom  = document.getElementById('badge-theme-custom');
     const colorPicker = document.getElementById('badge-custom-color');
     const pickerRow   = document.getElementById('badge-color-picker-row');
+    const animSelect  = document.getElementById('pausing-anim-select');
+
     if (modeThemed)  modeThemed.checked  = (_badgeTheme === 'themed');
     if (modeCustom)  modeCustom.checked  = (_badgeTheme === 'custom');
     if (colorPicker) colorPicker.value   = _badgeCustomColor;
     if (pickerRow)   pickerRow.style.display = (_badgeTheme === 'custom') ? '' : 'none';
+    if (animSelect)  animSelect.value    = window._pausingAnimStyle;
 };
 
 window.saveBadgeTheme = async function(theme) {
@@ -5851,6 +5874,11 @@ window.saveBadgeTheme = async function(theme) {
 window.saveBadgeCustomColor = async function(color) {
     _badgeCustomColor = color;
     await _saveConfig({ badge_custom_color: color });
+};
+
+window.savePausingAnimStyle = async function(style) {
+    window._pausingAnimStyle = style;
+    await _saveConfig({ pausing_anim_style: style });
 };
 
 // When `qTs` is provided (the queue item's timestamp / id), each badge becomes a
@@ -10842,3 +10870,45 @@ function _buildSlopCard(file, opts = {}) {
         init();
     }
 })();
+
+async function refreshLlmPool() {
+    const list = document.getElementById('llm-pool-list');
+    if (!list) return;
+    try {
+        const r = await fetch('/llm/pool');
+        if (!r.ok) throw new Error('failed');
+        const data = await r.json();
+        
+        let html = '';
+        const addNode = (role, node) => {
+            if (!node || !node.url) return;
+            const statusColor = node.ok ? 'text-success' : 'text-error';
+            const statusIcon = node.ok ? '✓' : '⚠';
+            html += `
+                <div class="bg-base-200 p-2 rounded flex justify-between items-center text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="badge badge-outline badge-xs uppercase opacity-70">${role}</span>
+                        <span class="font-mono opacity-80">${node.url}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-[10px] opacity-60">${node.selected_model || 'no model'}</span>
+                        <span class="${statusColor} font-bold" title="${node.error || 'OK'}">${statusIcon}</span>
+                    </div>
+                </div>
+            `;
+        };
+        addNode('Primary', data.primary);
+        addNode('CPU', data.cpu);
+        if (data.failovers) {
+            data.failovers.forEach((f, i) => addNode(`Failover ${i+1}`, f));
+        }
+        list.innerHTML = html || '<div class="text-xs opacity-50 italic">No pool endpoints configured in .env</div>';
+    } catch (e) {
+        list.innerHTML = '<div class="text-xs text-error">Failed to load pool status</div>';
+    }
+}
+window.refreshLlmPool = refreshLlmPool;
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(refreshLlmPool, 1000);
+});

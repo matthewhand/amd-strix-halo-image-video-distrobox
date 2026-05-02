@@ -2296,8 +2296,19 @@
                         <input type="radio" name="settings_tabs" role="tab" class="tab" aria-label="LLM" />
                         <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-4 pt-4">
 
+                            <!-- ================== Section: Distributed Pool (.env) ================== -->
+                            <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Distributed Pool</div>
+                            <div class="mb-4">
+                                <p class="text-[10px] opacity-60 leading-snug mb-2">
+                                    The following endpoints are configured via your `.env` file for distributed load balancing and CPU failover.
+                                </p>
+                                <div id="llm-pool-list" class="space-y-2">
+                                    <div class="text-xs opacity-50 italic">Loading pool endpoints...</div>
+                                </div>
+                            </div>
+
                             <!-- ================== Section 1: Provider connection ================== -->
-                            <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Provider
+                            <div class="divider text-[11px] uppercase tracking-widest text-base-content/60">Legacy Provider connection
                                 connection
                             </div>
                             {# Cloud-endpoints toggle. Default OFF — slopfinity is local-first.
@@ -2519,6 +2530,62 @@
                                             t }}
                                         </option>
                                         {% endfor %}
+                                    </select>
+                                </label>
+
+                                <div class="form-control">
+                                    <span class="label-text text-xs mb-1">Badge Colors</span>
+                                    <div class="flex gap-4 items-center h-8">
+                                        <label class="cursor-pointer label p-0 gap-2">
+                                            <input type="radio" name="badge-theme-opt" id="badge-theme-themed" class="radio radio-sm radio-primary" value="themed" onchange="window.saveBadgeTheme('themed')">
+                                            <span class="label-text text-xs">Themed</span>
+                                        </label>
+                                        <label class="cursor-pointer label p-0 gap-2">
+                                            <input type="radio" name="badge-theme-opt" id="badge-theme-custom" class="radio radio-sm radio-primary" value="custom" onchange="window.saveBadgeTheme('custom')">
+                                            <span class="label-text text-xs">Custom</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <label class="form-control" id="badge-color-picker-row" style="display:none;">
+                                    <span class="label-text text-xs">Custom Badge Color</span>
+                                    <input type="color" id="badge-custom-color" class="h-8 w-full cursor-pointer bg-base-100 rounded" onchange="window.saveBadgeCustomColor(this.value)">
+                                </label>
+
+                                <label class="form-control md:col-span-2">
+                                    <span class="label-text text-xs">Pausing Animation</span>
+                                    <select id="pausing-anim-select" class="select select-bordered select-sm" onchange="window.savePausingAnimStyle(this.value)">
+                                        <!-- Motion-first styles (default in rendering rotation) -->
+                                        <option value="bounce">Bounce</option>
+                                        <option value="wobble">Wobble</option>
+                                        <option value="jump">Jump</option>
+                                        <option value="wave">Wave</option>
+                                        <option value="swap">Swap</option>
+                                        <option value="spin">Spin</option>
+                                        <option value="flip">Flip</option>
+                                        <option value="glitch">Glitch</option>
+                                        <option value="shake">Shake</option>
+                                        <option value="orbit">Orbit</option>
+                                        <option value="typewriter">Typewriter</option>
+                                        <option value="nod">Nod</option>
+                                        <option value="stretch">Stretch</option>
+                                        <option value="skew">Skew</option>
+                                        <option value="drop">Drop</option>
+                                        <option value="slide">Slide</option>
+                                        <option value="pacman">Pacman</option>
+                                        <option value="cube">Cube</option>
+                                        <option value="card">Card</option>
+                                        <option value="bucket">Bucket</option>
+                                        <option value="spiral">Spiral</option>
+                                        <option value="mobius">Mobius</option>
+                                        <option value="breathe">Breathe</option>
+                                        <option value="sway">Sway</option>
+                                        <option value="fountain">Fountain</option>
+                                        <!-- Color-only styles (good for paused state) -->
+                                        <option value="pulse" selected>Pulse (Color only)</option>
+                                        <option value="ping">Ping (Color only)</option>
+                                        <option value="ripple">Ripple (Color only)</option>
+                                        <option value="morph">Morph (Color only)</option>
                                     </select>
                                 </label>
                             </div>
