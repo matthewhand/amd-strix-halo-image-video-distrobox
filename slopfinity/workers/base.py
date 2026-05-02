@@ -44,8 +44,10 @@ class StageWorker:
 
     role: str = ""  # 'llm', 'image', 'video', 'audio', 'tts', 'post', 'ffmpeg'
 
-    def __init__(self, worker_id: str):
+    def __init__(self, worker_id: str = "default", **kwargs):
         self.worker_id = worker_id
+        if "role" in kwargs:
+            self.role = kwargs["role"]
 
     # ------------------------------------------------------------------
     # Claim

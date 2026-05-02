@@ -153,3 +153,6 @@ __all__ = [
     "ping",
     "DEFAULT_LLM_CONFIG",
 ]
+
+import asyncio
+_LLM_LOCK = asyncio.Lock()

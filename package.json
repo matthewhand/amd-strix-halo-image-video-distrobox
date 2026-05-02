@@ -5,11 +5,14 @@
   "scripts": {
     "lint:css": "stylelint slopfinity/static/app.css",
     "lint:js": "node --check slopfinity/static/app.js && node --check slopfinity/static/sw.js",
-    "lint": "npm run lint:css && npm run lint:js"
+    "lint": "npm run lint:css && npm run lint:js",
+    "test:js": "vitest run js-tests/",
+    "test": "npm run test:js"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "stylelint": "^16.10.0",
-    "stylelint-config-recommended": "^14.0.1"
+    "stylelint-config-recommended": "^14.0.1",
+    "vitest": "^4.1.5"
   }
 }
