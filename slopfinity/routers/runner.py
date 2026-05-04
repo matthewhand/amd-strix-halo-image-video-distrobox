@@ -319,6 +319,49 @@ async def tts(data: dict = Body(...)):
         "error": result.get("error"),
     }
 
+@router.post("/music")
+async def music(data: dict = Body(...)):
+    """Generate standalone music via Heartmula."""
+    prompt = (data.get("prompt") or "").strip()
+    duration = float(data.get("duration") or 30.0)
+    out_name = data.get("out_name") or f"music_{int(time.time() * 1000)}.wav"
+    
+    if not prompt:
+        return JSONResponse({"ok": False, "error": "prompt required"}, status_code=400)
+        
+    out_path = os.path.join(EXP_DIR, out_name)
+    
+    async with sched.acquire_gpu("audio", "heartmula"):
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{os.getcwd()}:/workspace",
+            "-v", f"{os.path.expanduser('~/.cache/huggingface')}:/root/.cache/huggingface",
+            "-v", "/mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro",
+            "-w", "/workspace",
+            "--device", "/dev/kfd",
+            "--device", "/dev/dri",
+            "amd-strix-halo-image-video-toolbox:latest",
+            "nice", "-n", "19",
+            "python3", "/workspace/scripts/heartmula_launcher.py",
+            "--prompt", prompt,
+            "--duration", str(duration),
+            "--out", out_path,
+            "--real",
+        ]
+        
+        def _do() -> int:
+            return subprocess.run(cmd, check=False).returncode
+            
+        try:
+            rc = await asyncio.to_thread(_do)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+            
+        if rc != 0:
+            return JSONResponse({"ok": False, "error": f"heartmula exited with code {rc}"}, status_code=500)
+            
+    return {"ok": True, "url": f"/files/{out_name}", "audio_path": out_path}
+
 @router.post("/mux")
 async def mux(data: dict = Body(...)):
     vrel = data.get("video_path") or ""

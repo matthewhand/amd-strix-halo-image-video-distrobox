@@ -6136,7 +6136,9 @@ function _applyRenderHeartbeat() {
     if (!headerAct) return;
     const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
     const live = !!(_renderHeartbeat && Date.now() < _renderHeartbeat.expiresAt);
-    headerAct.style.display = live ? 'inline-flex' : 'none';
+    const isPaused = !!(_lastTick && _lastTick.scheduler && _lastTick.scheduler.paused);
+    
+    headerAct.style.display = (live || isPaused) ? 'inline-flex' : 'none';
     if (live && txtEl && _renderHeartbeat.text) {
         // Repaint per-char spans only when the underlying text actually
         // changes (cheap idempotent guard inside _paintRenderText), then
@@ -6151,12 +6153,20 @@ function _applyRenderHeartbeat() {
         if (!_renderWasLive) {
             _fireRenderIgnite(txtEl);
         }
+    } else if (isPaused && txtEl) {
+        // When paused, display "paused" text instead
+        _paintRenderText(txtEl, 'paused');
+        _updateRenderTextProgress(txtEl);
+        // Use the pausing animation style while paused
+        if (!txtEl.dataset.animStyle) {
+            txtEl.dataset.animStyle = window._pausingAnimStyle || 'pulse';
+        }
     }
     if (!live && _renderHeartbeat) _renderHeartbeat = null;
     _renderWasLive = live;
 }
 // Cycle animation styles every 5 s while a heartbeat is live.
-setInterval(() => {
+let _renderAnimInterval = setInterval(() => {
     if (!_renderHeartbeat || Date.now() > _renderHeartbeat.expiresAt) return;
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;

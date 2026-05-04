@@ -47,7 +47,7 @@ STAGE_BUDGETS = {
 }
 
 OVERHEAD_GB = 6
-SAFETY_GB = 10
+SAFETY_GB = 24
 COMFY_URL = "http://localhost:8188"
 
 
