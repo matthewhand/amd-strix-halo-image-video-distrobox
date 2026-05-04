@@ -334,6 +334,8 @@ async def music(data: dict = Body(...)):
     async with sched.acquire_gpu("audio", "heartmula"):
         cmd = [
             "docker", "run", "--rm",
+            "--cpus", "28.0",
+            "--memory", "110g",
             "-v", f"{os.getcwd()}:/workspace",
             "-v", f"{os.path.expanduser('~/.cache/huggingface')}:/root/.cache/huggingface",
             "-v", "/mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro",

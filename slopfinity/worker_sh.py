@@ -32,6 +32,8 @@ def _base_docker_cmd(extra_env: Optional[List[str]] = None) -> List[str]:
     for e in extra_env or []:
         cmd += ["-e", e]
     cmd += [
+        "--cpus", "28.0",
+        "--memory", "110g",
         "-v", f"{_workspace()}:/workspace",
         "-v", f"{_hf_cache()}:/root/.cache/huggingface",
         "-w", "/workspace",
@@ -107,7 +109,7 @@ async def run_video_wan(prompt: str, in_img: str, out: str, model: str = "wan2.2
 async def run_audio_heartmula(prompt: str, out: str, duration_s: float = 30.0) -> int:
     async with acquire_gpu("audio", "heartmula"):
         cmd = _base_docker_cmd() + [
-            "python3", "/opt/heartmula_launcher.py",
+            "python3", "/workspace/scripts/heartmula_launcher.py",
             "--prompt", prompt,
             "--duration", str(duration_s),
             "--out", out,
