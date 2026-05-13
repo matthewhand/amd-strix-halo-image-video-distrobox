@@ -31,6 +31,10 @@ class QueueItem(SQLModel, table=True):
     succeeded: Optional[bool] = None
     error: Optional[str] = None
     asset_paths: List[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # Shared UUID that groups all queue items belonging to the same story batch.
+    # None for standalone (non-story) injections. Set by the client via /inject.
+    story_id: Optional[str] = None
+    story_title: Optional[str] = None
 
 class ChatSession(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)

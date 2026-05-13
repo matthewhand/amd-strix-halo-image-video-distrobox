@@ -2218,10 +2218,15 @@ function _renderDoneItem(q) {
     // (must NOT rely on the previous DOM since it's already gone).
     const qid = String(q.ts || q.completed_ts || 0);
     const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
-    return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
+    // Story badge — shown when this item belongs to a multi-beat story batch.
+    const storyBadge = q.story_id
+        ? `<span class="badge badge-xs badge-info gap-1 flex-none" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>`
+        : '';
+    return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done" data-story-id="${q.story_id || ''}">
         <details data-q-id="${qid}"${openAttr}>
             <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
                 <span class="badge badge-xs ${cls} flex-none">${sym} ${verdict}</span>
+                ${storyBadge}
                 <span class="font-semibold truncate flex-1 min-w-0" title="${promptEsc}">${promptEsc}</span>
                 <span class="flex items-center gap-2 flex-none ml-auto">
                     ${assetCountBadge}
@@ -5841,6 +5846,19 @@ function _slopBadgeMeta(file) {
         // Generic mp4 fallback — assume LTX-2.3 since that's the only video model wired in.
         model = 'ltx-2.3';
     }
+    
+    if (!model) {
+        const lower = file.toLowerCase();
+        for (const m of knownModels) {
+            // Check if model name appears as a standalone word (e.g., _ernie_, -ernie-)
+            // to avoid false positives on words like "journey" if we had a "urn" model
+            if (lower.includes(m)) {
+                model = m;
+                break;
+            }
+        }
+    }
+    
     const map = {
         'qwen': { label: 'Qwen Image', color: 'badge-info' },
         'ernie': { label: 'Ernie Image', color: 'badge-error' },
@@ -6135,6 +6153,9 @@ function _applyRenderHeartbeat() {
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;
     const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
+    // If the fleet is confirmed idle via the WS state tick, immediately
+    // expire any stale heartbeat so the animation doesn't linger.
+    if (!_isRendering) _renderHeartbeat = null;
     const live = !!(_renderHeartbeat && Date.now() < _renderHeartbeat.expiresAt);
     const isPaused = !!(_lastTick && _lastTick.scheduler && _lastTick.scheduler.paused);
     
@@ -7029,6 +7050,14 @@ function connect() {
             _applyRenderHeartbeat();
             return;
         }
+        if (d.type === 'render_heartbeat_clear') {
+            // Broadcaster detected fleet process died with stale non-Idle state.
+            // Kill the animation immediately without waiting for TTL or state tick.
+            _renderHeartbeat = null;
+            _isRendering = false;
+            if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
+            return;
+        }
         if (d.type === 'chat_thinking') {
             // Backend chat-endpoint lifecycle: received / calling / done.
             // 8 s dead-man timeout in case heartbeats stop arriving — see
@@ -7234,6 +7263,12 @@ function connect() {
 
             const isRunning = d.state && d.state.mode && d.state.mode !== 'Idle';
             _isRendering = isRunning;
+            // Immediately kill the heartbeat on idle so the queue-header-activity
+            // animation does not linger for its full TTL (up to 15 s) after stopping.
+            if (!isRunning && _renderHeartbeat) {
+                _renderHeartbeat = null;
+                if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
+            }
             _updateStartBtn();
             // Pass mode AND step so the action verb mapping ("Imaging" / "Videoing" /
             // …) doesn't depend on _lastTick which is set later in this handler.
@@ -7844,7 +7879,7 @@ function connect() {
                         <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
                             ${chevronHTML}
                             <span class="flex items-center gap-1 flex-none">
-                                ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
+                                ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}${q.story_id ? `<span class="badge badge-xs badge-info" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>` : ""}
                             </span>
                             <span class="font-semibold truncate flex-1 min-w-0${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             <span class="flex items-center gap-2 flex-none ml-auto">
@@ -7969,15 +8004,58 @@ function connect() {
                         inlineCap = Math.max(6, Math.min(30, Math.floor(avail / 70)));
                     }
                     const pendingOnly = visibleQueue.filter(q => q.status !== 'done');
-                    items.push(...pendingOnly.slice(0, inlineCap).map(q => renderItem(q, {})));
-                    // Done items (newest first) — full audit log of completed
-                    // iters. Same dynamic cap so done rows can also fill
-                    // available height in the focused layout.
+                    // Group pending items by story_id — beats sharing a UUID
+                    // get wrapped in a compact collapsible story header.
+                    const pendingSlice = pendingOnly.slice(0, inlineCap);
+                    const pendingGrouped = _groupItemsByStory(pendingSlice);
+                    for (const g of pendingGrouped) {
+                        if (g.type === 'item') {
+                            items.push(renderItem(g.q, {}));
+                        } else {
+                            const beatsHtml = g.beats.map(q => renderItem(q, {})).join('');
+                            const count = g.beats.length;
+                            items.push(`<li class="bg-primary/5 rounded border border-primary/20 mb-0.5">
+                                <details open>
+                                    <summary class="cursor-pointer px-2 py-1 flex items-center gap-2 text-xs font-semibold">
+                                        <span class="text-primary">📖</span>
+                                        <span class="flex-1 truncate text-primary/80" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                                        <span class="badge badge-xs badge-ghost">${count} beat${count === 1 ? '' : 's'}</span>
+                                    </summary>
+                                    <ul class="m-0 p-0 pl-2 list-none flex flex-col gap-0.5">${beatsHtml}</ul>
+                                </details>
+                            </li>`);
+                        }
+                    }
+                    // Done items (newest first) — group by story_id then render.
                     const doneOnly = visibleQueue.filter(q => q.status === 'done')
                         .slice().sort((a, b) => (b.completed_ts || 0) - (a.completed_ts || 0));
-                    doneOnly.slice(0, inlineCap).forEach(q => {
-                        items.push(_renderDoneItem(q));
-                    });
+                    const doneSlice = doneOnly.slice(0, inlineCap);
+                    const doneGrouped = _groupItemsByStory(doneSlice);
+                    for (const g of doneGrouped) {
+                        if (g.type === 'item') {
+                            items.push(_renderDoneItem(g.q));
+                        } else {
+                            const count = g.beats.length;
+                            const anyFailed = g.beats.some(i => i.succeeded === false);
+                            const allSucceeded = g.beats.every(i => i.succeeded !== false);
+                            const groupCls = anyFailed ? 'badge-error' : 'badge-success';
+                            const groupSym = anyFailed ? '✗' : '✓';
+                            const beatsHtml = `<ul class="m-0 p-0 list-none">${g.beats.map(q => _renderDoneItem(q)).join('')}</ul>`;
+                            const qid = `story-${g.sid}`;
+                            const openAttr = _openDoneItem === qid ? ' open' : '';
+                            items.push(`<li class="bg-base-200/30 rounded-md opacity-80 hover:opacity-100" data-q-status="done" data-story-id="${g.sid}">
+                                <details data-q-id="${qid}"${openAttr}>
+                                    <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
+                                        <span class="badge badge-xs ${groupCls} flex-none">${groupSym}</span>
+                                        <span class="text-primary flex-none">📖</span>
+                                        <span class="font-semibold truncate flex-1 min-w-0 text-primary/90" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                                        <span class="badge badge-xs badge-ghost flex-none">${count} beat${count === 1 ? '' : 's'}</span>
+                                    </summary>
+                                    <div class="px-1 pb-1 pt-0">${beatsHtml}</div>
+                                </details>
+                            </li>`);
+                        }
+                    }
                     qList.innerHTML = items.join('');
                     qList.querySelectorAll('li[data-q-ts]').forEach(li => PriorityLoader.register(li));
                 }
@@ -8409,6 +8487,13 @@ async function inject(prio, terminate, concurrent, opts) {
 
     // Send one /inject per prompt. Multiple subjects (newline-separated)
     // become multiple queue items in order.
+    // When there are multiple prompts, generate ONE shared story_id so the
+    // queue UI can group them under a collapsible story header.
+    const storyId = prompts.length > 1 ? crypto.randomUUID() : null;
+    // Derive a story title from the first prompt (first 50 chars).
+    const storyTitle = storyId
+        ? (prompts[0] || '').slice(0, 50).replace(/\s+/g, ' ').trim() + (prompts[0].length > 50 ? '…' : '')
+        : null;
     for (const promptText of prompts) {
         const f = new FormData();
         // If Raw mode and a title is provided, override the display title.
@@ -8426,15 +8511,18 @@ async function inject(prio, terminate, concurrent, opts) {
         if (opts && opts.whenIdle) f.append('when_idle', '1');
         if (opts && opts.chaos) f.append('chaos', '1');
         if (opts && opts.fastTrack) f.append('fast_track', '1');
-        // Seeds — staged via the Subjects-card picker. Forward the list +
-        // mode so the server can fan out (per-task) or carry through to the
-        // chain loop (per-chain, FLF2V). Empty list = no-op on backend.
+        // Seeds — staged via the Subjects-card picker.
         const _stagedSeeds = (typeof _getStagedSeeds === 'function') ? _getStagedSeeds() : [];
         if (_stagedSeeds.length) {
             f.append('seed_images', JSON.stringify(_stagedSeeds));
             f.append('seeds_mode', (typeof _getSeedsMode === 'function') ? _getSeedsMode() : 'per-task');
         }
         if (stageConcat) f.append('stage_prompts', JSON.stringify(stages));
+        // Story grouping — share the same story_id across all beats.
+        if (storyId) {
+            f.append('story_id', storyId);
+            f.append('story_title', storyTitle);
+        }
         await fetch('/inject', { method: 'POST', body: f });
     }
     // Only blank the per-stage overrides — leave the Subjects textarea alone
@@ -8525,16 +8613,69 @@ let _queueDrawerTotal = 0;
 
 function _renderQueueDrawerItem(q) {
     if (q && q.status === 'done') {
-        // Reuse the canonical done-item renderer so the drawer matches
-        // the inline strip's markup (thumbnails, asset rows, etc.).
         return `<ul class="m-0 p-0 list-none">${_renderDoneItem(q)}</ul>`;
     }
-    const cls = q && q.status === 'cancelled' ? 'border-warning/40' :
-        q && q.status === 'pending' ? 'border-base-200' : 'border-base-200';
-    const badge = q && q.status === 'cancelled' ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>' :
-        q && q.status === 'pending' ? '<span class="badge badge-xs badge-info mr-1">pending</span>' : '';
+    const cls = q && q.status === 'cancelled' ? 'border-warning/40' : 'border-base-200';
+    const badge = q && q.status === 'cancelled'
+        ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>'
+        : '<span class="badge badge-xs badge-info mr-1">pending</span>';
+    const storyBadge = q && q.story_id
+        ? `<span class="badge badge-xs badge-info ml-1" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>`
+        : '';
     const prompt = _htmlEscape(((q && q.prompt) || '').substring(0, 200));
-    return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${prompt}</div>`;
+    return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${storyBadge}${prompt}</div>`;
+}
+
+/** Helper to group queue items by story_id. Returns an array of { type: 'story', sid, beats, story_title } or { type: 'item', q/item }. */
+function _groupItemsByStory(items) {
+    const groups = [];
+    const storyGroups = new Map();
+    for (const q of items) {
+        const sid = q && q.story_id;
+        if (sid) {
+            if (!storyGroups.has(sid)) {
+                storyGroups.set(sid, []);
+                // Keep 'items' and 'beats' aliases for compatibility
+                groups.push({ type: 'story', sid, beats: storyGroups.get(sid), items: storyGroups.get(sid), story_title: q.story_title || 'Story' });
+            }
+            storyGroups.get(sid).push(q);
+        } else {
+            groups.push({ type: 'item', q, item: q });
+        }
+    }
+    return groups;
+}
+
+/** Group a flat list of drawer items by story_id, rendering story groups as
+ *  collapsible <details> blocks and standalone items normally. */
+function _renderQueueDrawerGrouped(items) {
+    const groups = _groupItemsByStory(items);
+    return groups.map(g => {
+        if (g.type === 'item') return _renderQueueDrawerItem(g.item);
+        // Story group
+        const count = g.beats.length;
+        const statuses = g.beats.map(i => i.status || 'pending');
+        const allDone = statuses.every(s => s === 'done');
+        const anyFailed = g.beats.some(i => i.status === 'done' && i.succeeded === false);
+        const anyRunning = statuses.some(s => s === 'working');
+        const groupBadge = anyFailed
+            ? '<span class="badge badge-xs badge-error">✗ failed</span>'
+            : allDone
+                ? '<span class="badge badge-xs badge-success">✓ done</span>'
+                : anyRunning
+                    ? '<span class="badge badge-xs badge-warning">running</span>'
+                    : '<span class="badge badge-xs badge-info">pending</span>';
+        const beatsHtml = g.beats.map(_renderQueueDrawerItem).join('');
+        return `<details class="bg-base-300/60 rounded border border-primary/20 mb-1" open>
+            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs font-semibold">
+                <span class="text-primary">📖</span>
+                <span class="flex-1 truncate" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                ${groupBadge}
+                <span class="badge badge-xs badge-ghost">${count} beat${count === 1 ? '' : 's'}</span>
+            </summary>
+            <div class="pl-3 pb-2 flex flex-col gap-1">${beatsHtml}</div>
+        </details>`;
+    }).join('');
 }
 
 async function _loadQueueDrawerPage() {
@@ -8557,7 +8698,7 @@ async function _loadQueueDrawerPage() {
         if (_queueDrawerTotal === 0) {
             body.innerHTML = '<div class="text-xs text-base-content/50 italic text-center p-4">No queued items yet.</div>';
         } else {
-            body.innerHTML = items.map(_renderQueueDrawerItem).join('');
+            body.innerHTML = _renderQueueDrawerGrouped(items);
         }
         const totalPages = Math.max(1, Math.ceil(_queueDrawerTotal / _queueDrawerLimit));
         const currentPage = Math.floor(_queueDrawerOffset / _queueDrawerLimit) + 1;
