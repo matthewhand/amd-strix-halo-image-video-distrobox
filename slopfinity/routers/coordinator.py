@@ -8,6 +8,13 @@ import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 from slopfinity.paths import EXP_DIR
 
+try:
+    from slopfinity import coordinator as _coordinator
+    _coord_imp_err_repr = None
+except Exception as _coord_e:
+    _coordinator = None
+    _coord_imp_err_repr = repr(_coord_e)
+
 
 router = APIRouter()
 
