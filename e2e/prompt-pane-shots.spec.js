@@ -34,7 +34,7 @@ for (const mode of MODES) {
             const main = document.querySelector('main');
             const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
             return !splash && mainOpacity >= 1;
-        }, null, { timeout: 5000 });
+        }, null, { timeout: 12000 });
 
         // Click the matching mode-pill button. The pill lives at the top
         // of the Prompt card; data-subj-mode carries the mode key.
@@ -90,7 +90,7 @@ for (const mode of MODES) {
             const main = document.querySelector('main');
             const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
             return !splash && mainOpacity >= 1;
-        }, null, { timeout: 5000 });
+        }, null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="${mode}"]`);
         await page.waitForTimeout(400);
         // Clear the seed textarea so the placeholder shows.

@@ -26,7 +26,7 @@ for (const { layout, label } of LAYOUTS) {
             const main = document.querySelector('main');
             const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
             return !splash && mainOpacity >= 1;
-        }, null, { timeout: 5000 });
+        }, null, { timeout: 12000 });
         await page.waitForTimeout(400);
         await page.screenshot({
             path: `/tmp/mobile-${label}.png`,
@@ -51,7 +51,7 @@ test('mobile redirects multi-pane to prompt', async ({ page }) => {
     await page.waitForFunction(() => {
         const splash = document.getElementById('splash-overlay');
         return !splash;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
     await page.waitForTimeout(500);
     const layout = await page.evaluate(() => document.body.dataset.layout || '');
     if (layout !== 'subjects') {

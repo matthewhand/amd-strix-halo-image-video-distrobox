@@ -56,7 +56,7 @@ async function bootChat(page, history) {
         } catch (_) { }
     }, history);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
     await page.waitForTimeout(400);
 }

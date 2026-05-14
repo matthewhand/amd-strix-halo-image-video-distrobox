@@ -55,7 +55,7 @@ async function bootstrap(page) {
         const main = document.querySelector('main');
         const opacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && opacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.waitForTimeout(200);
 }

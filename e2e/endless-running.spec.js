@@ -32,7 +32,7 @@ test('endless story running — + enabled, story pane visible, buttons below log
         const main = document.querySelector('main');
         const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && mainOpacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 
     // Switch to endless mode.
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');

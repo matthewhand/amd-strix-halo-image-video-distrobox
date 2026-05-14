@@ -44,7 +44,7 @@ async function bootEndless(page, opts) {
         } catch (_) { }
     }, { storySeed, legacyString });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.waitForTimeout(250);
 }

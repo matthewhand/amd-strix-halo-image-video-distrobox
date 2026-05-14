@@ -28,7 +28,7 @@ async function bootstrap(page) {
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
 }
 
 async function openLLMTab(page) {

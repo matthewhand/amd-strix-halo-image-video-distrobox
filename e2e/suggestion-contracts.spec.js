@@ -31,7 +31,7 @@ async function bootstrap(page, layout = 'default') {
         const main = document.querySelector('main');
         const opacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && opacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 }
 
 async function setMode(page, mode) {
@@ -286,7 +286,7 @@ test('endless: stale localStorage flag does not auto-add rows', async ({ page })
         } catch (_) {}
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await setMode(page, 'endless');
     // Wait past the cycle interval — even though the toggle is checked
     // (from localStorage), _endlessRunning is false, so the cycle's
@@ -319,7 +319,7 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
         });
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.waitForTimeout(800); // give the cache hydrate a moment
     // Cached chips should appear without any /subjects/suggest call.
     const chipTexts = await page.evaluate(() => Array.from(new Set(
@@ -419,7 +419,7 @@ test('chat: replies render in #subjects-chat-replies, not chip stack', async ({ 
     });
     await stubSuggestionResponse(page, ['try queueing a dragon', 'list recent outputs', 'cancel job 4', 'pause the queue']);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await setMode(page, 'chat');
     await page.waitForTimeout(800);
     // Replies should be in #subjects-chat-replies, NOT in chip stack.

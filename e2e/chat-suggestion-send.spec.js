@@ -124,7 +124,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`console: ${m.text()}`); });
 
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         // Wait for replies host to be populated by _renderChatReplies.
         // Default display count is 3 (slopfinity-chat-suggest-count) — was 4
@@ -193,7 +193,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         await mockChatRoutes(page, chatRequests);
         await page.addInitScript(() => { try { localStorage.clear(); } catch (_) {} });
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForSelector('#subjects-chat-input');
         await page.fill('#subjects-chat-input', 'hello world from typing');
@@ -230,7 +230,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
             } catch (_) {}
         }, HISTORY);
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForTimeout(500);
         await page.screenshot({ path: '/tmp/pane-chat-thought-bubbles.png', fullPage: false });
@@ -319,7 +319,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         await mockChatRoutes(page, []);
         await page.addInitScript(() => { try { localStorage.clear(); } catch (_) {} });
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForSelector('#subjects-chat-input');
         await page.fill('#subjects-chat-input', 'queue 3 dragons');

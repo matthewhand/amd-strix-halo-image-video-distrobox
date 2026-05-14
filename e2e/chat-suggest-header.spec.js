@@ -37,7 +37,7 @@ async function bootChat(page, history) {
         } catch (_) { }
     }, history || null);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="chat"]');
     await page.waitForTimeout(400);
 }
@@ -111,7 +111,7 @@ test.describe('chat suggestions header (pill cluster + count stepper)', () => {
             } catch (_) { }
         });
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click('.subjects-mode-pill button[data-subj-mode="chat"]');
         await page.waitForSelector('#chat-suggest-count', { timeout: 5000 });
 

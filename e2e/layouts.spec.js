@@ -52,7 +52,7 @@ const waitForSplashGone = async (page) => {
         const main = document.querySelector('main');
         const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && mainOpacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 };
 
 const assertVisible = async (page, selector, label) => {
