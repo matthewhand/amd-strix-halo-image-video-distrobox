@@ -75,7 +75,7 @@ test.describe('spiffy toggle (set-suggest-per-row-prompts)', () => {
         await page.click('.subjects-mode-pill button[data-subj-mode="simple"]');
         await page.waitForTimeout(200);
         // Confirm no rows exist yet.
-        const before = await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+        const before = await page.locator('#subject-chips-stack-simple .suggest-marquee-row').count();
         expect(before).toBe(0);
 
         // Open settings and flip the toggle ON. The inline onchange handler
@@ -87,15 +87,15 @@ test.describe('spiffy toggle (set-suggest-per-row-prompts)', () => {
         await closeSettings(page);
 
         await page.waitForFunction(() => {
-            return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length >= 1;
+            return document.querySelectorAll('#subject-chips-stack-simple .suggest-marquee-row').length >= 1;
         }, null, { timeout: 4000 });
 
-        const rowCount = await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+        const rowCount = await page.locator('#subject-chips-stack-simple .suggest-marquee-row').count();
         expect(rowCount).toBe(1);
 
         // The lead cluster ([data-row-prompt-btn]) must be present in
         // simple mode WHEN the spiffy toggle is on (normally simple omits it).
-        const promptBtnCount = await page.locator('#subject-chips-stack [data-row-prompt-btn]').count();
+        const promptBtnCount = await page.locator('#subject-chips-stack-simple [data-row-prompt-btn]').count();
         expect(promptBtnCount).toBeGreaterThanOrEqual(1);
     });
 

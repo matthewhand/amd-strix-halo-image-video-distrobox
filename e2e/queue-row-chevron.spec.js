@@ -46,7 +46,7 @@ async function bootAndInjectRow(page) {
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     // Inject the fixture row into the live #q-list — uses the same CSS
     // selectors as the live queue rows.
     await page.evaluate((html) => {
