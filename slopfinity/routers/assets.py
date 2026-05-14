@@ -278,18 +278,24 @@ async def upload_seed_assets(files: list[UploadFile] = File(...)):
         out_name = f"seed_{ts}_{idx:02d}_{slug}{ext}"
         out_path = os.path.join(EXP_DIR, out_name)
         size = 0
+        oversize = False
         try:
             with open(out_path, "wb") as fh:
                 while True:
                     chunk = await uf.read(1024 * 1024)
-                    if not chunk: break
+                    if not chunk:
+                        break
                     size += len(chunk)
                     if size > _SEED_MAX_BYTES:
-                        os.remove(out_path)
-                        skipped.append({"name": original, "reason": "exceeds 25MB cap"})
+                        oversize = True
                         break
                     fh.write(chunk)
-                else: saved.append(out_name)
+            if oversize:
+                try: os.remove(out_path)
+                except OSError: pass
+                skipped.append({"name": original, "reason": "exceeds 25MB cap"})
+            else:
+                saved.append(out_name)
         except Exception as exc:
             skipped.append({"name": original, "reason": str(exc)})
     return {"ok": True, "saved": saved, "skipped": skipped}

@@ -324,8 +324,12 @@ def _load_scheduler_config() -> dict:
         return {}
 
 
+async def suspend_llm_async() -> dict:
+    return await _auto_suspend.legacy_suspend_lmstudio()
+
+
 async def resume_llm_async() -> dict:
-    return await _auto_suspend.legacy_suspend_lmstudio() # Wait, should be resume
+    return await _auto_suspend.legacy_resume_lmstudio()
 
 
 def suspend_llm() -> dict:

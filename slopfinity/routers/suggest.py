@@ -290,17 +290,18 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
             "an evocative opening scene that could anchor a longer story."
         )
         user_msg = "Give me one story-opening scene."
-    # We're now fetching THREE modes simultaneously in one payload to save LLM roundtrips.
-    user_msg_base = ""
-    if subjects_in:
-        user_msg_base = f"Current context / story beats: {subjects_in}\n\n"
-        
-    user_msg = user_msg_base + (
-        f"Generate {n} suggestions for THREE distinct contexts:\n"
-        f"1. 'story': short next-scene continuations building chronologically on the context above. Do NOT repeat beats.\n"
-        f"2. 'simple': tangential visual subjects matching the tone/theme of the context.\n"
-        f"3. 'chat': longer conversational replies or starters relating to the ongoing process."
-    )
+    else:
+        # We're now fetching THREE modes simultaneously in one payload to save LLM roundtrips.
+        user_msg_base = ""
+        if subjects_in:
+            user_msg_base = f"Current context / story beats: {subjects_in}\n\n"
+
+        user_msg = user_msg_base + (
+            f"Generate {n} suggestions for THREE distinct contexts:\n"
+            f"1. 'story': short next-scene continuations building chronologically on the context above. Do NOT repeat beats.\n"
+            f"2. 'simple': tangential visual subjects matching the tone/theme of the context.\n"
+            f"3. 'chat': longer conversational replies or starters relating to the ongoing process."
+        )
 
     # When fresh=1 we want EACH call to give different ideas (the marquee
     # drip-feed asks for rows 2..N and they'd otherwise be identical to
