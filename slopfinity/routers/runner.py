@@ -404,7 +404,7 @@ async def system_ram():
 
 @router.get("/pipeline/plan")
 async def pipeline_plan(lookahead: int = 2):
-    from .memory_planner import (
+    from ..memory_planner import (
         build_sequence_for_job,
         plan_resident_set,
         naive_load_count,
