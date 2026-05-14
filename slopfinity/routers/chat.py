@@ -710,7 +710,9 @@ async def chat_endpoint(payload: dict = Body(...)):
     history = history[-50:]
     await _broadcast_chat_thinking("received")
     config = cfg.load_config()
-    public_config = {k: v for k, v in config.items() if k not in cfg.SENSITIVE_KEYS and k != "auto_suspend"}
+    public_config = cfg.redact(config)
+    if isinstance(public_config, dict):
+        public_config.pop("auto_suspend", None)
     sys_msg = f"{_CHAT_SYSTEM_PROMPT}\n\nCurrent pipeline configuration:\n{json.dumps(public_config, indent=2)}"
     messages = [{"role": "system", "content": sys_msg}] + history
 
