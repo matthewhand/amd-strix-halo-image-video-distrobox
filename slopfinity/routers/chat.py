@@ -24,7 +24,7 @@ from slopfinity.models import ChatSession, ChatMessage
 
 router = APIRouter()
 
-@router.get("/history")
+@router.get("/chat/history")
 async def get_history():
     """Retrieve the active chat history from the database."""
     with Session(engine) as session:
@@ -46,7 +46,7 @@ async def get_history():
             "session_id": active_session.id
         }
 
-@router.post("/history")
+@router.post("/chat/history")
 async def update_history(payload: dict = Body(...)):
     """Wholesale replace the active chat history (sync from client)."""
     messages_data = payload.get("messages") or []
@@ -83,7 +83,7 @@ async def update_history(payload: dict = Body(...)):
         session.commit()
         return {"ok": True}
 
-@router.delete("/history")
+@router.delete("/chat/history")
 async def archive_history():
     """Archive the active chat session and start a fresh one."""
     with Session(engine) as session:
@@ -101,7 +101,7 @@ async def archive_history():
         session.commit()
         return {"ok": True, "session_id": new_session.id}
 
-@router.get("/archive")
+@router.get("/chat/archive")
 async def list_archive():
     """List archived chat sessions from the last week."""
     one_week_ago = datetime.utcnow() - timedelta(days=7)
@@ -114,7 +114,7 @@ async def list_archive():
         ).all()
         return {"ok": True, "sessions": [s.model_dump() for s in archived]}
 
-@router.post("/tokens")
+@router.post("/chat/tokens")
 async def count_tokens(payload: dict = Body(...)):
     """Calculate the total tokens for a given set of messages."""
     messages = payload.get("messages") or []

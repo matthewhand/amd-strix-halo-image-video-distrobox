@@ -7,7 +7,7 @@ import json
 
 router = APIRouter()
 
-@router.get("/log")
+@router.get("/story/log")
 async def get_story_log():
     """Retrieve the active story log from the database."""
     with Session(engine) as session:
@@ -23,7 +23,7 @@ async def get_story_log():
             "id": active.id
         }
 
-@router.post("/log")
+@router.post("/story/log")
 async def update_story_log(payload: dict = Body(...)):
     """Wholesale replace the active story log (sync from client)."""
     lines = payload.get("lines") or []
@@ -45,7 +45,7 @@ async def update_story_log(payload: dict = Body(...)):
         session.commit()
         return {"ok": True}
 
-@router.delete("/log")
+@router.delete("/story/log")
 async def reset_story_log():
     """Archive the active story log and start a fresh one."""
     with Session(engine) as session:
