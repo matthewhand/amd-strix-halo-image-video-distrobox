@@ -99,7 +99,7 @@ test('endless story running — + enabled, story pane visible, buttons below log
     // the first row should have promptId+rowIdx → lead cluster present.
     await page.waitForTimeout(2500);
     const hasLead = await page.evaluate(() => {
-        return !!document.querySelector('#subject-chips-stack .suggest-marquee-row [data-endless-row-lead]');
+        return !!document.querySelector('#subject-chips-stack-endless .suggest-marquee-row [data-endless-row-lead]');
     });
     if (!hasLead) {
         console.warn('[endless-lead] no [data-endless-row-lead] cluster on any rendered row — endless rows are missing the dropdown');

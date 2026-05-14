@@ -63,12 +63,16 @@ async function stubSuggestionResponse(page, suggestions) {
 }
 
 async function countRows(page) {
-    return await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+    // Mode-agnostic: only one of the suffixed stacks is mounted at a time
+    // (#subject-chips-stack-simple OR #subject-chips-stack-endless). Union
+    // the two so callers in both modes work without dispatch logic.
+    return await page.locator('#subject-chips-stack-simple .suggest-marquee-row, #subject-chips-stack-endless .suggest-marquee-row').count();
 }
 
 async function rowsHaveLead(page) {
+    // Lead clusters are endless-mode-only; only that stack is queried.
     return await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
         if (!rows.length) return null; // n/a
         return Array.from(rows).every(r => r.querySelector('[data-endless-row-lead]'));
     });
@@ -87,7 +91,7 @@ test('endless: every row has [data-endless-row-lead]', async ({ page }) => {
     await page.fill('#p-core', 'A lighthouse keeper meets a sea creature.');
     await page.click('#btn-start-stop-inline');
     // Wait for the initial _renderEndlessRows fetch to land + paint.
-    await page.waitForSelector('#subject-chips-stack .suggest-marquee-row', { timeout: 5000 });
+    await page.waitForSelector('#subject-chips-stack-endless .suggest-marquee-row', { timeout: 5000 });
     await page.waitForTimeout(400);
     const allHaveLead = await rowsHaveLead(page);
     expect(allHaveLead).toBe(true);
@@ -130,7 +134,7 @@ test('endless: + click renders empty mask, no blank-chip placeholders', async ({
     const rowsAfter = await countRows(page);
     expect(rowsAfter).toBe(rowsBefore + 1);
     const newRowChipCount = await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
         const last = rows[rows.length - 1];
         if (!last) return -1;
         // Chips inside the marquee mask, not the lead cluster.
@@ -216,12 +220,12 @@ test('suggest: junk filter drops markdown / errors / scaffolding', async ({ page
     await setMode(page, 'simple');
     // Trigger fetch via the + bootstrap button.
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForSelector('#subject-chips-stack .suggest-marquee-row', { timeout: 5000 });
+    await page.waitForSelector('#subject-chips-stack-simple .suggest-marquee-row', { timeout: 5000 });
     await page.waitForTimeout(300);
     const chipTexts = await page.evaluate(() => {
         // Marquee duplicates chips for the wraparound — dedupe via Set.
         return Array.from(new Set(
-            Array.from(document.querySelectorAll('#subject-chips-stack .btn[data-suggest]'))
+            Array.from(document.querySelectorAll('#subject-chips-stack-simple .btn[data-suggest]'))
                 .map(b => (b.dataset.suggest || '').trim())
         ));
     });
@@ -249,7 +253,7 @@ test('mode swap: chips do not leak across modes', async ({ page }) => {
     await bootstrap(page);
     await setMode(page, 'simple');
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForSelector('#subject-chips-stack .suggest-marquee-row', { timeout: 5000 });
+    await page.waitForSelector('#subject-chips-stack-simple .suggest-marquee-row', { timeout: 5000 });
     const simpleRowCount = await countRows(page);
     expect(simpleRowCount).toBeGreaterThan(0);
     // Swap to endless WITHOUT starting a story — chip stack should
@@ -323,7 +327,7 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
     await page.waitForTimeout(800); // give the cache hydrate a moment
     // Cached chips should appear without any /subjects/suggest call.
     const chipTexts = await page.evaluate(() => Array.from(new Set(
-        Array.from(document.querySelectorAll('#subject-chips-stack .btn[data-suggest]'))
+        Array.from(document.querySelectorAll('#subject-chips-stack-simple .btn[data-suggest]'))
             .map(b => (b.dataset.suggest || '').trim())
     )));
     expect(chipTexts).toContain('cached-1');

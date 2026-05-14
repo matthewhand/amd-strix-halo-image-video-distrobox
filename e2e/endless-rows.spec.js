@@ -64,18 +64,18 @@ async function startStory(page, seed = 'A lighthouse keeper meets a sea creature
     await page.fill('#p-core', seed);
     await page.click('#btn-start-stop-inline');
     // Wait for the initial endless render to land.
-    await page.waitForSelector('#subject-chips-stack .suggest-marquee-row', { timeout: 5000 });
+    await page.waitForSelector('#subject-chips-stack-endless .suggest-marquee-row', { timeout: 5000 });
     await page.waitForTimeout(200);
 }
 
 async function rowCount(page) {
-    return await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+    return await page.locator('#subject-chips-stack-endless .suggest-marquee-row').count();
 }
 
 // Returns [{rowIdx, promptLabel, firstChipText}, ...] for every row.
 async function rowSnapshot(page) {
     return await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
         return Array.from(rows).map((r, i) => {
             const lead = r.querySelector('[data-endless-row-lead]');
             const promptBtn = r.querySelector('[data-row-prompt-btn]');
@@ -118,7 +118,7 @@ test('endless-rows: + click adds 1 row with current default', async ({ page }) =
     expect(await rowCount(page)).toBe(1);
     await page.click('#subjects-suggest-add-btn');
     await page.waitForFunction(() => {
-        return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2;
+        return document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 2;
     }, null, { timeout: 5000 });
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(2);
@@ -139,7 +139,7 @@ test('endless-rows: 3 sequential + clicks → 4 total rows, indices 0..3', async
     for (let i = 0; i < 3; i++) {
         await page.click('#subjects-suggest-add-btn');
         await page.waitForFunction((expected) => {
-            return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === expected;
+            return document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === expected;
         }, i + 2, { timeout: 5000 });
     }
     const snap = await rowSnapshot(page);
@@ -158,13 +158,13 @@ test('endless-rows: − click removes row + reindexes survivors', async ({ page 
     // Add 3 more so we have 4 total.
     for (let i = 0; i < 3; i++) {
         await page.click('#subjects-suggest-add-btn');
-        await page.waitForFunction((n) => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === n, i + 2);
+        await page.waitForFunction((n) => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === n, i + 2);
     }
     expect(await rowCount(page)).toBe(4);
 
     // Remove the row at index 1 (second from top) via its − button.
-    await page.click('#subject-chips-stack .suggest-marquee-row:nth-child(2) [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await page.click('#subject-chips-stack-endless .suggest-marquee-row:nth-child(2) [data-row-remove]');
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 3);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(3);
     // Surviving rows must have indices 0,1,2 (REINDEXED). The bug being
@@ -188,11 +188,11 @@ test('endless-rows: − click on last row leaves N-1 clean rows', async ({ page 
     await bootstrap(page);
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 2);
     // Click − on the LAST row.
-    const remBtns = page.locator('#subject-chips-stack [data-row-remove]');
+    const remBtns = page.locator('#subject-chips-stack-endless [data-row-remove]');
     await remBtns.nth(1).click();
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 1);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(1);
     expect(snap[0].rowIdx).toBe(0);
@@ -208,8 +208,8 @@ test('endless-rows: − click on only row → 0 rows', async ({ page }) => {
     await bootstrap(page);
     await startStory(page);
     expect(await rowCount(page)).toBe(1);
-    await page.click('#subject-chips-stack [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 0);
+    await page.click('#subject-chips-stack-endless [data-row-remove]');
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 0);
     expect(await rowCount(page)).toBe(0);
 });
 
@@ -222,10 +222,10 @@ test('endless-rows: − click on only row → 0 rows', async ({ page }) => {
 test('endless-rows: + after empty stack adds row at idx=0', async ({ page }) => {
     await bootstrap(page);
     await startStory(page);
-    await page.click('#subject-chips-stack [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 0);
+    await page.click('#subject-chips-stack-endless [data-row-remove]');
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 0);
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 1);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(1);
     expect(snap[0].rowIdx).toBe(0);
@@ -242,13 +242,13 @@ test('endless-rows: ↻ refresh stays at original index', async ({ page }) => {
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 3);
     // Refresh row 1 (middle).
-    await page.click('#subject-chips-stack .suggest-marquee-row:nth-child(2) [data-row-refresh]');
+    await page.click('#subject-chips-stack-endless .suggest-marquee-row:nth-child(2) [data-row-refresh]');
     // Wait for the row content to swap (any chip is OK; we just want
     // the loading class to clear).
     await page.waitForFunction(() => {
-        const row = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row')[1];
+        const row = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row')[1];
         return row && !row.querySelector('.suggest-marquee-mask.row-loading');
     }, null, { timeout: 5000 });
     const snap = await rowSnapshot(page);
@@ -268,9 +268,9 @@ test('endless-rows: every row has a lead cluster', async ({ page }) => {
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 3);
     const allHaveLead = await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
         return Array.from(rows).every(r => r.querySelector('[data-endless-row-lead]'));
     });
     expect(allHaveLead).toBe(true);
@@ -290,7 +290,7 @@ test('endless-rows: Submit ends story (clears running flag + seed)', async ({ pa
     await bootstrap(page);
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 2);
     // Submit ends the story.
     await page.click('#subjects-story-submit');
     await page.waitForTimeout(400);
@@ -341,7 +341,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.fill('#p-core', 'seed');
     await page.click('#btn-start-stop-inline');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1, null, { timeout: 5000 });
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 1, null, { timeout: 5000 });
 
     // Double-click + with no delay between.
     await page.click('#subjects-suggest-add-btn');
@@ -362,7 +362,7 @@ test('endless-rows: 3-row endless screenshot', async ({ page }) => {
     await startStory(page);
     await page.click('#subjects-suggest-add-btn');
     await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 3);
     await page.waitForTimeout(300);
     await page.screenshot({ path: '/tmp/endless-rows-3.png', fullPage: false });
 });

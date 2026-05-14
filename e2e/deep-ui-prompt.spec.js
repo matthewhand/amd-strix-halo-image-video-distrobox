@@ -43,7 +43,11 @@ const SURFACES = [
     { label: 'suggest-add-btn', selector: '#subjects-suggest-add-btn' },
     { label: 'simple-rowctl-add', selector: '#subjects-simple-add-row' },
     { label: 'simple-rowctl-remove', selector: '#subjects-simple-remove-row' },
-    { label: 'subject-chips-stack', selector: '#subject-chips-stack' },
+    // #subject-chips-stack is now mounted as two mode-suffixed nodes
+    // (-simple / -endless); only one exists at a time. Inspect both so
+    // the harvest captures whichever the active mode rendered.
+    { label: 'subject-chips-stack-simple', selector: '#subject-chips-stack-simple' },
+    { label: 'subject-chips-stack-endless', selector: '#subject-chips-stack-endless' },
     { label: 'subject-chips-empty', selector: '#subject-chips-empty' },
     { label: 'gen-mode-pill', selector: '#gen-mode-pill' },
     { label: 'pipeline-config-button', selector: '#pipeline-config-button' },
@@ -158,8 +162,10 @@ async function harvestForMode(page, mode) {
         suggest_prompt_name_btn_visible: await inspectSurface(page, '#subjects-suggest-prompt-name', false),
         suggest_refresh_btn_visible: await inspectSurface(page, '#subjects-suggest-btn', false),
         suggest_add_btn_visible: await inspectSurface(page, '#subjects-suggest-add-btn', false),
-        chips_stack: await inspectSurface(page, '#subject-chips-stack', false),
-        chip_rows: await inspectSurface(page, '#subject-chips-stack > *', true),
+        chips_stack_simple: await inspectSurface(page, '#subject-chips-stack-simple', false),
+        chips_stack_endless: await inspectSurface(page, '#subject-chips-stack-endless', false),
+        chip_rows_simple: await inspectSurface(page, '#subject-chips-stack-simple > *', true),
+        chip_rows_endless: await inspectSurface(page, '#subject-chips-stack-endless > *', true),
     };
     return out;
 }
