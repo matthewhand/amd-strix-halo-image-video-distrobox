@@ -3,7 +3,7 @@
 // nav bar visible, so the user can verify left/right arrows + labels
 // + the auto-redirect from multi-pane layouts works.
 
-const { test } = require('@playwright/test');
+const { test } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const MOBILE_VIEWPORT = { width: 390, height: 844 };  // iPhone 12-ish

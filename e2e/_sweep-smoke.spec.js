@@ -1,7 +1,7 @@
 // Disposable sweep spec — captures console errors, page errors, and failed
 // network responses on a cold load of http://localhost:9099. NOT part of the
 // regular suite; run explicitly. Safe to delete after the AFK report ships.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 test('cold-load console + network smoke', async ({ page }) => {
   const consoleErrors = [];

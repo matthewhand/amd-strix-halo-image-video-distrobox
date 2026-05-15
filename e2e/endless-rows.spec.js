@@ -23,7 +23,7 @@
 //   story). _submitEndlessStory still exists as a JS function but has
 //   no UI affordance.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const VIEWPORT = { width: 1440, height: 900 };

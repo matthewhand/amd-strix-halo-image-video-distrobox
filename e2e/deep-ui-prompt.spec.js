@@ -10,7 +10,7 @@
 // tabs to surface mode-specific markup. localStorage is wiped per test
 // for reproducibility.
 
-const { test } = require('@playwright/test');
+const { test } = require('./_fixtures');
 const fs = require('fs');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';

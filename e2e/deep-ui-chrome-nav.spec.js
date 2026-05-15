@@ -7,7 +7,7 @@
 // /tmp/deep-ui-chrome-nav.json and a handful of screenshots to
 // /tmp/deep-ui-*.png so the parent agent can score per-element.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 const fs = require('fs');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';

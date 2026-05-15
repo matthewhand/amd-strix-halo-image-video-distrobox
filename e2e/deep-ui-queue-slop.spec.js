@@ -7,7 +7,7 @@
 //
 // Run: npx playwright test e2e/deep-ui-queue-slop.spec.js
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 const fs = require('fs');
 const path = require('path');
 

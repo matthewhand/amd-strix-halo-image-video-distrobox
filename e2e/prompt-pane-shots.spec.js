@@ -10,7 +10,7 @@
 // one go without manually clicking each tab. Not an assertion suite —
 // pair with layouts.spec.js for contract checks.
 
-const { test } = require('@playwright/test');
+const { test } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const MODES = ['simple', 'raw', 'endless', 'chat'];

@@ -14,7 +14,7 @@
 //   npx playwright test e2e/music-generation.spec.js
 //   SLOPFINITY_URL=http://localhost:9099 npx playwright test e2e/music-generation.spec.js
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 const path = require('path');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';

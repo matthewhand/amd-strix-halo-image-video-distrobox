@@ -8,7 +8,7 @@
 //
 // _renderChatReplies + _consumeChatReply at slopfinity/static/app.js:8661
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

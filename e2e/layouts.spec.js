@@ -15,7 +15,7 @@
 // Driven by the URL ?layout=<mode> param so each test gets a fresh page
 // (avoids cross-contamination from localStorage).
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

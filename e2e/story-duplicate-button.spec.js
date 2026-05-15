@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 test('Story mode should only have one Queue Slop button visible', async ({ page }) => {
     await page.goto('/');

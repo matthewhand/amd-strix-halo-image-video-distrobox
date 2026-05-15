@@ -11,7 +11,7 @@
 //   4. toggling on auto-seeds first row (one .suggest-marquee-row appears
 //      with the lead cluster)
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

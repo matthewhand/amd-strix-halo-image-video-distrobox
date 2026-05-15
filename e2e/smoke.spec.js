@@ -8,7 +8,7 @@
 // Run: npx playwright test e2e/smoke.spec.js
 //   (assumes slopfinity is reachable at http://localhost:9099)
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

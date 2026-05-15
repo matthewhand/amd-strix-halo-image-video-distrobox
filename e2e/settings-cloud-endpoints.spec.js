@@ -14,7 +14,7 @@
 //   4. saving settings persists allow_cloud_endpoints in config
 //      (POST /settings body has the key, GET /settings returns it)
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

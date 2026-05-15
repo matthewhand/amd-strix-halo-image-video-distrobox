@@ -10,7 +10,7 @@
 //   npx playwright test e2e/story-grouping.spec.js
 //   SLOPFINITY_URL=http://localhost:9099 npx playwright test e2e/story-grouping.spec.js
 
-const { test, expect, request: pwRequest } = require('@playwright/test');
+const { test, expect, request: pwRequest } = require('./_fixtures');
 const path = require('path');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';

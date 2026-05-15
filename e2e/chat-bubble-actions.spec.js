@@ -9,7 +9,7 @@
 // Adapted from e2e/chat-mocked.spec.js + e2e/chat-suggestion-send.spec.js
 // (mock /chat + seed history) — does NOT modify those files.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

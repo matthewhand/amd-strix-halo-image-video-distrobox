@@ -6,7 +6,7 @@
 // Captures /tmp/pane-chat-mocked-{default,focused}.png so the user
 // can eyeball whether the chat ever overflows the card.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

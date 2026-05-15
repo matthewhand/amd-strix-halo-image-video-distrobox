@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 test.describe('v304/v305 UI tweaks', () => {
     test('Change 2: slop-filter-pill outer-end rounding', async ({ page }) => {

@@ -21,7 +21,7 @@
 //      so a future regression (e.g. JSON.stringify producing
 //      attribute-breaking quotes) is caught.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
