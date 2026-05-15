@@ -92,6 +92,17 @@ test.describe('Story grouping — queue UI', () => {
     }
 
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+    // Wait for splash to detach so the resulting screenshot shows the
+    // dashboard, not the SLOPFINITY splash overlay. Splash takes
+    // ~3.1s minimum (load+2500ms hide + 600ms removal).
+    await page.waitForFunction(() => {
+      const splash = document.getElementById('splash-overlay');
+      const main = document.querySelector('main');
+      // Use COMPUTED opacity — the fade-in is a CSS animation so
+      // inline style.opacity reads empty mid-fade.
+      const mainOpacity = main ? parseFloat(getComputedStyle(main).opacity) : 1;
+      return !splash && mainOpacity >= 0.99;
+    }, null, { timeout: 12000 });
     await page.waitForTimeout(600); // let WS hydrate
 
     // Open the View All drawer

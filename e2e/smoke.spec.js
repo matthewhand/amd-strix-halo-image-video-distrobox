@@ -39,8 +39,17 @@ test.describe('slopfinity dashboard smoke', () => {
         });
 
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-        // Give the WS handshake + initial render a moment.
-        await page.waitForTimeout(800);
+        // Wait for the splash overlay to detach (controller hides at
+        // load+2500ms then removes the element after 600ms). 800ms here
+        // caught the splash mid-fade in every smoke.png artefact.
+        await page.waitForFunction(() => {
+            const splash = document.getElementById('splash-overlay');
+            const main = document.querySelector('main');
+            // Use COMPUTED opacity — the fade-in is a CSS animation so
+            // inline style.opacity reads empty mid-fade.
+            const mainOpacity = main ? parseFloat(getComputedStyle(main).opacity) : 1;
+            return !splash && mainOpacity >= 0.99;
+        }, null, { timeout: 12000 });
 
         // Capture a screenshot regardless so the artefact is on disk
         // for review when something fails further down.
