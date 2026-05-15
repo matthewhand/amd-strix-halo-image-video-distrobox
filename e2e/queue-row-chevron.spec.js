@@ -74,21 +74,29 @@ test.describe('queue row chevron', () => {
 
     test('chevron rotates 90° when parent <details> is open', async ({ page }) => {
         await bootAndInjectRow(page);
+        // Scope every selector to the fixture row by its unique
+        // data-q-ts. The live server may have queue history (cancelled /
+        // done items) whose <details> sit ahead of our fixture in
+        // #q-list — querySelector('#q-list details') would then pick a
+        // done-item <details> (which has no .q-row-chevron), and opening
+        // that wouldn't satisfy '#q-list details[open] .q-row-chevron'.
+        const FIXTURE = '#q-list li[data-q-ts="111111"]';
+
         // Closed state — transform is none / identity matrix.
-        const closedTransform = await page.locator('#q-list .q-row-chevron').first().evaluate(el => getComputedStyle(el).transform);
+        const closedTransform = await page.locator(`${FIXTURE} .q-row-chevron`).first().evaluate(el => getComputedStyle(el).transform);
         // 'none' means no rotation; if the browser computes a matrix it
         // should be the identity matrix(1,0,0,1,0,0).
         expect(['none', 'matrix(1, 0, 0, 1, 0, 0)']).toContain(closedTransform);
 
         // Open the <details> via JS — clicking the summary works too but
         // we're testing the CSS rotation contract, not click-through.
-        await page.evaluate(() => {
-            const d = document.querySelector('#q-list details');
+        await page.evaluate((sel) => {
+            const d = document.querySelector(`${sel} details`);
             if (d) d.open = true;
-        });
+        }, FIXTURE);
         await page.waitForTimeout(250); // let the 0.15s transition settle.
 
-        const openTransform = await page.locator('#q-list details[open] .q-row-chevron').first().evaluate(el => getComputedStyle(el).transform);
+        const openTransform = await page.locator(`${FIXTURE} details[open] .q-row-chevron`).first().evaluate(el => getComputedStyle(el).transform);
         // rotate(90deg) computes to matrix(0, 1, -1, 0, 0, 0) — a 90°
         // rotation of the identity. Identity / none would mean the CSS
         // rule didn't apply.
