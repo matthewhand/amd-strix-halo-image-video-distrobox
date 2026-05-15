@@ -1,42 +1,19 @@
 # Docker Compose Override Example
 # Copy to docker-compose.override.yaml (gitignored) for local customization.
 #
-# Two common reasons to use this file:
-#   1. Add the Slopfinity dashboard service (not in the committed compose)
-#   2. Override toolbox env/ports/volumes for your machine
+# Note: the Slopfinity dashboard no longer runs in docker — it runs natively
+# on the host. Start it with `make up` (or `bin/slopfinity up`). See
+# README.slopfinity.md for the host-native launcher.
+#
+# This override file is for per-environment tweaks to the *backend* services
+# (strix-halo-toolbox, qwen-image-service, qwen-tts-service, comfyui-service).
 #
 # Usage:
 #   cp docker-compose.override.yaml.example docker-compose.override.yaml
-#   docker compose --profile slop up -d      # full stack with dashboard
+#   docker compose --profile slop up -d      # backend services
+#   make up                                  # dashboard on host
 
-services:
-  # Slopfinity dashboard — FastAPI + Jinja + DaisyUI over the fleet (:9099)
-  slopfinity:
-    image: amd-strix-halo-image-video-toolbox:latest
-    container_name: strix-halo-slopfinity
-    network_mode: host
-    environment:
-      - PYTHONPATH=/
-      - SLOPFINITY_STATE_DIR=/workspace
-      # Bind defaults to 127.0.0.1 so the dashboard isn't exposed to the
-      # LAN by default. Uncomment + customize to allow LAN access.
-      # The CSRF middleware accepts only same-origin (the bind host) by
-      # default — set SLOPFINITY_TRUSTED_ORIGINS to a comma-separated
-      # list of full scheme://host[:port] entries for any other hosts
-      # that should be allowed (e.g. a reverse proxy or kiosk URL).
-      # - SLOPFINITY_BIND_HOST=0.0.0.0
-      # - SLOPFINITY_TRUSTED_ORIGINS=http://my-lan-host:9099,http://kiosk.local
-    volumes:
-      - ./comfy-outputs/experiments:/workspace
-      - ./slopfinity:/slopfinity
-      - ./branding:/branding:ro
-      - ./scripts/dark_server.py:/dark_server.py
-      - ./fleet_config.py:/fleet_config.py
-    working_dir: /
-    command: python3 -u /dark_server.py
-    profiles:
-      - slopfinity
-      - slop
+services: {}
 
   # Example toolbox overrides (uncomment + edit as needed)
   # strix-halo-toolbox:

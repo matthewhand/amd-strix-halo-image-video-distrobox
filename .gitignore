@@ -75,9 +75,9 @@ run_philosophical_experiments.py
 workflow_api.json
 
 # Tailwind build artifacts (see Makefile / README "Tailwind bundle").
-# bin/ holds the downloaded standalone CLI; tailwind.css is the
-# generated bundle — both are reproducible from src/tailwind.css.
-bin/
+# Only the downloaded CLI binary and the generated CSS bundle are
+# ignored — bin/slopfinity (launcher shim) is intentionally tracked.
+bin/tailwindcss
 slopfinity/static/tailwind.css
 
 # stylelint deps — installed by `make lint` / CI on demand. The
