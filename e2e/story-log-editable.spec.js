@@ -1,12 +1,12 @@
 // Endless story log — editable rows in #subjects-story-log instead of
-// the legacy <pre> blob. Each row is a contenteditable .endless-row-text
-// + an .endless-row-del × button. Edits and deletes both persist into
-// localStorage `slopfinity-endless-story-log` as a JSON array. Legacy
-// `\n`-joined string storage migrates to the array shape on first read.
+// the legacy <pre> blob. Each row is an <input type="text">
+// .endless-row-text + an .endless-row-del × button. Edits and deletes
+// both persist into localStorage `slopfinity-endless-story-log` as a
+// JSON array. Legacy `\n`-joined string storage migrates to the array
+// shape on first read.
 //
 // Verifies:
-//   1. story pane in endless mode renders editable rows (contenteditable
-//      spans), not <pre>
+//   1. story pane in endless mode renders editable <input> rows, not <pre>
 //   2. each row has a × delete button
 //   3. editing row text persists into localStorage as a JSON array
 //   4. legacy `\n`-joined string in storage migrates to array on first read
@@ -44,7 +44,7 @@ async function bootEndless(page, opts) {
         } catch (_) { }
     }, { storySeed, legacyString });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.waitForTimeout(250);
 }
@@ -63,8 +63,9 @@ test.describe('endless story log — editable rows', () => {
         const preCount = await page.locator('#subjects-story-log pre').count();
         expect(preCount).toBe(0);
 
-        // Each row's text span is contenteditable.
-        const editableCount = await page.locator('#subjects-story-log .endless-row-text[contenteditable="true"]').count();
+        // Each row's text is editable. Implementation uses <input type="text">
+        // (intrinsically editable) rather than a contenteditable span.
+        const editableCount = await page.locator('#subjects-story-log input.endless-row-text').count();
         expect(editableCount).toBeGreaterThanOrEqual(3);
 
         // Each row has a × delete button.
@@ -74,15 +75,15 @@ test.describe('endless story log — editable rows', () => {
 
     test('editing a row text persists into localStorage JSON array', async ({ page }) => {
         await bootEndless(page, { storySeed: ['alpha', 'bravo'] });
-        await page.waitForSelector('#subjects-story-log .endless-row-text[contenteditable="true"]', { timeout: 4000, state: 'attached' });
+        await page.waitForSelector('#subjects-story-log input.endless-row-text', { timeout: 4000, state: 'attached' });
 
         // Edit the first row via direct DOM mutation + dispatching input
-        // (simpler than typing into a contenteditable span).
+        // (simpler than typing into the input).
         await page.evaluate(() => {
-            const span = document.querySelector('#subjects-story-log .endless-row-text[data-row-idx="0"]');
-            if (span) {
-                span.textContent = 'alpha-edited';
-                span.dispatchEvent(new Event('input', { bubbles: true }));
+            const inp = document.querySelector('#subjects-story-log input.endless-row-text[data-row-idx="0"]');
+            if (inp) {
+                inp.value = 'alpha-edited';
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
         await page.waitForTimeout(150);
@@ -110,9 +111,10 @@ test.describe('endless story log — editable rows', () => {
 
         const rows = await page.locator('#subjects-story-log .endless-row-text').count();
         expect(rows).toBe(3);
+        // Inputs hold their text in `.value`, not `.textContent`.
         const texts = await page.evaluate(() => Array.from(
             document.querySelectorAll('#subjects-story-log .endless-row-text')
-        ).map(s => s.textContent));
+        ).map(s => s.value !== undefined ? s.value : s.textContent));
         expect(texts).toEqual(['one', 'two', 'three']);
     });
 
