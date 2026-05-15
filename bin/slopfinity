@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Canonical launcher for the Slopfinity dashboard.
+#
+#   bin/slopfinity up       — start uvicorn (server only, no css watcher)
+#   bin/slopfinity dev      — start uvicorn + tailwind --watch via overmind
+#   bin/slopfinity down     — stop whatever's running on $PORT
+#   bin/slopfinity logs     — tail the server log
+#   bin/slopfinity status   — show what's bound on $PORT and the pid
+#
+# Env knobs (with defaults):
+#   SLOPFINITY_BIND_HOST=127.0.0.1   set 0.0.0.0 for LAN access
+#   SLOPFINITY_BIND_PORT=9099
+#   SLOPFINITY_STATE_DIR=$REPO/comfy-outputs/experiments
+#   SLOPFINITY_DISABLE_CSRF=0        set 1 only when developing same-LAN
+#   SLOPFINITY_TRUSTED_ORIGINS=      comma-separated extra origins
+#
+# State dir today is ./comfy-outputs/experiments (matches what the docker
+# container used to mount as /workspace). A future "Phase B" unifies all
+# slop assets under ./slop/ — when that lands, flip the default here.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
+
+: "${SLOPFINITY_BIND_HOST:=127.0.0.1}"
+: "${SLOPFINITY_BIND_PORT:=9099}"
+: "${SLOPFINITY_STATE_DIR:=$REPO/comfy-outputs/experiments}"
+
+export SLOPFINITY_BIND_HOST SLOPFINITY_BIND_PORT SLOPFINITY_STATE_DIR
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+mkdir -p "$SLOPFINITY_STATE_DIR"
+
+LOG_DIR="$REPO/logs"
+LOG_FILE="$LOG_DIR/slopfinity.log"
+mkdir -p "$LOG_DIR"
+
+_url() { printf 'http://%s:%s\n' "$SLOPFINITY_BIND_HOST" "$SLOPFINITY_BIND_PORT"; }
+
+_port_pid() {
+  ss -ltnpH 2>/dev/null \
+    | awk -v port=":$SLOPFINITY_BIND_PORT" '$4 ~ port { print $6 }' \
+    | grep -oP 'pid=\K[0-9]+' | head -n1 || true
+}
+
+cmd_up() {
+  if [[ -n "$(_port_pid)" ]]; then
+    echo "✗ port $SLOPFINITY_BIND_PORT is already in use (pid $(_port_pid)). Run \`$0 down\` first." >&2
+    exit 1
+  fi
+  echo "→ starting uvicorn at $(_url) (logs: $LOG_FILE)"
+  nohup uvicorn slopfinity.server:app \
+    --host "$SLOPFINITY_BIND_HOST" --port "$SLOPFINITY_BIND_PORT" \
+    --reload --reload-dir slopfinity \
+    >>"$LOG_FILE" 2>&1 &
+  disown
+  echo "→ pid $! — \`$0 logs\` to tail, \`$0 down\` to stop"
+}
+
+cmd_dev() {
+  if ! command -v overmind >/dev/null 2>&1; then
+    cat <<EOF >&2
+✗ overmind not installed.
+
+Install on Ubuntu/Debian:
+  curl -L https://github.com/DarthSim/overmind/releases/latest/download/overmind-v2.5.1-linux-amd64.gz \\
+    | gunzip > "$REPO/bin/overmind" && chmod +x "$REPO/bin/overmind"
+  export PATH="$REPO/bin:\$PATH"
+
+Or fall back to \`$0 up\` (uvicorn only, no css watcher).
+EOF
+    exit 1
+  fi
+  if [[ -n "$(_port_pid)" ]]; then
+    echo "✗ port $SLOPFINITY_BIND_PORT is already in use (pid $(_port_pid)). Run \`$0 down\` first." >&2
+    exit 1
+  fi
+  echo "→ overmind start (web + css watch) at $(_url)"
+  exec overmind start -f "$REPO/Procfile"
+}
+
+cmd_down() {
+  local pid
+  pid="$(_port_pid)"
+  if [[ -z "$pid" ]]; then
+    echo "→ nothing on port $SLOPFINITY_BIND_PORT"
+    return 0
+  fi
+  echo "→ killing pid $pid on port $SLOPFINITY_BIND_PORT"
+  kill "$pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    sleep 0.3
+    [[ -z "$(_port_pid)" ]] && { echo "→ stopped"; return 0; }
+  done
+  echo "→ still alive, sending SIGKILL"
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+cmd_logs() {
+  [[ -f "$LOG_FILE" ]] || { echo "no log file at $LOG_FILE" >&2; exit 1; }
+  exec tail -F "$LOG_FILE"
+}
+
+cmd_status() {
+  local pid
+  pid="$(_port_pid)"
+  if [[ -n "$pid" ]]; then
+    echo "✓ running — pid $pid bound to $(_url)"
+    ps -p "$pid" -o pid,etime,cmd 2>/dev/null | tail -n +1
+  else
+    echo "✗ not running (nothing on $(_url))"
+  fi
+}
+
+case "${1:-}" in
+  up)     cmd_up ;;
+  dev)    cmd_dev ;;
+  down)   cmd_down ;;
+  logs)   cmd_logs ;;
+  status) cmd_status ;;
+  ""|help|-h|--help)
+    sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    echo "unknown subcommand: $1" >&2
+    echo "try: $0 help" >&2
+    exit 2
+    ;;
+esac
