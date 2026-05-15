@@ -18,12 +18,26 @@ const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test('endless story running — + enabled, story pane visible, buttons below log', async ({ page }) => {
+    // Stub /subjects/suggest so the bonus row-rendering check doesn't
+    // wait on the live LLM (~minutes per call).
+    await page.route('**/subjects/suggest**', (route) => {
+        const arr = ['lonely lighthouse', 'cyberpunk dragon', 'hermit crab lawyer'];
+        return route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
+        });
+    });
     await page.addInitScript(() => {
         try {
             localStorage.clear();
             // Generous upper-pane height so the full Prompt card body
             // fits — without this, the story-pane gets cropped.
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            // Seed Suggestions visible — _applySuggestionsHiddenState
+            // inline-style-hides the +/regen badges on a cold browser
+            // (default state is "hidden") which would defeat the +
+            // enabled-state assertion. Same fix as smoke spec c159d69.
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) {}
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
@@ -34,43 +48,42 @@ test('endless story running — + enabled, story pane visible, buttons below log
         return !splash && mainOpacity >= 1;
     }, null, { timeout: 12000 });
 
-    // Switch to endless mode.
+    // Switch to endless mode. Note: as of the Story-mode redesign,
+    // entering endless mode IS starting the story — there is no
+    // separate "Start Story" button anymore. _setSubjectsMode flips
+    // `_endlessRunning=true` and adds `body.endless-running`
+    // synchronously (see app.js ~line 2596). The big inline button
+    // is now the standard "Queue Slop" — it does NOT start endless.
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
 
-    // Snapshot pre-start — + button SHOULD be disabled here.
     const addBtn = page.locator('#subjects-suggest-add-btn');
-    const preStartDisabled = await addBtn.evaluate(el => el.disabled);
-    if (!preStartDisabled) {
-        console.warn('[endless-prestart] + button should be disabled before Start Story, but isn\'t');
-    }
     await page.screenshot({ path: '/tmp/endless-prestart.png', fullPage: false });
 
-    // Type a seed + click Start Story.
-    await page.fill('#p-core', 'A lonely lighthouse keeper discovers a stranded sea creature.');
+    // Pre-seed via JS — #subjects-input-row is CSS-hidden in
+    // body.subj-mode-endless.endless-running, so page.fill('#p-core')
+    // times out on visibility. Setting .value + dispatching 'input'
+    // is the post-redesign equivalent.
+    await page.evaluate(() => {
+        const ta = document.getElementById('p-core');
+        if (ta) {
+            ta.value = 'A lonely lighthouse keeper discovers a stranded sea creature.';
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
     await page.waitForTimeout(150);
-    await page.click('#btn-start-stop-inline');
 
-    // Give the start handler time to flip _endlessRunning + repaint.
-    await page.waitForTimeout(600);
-
-    // Verify _endlessRunning is true module-side.
+    // Verify _endlessRunning is true module-side via the body class
+    // (set synchronously in _setSubjectsMode for endless).
     const isRunning = await page.evaluate(() => {
-        // _endlessRunning is module-scoped; we expose it indirectly via
-        // body.endless-running class set in _startEndlessStory.
         return document.body.classList.contains('endless-running');
     });
-    if (!isRunning) {
-        console.warn('[endless-start] body.endless-running class missing after Start Story click');
-    }
     expect(isRunning).toBe(true);
 
-    // + button should now be enabled.
+    // + button should be enabled in endless mode (always — see
+    // _refreshSuggestBadge "isEndless: allow=true" branch).
     const postStartDisabled = await addBtn.evaluate(el => el.disabled);
     expect(postStartDisabled).toBe(false);
-    if (postStartDisabled) {
-        console.warn('[endless-poststart] + button STILL disabled after Start Story — gating bug');
-    }
 
     // Story pane should be visible (no .hidden class).
     const storyPane = page.locator('#subjects-story-pane');
@@ -95,11 +108,12 @@ test('endless story running — + enabled, story pane visible, buttons below log
 
     // Bonus: verify a suggestion row is rendering with a lead cluster
     // (the [data-endless-row-lead] container — that's the dropdown +
-    // refresh + minus chip group). Wait for the cycle to inject one;
-    // the first row should have promptId+rowIdx → lead cluster present.
-    await page.waitForTimeout(2500);
+    // refresh + minus chip group). The Start-Story-triggered fetch
+    // is gone too, so we kick it via the public regenSuggestions API.
+    await page.evaluate(() => window.regenSuggestions && window.regenSuggestions());
+    await page.waitForTimeout(1500);
     const hasLead = await page.evaluate(() => {
-        return !!document.querySelector('#subject-chips-stack-endless .suggest-marquee-row [data-endless-row-lead]');
+        return !!document.querySelector('.subject-chips-stack:not(.hidden) .suggest-marquee-row [data-endless-row-lead]');
     });
     if (!hasLead) {
         console.warn('[endless-lead] no [data-endless-row-lead] cluster on any rendered row — endless rows are missing the dropdown');
