@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dracula">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slopfinity screenshot audit</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css">
+
+<!-- lightGallery: free GPL build via CDN, no plugins needed beyond core + zoom + fullscreen -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/css/lightgallery.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/css/lg-zoom.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/css/lg-fullscreen.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/css/lg-thumbnail.css">
+<script src="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/lightgallery.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/plugins/zoom/lg-zoom.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/plugins/fullscreen/lg-fullscreen.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightgallery@2.7.2/plugins/thumbnail/lg-thumbnail.umd.min.js"></script>
+
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  .ss-tile { transition: transform 120ms ease; }
+  .ss-tile:hover { transform: scale(1.02); }
+  /* lightGallery overrides — match daisyUI dracula */
+  .lg-backdrop { background-color: rgba(0,0,0,0.92); }
+</style>
+</head>
+<body class="min-h-screen bg-base-300 text-base-content">
+<div class="max-w-7xl mx-auto p-6 space-y-6">
+
+  <header class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-3xl font-bold">Slopfinity screenshot audit</h1>
+      <p class="text-sm opacity-70">Most-recent Playwright artifacts in <code class="text-xs">e2e/artifacts/</code>. Click any tile to zoom.</p>
+    </div>
+    <div class="flex gap-2 items-center text-xs opacity-70">
+      <span class="badge badge-success badge-sm">current</span>
+      <span class="badge badge-warning badge-sm">stale</span>
+      <span class="badge badge-info badge-sm">verified</span>
+      <span class="badge badge-error badge-sm">mismatch</span>
+    </div>
+  </header>
+
+  <!-- Cluster tabs ---------------------------------------------------------->
+  <div role="tablist" class="tabs tabs-lifted tabs-lg">
+
+    <!-- ============================== LAYOUTS ============================== -->
+    <input type="radio" name="cluster" role="tab" class="tab" aria-label="Layouts (7)" checked>
+    <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-5">
+      <p class="text-sm opacity-80 mb-3">From <code class="text-xs">e2e/layouts.spec.js</code>. 4 modern modes; 3 stale relics from before commit <code class="text-xs">e9ac9ea</code> removed the 2-card layouts.</p>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="grid-layouts"></div>
+    </div>
+
+    <!-- ============================== DEEP-UI MATRIX ============================== -->
+    <input type="radio" name="cluster" role="tab" class="tab" aria-label="Deep-UI matrix (9)">
+    <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-5">
+      <p class="text-sm opacity-80 mb-3">From <code class="text-xs">e2e/deep-ui-queue-slop.spec.js</code>. 3 viewports × 3 layouts.</p>
+      <div class="grid grid-cols-3 gap-4" id="grid-deepui"></div>
+    </div>
+
+    <!-- ============================== MUSIC FLOW ============================== -->
+    <input type="radio" name="cluster" role="tab" class="tab" aria-label="Music flow (6)">
+    <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-5">
+      <p class="text-sm opacity-80 mb-3">From <code class="text-xs">e2e/music-generation.spec.js</code>. Sequential states of the HeartMuLa music generation flow.</p>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="grid-music"></div>
+    </div>
+
+    <!-- ============================== SMOKE + MISC ============================== -->
+    <input type="radio" name="cluster" role="tab" class="tab" aria-label="Smoke + misc (3)">
+    <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-5">
+      <p class="text-sm opacity-80 mb-3">From <code class="text-xs">e2e/smoke.spec.js</code> and <code class="text-xs">e2e/story-grouping.spec.js</code>. Reference snapshots.</p>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="grid-misc"></div>
+    </div>
+
+    <!-- ============================== WALKTHROUGH ============================== -->
+    <input type="radio" name="cluster" role="tab" class="tab" aria-label="Walkthrough (19)">
+    <div role="tabpanel" class="tab-content bg-base-100 border-base-300 rounded-box p-5">
+      <p class="text-sm opacity-80 mb-3">From <code class="text-xs">e2e/walkthrough.spec.js</code> — one shot per meaningful state of the happy-path flow. Numerically ordered.</p>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="grid-walkthrough"></div>
+    </div>
+
+  </div>
+
+  <footer class="text-xs opacity-60 pt-6 border-t border-base-content/10">
+    <p>This page is hand-maintained. When you add a new screenshot, append an entry to the <code>SCREENSHOTS</code> array below. Future work: script regen from a manifest.</p>
+    <p class="mt-1">Generated 2026-05-15. Branch: <code>claude/auto-sweep-2026-05-14</code>.</p>
+  </footer>
+
+</div>
+
+
+<script>
+// Data ---------------------------------------------------------------------
+// Each entry: { file, intent, status, dir }
+// status: current | stale | verified | mismatch | (omit = unverified)
+// dir: 'walkthrough' (only for the walkthrough subdir) | undefined
+const SCREENSHOTS = {
+  layouts: [
+    { file: 'layout-default.png',     intent: 'Default layout: subjects + queue + slop outputs all visible. Split-divider + horizontal splitter present. Focus FAB hidden.', status: 'current' },
+    { file: 'layout-subjects.png',    intent: 'Subjects-only layout: #split-left visible; queue + outputs hidden. Focus FAB present (single-card mode).', status: 'current' },
+    { file: 'layout-queue.png',       intent: 'Queue-only layout: #split-right visible; subjects + outputs hidden. Focus FAB present.', status: 'current' },
+    { file: 'layout-gallery.png',     intent: 'Gallery-only layout: #output-section visible; both upper cards hidden. Gallery-FAB owns the floating slot.', status: 'current' },
+    { file: 'layout-subj-slop.png',   intent: '(REMOVED in e9ac9ea — 2-card subj+slop layout). Image is from 2026-04-28, pre-removal.', status: 'stale' },
+    { file: 'layout-subj-queue.png',  intent: '(REMOVED in e9ac9ea — 2-card subj+queue layout). Pre-removal artifact.', status: 'stale' },
+    { file: 'layout-queue-slop.png',  intent: '(REMOVED in e9ac9ea — 2-card queue+slop layout). Pre-removal artifact.', status: 'stale' },
+  ],
+  deepui: [
+    { file: 'deepui-compact-default.png',  intent: 'Compact viewport (375×800), default layout.' },
+    { file: 'deepui-compact-queue.png',    intent: 'Compact viewport, queue-only layout.' },
+    { file: 'deepui-compact-gallery.png',  intent: 'Compact viewport, gallery-only layout.' },
+    { file: 'deepui-medium-default.png',   intent: 'Medium viewport (900×800), default layout.' },
+    { file: 'deepui-medium-queue.png',     intent: 'Medium viewport, queue-only layout.' },
+    { file: 'deepui-medium-gallery.png',   intent: 'Medium viewport, gallery-only layout.' },
+    { file: 'deepui-large-default.png',    intent: 'Large viewport (1440×900), default layout.' },
+    { file: 'deepui-large-queue.png',      intent: 'Large viewport, queue-only layout.' },
+    { file: 'deepui-large-gallery.png',    intent: 'Large viewport, gallery-only layout.' },
+  ],
+  music: [
+    { file: 'music-01-page-load.png',                  intent: 'Music textarea (#fe-music or fallback #p-music) present on cold page load.' },
+    { file: 'music-02-settings-audio-select.png',      intent: '#cfg-audio model selector — initial state (lives in #pipeline-modal, not #settings-modal).' },
+    { file: 'music-03-settings-heartmula-selected.png',intent: 'HeartMuLa option chosen in #cfg-audio.' },
+    { file: 'music-04-prompt-filled.png',              intent: 'Music textarea filled with "ambient electronic, dreamy synths, 90 BPM".' },
+    { file: 'music-05-model-options-verified.png',     intent: 'Options list of #cfg-audio: No Music / Heartmula / divider / Use existing slop…' },
+    { file: 'music-06-api-post-outputs.png',           intent: '#output-section after POSTing /music — post-API outputs state.' },
+  ],
+  misc: [
+    { file: 'smoke.png',                       intent: 'Whole dashboard at default layout — sanity reference shot from smoke spec.' },
+    { file: 'settings-open.png',               intent: '#settings-modal open, tabs strip visible.' },
+    { file: 'story-01-view-all-grouped.png',   intent: '#queue-drawer-body showing the "View All" story group — beats grouped under a story header.' },
+  ],
+  walkthrough: [
+    { file: '01_landing.png',          intent: 'Cold landing — splash dismissed, all 3 cards visible.', dir: 'walkthrough' },
+    { file: '02_mode_endless.png',     intent: 'Subject mode pill flipped to endless.', dir: 'walkthrough' },
+    { file: '02_mode_simple.png',      intent: 'Subject mode pill = simple.', dir: 'walkthrough' },
+    { file: '02_mode_raw.png',         intent: 'Subject mode pill = raw.', dir: 'walkthrough' },
+    { file: '02_mode_chat.png',        intent: 'Subject mode pill = chat.', dir: 'walkthrough' },
+    { file: '03a_simple_empty.png',    intent: 'Simple mode, prompt textarea (#p-core) empty.', dir: 'walkthrough' },
+    { file: '03b_prompt_typed.png',    intent: 'Same after typing "a neon cat surfing on a glowing wave at sunset".', dir: 'walkthrough' },
+    { file: '04_queue_submitted.png',  intent: '#btn-start-stop-inline clicked → queue submission state.', dir: 'walkthrough' },
+    { file: '05a_settings_open.png',   intent: 'Settings drawer just opened.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_1.png',  intent: 'Settings tab 1 — General.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_2.png',  intent: 'Settings tab 2 — LLM.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_3.png',  intent: 'Settings tab 3 — Pipeline.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_4.png',  intent: 'Settings tab 4 — Speech.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_5.png',  intent: 'Settings tab 5 — Prompts.', dir: 'walkthrough' },
+    { file: '05b_settings_tab_6.png',  intent: 'Settings tab 6 — Triggers.', dir: 'walkthrough' },
+    { file: '06a_chat_empty.png',      intent: 'Chat mode pane, empty input.', dir: 'walkthrough' },
+    { file: '06b_chat_typed.png',      intent: 'Chat input with "hello there" typed.', dir: 'walkthrough' },
+    { file: '07_story_endless.png',    intent: 'Story-log endless mode after switching pill.', dir: 'walkthrough' },
+    { file: '08_outputs.png',          intent: '#output-section scrolled into view.', dir: 'walkthrough' },
+  ],
+};
+
+// Render -------------------------------------------------------------------
+const badgeFor = (status) => {
+  if (!status) return '';
+  const cls = {
+    current:  'badge-success',
+    stale:    'badge-warning',
+    verified: 'badge-info',
+    mismatch: 'badge-error',
+  }[status] || 'badge-ghost';
+  return `<span class="badge badge-sm ${cls}">${status}</span>`;
+};
+
+const renderGrid = (containerId, items) => {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  // Each tile = <a> wrapping the thumb img — lightGallery init walks
+  // its children for the gallery items (href = full-size, data-src
+  // gives explicit URL, data-sub-html = caption rendered in lightbox).
+  container.innerHTML = items.map(({ file, intent, status, dir }) => {
+    const src = dir ? `${dir}/${file}` : file;
+    const captionHtml = `<h4 class='font-mono text-sm'>${file}</h4><p class='text-xs opacity-80 mt-1'>${intent.replace(/'/g, "&#39;")}</p>`;
+    return `
+      <a href="${src}" data-src="${src}" data-sub-html="${captionHtml.replace(/"/g, '&quot;')}"
+         class="ss-tile card bg-base-200 shadow-md cursor-zoom-in block hover:shadow-lg">
+        <figure class="bg-base-300 aspect-video overflow-hidden">
+          <img class="w-full h-full object-cover" loading="lazy" src="${src}" alt="${file}" />
+        </figure>
+        <div class="card-body p-3 space-y-1">
+          <h3 class="card-title text-xs font-mono break-all leading-tight">${file}</h3>
+          <p class="text-xs opacity-75 leading-snug">${intent}</p>
+          <div class="flex gap-1 flex-wrap pt-1">${badgeFor(status)}</div>
+        </div>
+      </a>`;
+  }).join('');
+};
+
+renderGrid('grid-layouts',     SCREENSHOTS.layouts);
+renderGrid('grid-deepui',      SCREENSHOTS.deepui);
+renderGrid('grid-music',       SCREENSHOTS.music);
+renderGrid('grid-misc',        SCREENSHOTS.misc);
+renderGrid('grid-walkthrough', SCREENSHOTS.walkthrough);
+
+// lightGallery — one instance per cluster grid so prev/next stays
+// within-cluster (you don't accidentally swipe from a layout shot to
+// a walkthrough one).
+['grid-layouts','grid-deepui','grid-music','grid-misc','grid-walkthrough'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  lightGallery(el, {
+    plugins: [lgZoom, lgFullscreen, lgThumbnail],
+    speed: 250,
+    download: false,
+    thumbnail: true,
+    selector: 'a',
+    licenseKey: '0000-0000-000-0000', // CC: lightGallery non-commercial use
+  });
+});
+</script>
+</body>
+</html>
