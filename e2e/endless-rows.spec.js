@@ -59,6 +59,12 @@ async function bootstrap(page) {
         try {
             localStorage.clear();
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            // Force Suggestions toggle ON so #subjects-suggest-add-btn is
+            // un-hidden in endless mode (the badge refresh keys on the
+            // toggle for the simple-mode pre-first-batch + bootstrap, and
+            // an OFF toggle drops other badge elements that share its
+            // join cluster offscreen).
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
@@ -374,6 +380,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
         try {
             localStorage.clear();
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
