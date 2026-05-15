@@ -53,72 +53,32 @@ test.describe('chat suggestions header (pill cluster + count stepper)', () => {
         const pillCount = await page.locator('#chat-suggest-prompt-pills button').count();
         expect(pillCount).toBeGreaterThanOrEqual(3);
 
-        // Count badge is at #chat-suggest-count, default 3.
-        const badge = page.locator('#chat-suggest-count');
-        await expect(badge).toHaveCount(1);
-        const txt = (await badge.textContent() || '').trim();
-        expect(txt).toBe('3');
-        const dataCount = await badge.getAttribute('data-count');
-        expect(dataCount).toBe('3');
+        // v324: per-mode count badge was REMOVED from the chat-suggest
+        // cluster per user request "under chat mode the tally counter
+        // should be removed". The default count (3) lives on in the
+        // localStorage key + _getChatSuggestCount() — no visible badge.
+        await expect(page.locator('#chat-suggest-count')).toHaveCount(0);
+        const defaultCount = await page.evaluate(() => (typeof window._getChatSuggestCount === 'function' ? window._getChatSuggestCount() : null));
+        expect(defaultCount).toBe(3);
     });
 
-    test('+/- step badge in lockstep, clamped to 1..6', async ({ page }) => {
-        await bootChat(page);
-        await page.waitForSelector('#chat-suggest-count', { timeout: 5000 });
-        // The − button is the join-item btn before the badge; the + is after.
-        const minus = page.locator('.chat-suggest-step').first();
-        const plus = page.locator('.chat-suggest-step').last();
-        const badge = page.locator('#chat-suggest-count');
-
-        // From 3, click − twice → expect 1 (floor at 1).
-        await minus.click();
-        await page.waitForFunction(() => document.getElementById('chat-suggest-count').textContent.trim() === '2');
-        await minus.click();
-        await page.waitForFunction(() => document.getElementById('chat-suggest-count').textContent.trim() === '1');
-
-        // Another − should be a no-op (clamped at min 1).
-        await minus.click();
-        await page.waitForTimeout(200);
-        expect((await badge.textContent() || '').trim()).toBe('1');
-
-        // Now ramp + up to 6 then beyond — expect cap at 6.
-        for (let i = 0; i < 6; i++) {
-            await plus.click();
-            await page.waitForTimeout(80);
-        }
-        const final = (await badge.textContent() || '').trim();
-        expect(final).toBe('6');
-        const finalAttr = await badge.getAttribute('data-count');
-        expect(finalAttr).toBe('6');
+    test.skip('+/- step badge in lockstep, clamped to 1..6', async ({ page }) => {
+        // v324: the +/- stepper buttons + count badge were REMOVED from
+        // the chat-suggest cluster (user request "under chat mode the
+        // tally counter should be removed"). Chat replies now render
+        // whatever the server returns (capped server-side via
+        // suggest_max_len_chat) without a client-side display-count
+        // gate. The clamp logic lives in _setChatSuggestCount() — see
+        // js-tests/ for that unit coverage.
     });
 
-    test('count persists across reload via localStorage', async ({ page }) => {
-        // Pre-seed the localStorage value DIRECTLY via addInitScript and
-        // navigate. addInitScript fires on every navigation including
-        // reload, so we encode the seeded value into the script itself
-        // (which means no clear() between page visits).
-        await page.route('**/subjects/suggest**', (route) => {
-            const arr = ['reply-1', 'reply-2', 'reply-3'];
-            return route.fulfill({
-                status: 200, contentType: 'application/json',
-                body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
-            });
-        });
-        await page.addInitScript(() => {
-            try {
-                localStorage.setItem('slopfinity-chat-suggest-count', '5');
-                localStorage.setItem('slopfinity_ui_split_upper_px', '700');
-            } catch (_) { }
-        });
-        await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
-        await page.click('.subjects-mode-pill button[data-subj-mode="chat"]');
-        await page.waitForSelector('#chat-suggest-count', { timeout: 5000 });
-
-        // _initChatSuggestCluster reads the persisted count and paints
-        // the badge — should read "5" instead of the default "3".
-        const restored = (await page.locator('#chat-suggest-count').textContent() || '').trim();
-        expect(restored).toBe('5');
+    test.skip('count persists across reload via localStorage', async ({ page }) => {
+        // v324: the count badge was REMOVED from the chat-suggest
+        // cluster (user request "under chat mode the tally counter
+        // should be removed"). The localStorage key
+        // slopfinity-chat-suggest-count still exists for
+        // _getChatSuggestCount() but there is no longer a visible
+        // badge to read it back into.
     });
 
     test('in-flight thinking run is .chat-thought-active; resolved is .chat-thought-done', async ({ page }) => {
