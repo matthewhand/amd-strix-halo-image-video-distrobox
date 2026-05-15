@@ -164,8 +164,14 @@ test.describe('chat-bubble action cluster', () => {
 
         await page.waitForFunction(() => document.querySelectorAll('.chat-bubble-host').length >= 2, null, { timeout: 4000 });
 
-        // Hover the assistant bubble + click the SECOND action button = refresh.
-        const asstBubble = page.locator('.chat-start .chat-bubble-host').first();
+        // The assistant bubble bound to the SEEDED history (not any
+        // sibling-spec carryover that may also be in the rendered log).
+        // We locate it by its visible content instead of "first
+        // .chat-start bubble" because cross-spec localStorage carryover
+        // (the chat tree key is not always cleared between Playwright
+        // contexts) can prepend earlier specs' bubbles in front of the
+        // one we just seeded.
+        const asstBubble = page.locator('.chat-start .chat-bubble-host', { hasText: SEED_HISTORY[1].content }).first();
         await asstBubble.hover();
         await asstBubble.locator('.chat-bubble-action').nth(1).click();
 
@@ -173,30 +179,24 @@ test.describe('chat-bubble action cluster', () => {
         // sets the input value to that user text and fires _sendChatMessage.
         // _sendChatMessage clears the input AFTER reading it; so the truest
         // observable signal is that /chat was POSTed with the original
-        // user text as the last user message.
+        // user text as the only user message in the rewound conversation.
         await page.waitForTimeout(400);
 
-        // History was trimmed to 0 BEFORE _sendChatMessage ran, then the
-        // user msg was re-pushed. After the mock reply lands, history
-        // should have user + assistant again (length === 2), and the user
-        // content should be the original seed.
-        const historyAfter = await page.evaluate(() => {
-            try {
-                return JSON.parse(localStorage.getItem('slopfinity-chat-history-v1') || '[]');
-            } catch (_) { return []; }
-        });
-
-        // /chat must have been hit with the original user message.
+        // /chat must have been hit, with a payload that proves the
+        // rewind: the ORIGINAL user text is in the request AND the
+        // ORIGINAL assistant content is GONE from the sent history
+        // (i.e. the assistant turn after the rewound user has been
+        // truncated, not appended-after). Both signals come from the
+        // request body, which is deterministic regardless of any
+        // stale-localStorage carryover that may pollute the
+        // post-render history snapshot.
         expect(chatRequests.length, '/chat POSTed by refresh').toBeGreaterThanOrEqual(1);
         const lastReq = chatRequests[chatRequests.length - 1];
-        const lastUser = [...(lastReq.messages || [])].reverse().find((m) => m.role === 'user');
+        const sentMessages = lastReq.messages || [];
+        const lastUser = [...sentMessages].reverse().find((m) => m.role === 'user');
         expect(lastUser, 'last user message in /chat post').toBeTruthy();
         expect(lastUser.content, 'refresh re-sent the original user prompt').toBe(SEED_HISTORY[0].content);
-
-        // History length should still be 2 (user + new assistant), NOT
-        // appended on top of the old one (proves the rewind happened).
-        expect(historyAfter.length, 'history rewound + re-sent (not appended)').toBe(2);
-        expect(historyAfter[0]?.role).toBe('user');
-        expect(historyAfter[0]?.content).toBe(SEED_HISTORY[0].content);
+        const sentAssistantContents = sentMessages.filter((m) => m && m.role === 'assistant').map((m) => m.content);
+        expect(sentAssistantContents).not.toContain(SEED_HISTORY[1].content);
     });
 });
