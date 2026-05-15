@@ -3335,7 +3335,16 @@ function _renderChatLog() {
     // history minus the last assistant turn). Wrapped in
     // `.chat-bubble-actions` so CSS handles opacity transitions.
     const _bubbleActions = (text, withRefresh, msgIdx) => {
-        const escText = (text || '').replace(/"/g, '&quot;').replace(/\n/g, '&#10;');
+        // Escape both quote flavors + newlines. The outer attribute is
+        // wrapped in single quotes (onclick='...') so an un-escaped "'"
+        // in the user's text closes the attribute early and the inline
+        // JS `_copyBubbleText(this, "foo' bar")` becomes a SyntaxError
+        // the browser raises on every read of `.onclick`.
+        const escText = (text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/\n/g, '&#10;');
         return `<div class="chat-bubble-actions">
             <button type="button" class="chat-bubble-action" title="Copy"
                 onclick='_copyBubbleText(this, "${escText}")'>
