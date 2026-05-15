@@ -2,6 +2,7 @@ import os
 import json
 import time
 import asyncio
+import subprocess
 from typing import List, Set
 from . import config as cfg
 from .stats import (
@@ -18,6 +19,47 @@ from . import scheduler as sched
 
 _RECENT_EVENTS_MAX = 20
 _recent_events = []
+
+def _fleet_is_running() -> bool:
+    """Return True if at least one run_fleet.py process is alive.
+    Uses the same /proc scan as runner.py so it works without psutil."""
+    try:
+        if os.path.isdir("/proc"):
+            for entry in os.scandir("/proc"):
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{entry.name}/cmdline", "rb") as f:
+                        raw = f.read()
+                    if not raw:
+                        continue
+                    args = [a.decode("utf-8", errors="replace") for a in raw.split(b"\x00") if a]
+                    if any(os.path.basename(a) == "run_fleet.py" for a in args):
+                        return True
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    continue
+        else:
+            out = subprocess.run(["pgrep", "-f", "run_fleet.py"],
+                                 capture_output=True, text=True, timeout=2).stdout
+            return bool(out.strip())
+    except Exception:
+        pass
+    return False
+
+def _reset_state_to_idle() -> None:
+    """Write an Idle sentinel to state.json to self-heal a stale non-Idle mode."""
+    try:
+        state_path = os.path.join(EXP_DIR, "state.json")
+        idle = {"mode": "Idle", "step": None, "video_index": None,
+                "total_videos": 0, "chain_index": None, "total_chains": 0,
+                "current_prompt": ""}
+        with open(state_path, "w") as f:
+            import json as _json
+            _json.dump(idle, f)
+    except Exception:
+        pass
+
+
 
 async def broadcast():
     try:
@@ -136,36 +178,50 @@ async def broadcast():
                     
             try:
                 if state.get('mode') != 'Idle' and state.get('step'):
-                    _step_text_map = {
-                        'Concept': 'rewriting prompt',
-                        'Base Image': 'rendering image',
-                        'Video Chains': 'rendering video',
-                        'Audio': 'composing music',
-                        'TTS': 'recording voiceover',
-                        'Post Process': 'upscaling',
-                        'Final Merge': 'merging final',
-                    }
-                    _hb_text = _step_text_map.get(state['step'], 'working')
-                    
-                    # Handle pausing/paused overrides for the header animation
-                    if sched.is_paused():
-                        # If anything is holding a GPU reservation, we are still "pausing"
-                        # the pipeline (waiting for current stage to finish).
-                        if sched.GPU.resident_gb > 0 or sched.GPU.in_flight:
-                            _hb_text = 'pausing'
-                        else:
-                            _hb_text = 'paused'
-                    
-                    _hb_msg = {
-                        "type": "render_heartbeat",
-                        "text": _hb_text,
-                        "expires_ts": time.time() + 15,
-                    }
-                    for c in list(clients):
-                        try:
-                            await c.send_json(_hb_msg)
-                        except Exception:
-                            pass
+                    # Dead-man's check: if the state says we're rendering but
+                    # no run_fleet.py process is actually alive, self-heal by
+                    # resetting state to Idle and clearing the animation.
+                    fleet_alive = _fleet_is_running()
+                    if not fleet_alive:
+                        _reset_state_to_idle()
+                        # Broadcast a clear so clients kill the animation immediately
+                        _clear_msg = {"type": "render_heartbeat_clear"}
+                        for c in list(clients):
+                            try:
+                                await c.send_json(_clear_msg)
+                            except Exception:
+                                pass
+                    else:
+                        _step_text_map = {
+                            'Concept': 'rewriting prompt',
+                            'Base Image': 'rendering image',
+                            'Video Chains': 'rendering video',
+                            'Audio': 'composing music',
+                            'TTS': 'recording voiceover',
+                            'Post Process': 'upscaling',
+                            'Final Merge': 'merging final',
+                        }
+                        _hb_text = _step_text_map.get(state['step'], 'working')
+                        
+                        # Handle pausing/paused overrides for the header animation
+                        if sched.is_paused():
+                            # If anything is holding a GPU reservation, we are still "pausing"
+                            # the pipeline (waiting for current stage to finish).
+                            if sched.GPU.resident_gb > 0 or sched.GPU.in_flight:
+                                _hb_text = 'pausing'
+                            else:
+                                _hb_text = 'paused'
+                        
+                        _hb_msg = {
+                            "type": "render_heartbeat",
+                            "text": _hb_text,
+                            "expires_ts": time.time() + 15,
+                        }
+                        for c in list(clients):
+                            try:
+                                await c.send_json(_hb_msg)
+                            except Exception:
+                                pass
             except Exception: pass
             
             try:

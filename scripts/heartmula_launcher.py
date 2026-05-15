@@ -81,6 +81,10 @@ def main() -> int:
 
     # ROCm gfx1151 override for Strix Halo. Set before torch import.
     os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.5.1")
+    # Enable experimental AOTriton attention kernels — required on Strix Halo to
+    # avoid GPU hangs during SDPA (scaled dot-product attention). The UserWarning
+    # messages emitted during generation explicitly request this flag.
+    os.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
     try:
         import torch
@@ -151,9 +155,12 @@ def main() -> int:
 
     try:
         device = torch.device("cuda")
+        # HeartCodec (VAE decode) triggers a GPU hang on Strix Halo ROCm at
+        # the final decode step. Run codec on CPU to avoid the hang; the
+        # transformer (mula) stays on GPU for fast token generation.
         pipe = HeartMuLaGenPipeline.from_pretrained(
             model_root,
-            device={"mula": device, "codec": device},
+            device={"mula": device, "codec": torch.device("cpu")},
             dtype={"mula": torch.bfloat16, "codec": torch.float32},
             version=args.version,
             lazy_load=False,

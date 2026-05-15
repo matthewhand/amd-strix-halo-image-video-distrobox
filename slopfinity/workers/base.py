@@ -130,6 +130,16 @@ class StageWorker:
                     kwargs["output"] = result["output"]
                 if "asset" in result:
                     kwargs["asset"] = result["asset"]
+                    # Accumulate asset paths so the queue item records every
+                    # output file across all stages (not just the last one).
+                    asset_val = result["asset"]
+                    if asset_val:
+                        existing = qi.get("asset_paths") or []
+                        if not isinstance(existing, list):
+                            existing = []
+                        if asset_val not in existing:
+                            existing.append(asset_val)
+                        qi["asset_paths"] = existing
                 qs.set_stage_status(qi, stage, "done", **kwargs)
             else:
                 qs.set_stage_status(

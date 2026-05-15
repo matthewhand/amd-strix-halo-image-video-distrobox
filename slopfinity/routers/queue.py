@@ -53,6 +53,11 @@ async def inject(
     fast_track: str = Form(default=""),
     seed_images: str = Form(default=""),
     seeds_mode: str = Form(default=""),
+    # Shared UUID that links all beats of one story injection together.
+    # Client generates one UUID per multi-beat inject() call and stamps it
+    # on every POST so the queue UI can group them. None for standalone jobs.
+    story_id: Optional[str] = Form(default=None),
+    story_title: Optional[str] = Form(default=None),
 ):
     # Disk-low guard — bail early when the outputs partition is below the
     # configured threshold so the queue doesn't pile up against a wall.
@@ -101,6 +106,11 @@ async def inject(
     }
     if title:
         task["title"] = title
+    # Story grouping — stamp both the shared UUID and the story label so the
+    # queue UI can collapse beats into a collapsible group header.
+    if story_id:
+        task["story_id"] = story_id
+        task["story_title"] = story_title or "Story"
     if stage_prompts:
         try:
             task["stage_prompts"] = json.loads(stage_prompts)

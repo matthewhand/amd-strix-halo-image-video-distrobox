@@ -1201,7 +1201,7 @@
                                             {% if q.status == 'cancelled' %}
                                             <span class="badge badge-xs badge-ghost">cancelled</span>
                                             {% endif %}
-                                            {% if q.infinity %}<span class="badge badge-xs badge-secondary"
+                                            {% if q.infinity %}<span class="badge badge-xs badge-warning"
                                                 title="Infinity — re-queues itself after every completion">♾</span>{%
                                             endif %}
                                             <span
@@ -1401,51 +1401,54 @@
                                 the only inline header content. #}
                                 <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                                     <div class="flex flex-wrap gap-2 items-center" id="slop-filters">
-                                        {# Slop kind filter — pill-radio cluster matching the
-                                        Subjects-mode pill aesthetic across the dashboard.
-                                        Each label wraps a hidden checkbox + a `.join-item
-                                        btn btn-xs btn-primary btn-outline` styled span.
-                                        When the checkbox is :checked, peer- tailwind
-                                        utilities drop the outline so the chip reads as
-                                        the active filled-primary state — same on/off
-                                        contract as the prompt-mode pill. JS handler
-                                        `_applySlopFilters` reads the checkbox state via
-                                        `[data-slop-filter]` so no JS change required. #}
-                                        <div class="flex flex-wrap gap-2 slop-filter-pill" role="group"
-                                            aria-label="Slop kind filter">
-                                            <label
-                                                class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
-                                                <input type="checkbox"
-                                                    class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
-                                                    data-slop-filter="video" checked>
-                                                {{ branding.labels.slop_video or 'video' }}
-                                                <span class="font-mono opacity-70" data-chip-count="video">0</span>
-                                            </label>
-                                            <label
-                                                class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
-                                                <input type="checkbox"
-                                                    class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
-                                                    data-slop-filter="image" checked>
-                                                {{ branding.labels.slop_image or 'image' }}
-                                                <span class="font-mono opacity-70" data-chip-count="image">0</span>
-                                            </label>
-                                            <label
-                                                class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
-                                                <input type="checkbox"
-                                                    class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
-                                                    data-slop-filter="music" checked>
-                                                music
-                                                <span class="font-mono opacity-70" data-chip-count="music">0</span>
-                                            </label>
-                                            <label
-                                                class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
-                                                <input type="checkbox"
-                                                    class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
-                                                    data-slop-filter="speech" checked>
-                                                speech
-                                                <span class="font-mono opacity-70" data-chip-count="speech">0</span>
-                                            </label>
-                                        </div>
+                                        {# Slop kind filter — two bounded fieldsets mirroring each
+                                        other: "Finals" (video/image/music/speech — primary tint)
+                                        and "Intermediates" (assets/frames — accent tint).
+                                        Using fieldsets gives a visual boundary that matches the
+                                        established Intermediates box and makes the two filter groups
+                                        obviously peers. JS handler `_applySlopFilters` reads the
+                                        checkbox state via `[data-slop-filter]` — no JS change needed. #}
+                                        <fieldset
+                                            class="border border-base-content/30 rounded-md px-2 py-1 flex items-center gap-2"
+                                            aria-label="Finals filter">
+                                            <legend
+                                                class="text-[9px] uppercase tracking-widest text-base-content/60 px-1">
+                                                Finals</legend>
+                                            <div class="flex flex-wrap gap-2 slop-filter-pill" role="group">
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
+                                                    <input type="checkbox"
+                                                        class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
+                                                        data-slop-filter="video" checked>
+                                                    {{ branding.labels.slop_video or 'video' }}
+                                                    <span class="font-mono opacity-70" data-chip-count="video">0</span>
+                                                </label>
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
+                                                    <input type="checkbox"
+                                                        class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
+                                                        data-slop-filter="image" checked>
+                                                    {{ branding.labels.slop_image or 'image' }}
+                                                    <span class="font-mono opacity-70" data-chip-count="image">0</span>
+                                                </label>
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
+                                                    <input type="checkbox"
+                                                        class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
+                                                        data-slop-filter="music" checked>
+                                                    music
+                                                    <span class="font-mono opacity-70" data-chip-count="music">0</span>
+                                                </label>
+                                                <label
+                                                    class="btn btn-xs rounded-full btn-primary btn-outline cursor-pointer normal-case has-[:checked]:btn-active has-[:checked]:btn-primary has-[:checked]:no-outline flex items-center gap-1.5 transition-all">
+                                                    <input type="checkbox"
+                                                        class="checkbox checkbox-xs checkbox-primary border-primary/40 bg-base-100 rounded-full"
+                                                        data-slop-filter="speech" checked>
+                                                    speech
+                                                    <span class="font-mono opacity-70" data-chip-count="speech">0</span>
+                                                </label>
+                                            </div>
+                                        </fieldset>
                                         {# Assets + frames grouped in a fieldset — same treatment
                                         as the Insert-priority fieldset on the Prompt card.
                                         Frames is a sub-filter that only applies when assets

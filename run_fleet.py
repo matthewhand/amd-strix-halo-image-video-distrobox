@@ -1063,7 +1063,7 @@ def generate_base_image_ltx23(prompt, output_path, size_str):
 def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
     size_str = _resolve_size(size_str)
     w, h = map(int, size_str.split("*"))
-    print(f"🎬 Video Gen [LTX-2.3]...")
+    print(f"🎬 Video Gen [LTX-2.3 22B distilled] {w}×{h} {frames}f…")
     seed = random.randint(1, 1000000)
     prefix = f"vid_{int(time.time())}"
     workflow = {
@@ -1147,55 +1147,61 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
-            p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
+            resp = json.loads(r.read())
+            p_id = resp["prompt_id"]
+        print(f"   ⏳ Submitted {p_id[:8]}… polling for completion (max 10 min)…")
+        time.sleep(60)
+        deadline = time.time() + 600
+        consecutive_errors = 0
+        repo_root = os.path.abspath(os.path.dirname(__file__))
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:8188/history/{p_id}", timeout=15
+                ) as r:
+                    h = json.loads(r.read())
+                consecutive_errors = 0
                 if p_id in h:
+                    status = h[p_id].get("status", {})
+                    if not status.get("completed"):
+                        time.sleep(10)
+                        continue
+                    errors = [m for m in status.get("messages", []) if m[0] == "execution_error"]
+                    if errors:
+                        raise RuntimeError(f"ComfyUI execution error: {errors[0]}")
                     imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
                     first = imgs[0]
                     match = re.search(r"(\d+)(?=_\.png)", first)
                     num = match.group(1) if match else "00001"
                     parts = first.rsplit(num, 1)
                     patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding...")
-                    # ffmpeg lives inside the strix-halo-comfyui container (host
-                    # has none installed). The container's /opt/ComfyUI/output
-                    # mounts ./comfy-outputs/ on host, so paths translate cleanly.
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    out_rel = os.path.relpath(
-                        out_path, os.path.join(repo_root, "comfy-outputs")
-                    )
-                    # Frame-seq → MP4. The ffmpeg backend resolver picks the
-                    # H.264 encoder available in the active backend (libx264 on
-                    # host, libopenh264 in the strix-halo-comfyui container).
+                    print(f"   🎞️  Encoding {len(imgs)} frames → MP4…")
                     args = [
-                        "-y",
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-framerate",
-                        "24",
-                        "-start_number",
-                        str(int(num)),
-                        "-i",
-                        f"comfy-outputs/{patt}",
-                        "-c:v",
-                        _ffmpeg_h264_encoder(),
-                        "-pix_fmt",
-                        "yuv420p",
-                        "-b:v",
-                        "8M",
+                        "-y", "-hide_banner", "-loglevel", "error",
+                        "-framerate", "24",
+                        "-start_number", str(int(num)),
+                        "-i", f"comfy-outputs/{patt}",
+                        "-c:v", _ffmpeg_h264_encoder(),
+                        "-pix_fmt", "yuv420p",
+                        "-b:v", "8M",
                         out_path,
                     ]
                     _ffmpeg_run(args, check=True)
                     for f in imgs:
                         try:
                             os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except:
+                        except Exception:
                             pass
                     return
+                else:
+                    time.sleep(10)
+            except (urllib.error.URLError, OSError) as poll_err:
+                consecutive_errors += 1
+                print(f"   ⚠️  History poll error ({consecutive_errors}): {poll_err}")
+                if consecutive_errors > 18:
+                    raise RuntimeError("ComfyUI unreachable for >3 min during video poll") from poll_err
+                time.sleep(10)
+        raise RuntimeError(f"Video timed out after 10 min (prompt_id={p_id[:8]})")
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1658,18 +1664,18 @@ def main():
             # downstream snapshot reads (chains/frames/tier/audio/tts) pick
             # up the lower-quality budget. Global config.json untouched.
             # Targets ~3 min/clip on Strix Halo for "does the model work?"
-            # smoke runs.
-            if _task_opts.get("fast_track"):
+            _is_fast = _task_opts.get("fast_track") or (_task_opts.get("_config_snapshot") or {}).get("fast_track") or (_task_opts.get("config_snapshot") or {}).get("fast_track")
+            if _is_fast:
                 _ft_snap = dict((_task_opts.get("_config_snapshot") or config) or {})
-                _ft_snap["chains"] = 2
-                _ft_snap["frames"] = 17
+                _ft_snap["chains"] = 1
+                _ft_snap["frames"] = 9
                 _ft_snap["tier"] = "low"
                 _ft_snap["audio_model"] = "none"
                 _ft_snap["tts_model"] = "none"
                 _ft_snap["upscale_model"] = "none"
                 _task_opts["_config_snapshot"] = _ft_snap
                 print(
-                    f"[FLEET] 🏃 Fast Track v{v_idx}: chains=2 frames=17 "
+                    f"[FLEET] 🏃 Fast Track v{v_idx}: chains=1 frames=9 "
                     f"tier=low audio/tts/upscale skipped",
                     flush=True,
                 )
