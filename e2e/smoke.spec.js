@@ -24,6 +24,20 @@ test.describe('slopfinity dashboard smoke', () => {
             if (msg.type() === 'error') consoleErrors.push(msg.text());
         });
 
+        // Seed Suggestions as VISIBLE before the page loads. New browsers
+        // default to slopfinity_suggestions_hidden=null which the app
+        // treats as hidden (intentional UX — new users don't see the
+        // suggestion badges until they opt in). The mode-update logic
+        // toggles the .hidden class on #subjects-suggest-add-btn but
+        // does NOT clear the inline style.display='none' that
+        // _applySuggestionsHiddenState sets, so on a cold browser the
+        // + button is "shown by class, invisible by inline style". We
+        // want the assertion below to exercise the visible-badge path,
+        // so opt in via localStorage before the page boots.
+        await page.addInitScript(() => {
+            try { localStorage.setItem('slopfinity_suggestions_hidden', '0'); } catch (_) { }
+        });
+
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
         // Give the WS handshake + initial render a moment.
         await page.waitForTimeout(800);
