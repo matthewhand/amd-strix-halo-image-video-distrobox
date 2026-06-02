@@ -27,6 +27,12 @@ OUTPUT_DIR = "comfy-outputs/experiments"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("comfy-input", exist_ok=True)
 
+# TTS worker endpoint (Qwen3-TTS / Kokoro). Matches the contract used by
+# slopfinity/workers/tts.py and slopfinity/routers/runner.py: POST JSON
+# {text, voice, lang, speed} → {ok, url, voice}. Overridable via env so the
+# CI mock TTS server (tests/mock_tts_server.py) can be substituted.
+TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
+
 # ---- Tiered quality ramp ---------------------------------------------------
 # Incrementally ramp up framerate + resolution across videos so we validate
 # the pipeline on cheap passes before committing to slow max-quality runs.
@@ -842,6 +848,87 @@ def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=
 
     print(f"   ✅ Muxed MP4+audio saved to {final_out_path}")
     return True
+
+
+def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600):
+    """Synthesize narration to `out_wav_host` (host path under OUTPUT_DIR) via
+    the local TTS worker (Qwen3-TTS / Kokoro on :8010). Returns True on success.
+
+    Pure WAV producer — no muxing (mirrors `heartmula_wav`). POSTs the worker
+    contract {text, voice, lang, speed} and parses the JSON envelope
+    {ok, url, voice}. The worker writes the WAV into the shared `tts/` output
+    dir (EXP_DIR/tts == ./tts when cwd is the workspace) and returns a
+    `/files/tts/<name>` URL; we resolve that back to a local file and copy it
+    to `out_wav_host` so the rest of the pipeline treats it like any other WAV.
+    """
+    text = (text or "").strip()
+    if not text:
+        print("   ⚠️  TTS: empty text — skipping", flush=True)
+        return False
+    payload = {"text": text, "voice": voice or "ryan"}
+    if lang:
+        payload["lang"] = lang
+    if speed:
+        payload["speed"] = float(speed)
+    print(
+        f"🎙️  TTS: voice={voice or 'ryan'} lang={lang or 'auto'} "
+        f"text={text[:60]!r}",
+        flush=True,
+    )
+    try:
+        req = urllib.request.Request(
+            TTS_WORKER_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            envelope = json.loads(r.read().decode("utf-8") or "{}")
+    except Exception as e:
+        print(f"   ⚠️  TTS request to {TTS_WORKER_URL} failed: {e!r}", flush=True)
+        return False
+
+    if not envelope.get("ok"):
+        print(f"   ⚠️  TTS worker reported failure: {envelope!r}", flush=True)
+        return False
+
+    # Resolve the produced WAV to a local file. The worker writes into the
+    # shared TTS output dir; the returned URL is `/files/tts/<name>`. Try the
+    # URL basename first, then fall back to the newest .wav in the tts dir
+    # (the CI mock returns a synthetic URL that doesn't match its on-disk
+    # filename, so the newest-file fallback keeps that path working too).
+    url = envelope.get("url") or envelope.get("audio_path") or ""
+    tts_dir = os.path.join(
+        os.environ.get("EXP_DIR") or os.getcwd(), "tts"
+    )
+    src = ""
+    if url:
+        cand = os.path.join(tts_dir, os.path.basename(url))
+        if os.path.exists(cand):
+            src = cand
+    if not src and os.path.isdir(tts_dir):
+        wavs = [
+            os.path.join(tts_dir, f)
+            for f in os.listdir(tts_dir)
+            if f.lower().endswith(".wav")
+        ]
+        if wavs:
+            src = max(wavs, key=os.path.getmtime)
+    if not src or not os.path.exists(src):
+        print(
+            f"   ⚠️  TTS: worker ok but no local WAV found (url={url!r}, "
+            f"dir={tts_dir!r})",
+            flush=True,
+        )
+        return False
+
+    try:
+        os.makedirs(os.path.dirname(out_wav_host) or ".", exist_ok=True)
+        subprocess.run(["cp", src, out_wav_host], check=True)
+    except Exception as e:
+        print(f"   ⚠️  TTS: failed to copy {src} → {out_wav_host}: {e!r}", flush=True)
+        return False
+    return os.path.exists(out_wav_host) and os.path.getsize(out_wav_host) > 0
 
 
 def run_comfy_job(workflow, out_node_id, target_file):
@@ -1701,16 +1788,16 @@ def main():
                         audio_wav = None
                 # else: other audio models (none today) — silently skip.
 
-            # ─── TTS (Qwen-TTS / Kokoro) — placeholder: NOT YET IMPLEMENTED ─
-            # The dashboard exposes tts_model but run_fleet.py doesn't have
-            # a TTS code path yet (the slopfinity/workers/tts.py worker is
-            # part of the unwired StageWorker pattern). Skip silently for
-            # now; the heartbeat still flips through TTS so the UI shows
-            # the stage as visited but no asset is produced.
-            _tts_model = (_task_opts.get("_config_snapshot") or config or {}).get(
-                "tts_model", "none"
-            ) or "none"
-            tts_wav = None
+            # ─── TTS (Qwen-TTS / Kokoro) — narration over the video ──────────
+            # Honors config.tts_model. When set (≠ "none") and the iteration is
+            # producing video, POST the prompt to the local TTS worker (:8010,
+            # via tts_wav()) and stash the resulting voice WAV for the final
+            # mux step. Gated entirely behind tts_model so a "none" / unset
+            # config keeps the loop's behavior identical to before — no request,
+            # no asset, no mux change.
+            _cfg_snap = _task_opts.get("_config_snapshot") or config or {}
+            _tts_model = (_cfg_snap.get("tts_model", "none")) or "none"
+            tts_voice_wav = None
             if (
                 _tts_model
                 and _tts_model != "none"
@@ -1720,11 +1807,41 @@ def main():
                 update_state(
                     mode="Voicing", step="TTS", video=v_idx, total=1000, prompt=p
                 )
-                # TODO: wire scripts/qwen_tts_serve.py / kokoro path here.
-                print(
-                    f"[FLEET] ⚠️  TTS stage requested (model={_tts_model}) but not yet implemented in run_fleet.py",
-                    flush=True,
+                _tts_voice = str(_cfg_snap.get("tts_voice", "ryan") or "ryan")
+                _tts_lang = str(_cfg_snap.get("tts_lang", "") or "")
+                _tts_speed = float(_cfg_snap.get("tts_speed", 0.0) or 0.0)
+                # Narration text: prefer an explicit override, else the prompt.
+                _tts_text = str(
+                    _task_opts.get("tts_text") or _cfg_snap.get("tts_text") or p
                 )
+                _tts_out = f"{OUTPUT_DIR}/{_stem}_tts.wav"
+                try:
+                    ok = tts_wav(
+                        _tts_text,
+                        _tts_out,
+                        voice=_tts_voice,
+                        lang=_tts_lang,
+                        speed=_tts_speed,
+                    )
+                    if ok and os.path.exists(_tts_out):
+                        tts_voice_wav = _tts_out
+                        _write_sidecar(
+                            _tts_out,
+                            prompt=_tts_text,
+                            model=_tts_model,
+                            kind="tts",
+                            voice=_tts_voice,
+                        )
+                        _iter_assets.append(os.path.basename(_tts_out))
+                    else:
+                        print(
+                            f"[FLEET] ⚠️  TTS (model={_tts_model}) produced no WAV — continuing without narration",
+                            flush=True,
+                        )
+                except Exception as e:
+                    # Never let a TTS failure crash the fleet — log and move on.
+                    print(f"[FLEET] ⚠️  TTS (model={_tts_model}) failed: {e!r}", flush=True)
+                    tts_voice_wav = None
 
             in_img = f"comfy-input/{_stem}_base.png"
             update_state(
@@ -1995,42 +2112,63 @@ def main():
             _iter_assets.append(os.path.basename(final_silent))
             os.remove(concat_path)
 
-            # Mux: if Audio ran successfully up front, lay the WAV onto the
-            # silent FINAL_*.mp4 and emit FINAL_*_audio.mp4 alongside.
-            # Replaces the old matrix-mode-only heartmula path; now any
-            # iteration with audio_model != "none" gets a muxed final.
-            if audio_wav and os.path.exists(audio_wav):
+            # Mux: lay any produced audio onto the silent FINAL_*.mp4 and emit
+            # FINAL_*_audio.mp4 alongside. Two independent sources may exist:
+            #   • audio_wav      — HeartMuLa music (generated pre-image)
+            #   • tts_voice_wav  — TTS narration (generated above)
+            # If both are present they're mixed (amix) so the narration rides
+            # over the music; if only one is present it's used directly. When
+            # neither exists (the default no-audio / no-TTS path) this block is
+            # skipped entirely and behavior is identical to before.
+            _has_music = bool(audio_wav and os.path.exists(audio_wav))
+            _has_voice = bool(tts_voice_wav and os.path.exists(tts_voice_wav))
+            if _has_music or _has_voice:
                 final_audio = f"{OUTPUT_DIR}/FINAL_{v_idx}_{_slug}_audio.mp4"
-                mux_args = [
-                    "-y",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    final_silent,
-                    "-i",
-                    audio_wav,
-                    "-map",
-                    "0:v",
-                    "-map",
-                    "1:a",
-                    "-c:v",
-                    "copy",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "192k",
-                    "-shortest",
-                    final_audio,
-                ]
+                if _has_music and _has_voice:
+                    # Video + music + voice → mix the two audio tracks.
+                    mux_args = [
+                        "-y", "-loglevel", "error",
+                        "-i", final_silent,
+                        "-i", audio_wav,
+                        "-i", tts_voice_wav,
+                        "-filter_complex",
+                        "[1:a][2:a]amix=inputs=2:duration=longest[aout]",
+                        "-map", "0:v",
+                        "-map", "[aout]",
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-b:a", "192k",
+                        "-shortest",
+                        final_audio,
+                    ]
+                    _mux_model = f"heartmula+{_tts_model}"
+                else:
+                    # Exactly one audio source — single map (legacy music path
+                    # unchanged; voice-only follows the same shape).
+                    _single = audio_wav if _has_music else tts_voice_wav
+                    mux_args = [
+                        "-y", "-loglevel", "error",
+                        "-i", final_silent,
+                        "-i", _single,
+                        "-map", "0:v",
+                        "-map", "1:a",
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-b:a", "192k",
+                        "-shortest",
+                        final_audio,
+                    ]
+                    _mux_model = "heartmula" if _has_music else _tts_model
                 try:
                     _ffmpeg_run(mux_args, check=True)
                     _write_sidecar(
                         final_audio,
                         prompt=p,
-                        model="heartmula",
+                        model=_mux_model,
                         kind="final-with-audio",
                         parts=len(chain_vids),
                         audio_duration_s=audio_duration_s,
+                        has_voice=_has_voice,
                     )
                     _iter_assets.append(os.path.basename(final_audio))
                 except Exception as e:
