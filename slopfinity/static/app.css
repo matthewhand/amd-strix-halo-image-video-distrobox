@@ -4169,6 +4169,66 @@ body.suggest-cluster-collapsed #subjects-suggestions-toggle.join-item {
     border-radius: 9999px;
 }
 
+/* ── Suggestions ON: recede the controls so the prompt gets the room ──
+   Counterintuitive-by-design: turning Suggestions ON should NOT shout a
+   row of buttons. Once it's on, the suggestion chips below are the active
+   surface and the config controls (prompt picker / regen / add / stepper)
+   are secondary.
+     • Desktop: dim them to ~45% at rest; restore to full on cluster-hover
+       or keyboard focus — present but out of the way.
+     • Mobile (≤767px): collapse them entirely so only the toggle remains
+       (shortened label), handing the vertical space back to the prompt. */
+body.suggestions-on #subjects-suggest-prompt-name,
+body.suggestions-on #subjects-suggest-btn,
+body.suggestions-on #subjects-suggest-add-btn,
+body.suggestions-on #subjects-suggest-simple-stepper {
+    opacity: 0.45;
+    transition: opacity 0.15s ease;
+}
+#subjects-suggest-cluster-wrap:hover #subjects-suggest-prompt-name,
+#subjects-suggest-cluster-wrap:hover #subjects-suggest-btn,
+#subjects-suggest-cluster-wrap:hover #subjects-suggest-add-btn,
+#subjects-suggest-cluster-wrap:hover #subjects-suggest-simple-stepper,
+#subjects-suggest-prompt-name:focus-visible,
+#subjects-suggest-btn:focus-visible,
+#subjects-suggest-add-btn:focus-visible,
+#subjects-suggest-simple-stepper:focus-within {
+    opacity: 1;
+}
+
+/* Short toggle label is desktop-hidden; swapped in on mobile. */
+.suggest-label-short {
+    display: none;
+}
+
+@media (max-width: 767px) {
+
+    /* Mobile: Suggestions cluster collapses to just the toggle. The
+       secondary controls only appear when ON anyway, so hiding them here
+       means the mobile cluster is always a lone toggle → max prompt room. */
+    #subjects-suggest-prompt-name,
+    #subjects-suggest-btn,
+    #subjects-suggest-add-btn,
+    #subjects-suggest-simple-stepper {
+        display: none !important;
+    }
+
+    /* Lone toggle in the join → round both edges so it doesn't read as an
+       amputated segment (same treatment as the OFF/collapsed state). */
+    #subjects-suggestions-toggle.join-item {
+        border-radius: 9999px;
+    }
+
+    /* Shorten the toggle label. */
+    .suggest-label-full {
+        display: none;
+    }
+
+    .suggest-label-short {
+        display: inline;
+    }
+}
+
 /* Endless mode + no story running: dim + disable the entire
    Suggestions pill. Re-enables when _endlessRunning flips true.
    Override the per-button .opacity-40 stack so the + icon doesn't
