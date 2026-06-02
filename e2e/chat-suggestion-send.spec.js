@@ -21,7 +21,8 @@
 //      so a future regression (e.g. JSON.stringify producing
 //      attribute-breaking quotes) is caught.
 
-const { test, expect } = require('@playwright/test');
+// Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
