@@ -1,5 +1,15 @@
 # Memory-stage Planner — Design
 
+> **Status (as of this update):** Phase 1 has landed as designed —
+> `slopfinity/memory_planner.py` implements `StageStep`, `PlanDecision`, and
+> `plan_resident_set(...)` with the exact signature below, and the advisory
+> `GET /pipeline/plan` endpoint exists (in `slopfinity/routers/runner.py`).
+> Phase 2 ("make `acquire_gpu` honour the plan") is partly wired: the
+> scheduler config now carries a `use_planner` flag (default `False`, under
+> `DEFAULT_SCHEDULER` in `slopfinity/config.py`) and `GPUReservation` tracks a
+> `resident_models` cache that `acquire_gpu` consults when the flag is on.
+> Rest of the doc unchanged.
+
 ## Problem
 
 Slopfinity runs a fixed sequence of GPU stages per video:

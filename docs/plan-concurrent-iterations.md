@@ -11,6 +11,19 @@ GPU reservation primitive) and `docs/queueing-refactor-design.md` (which covered
 the per-stage worker fan). Those two designs are *both partially landed*; the
 gap that prevents real concurrency today is the orchestrator on top of them.
 
+> **Status (as of this update):** Several premises in this plan have moved
+> on. The Phase-4 coordinator's `stage_workers` aggregator gap is **closed** —
+> `slopfinity/coordinator.py` now imports the seven worker classes directly
+> from their individual `slopfinity/workers/*.py` modules and its
+> `_WORKERS_AVAILABLE` flag is `True` (the imports succeed; `run()` no longer
+> raises "Land Phases 1-3 first"). So the repeated claim below that
+> `coordinator.py` imports a non-existent `stage_workers` module and "the
+> import fails" is historical. The `concurrent-on` toggle has also been
+> relocated out of the Pipeline popup into the Diagnostics tab and is now a
+> live `experimental` toggle backed by `GPUReservation`, not a locked stub.
+> Specific `file.py:NN` line numbers cited throughout are point-in-time and
+> may have drifted. The analysis below is otherwise retained as-is.
+
 ---
 
 ## 1. Resource model
