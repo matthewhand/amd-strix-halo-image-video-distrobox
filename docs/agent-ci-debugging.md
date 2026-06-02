@@ -4,6 +4,34 @@ When the **Playwright Tests** workflow goes red and an agent (or human)
 needs to figure out why, **read in this order** to keep the agent's
 context window unflooded:
 
+## 0. Know the CI shape first
+
+The `.github/workflows/playwright.yml` job is now **mock-backed**, which
+changes what a red run means. Before triaging, internalise this:
+
+- **A mock LLM backend is started.** The job runs
+  `tests/mock_llm_server.py` on `127.0.0.1:11500` (port 11500 avoids the
+  Ollama default 11434) and points the dashboard's LLM pool at it via
+  `SLOPFINITY_LLM_PRIMARY_URL` / `SLOPFINITY_LLM_CPU_URL`. The
+  CPU/failover endpoints are blanked so the pool never probes a real
+  Ollama / LAN box. So `/llm/health` is green and the suggestion cluster
+  renders **enabled**.
+- **The backend-gated specs now RUN.** The test step sets
+  `SLOPFINITY_HAS_LLM=1`, which flips the gate in `e2e/_fixtures.js` so
+  the previously-skipped chat / suggestion / endless / story specs
+  execute against the mock instead of self-skipping. (See the gate
+  section below.) The job is still `continue-on-error: true`, so a red
+  run does **not** block merge — but the failure packet is the signal.
+- **A placeholder output is seeded** into `SLOPFINITY_EXP_DIR` (a 1x1
+  PNG + a stub `FINAL_*.mp4`) so the Slop output card renders its
+  populated layout rather than the empty state.
+
+When a backend-gated spec fails, suspect (in order): the mock's canned
+response shape drifting from what the spec asserts
+(`artifacts/mock-llm.log`), the dashboard not pointed at the mock, or a
+genuine UI regression. When a static / chrome spec fails, the mock is
+irrelevant — it's a layout / contract regression.
+
 ## 1. `failure-packet.md` (always present)
 
 Compact summary, ≤20 entries. Generated from `results.json` by
@@ -39,14 +67,79 @@ interactive debugger.
 `test-results/` carries the raw per-test artifacts (PNGs, MP4s, traces)
 that the HTML report indexes.
 
-## 4. `artifacts/slopfinity.log` (only on red runs)
+## 4. `artifacts/slopfinity.log` + `artifacts/mock-llm.log` (only on red runs)
 
-The dashboard's stdout/stderr during the test run. Useful when the
-failure is "the dashboard 500'd" rather than "the spec is wrong" — a
-500 in slopfinity.log means the bug is in `slopfinity/server.py`, not
-the test.
+`slopfinity.log` is the dashboard's stdout/stderr during the test run.
+Useful when the failure is "the dashboard 500'd" rather than "the spec
+is wrong" — a 500 in slopfinity.log means the bug is in
+`slopfinity/server.py`, not the test.
+
+`mock-llm.log` is the stdout/stderr of `tests/mock_llm_server.py`. Read
+it when a backend-gated spec (chat / suggestion / endless / story) fails
+in a way that smells like bad data from the LLM — e.g. the suggestion
+cluster renders but with the wrong shape, or `/subjects/suggest` returns
+something the spec doesn't expect. Both logs are bundled in the
+`playwright-failure-artifacts` upload (failure-only).
 
 ---
+
+## The `SLOPFINITY_HAS_LLM` gate
+
+Specs that drive the *interactive* LLM machinery (suggestion batches,
+endless story rows, chat replies, the story log) import
+`{ test, expect }` from `e2e/_fixtures.js` instead of
+`@playwright/test`. That module installs an `auto` fixture that calls
+`test.skip(!process.env.SLOPFINITY_HAS_LLM, ...)` — so:
+
+- **`SLOPFINITY_HAS_LLM` unset** → those specs report as **skipped**
+  (clean signal, not a red).
+- **`SLOPFINITY_HAS_LLM=1`** → those specs **run**.
+
+CI sets `SLOPFINITY_HAS_LLM=1` in the test step (the mock backend is up),
+so the gated specs run there. The specs currently importing the fixture
+(`grep -l _fixtures e2e/*.spec.js`):
+
+```
+e2e/chat-suggest-header.spec.js
+e2e/chat-suggestion-send.spec.js
+e2e/endless-rows.spec.js
+e2e/endless-running.spec.js
+e2e/story-log-editable.spec.js
+e2e/spiffy-toggle.spec.js
+e2e/suggestion-contracts.spec.js
+```
+
+Static layout / chrome specs (smoke, layouts, settings, etc.) import
+`@playwright/test` directly and always run.
+
+> Note: the comment block at the top of `playwright.yml` still describes
+> the *old* behaviour where `SLOPFINITY_HAS_LLM` was left unset and the
+> gated specs skipped. The **test step actually sets it to `1`**
+> (`Run Playwright tests` step) — trust the step env, not the stale
+> header comment.
+
+## Running the e2e suite locally against a mock
+
+Reproduce the CI lane without a real backend:
+
+```bash
+# 1. Start the mock LLM on 11500 (avoid a host Ollama on 11434).
+LLM_MOCK_HOST=127.0.0.1 LLM_MOCK_PORT=11500 \
+  python3 tests/mock_llm_server.py &
+
+# 2. Boot the dashboard pointed at the mock, with a writable exp dir.
+export SLOPFINITY_EXP_DIR="$(mktemp -d)"
+export SLOPFINITY_LLM_PRIMARY_URL=http://127.0.0.1:11500/v1
+export SLOPFINITY_LLM_CPU_URL=http://127.0.0.1:11500/v1
+python3 dark_server.py &
+
+# 3. Run the suite with the gate on so the backend specs execute.
+SLOPFINITY_HAS_LLM=1 npx playwright test
+```
+
+Drop `SLOPFINITY_HAS_LLM` to run only the always-on static/chrome specs.
+To run a single gated spec: `SLOPFINITY_HAS_LLM=1 npx playwright test
+e2e/suggestion-contracts.spec.js`.
 
 ## Why this order
 
