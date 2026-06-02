@@ -1,12 +1,13 @@
 // Endless story log — editable rows in #subjects-story-log instead of
-// the legacy <pre> blob. Each row is a contenteditable .endless-row-text
-// + an .endless-row-del × button. Edits and deletes both persist into
-// localStorage `slopfinity-endless-story-log` as a JSON array. Legacy
-// `\n`-joined string storage migrates to the array shape on first read.
+// the legacy <pre> blob. Each beat row is an `<input.endless-row-text>`
+// (the v324+ beat-row shape; earlier iterations used a contenteditable
+// span) + an .endless-row-del × button. Edits and deletes both persist
+// into localStorage `slopfinity-endless-story-log` as a JSON array.
+// Legacy `\n`-joined string storage migrates to the array shape on first
+// read.
 //
 // Verifies:
-//   1. story pane in endless mode renders editable rows (contenteditable
-//      spans), not <pre>
+//   1. story pane in endless mode renders editable beat inputs, not <pre>
 //   2. each row has a × delete button
 //   3. editing row text persists into localStorage as a JSON array
 //   4. legacy `\n`-joined string in storage migrates to array on first read
@@ -51,7 +52,7 @@ async function bootEndless(page, opts) {
 }
 
 test.describe('endless story log — editable rows', () => {
-    test('story pane renders contenteditable rows, not <pre>', async ({ page }) => {
+    test('story pane renders editable beat inputs, not <pre>', async ({ page }) => {
         await bootEndless(page, { storySeed: ['First beat.', 'Second beat.', 'Third beat.'] });
         // Ensure the story log paints — _setSubjectsMode hydrates from
         // saved lines when entering endless mode.
@@ -64,8 +65,8 @@ test.describe('endless story log — editable rows', () => {
         const preCount = await page.locator('#subjects-story-log pre').count();
         expect(preCount).toBe(0);
 
-        // Each row's text span is contenteditable.
-        const editableCount = await page.locator('#subjects-story-log .endless-row-text[contenteditable="true"]').count();
+        // Each row's text surface is an editable <input.endless-row-text>.
+        const editableCount = await page.locator('#subjects-story-log input.endless-row-text').count();
         expect(editableCount).toBeGreaterThanOrEqual(3);
 
         // Each row has a × delete button.
@@ -75,15 +76,17 @@ test.describe('endless story log — editable rows', () => {
 
     test('editing a row text persists into localStorage JSON array', async ({ page }) => {
         await bootEndless(page, { storySeed: ['alpha', 'bravo'] });
-        await page.waitForSelector('#subjects-story-log .endless-row-text[contenteditable="true"]', { timeout: 4000, state: 'attached' });
+        await page.waitForSelector('#subjects-story-log input.endless-row-text', { timeout: 4000, state: 'attached' });
 
-        // Edit the first row via direct DOM mutation + dispatching input
-        // (simpler than typing into a contenteditable span).
+        // Edit the first row via direct DOM mutation + dispatching input.
+        // The beat surface is a text <input>, so we set .value (not
+        // textContent) and dispatch the input event the row handler listens
+        // for.
         await page.evaluate(() => {
-            const span = document.querySelector('#subjects-story-log .endless-row-text[data-row-idx="0"]');
-            if (span) {
-                span.textContent = 'alpha-edited';
-                span.dispatchEvent(new Event('input', { bubbles: true }));
+            const inp = document.querySelector('#subjects-story-log input.endless-row-text[data-row-idx="0"]');
+            if (inp) {
+                inp.value = 'alpha-edited';
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
             }
         });
         await page.waitForTimeout(150);
@@ -109,11 +112,12 @@ test.describe('endless story log — editable rows', () => {
             return log && log.querySelectorAll('.endless-row').length === 3;
         }, null, { timeout: 4000 });
 
-        const rows = await page.locator('#subjects-story-log .endless-row-text').count();
+        const rows = await page.locator('#subjects-story-log input.endless-row-text').count();
         expect(rows).toBe(3);
+        // Beat surfaces are <input> — read .value, not .textContent.
         const texts = await page.evaluate(() => Array.from(
-            document.querySelectorAll('#subjects-story-log .endless-row-text')
-        ).map(s => s.textContent));
+            document.querySelectorAll('#subjects-story-log input.endless-row-text')
+        ).map(s => s.value));
         expect(texts).toEqual(['one', 'two', 'three']);
     });
 

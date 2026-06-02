@@ -70,6 +70,39 @@ def _canned_content(messages: list[dict], n_hint: int = 5) -> str:
         }
         return json.dumps(payload)
 
+    # Multi-mode suggestion batch (the /subjects/suggest endpoint asks for
+    # one JSON object with three keyed arrays: story / simple / chat — see
+    # slopfinity/routers/suggest.py:subjects_suggest). The user message
+    # explicitly names the three contexts and ends with a one-line schema
+    # reminder. Detect either signal and return the dict shape the endpoint
+    # parses (it ignores a bare array and yields empty rows otherwise).
+    wants_multi = (
+        ('"story"' in user_l and '"simple"' in user_l and '"chat"' in user_l)
+        or ("three distinct contexts" in user_l)
+        or ("'story'" in user_l and "'simple'" in user_l and "'chat'" in user_l)
+    )
+    if wants_multi:
+        # How many per array? The user message says "Generate N suggestions".
+        n = n_hint
+        for i, tok in enumerate(user_p.replace("\n", " ").split()):
+            if tok.lower() == "generate":
+                nxt = user_p.replace("\n", " ").split()[i + 1] if i + 1 < len(user_p.split()) else ""
+                if nxt.isdigit():
+                    n = max(1, min(20, int(nxt)))
+                break
+        pool = _CANNED_SUBJECTS
+        story = [f"{pool[i % len(pool)]} (beat {i + 1})" for i in range(n)]
+        simple = [pool[(i + 2) % len(pool)] for i in range(n)]
+        chat = [
+            f"Tell me more about {pool[(i + 4) % len(pool)]}?" for i in range(n)
+        ]
+        return json.dumps({"story": story, "simple": simple, "chat": chat})
+
+    # Single-opener path ("Output exactly ONE short visual subject" — the
+    # I'm-Feeling-Lucky endless seed). Return a bare phrase, no JSON.
+    if "exactly one short visual subject" in sys_l or "one story-opening scene" in user_l:
+        return _CANNED_SUBJECTS[0]
+
     # Subject-ideas array (concept-artist prompt).
     if "subject ideas" in sys_l or "concept artist" in sys_l or "suggest" in user_l:
         # Try to parse a number out of the system prompt ("exactly N").

@@ -14,6 +14,21 @@ import slopfinity.fanout as _fanout
 
 router = APIRouter()
 
+
+def _default_suggest_system_prompt(n: int) -> str:
+    # Default prompt is intentionally GENERIC — no editorial tone — so a
+    # fresh install doesn't bias prompts toward any particular aesthetic.
+    # Users can override via the SLOPFINITY_SUGGEST_CUSTOM_PROMPT env var
+    # or Settings → Prompts → "Subjects-suggest system prompt".
+    return (
+        "You are a concept artist for an AI video fleet. "
+        f"Output exactly {n} short visual subject ideas, one per line. "
+        "Each line must be 3-8 words, plain text, no numbering, no bullets, "
+        "no quotes, no JSON, no markdown — just the phrase. "
+        "Variety across themes; visually rich."
+    )
+
+
 @router.post("/enhance")
 async def enhance(data: dict = Body(...)):
     config = cfg.load_config()
