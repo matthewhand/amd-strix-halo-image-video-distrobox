@@ -2362,62 +2362,6 @@ function _wireEndlessStoryCycle() {
     // localStorage state + UI toggle stay valid; the change-listener
     // below now only manages the toggle's persisted state.
     const start = () => { /* intentional no-op — see comment above */ };
-    if (false) { // dead code, kept inside an unreachable block so the
-        // pre-existing closure capture (recentChips / promptId / etc.)
-        // remains for any future callers that want to revive it.
-        _endlessStoryTimer = setInterval(async () => {
-            if (typeof _isSuggestionsHidden === 'function' && _isSuggestionsHidden()) return;
-            if (typeof _autoSuggestDisabled === 'function' && _autoSuggestDisabled()) return;
-            if (!_endlessRunning) return;
-            if (typeof _getSubjectsMode === 'function' && _getSubjectsMode() !== 'endless') return;
-            // Direct fetch + APPEND (vs regenSuggestions which clears the stack)
-            // so existing rows stay visible while new ones queue below them.
-            try {
-                // Endless Story mode = continuation of the existing chip
-                // history. Grab the most-recent visible chip texts and
-                // pass them as `subjects=` so the server can prompt the
-                // LLM to extend the story rather than generate isolated
-                // fresh subjects. `endless=1` flips the server's
-                // user-message wording.
-                const { stack } = _getSuggestStack();
-                const recentChips = Array.from(
-                    stack ? stack.querySelectorAll('button[data-suggest]') : []
-                ).map(b => b.dataset.suggest).filter(Boolean);
-                // Dedupe (chips are duplicated in each row for the
-                // marquee wraparound) and keep the last 6 unique.
-                const seen = new Set(); const uniq = [];
-                for (const t of recentChips) {
-                    if (!seen.has(t)) { seen.add(t); uniq.push(t); }
-                    if (uniq.length >= 6) break;
-                }
-                const qs = new URLSearchParams({ n: '6', endless: '1' });
-                if (uniq.length) qs.set('subjects', uniq.join('\n'));
-                const r = await fetch('/subjects/suggest?' + qs.toString());
-                const d = await r.json();
-                const arr = (d && d.suggestions) || [];
-                if (arr.length && typeof _appendSuggestBatchRow === 'function') {
-                    // Pass promptId + rowIdx so the cycle's auto-appended
-                    // rows render with the same subject/refresh/minus
-                    // lead cluster as the rows added by the user. Without
-                    // these opts the row would render as a bare marquee
-                    // (no dropdown), which read as "the simple-mode
-                    // suggestions are leaking into endless".
-                    const existingRows = stack ? stack.querySelectorAll('.suggest-marquee-row').length : 0;
-                    const promptId = (typeof _getDefaultPromptId === 'function')
-                        ? _getDefaultPromptId() : 'yes-and';
-                    // Persist the new row's prompt so refresh / minus on
-                    // it stays in sync with _ENDLESS_ROW_PROMPTS_KEY.
-                    if (typeof _getEndlessRowPrompts === 'function'
-                        && typeof _setEndlessRowPrompts === 'function') {
-                        const arrIds = _getEndlessRowPrompts();
-                        arrIds.push(promptId);
-                        _setEndlessRowPrompts(arrIds);
-                    }
-                    _appendSuggestBatchRow(arr, { promptId, rowIdx: existingRows });
-                }
-            } catch (_) { }
-        }, _endlessCycleMs());
-    };
     const stop = () => {
         if (_endlessStoryTimer) { clearInterval(_endlessStoryTimer); _endlessStoryTimer = null; }
     };
