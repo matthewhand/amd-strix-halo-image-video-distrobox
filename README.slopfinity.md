@@ -41,6 +41,7 @@ Three external services. Each addressed by a URL configurable in **Settings → 
 | **Story mode** (Endless) | Multi-beat composer. Each beat → a clip. Optional auto-stitch concatenates `FINAL_*.mp4` clips into one continuous story. |
 | **Raw mode** | Per-stage textareas (image / video / music / voice). Skips the LLM rewrite — you write the prompts the model sees. Power users only. |
 | **Chat mode** | Conversational driver. The LLM has tool-calls for `queue_inject`, `pause_queue`, `requeue`, etc. — type natural language, watch the dashboard react. |
+| **Suggestions toggle** | LLM-generated prompt chips. Counterintuitive-by-design: turning Suggestions **ON** makes the surrounding config controls *recede* (the chips are now the active surface) — on desktop the secondary controls dim to ~45% at rest and restore on hover/focus; on mobile (≤767px) the cluster collapses to just the toggle (shortened label) to hand the vertical space back to the prompt. |
 | **Queue card** | All queued / running / completed / failed jobs with pause, cancel, edit, requeue. |
 | **Slop gallery** | Thumbnail grid of every generated PNG/MP4/WAV with filter pills (image / video / music / speech / intermediates / frames) and lightbox. |
 | **Settings → Endpoints** | Three URLs (LLM, TTS, ComfyUI) so you can point at your own services. SSRF-guarded; metadata services blocked unconditionally. |
@@ -54,6 +55,7 @@ Three external services. Each addressed by a URL configurable in **Settings → 
 
 What's stable:
 - All 4 modes work end-to-end on the bundled backend (Strix Halo + ROCm + ComfyUI + Qwen-Image + LTX + Heartmula + Qwen3-TTS).
+- **TTS is wired into the fleet loop.** When `tts_model` is set (≠ `none`) in the pipeline config, each iteration synthesizes narration through the TTS worker on `:8010` (Qwen3-TTS / Kokoro) and muxes the voice track onto the `FINAL_*.mp4`. If music (HeartMuLa) is also produced, the two tracks are mixed (`amix`) so the narration rides over the music; otherwise the single track is used directly. Driven by `tts_model` / `tts_voice` / `tts_text` config (see `run_fleet.py`).
 - 0-auth single-user-loopback by default. CSRF + Origin checks block drive-by abuse.
 - SSRF guard validates every backend URL written through Settings.
 - Atomic queue writes; multi-worker race-free.
@@ -91,8 +93,9 @@ Slopfinity itself is a Python+FastAPI app that talks to three URLs. If you have 
 ```bash
 git clone https://github.com/matthewhand/slopfinity.git    # (post-spinoff)
 cd slopfinity
-pip install -r requirements.txt
+pip install -r requirements-slopfinity.txt
 SLOPFINITY_BIND_HOST=127.0.0.1 \
+  SLOPFINITY_EXP_DIR=$PWD/comfy-outputs/experiments \
   python3 dark_server.py
 # Open http://localhost:9099
 # Then: Settings → Endpoints → set LLM / TTS / ComfyUI URLs to your services
@@ -157,13 +160,29 @@ python3 dark_server.py
 
 The CSRF middleware accepts only same-origin (the bind host) by default; `SLOPFINITY_TRUSTED_ORIGINS` extends the allowlist.
 
-Other env vars:
+### Server / bind
+
+- `SLOPFINITY_BIND_HOST` (default `127.0.0.1`) — interface to bind. Set `0.0.0.0` for LAN/proxy access.
 - `SLOPFINITY_BIND_PORT` (default `9099`)
-- `SLOPFINITY_DISABLE_CSRF=1` — escape hatch for scripted automation that can't carry Origin/Referer headers
-- `SLOPFINITY_STATE_DIR` — where queue.json + state.json + config.json live
-- `EXP_DIR` — where slop files land (writes go here, dashboard serves at `/files/<name>`)
-- `TTS_WORKER_URL` — preferred over Settings if both set (env wins)
-- `HF_HOME` — HuggingFace cache dir for any downloaded models
+- `SLOPFINITY_TRUSTED_ORIGINS` — comma-separated full origins (e.g. `http://my-host:9099`) added to the CSRF allowlist.
+- `SLOPFINITY_DISABLE_CSRF=1` — escape hatch for scripted automation that can't carry Origin/Referer headers.
+
+### Paths / storage
+
+- `SLOPFINITY_EXP_DIR` — where slop files land (writes go here, dashboard serves them at `/files/<name>`). Defaults to `/workspace` inside the container; if `/workspace` is missing **or not writable** (e.g. a read-only bind in CI/sandboxes), it falls back to `./comfy-outputs/experiments`. Set this when running locally so the dashboard isn't fighting a read-only `/workspace`.
+- `SLOPFINITY_STATE_DIR` — where `queue.json` + `state.json` + `config.json` live (default `comfy-outputs/experiments`).
+- `HF_HOME` — HuggingFace cache dir for any downloaded models.
+
+### Backend endpoints (env overrides Settings)
+
+The LLM pool reads these per request (`slopfinity/llm/pool.py::get_env_pool_config`). When `SLOPFINITY_LLM_PRIMARY_URL` is unset the primary falls back to the `llm` block saved in `config.json` (Settings → Endpoints), then to the legacy `localhost:1234` default.
+
+- `SLOPFINITY_LLM_PRIMARY_URL` / `SLOPFINITY_LLM_PRIMARY_MODEL` — primary OpenAI-compatible LLM endpoint + model id.
+- `SLOPFINITY_LLM_CPU_URL` / `SLOPFINITY_LLM_CPU_MODEL` — secondary "CPU" endpoint (default `http://localhost:11434/v1`, i.e. Ollama). Set to `""` to disable.
+- `SLOPFINITY_LLM_FAILOVER_URLS` — comma-separated list of additional failover endpoints.
+- `SLOPFINITY_LLM_FAILOVER_MODELS` — comma-separated model ids, positionally paired with the failover URLs (padded with blanks when shorter).
+- `SLOPFINITY_COMFY_URL` — ComfyUI base URL used for the `/free` VRAM-unload calls in the scheduler (default `http://localhost:8188`).
+- `TTS_WORKER_URL` — full URL of the TTS worker `/tts` endpoint (default `http://localhost:8010/tts`). Preferred over Settings if both set (env wins).
 
 Settings → Endpoints persists the URLs to `config.json`; env vars override on each restart.
 
@@ -215,6 +234,39 @@ When this project moves to its own repo, the priorities are:
 | **P2** | Replay attack tests in CI for the CSRF/SSRF middleware | Lock in the security fixes |
 | **P3** | rrweb-recorded interactive walkthrough on the docs page | Better than MP4 for engagement |
 | **P3** | Browser-side ffmpeg.wasm story stitching | Removes the last host-binary dependency |
+
+---
+
+## Testing
+
+CI runs three lanes on every push / PR to `main`:
+
+- **Python suite** (`.github/workflows/python-tests.yml`) — the full `tests/` suite (excluding `tests/e2e_qwen_web_test.py`, which needs a real AMD GPU / ROCm). This job *gates* (no `continue-on-error`).
+- **Playwright e2e** (`.github/workflows/playwright.yml`) — boots the dashboard against a stdlib mock LLM (`tests/mock_llm_server.py`) and runs the specs in `e2e/`. Currently non-blocking (`continue-on-error`) while the suite stabilises; failure-packet + report artifacts are always uploaded.
+- **Lint** (`.github/workflows/lint.yml`) — stylelint + `node --check` on the hand-authored CSS/JS.
+
+Running locally:
+
+```bash
+# Python suite. SLOPFINITY_EXP_DIR is required so tests don't try to
+# write to a read-only /workspace (paths.py falls back otherwise, but
+# pinning it keeps the state + outputs dirs writable and predictable).
+export SLOPFINITY_EXP_DIR="$PWD/.pytest-exp"
+export SLOPFINITY_STATE_DIR="$PWD/.pytest-exp"
+mkdir -p "$SLOPFINITY_EXP_DIR"
+python -m pytest tests/ --ignore=tests/e2e_qwen_web_test.py -q
+
+# Frontend unit tests + lint (no build step).
+npm ci
+npm test          # vitest run js-tests/
+npm run lint      # stylelint + node --check
+
+# Playwright e2e (boots dark_server.py against the mock LLM).
+npx playwright install --with-deps chromium
+npx playwright test
+```
+
+`pytest.ini` sets `asyncio_mode = auto` so async tests need no per-test marker.
 
 ---
 
