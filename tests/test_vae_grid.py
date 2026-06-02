@@ -1,11 +1,23 @@
 """Hermetic unit tests for slopfinity.vae_grid (FFT grid-artifact detector).
 
 All inputs are constructed explicitly (no randomness, no real model output) so
-results are deterministic:
-  - a smooth gradient image -> has_grid False, low score
-  - a gradient with an injected 8-px periodic pattern -> has_grid True, peak_freq 8
-  - error paths: missing file, non-RGB
+results are deterministic. These assertions describe the CORRECT detector
+behaviour (local-baseline scoring), not the earlier over-triggering one:
+
+  - a smooth gradient image            -> has_grid False (clean)
+  - a single smooth sinusoid           -> has_grid False (clean)
+  - a flat image                       -> has_grid False, score 0
+  - a smooth image + injected 8-px grid  -> has_grid True, peak_freq 8
+  - a smooth image + injected 16-px grid -> has_grid True, peak_freq 16
+  - a gridded image scores strictly higher than the same image without a grid
+  - error paths: missing file, non-RGB, corrupt file
   - write_sidecar / read_sidecar round-trip + fmt_summary formatting
+
+A "clean" image here is a smooth, low-frequency-dominated one (a gradient or
+sinusoid) — exactly the case the old global-median baseline false-positived on.
+The fixed detector compares each candidate frequency to its LOCAL spectral
+neighbourhood, so a smoothly-decaying spectrum scores ~1.0 (no spike) while a
+sharp block grid towers over its neighbours and is flagged.
 
 Requires numpy + PIL (both are project deps); skipped cleanly if absent.
 """
@@ -33,19 +45,30 @@ def _save_rgb(arr, path):
     Image.fromarray(a).save(str(path))
 
 
-def _broadband_texture(h=256, w=256):
-    """A deterministic, spectrally-flat texture (clean / no block grid).
+def _smooth_gradient(h=256, w=256):
+    """A deterministic, smooth left-to-right luminance gradient (clean).
 
-    The detector's baseline is the global-median spectrum amplitude, so a
-    *clean* image for it is one whose energy is spread evenly across all
-    frequencies (a large, uniform median) with no peak at the 8/16-px block
-    bins. White noise gives exactly that. We seed the generator with a fixed
-    value so the array — and therefore every assertion below — is fully
-    reproducible run to run.
+    This is the canonical false-positive case for the OLD global-median
+    baseline: nearly all of its spectral energy sits near DC, dragging the
+    global median to ~0 so any faint periodic energy scored 4x+. The fixed
+    local-baseline detector compares each candidate frequency to its own
+    neighbouring bins — a smoothly-decaying ramp has neighbours nearly equal
+    to the "peak", so the score is ~1.0 and has_grid is correctly False.
+
+    Fully deterministic (no randomness): every assertion is reproducible.
     """
-    rng = np.random.default_rng(12345)
-    n = rng.integers(0, 256, size=(h, w)).astype(np.float32)
-    return np.stack([n, n, n], axis=-1)
+    xx = np.arange(w, dtype=np.float32)[None, :].repeat(h, axis=0)
+    grad = xx / (w - 1) * 255.0
+    return np.stack([grad, grad, grad], axis=-1)
+
+
+def _smooth_sinusoid(h=256, w=256, period=120.0, amp=60.0):
+    """A deterministic single smooth sinusoid (clean). Its energy sits at one
+    low frequency well away from the 8/16-px block bins, with a smooth
+    spectrum elsewhere — so the local-baseline detector reads it as clean."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    s = 128.0 + amp * np.sin(2.0 * np.pi * xx / period)
+    return np.stack([s, s, s], axis=-1).astype(np.float32)
 
 
 def _inject_grid(base, period=8, amp=60.0):
@@ -61,11 +84,24 @@ def _inject_grid(base, period=8, amp=60.0):
 
 # ---------- clean image ------------------------------------------------------
 
-def test_clean_broadband_texture_has_no_grid(tmp_path):
+def test_smooth_gradient_has_no_grid(tmp_path):
+    # A plain smooth gradient is the classic false-positive for the old
+    # global-median baseline; the fixed detector must read it as CLEAN.
     p = tmp_path / "clean.png"
-    _save_rgb(_broadband_texture(), p)
+    _save_rgb(_smooth_gradient(), p)
     r = vae_grid.detect_grid(str(p))
     assert r["method"] == "fft"
+    assert "error" not in r
+    assert r["has_grid"] is False
+    assert r["peak_freq"] is None
+    assert r["score"] < vae_grid.GRID_THRESHOLD
+
+
+def test_smooth_sinusoid_has_no_grid(tmp_path):
+    # A single smooth sinusoid (no block grid) must also read as CLEAN.
+    p = tmp_path / "sinusoid.png"
+    _save_rgb(_smooth_sinusoid(), p)
+    r = vae_grid.detect_grid(str(p))
     assert "error" not in r
     assert r["has_grid"] is False
     assert r["peak_freq"] is None
@@ -84,9 +120,9 @@ def test_flat_image_scores_zero(tmp_path):
 # ---------- injected grid ----------------------------------------------------
 
 def test_injected_8px_grid_is_detected(tmp_path):
-    # Inject a strong 8-px-period checker on top of a clean broadband texture —
+    # Inject a strong 8-px-period checker on top of a smooth gradient —
     # exactly the VAE block artifact the detector targets.
-    base = _inject_grid(_broadband_texture(), period=8, amp=60.0)
+    base = _inject_grid(_smooth_gradient(), period=8, amp=60.0)
     p = tmp_path / "grid8.png"
     _save_rgb(base, p)
 
@@ -97,8 +133,21 @@ def test_injected_8px_grid_is_detected(tmp_path):
     assert r["score"] >= vae_grid.GRID_THRESHOLD
 
 
+def test_injected_16px_grid_is_detected(tmp_path):
+    # A 16-px block grid (upscaler / some video VAEs) must also be caught.
+    base = _inject_grid(_smooth_gradient(), period=16, amp=60.0)
+    p = tmp_path / "grid16.png"
+    _save_rgb(base, p)
+
+    r = vae_grid.detect_grid(str(p))
+    assert "error" not in r
+    assert r["has_grid"] is True
+    assert r["peak_freq"] == 16
+    assert r["score"] >= vae_grid.GRID_THRESHOLD
+
+
 def test_grid_score_strictly_higher_than_clean(tmp_path):
-    clean_arr = _broadband_texture()
+    clean_arr = _smooth_gradient()
     clean = tmp_path / "c.png"
     _save_rgb(clean_arr, clean)
     gridded = tmp_path / "g.png"
@@ -125,9 +174,9 @@ def test_empty_path():
 
 def test_grayscale_image_still_handled(tmp_path):
     # A single-channel ("L") image is converted to RGB internally, so it must
-    # not error out. Use a broadband texture so it reads as clean (no grid).
+    # not error out. Use a smooth gradient so it reads as clean (no grid).
     p = tmp_path / "gray.png"
-    arr = np.clip(_broadband_texture(128, 128)[:, :, 0], 0, 255).astype(np.uint8)
+    arr = np.clip(_smooth_gradient(128, 128)[:, :, 0], 0, 255).astype(np.uint8)
     Image.fromarray(arr).save(str(p))
     r = vae_grid.detect_grid(str(p))
     assert "error" not in r

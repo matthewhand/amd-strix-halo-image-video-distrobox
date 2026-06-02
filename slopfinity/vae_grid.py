@@ -39,6 +39,46 @@ GRID_THRESHOLD = 4.0
 # new model surfaces a different period.
 CANDIDATE_PERIODS = (8, 16)
 
+# Half-width (in FFT bins) of the LOCAL neighborhood used to estimate the
+# baseline amplitude around a candidate grid frequency. The ±1 bins right
+# at the candidate (the peak window itself) are excluded so the peak does
+# not contaminate its own baseline.
+LOCAL_WIN = 6
+
+
+def _local_baseline(line, bin_idx: int) -> float:
+    """Median amplitude of FFT bins *around* ``bin_idx`` on a single 1-D
+    spectral line, excluding the ±1 peak window. Used as a per-candidate
+    baseline so the score measures how far the peak rises above its own
+    spectral neighbourhood (a real grid spike) rather than above the global
+    median (which smooth, low-freq-dominated images drag toward zero).
+
+    A vertical grid (period along rows) spikes on the column-0 line of the
+    spectrum; a horizontal grid spikes on the row-0 line. Comparing each
+    peak to the bins right next to it on the *same* line is what separates a
+    sharp grid spike from the smooth, slowly-decaying ramp of a gradient —
+    whose neighbouring bins are nearly identical to the "peak", yielding a
+    score near 1.0 instead of a false positive.
+
+    Returns a strictly-positive float so the caller can divide safely.
+    """
+    import numpy as np  # type: ignore
+
+    n = line.shape[0]
+    lo = max(0, bin_idx - LOCAL_WIN)
+    hi = min(n, bin_idx + LOCAL_WIN + 1)
+    window = line[lo:hi]
+    # Mask out the immediate peak window (±1 bin) so a real spike doesn't
+    # inflate its own baseline and mask itself.
+    peak_lo = max(lo, bin_idx - 1)
+    peak_hi = min(hi, bin_idx + 2)
+    mask = np.ones(window.shape[0], dtype=bool)
+    mask[peak_lo - lo:peak_hi - lo] = False
+    neighborhood = window[mask]
+    if neighborhood.size == 0:
+        neighborhood = window
+    return float(np.median(neighborhood)) + 1e-6
+
 
 def detect_grid(image_path: str) -> dict:
     """Run the FFT detector on an image file. Returns a result dict; never
@@ -82,10 +122,6 @@ def detect_grid(image_path: str) -> dict:
         g = g - g.mean()
         spec = np.abs(np.fft.fft2(g))
         H, W = spec.shape
-        # Energy at frequency f (cycles/image) for an N-pixel period sits
-        # at index N // period_in_px. After downsampling by `scale`, the
-        # effective period is original_period * scale.
-        baseline = float(np.median(spec)) + 1e-6
 
         best_score = 0.0
         best_period: Optional[int] = None
@@ -97,13 +133,33 @@ def detect_grid(image_path: str) -> dict:
             col_bin = W // eff_period
             if row_bin <= 1 or col_bin <= 1:
                 continue
-            # Take a small neighborhood (±1 bin) so off-by-one rounding
-            # doesn't kill the signal. Max amplitude in that window vs
-            # baseline = the score for this period.
-            row_peak = float(spec[max(0, row_bin - 1):row_bin + 2, 0:3].max())
-            col_peak = float(spec[0:3, max(0, col_bin - 1):col_bin + 2].max())
-            peak = max(row_peak, col_peak)
-            score = peak / baseline
+            # A vertical grid (period along rows) spikes on the column-0
+            # spectral line; a horizontal grid spikes on the row-0 line.
+            # Pull those two 1-D lines and score each peak against a LOCAL
+            # baseline taken from the *same* line.
+            #
+            # The baseline must be the typical amplitude *around* the
+            # candidate bin, NOT the global median: smooth / low-frequency
+            # images (gradients, sunsets) concentrate their energy near DC
+            # and leave the rest of the spectrum near zero, which drags the
+            # global median down and makes any faint periodic energy score
+            # 4x+ — a false positive. A smooth gradient's column-line decays
+            # slowly, so the bins right next to the candidate are nearly as
+            # large as the "peak" → score ≈ 1.0 (clean). A real grid spike
+            # towers over its immediate neighbours → score ≫ threshold.
+            row_line = spec[:, 0]   # vertical-grid energy lives here
+            col_line = spec[0, :]   # horizontal-grid energy lives here
+
+            # Small ±1 peak window so off-by-one rounding doesn't kill it.
+            row_peak = float(row_line[max(0, row_bin - 1):row_bin + 2].max())
+            col_peak = float(col_line[max(0, col_bin - 1):col_bin + 2].max())
+
+            row_base = _local_baseline(row_line, row_bin)
+            col_base = _local_baseline(col_line, col_bin)
+
+            row_score = row_peak / row_base
+            col_score = col_peak / col_base
+            score = max(row_score, col_score)
             if score > best_score:
                 best_score = score
                 best_period = orig_period
