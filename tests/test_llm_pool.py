@@ -236,9 +236,10 @@ async def test_get_pool_status_cpu_uses_ollama_provider(monkeypatch):
 
 
 async def test_get_pool_status_dedup_of_duplicate_failover_urls(monkeypatch):
-    # NOTE: pool.py does NOT currently dedup duplicate failover URLs; this
-    # documents the actual behavior (no dedup) so a future refactor that
-    # adds dedup will intentionally flip this assertion.
+    # pool.py now de-duplicates the pool before probing so the same endpoint
+    # is never probed twice. Two identical failover URLs collapse to one.
+    # (This assertion was intentionally flipped from the original
+    # no-dedup placeholder once dedup landed.)
     monkeypatch.setenv("SLOPFINITY_LLM_FAILOVER_URLS", "http://dup/v1, http://dup/v1")
 
     async def fake_probe(url, default_model, provider_name="lmstudio", timeout=5):
@@ -247,4 +248,4 @@ async def test_get_pool_status_dedup_of_duplicate_failover_urls(monkeypatch):
 
     monkeypatch.setattr(POOL, "probe_endpoint", fake_probe)
     status = await POOL.get_pool_status()
-    assert len(status["failovers"]) == 2  # not deduped (documents current behavior)
+    assert len(status["failovers"]) == 1  # deduped on normalized url

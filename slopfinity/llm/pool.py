@@ -25,12 +25,46 @@ def get_env_pool_config():
         failover_models.append("")
         
     failovers = [{"url": u, "model": m} for u, m in zip(failover_urls, failover_models)]
-    
+
     return {
         "primary": {"url": primary_url, "model": primary_model},
         "cpu": {"url": cpu_url, "model": cpu_model},
         "failovers": failovers
     }
+
+
+def _normalize_url(url):
+    """Canonical form for URL identity comparison.
+
+    Case-insensitive and trailing-slash-insensitive so that, e.g.,
+    "http://Host:1234/v1/" and "http://host:1234/v1" are treated as the
+    same endpoint and not probed/tried twice.
+    """
+    return (url or "").strip().rstrip("/").lower()
+
+
+def _dedup_endpoints(endpoints):
+    """De-duplicate a priority-ordered list of endpoint dicts.
+
+    Order/priority is preserved (the caller supplies the chain in the
+    desired order, e.g. primary, then cpu, then failovers). Duplicates
+    are dropped on (normalized-url, model) identity, so the same endpoint
+    is never probed/tried twice. An endpoint serving a *different* model
+    on the same URL is kept (it is a distinct (url, model) pair).
+    Endpoints with a blank URL are skipped.
+    """
+    seen = set()
+    deduped = []
+    for ep in endpoints:
+        url = ep.get("url") if isinstance(ep, dict) else None
+        if not url or not url.strip():
+            continue
+        key = (_normalize_url(url), (ep.get("model") or "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(ep)
+    return deduped
 
 async def probe_endpoint(url, default_model, provider_name="lmstudio", timeout=5):
     """Probes an endpoint to see if it's alive and what models it has."""
@@ -64,21 +98,43 @@ async def probe_endpoint(url, default_model, provider_name="lmstudio", timeout=5
         }
 
 async def get_pool_status():
-    """Probes all endpoints in the pool and returns their status."""
+    """Probes all endpoints in the pool and returns their status.
+
+    The pool is de-duplicated by (normalized-url, model) identity before
+    probing so the same endpoint is never probed twice. Priority order is
+    preserved (primary, then cpu, then failovers). The primary and cpu
+    slots are always returned (even if a failover duplicates them); only
+    redundant *failovers* are dropped from the probed set.
+    """
     cfg = get_env_pool_config()
-    
+
     primary_task = probe_endpoint(cfg["primary"]["url"], cfg["primary"]["model"])
     cpu_task = probe_endpoint(cfg["cpu"]["url"], cfg["cpu"]["model"], provider_name="ollama")
-    
+
+    # Dedup failovers against the primary/cpu slots and against each other.
+    seen = {
+        (_normalize_url(cfg["primary"]["url"]), (cfg["primary"]["model"] or "").strip()),
+        (_normalize_url(cfg["cpu"]["url"]), (cfg["cpu"]["model"] or "").strip()),
+    }
+    unique_failovers = []
+    for f in cfg["failovers"]:
+        if not f.get("url") or not f["url"].strip():
+            continue
+        key = (_normalize_url(f["url"]), (f.get("model") or "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_failovers.append(f)
+
     failover_tasks = [
         probe_endpoint(f["url"], f["model"], provider_name="ollama")
-        for f in cfg["failovers"]
+        for f in unique_failovers
     ]
-    
+
     results = await asyncio.gather(primary_task, cpu_task, *failover_tasks)
-    
+
     return {
         "primary": results[0],
         "cpu": results[1],
-        "failovers": results[2:]
+        "failovers": list(results[2:])
     }
