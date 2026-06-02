@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from slopfinity.paths import EXP_DIR
 import slopfinity.config as cfg
 import slopfinity.scheduler as sched
+from slopfinity.stats import check_disk_guard
 
 
 router = APIRouter()
@@ -35,7 +36,7 @@ async def inject(
     # to push past it. terminate=1 still works (it cancels rather than
     # creates work).
     if not terminate:
-        ok, reason = _check_disk_guard()
+        ok, reason = check_disk_guard()
         if not ok:
             return JSONResponse(
                 {"status": "blocked", "reason": f"disk-low guard: {reason}",

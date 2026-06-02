@@ -58,6 +58,27 @@ jobs:
     # SLOPFINITY_EXP_DIR and otherwise falls back to ./comfy-outputs.)
     env:
       SLOPFINITY_EXP_DIR: ${{ github.workspace }}/ci-exp
+      # Point the dashboard's LLM pool at the stdlib mock provider
+      # (tests/mock_llm_server.py) started below. The pool (slopfinity/
+      # llm/pool.py:get_env_pool_config) reads these per request, and
+      # load_dotenv() does not override real env vars, so the dashboard
+      # sees a *healthy* primary endpoint instead of "no LLM". This makes
+      # /llm/health green and the suggestion cluster render enabled rather
+      # than disabled. The mock answers /v1/models + /v1/chat/completions
+      # deterministically — port 11500 avoids the Ollama default 11434.
+      # Note: SLOPFINITY_HAS_LLM is still left UNSET in the test step, so
+      # the deeply-interactive endless/suggestion specs (which also drive
+      # mode-switching UI state) stay skipped; the mock simply gives the
+      # static + chrome specs a real backend to talk to.
+      LLM_MOCK_HOST: 127.0.0.1
+      LLM_MOCK_PORT: '11500'
+      SLOPFINITY_LLM_PRIMARY_URL: http://127.0.0.1:11500/v1
+      SLOPFINITY_LLM_PRIMARY_MODEL: mock-llm
+      # Blank out the CPU + failover endpoints so the pool never probes a
+      # real Ollama / LAN box (which would hang or pollute /llm/pool).
+      SLOPFINITY_LLM_CPU_URL: ''
+      SLOPFINITY_LLM_FAILOVER_URLS: ''
+      SLOPFINITY_LLM_FAILOVER_MODELS: ''
 
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +101,14 @@ jobs:
       - name: Install Slopfinity Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi 'uvicorn[standard]' jinja2 python-multipart httpx psutil pyyaml
+          # Install the pinned runtime deps (fastapi, uvicorn, sqlmodel,
+          # jinja2, tiktoken, python-dotenv). python-dotenv in particular
+          # is imported lazily by slopfinity/llm/pool.py — without it the
+          # /llm/health + /llm/pool routes the dashboard hits on page load
+          # would 500. The extras below cover request parsing + the system
+          # stats / HTTP-probe code paths the e2e suite exercises.
+          pip install -r requirements-slopfinity.txt
+          pip install python-multipart httpx psutil pyyaml
 
       - name: Make artifacts dir
         run: mkdir -p artifacts
@@ -99,12 +127,29 @@ jobs:
             | base64 -d > "$SLOPFINITY_EXP_DIR/slop_1_f1.png"
           printf '\x00\x00\x00\x18ftypmp42' > "$SLOPFINITY_EXP_DIR/FINAL_1.mp4"
 
+      - name: Start mock LLM provider in background
+        run: |
+          # Stdlib-only OpenAI-compat mock (no extra deps). Serves
+          # /v1/models + /v1/chat/completions so the dashboard's LLM pool
+          # has a healthy primary (see the SLOPFINITY_LLM_* job env). The
+          # dashboard is booted AFTER this so its first /llm/health probe
+          # already succeeds.
+          (python3 tests/mock_llm_server.py >artifacts/mock-llm.log 2>&1 &)
+          for i in $(seq 1 30); do
+            curl -fs "http://127.0.0.1:${LLM_MOCK_PORT}/v1/models" >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::mock LLM did not respond on :${LLM_MOCK_PORT} within 30s"
+          tail -50 artifacts/mock-llm.log
+          exit 1
+
       - name: Boot Slopfinity dashboard in background
         run: |
           # Bind to loopback (matches default since #142). The Playwright
           # config picks up SLOPFINITY_URL=http://localhost:9099 by
           # default, so no env override needed. SLOPFINITY_EXP_DIR (job
-          # env) points the dashboard at the same seeded experiments dir.
+          # env) points the dashboard at the same seeded experiments dir,
+          # and SLOPFINITY_LLM_PRIMARY_URL points it at the mock above.
           (python3 dark_server.py >artifacts/slopfinity.log 2>&1 &)
           # Wait until the FastAPI worker answers /healthz. Bounded by
           # 60s — if the server fails to boot, fail the workflow fast
@@ -176,4 +221,5 @@ jobs:
             playwright-report/
             test-results/
             artifacts/slopfinity.log
+            artifacts/mock-llm.log
           retention-days: 7
