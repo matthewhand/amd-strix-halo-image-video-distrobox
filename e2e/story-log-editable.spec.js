@@ -12,7 +12,8 @@
 //   4. legacy `\n`-joined string in storage migrates to array on first read
 //   5. × removes the row + persists the new array
 
-const { test, expect } = require('@playwright/test');
+// Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

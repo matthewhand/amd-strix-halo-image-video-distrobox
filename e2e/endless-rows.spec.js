@@ -4,7 +4,8 @@
 // depend on the LLM's mood. Each chip's text encodes the prompt_id
 // it came from so we can verify per-row prompt routing.
 
-const { test, expect } = require('@playwright/test');
+// Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const VIEWPORT = { width: 1440, height: 900 };

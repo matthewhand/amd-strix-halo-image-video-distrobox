@@ -7,7 +7,8 @@
 // we stub fetch in the page context so the assertions don't depend on
 // the live LLM's mood.
 
-const { test, expect } = require('@playwright/test');
+// Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const VIEWPORT = { width: 1440, height: 900 };
