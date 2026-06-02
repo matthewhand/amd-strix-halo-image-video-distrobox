@@ -1,7 +1,8 @@
-import json
-import asyncio
 import os
+import re
+import json
 import random
+import asyncio
 from fastapi import APIRouter, Form, Body
 from fastapi.responses import JSONResponse
 import slopfinity.config as cfg
@@ -242,6 +243,11 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     same cache_key as row 1 and all show identical chips).
     """
     import time
+    # The default suggestion system prompt lives in server.py. Imported
+    # lazily to avoid a circular import at module load (server.py includes
+    # this router). Without it line ~264 raised NameError and 500'd
+    # /subjects/suggest whenever no named/custom prompt was configured.
+    from slopfinity.server import _default_suggest_system_prompt
     config = cfg.load_config()
     use_subjects = bool(config.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS))
     # Env override wins over Settings → Prompts. Lets a user pin their

@@ -1,22 +1,54 @@
 import os
 import json
+import time
 import asyncio
-import subprocess
-from fastapi import APIRouter, Form, Request, UploadFile, File, Body
-from fastapi.responses import JSONResponse, HTMLResponse
-from typing import List
-from slopfinity.paths import EXP_DIR, TTS_OUT_DIR
+from fastapi import APIRouter, UploadFile, File, Body
+from fastapi.responses import JSONResponse
+from slopfinity.paths import EXP_DIR
 import slopfinity.config as cfg
-from slopfinity.stats import get_sys_stats, get_outputs_disk, get_ram_estimate
-from fastapi.templating import Jinja2Templates
-from slopfinity.paths import TEMPLATES_DIR
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
-import os
+from slopfinity.stats import get_outputs_disk, get_ram_estimate, check_disk_guard
 TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
 from slopfinity.workers import ffmpeg_mux as _ffmpeg_mux
 import urllib.request
 import urllib.error
 import slopfinity.scheduler as sched
+
+
+# ---------------------------------------------------------------------------
+# File-extension allowlists + seed-upload cap. Restored from server.py (the
+# Phase-1 split dropped them here). Kept verbatim so the /pipeline/slopped,
+# /seeds/list and /upload endpoints behave identically.
+# ---------------------------------------------------------------------------
+# Slopped sub-select per role. Voice (TTS) and music both produce WAVs so they
+# share the same set.
+_SLOPPED_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp"),
+    "audio": (".wav", ".mp3", ".flac", ".ogg"),
+    "tts": (".wav", ".mp3", ".flac", ".ogg"),
+}
+_SEED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+_SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
+
+
+def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
+    """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
+
+    Relocated here from server.py: server.py imports this router at module
+    load, so importing _call_tts_worker back FROM server.py would hit a
+    partially-initialised module (circular import). Keeping the helper local
+    avoids the cycle — all its deps (json, urllib, TTS_WORKER_URL) live here.
+    Isolated for test mocking.
+    """
+    payload = json.dumps({"text": text, "voice": voice}).encode("utf-8")
+    req = urllib.request.Request(
+        TTS_WORKER_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
 
 
 router = APIRouter()
@@ -53,7 +85,7 @@ async def disk_guard_endpoint():
     """Live disk-guard check. Used by the dashboard to pre-warn the user
     before they click Queue Slop instead of failing the /inject call.
     Returns {ok, reason, free_pct, free_gb, threshold_pct, threshold_gb}."""
-    ok, reason = _check_disk_guard()
+    ok, reason = check_disk_guard()
     config = cfg.load_config()
     try:
         d = get_outputs_disk(EXP_DIR)
@@ -82,6 +114,10 @@ async def runner_status():
     terminate. Used by e2e tests + the dashboard's pause-button retry
     logic to distinguish "runner stuck" from "runner not running".
     """
+    # Process-table helper lives in server.py; imported lazily to dodge
+    # the circular import (server.py includes this router). Without it the
+    # endpoint raised NameError and 500'd.
+    from slopfinity.server import _find_pids_by_cmdline
     pids = _find_pids_by_cmdline("run_fleet.py")
     info = []
     now = time.time()
@@ -121,6 +157,7 @@ async def runner_terminate():
     Returns the flag path + the pids touched (signal + escalation).
     Both succeed independently."""
     import signal
+    from slopfinity.server import _find_pids_by_cmdline  # see runner_status
     flag_path = os.path.join(EXP_DIR, "terminate.flag")
     flag_written = False
     try:
@@ -267,7 +304,10 @@ async def vae_grid_check(file: str):
     abs_path = os.path.join(EXP_DIR, file)
     if not os.path.isfile(abs_path):
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    from . import vae_grid as _vg
+    # vae_grid lives at slopfinity.vae_grid (package root), not under
+    # slopfinity.routers — `from . import vae_grid` raised ImportError and
+    # 500'd the /vae_grid endpoint.
+    from slopfinity import vae_grid as _vg
     cached = _vg.read_sidecar(abs_path)
     if cached:
         return {"ok": True, "cached": True, **cached}
@@ -293,6 +333,10 @@ async def tts(data: dict = Body(...)):
     # so a mid-fleet click queues correctly and LM Studio gets suspended
     # (Qwen-TTS shares the GPU). safety_gb=4: the worker already lives in
     # its own process holding ~10 GB, this lock just gates concurrent demand.
+    # Lazy import to avoid a circular import at module load (server.py imports
+    # this router at top level). _call_tts_worker isolates the worker HTTP call
+    # so tests can mock it / urllib.
+    from slopfinity.server import _call_tts_worker
     try:
         async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
             result = await asyncio.to_thread(_call_tts_worker, text, voice)
@@ -405,7 +449,7 @@ async def pipeline_plan(lookahead: int = 2):
         savings: {naive_loads, planned_loads, saved_loads, est_saved_seconds},
       }
     """
-    from .memory_planner import (
+    from slopfinity.memory_planner import (
         build_sequence_for_job,
         plan_resident_set,
         naive_load_count,

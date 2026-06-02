@@ -5,6 +5,7 @@ import asyncio
 from fastapi import APIRouter, Request, Body
 from fastapi.responses import JSONResponse
 import slopfinity.config as cfg
+import slopfinity.scheduler as sched
 from slopfinity.routers.assets import _list_outputs
 from slopfinity.paths import EXP_DIR
 from slopfinity.llm import _LLM_LOCK
@@ -247,6 +248,16 @@ async def chat_endpoint(payload: dict = Body(...)):
     model returns a content-only response (or hits the turn cap), and
     returns the full updated message history.
     """
+    # The chat-thinking WS broadcasters live in server.py (which owns the
+    # WS client registry). Imported lazily here to avoid a circular import
+    # at module load (server.py includes this router). Without this the
+    # endpoint raised NameError: name '_broadcast_chat_thinking' is not
+    # defined → every /chat call 500'd.
+    from slopfinity.server import (
+        _broadcast_chat_thinking,
+        _chat_thinking_heartbeat,
+    )
+
     history = payload.get("messages") or []
     if not isinstance(history, list):
         return JSONResponse({"ok": False, "error": "messages must be a list"}, status_code=400)
