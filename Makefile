@@ -52,15 +52,30 @@ endif
 
 TAILWIND_URL := https://github.com/tailwindlabs/tailwindcss/releases/$(TAILWIND_VERSION)/download/$(TAILWIND_ASSET)
 
-.PHONY: tailwind tailwind-watch tailwind-clean lint e2e help
+.PHONY: tailwind tailwind-watch tailwind-clean lint e2e e2e-live e2e-all help up dev down logs status
 
 help:
 	@echo "Targets:"
+	@echo "  up              Start the dashboard (uvicorn only)"
+	@echo "  dev             Start uvicorn + tailwind --watch via overmind"
+	@echo "  down            Stop whatever's running on the dashboard port"
+	@echo "  logs            Tail the server log"
+	@echo "  status          Show what's bound on the dashboard port"
 	@echo "  tailwind        Build $(TAILWIND_OUTPUT) (downloads CLI on first run)"
 	@echo "  tailwind-watch  Rebuild on change (Ctrl-C to stop)"
 	@echo "  tailwind-clean  Remove the CLI binary + generated CSS"
 	@echo "  lint            stylelint app.css + node --check app.js/sw.js + ast.parse python"
-	@echo "  e2e             Playwright smoke test against the live dashboard"
+	@echo "  e2e             Playwright CI suite (e2e/, mocked, no AI required)"
+	@echo "  e2e-live        Playwright local-only suite (e2e/live/, real :9099 server)"
+	@echo "  e2e-all         Both suites in one run"
+
+# Launcher delegates. Real logic lives in bin/slopfinity so the shell
+# script is also usable on systems without make.
+up:     ; @bin/slopfinity up
+dev:    ; @bin/slopfinity dev
+down:   ; @bin/slopfinity down
+logs:   ; @bin/slopfinity logs
+status: ; @bin/slopfinity status
 
 # Download the standalone Tailwind binary on first use, cache in bin/.
 $(TAILWIND_BIN):
@@ -119,7 +134,26 @@ e2e:
 	@test -d node_modules/@playwright/test || npm install --silent --save-dev @playwright/test@1.59.1
 	@test -d node_modules/playwright/.local-browsers 2>/dev/null || npx playwright install chromium
 	npx playwright test --reporter=list
-	@echo "→ e2e OK"
+	@echo "→ e2e OK (CI suite — mocked)"
+
+# Local-only — hits the real slopfinity server on :9099. AI workers may or
+# may not be running; these specs assert the wire contract end-to-end, not
+# generated output. Each test cleans up after itself via POST /queue/cancel.
+e2e-live:
+	@command -v npm >/dev/null || { echo "npm required for Playwright"; exit 1; }
+	@test -d node_modules/@playwright/test || npm install --silent --save-dev @playwright/test@1.59.1
+	@test -d node_modules/playwright/.local-browsers 2>/dev/null || npx playwright install chromium
+	E2E_INCLUDE_LIVE=1 npx playwright test e2e/live --reporter=list
+	@echo "→ e2e-live OK (real :9099 server)"
+
+# Run both suites in a single invocation. CI runs `make e2e`; local QA runs
+# `make e2e-all` to cover the wire contract + the mocked frontend behavior.
+e2e-all:
+	@command -v npm >/dev/null || { echo "npm required for Playwright"; exit 1; }
+	@test -d node_modules/@playwright/test || npm install --silent --save-dev @playwright/test@1.59.1
+	@test -d node_modules/playwright/.local-browsers 2>/dev/null || npx playwright install chromium
+	E2E_INCLUDE_LIVE=1 npx playwright test --reporter=list
+	@echo "→ e2e-all OK (CI + live)"
 
 # ─────────────────────────────────────────────────────────────────────
 # Static demo bundle (static-demo-builder skill)
