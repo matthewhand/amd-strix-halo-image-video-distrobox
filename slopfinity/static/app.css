@@ -2727,8 +2727,16 @@ body.subj-mode-raw #subjects-per-stage {
 body.subj-mode-raw #subjects-per-stage>div {
     display: flex;
     flex-direction: column;
-    flex: 1 1 0;
-    min-height: 0;
+    /* Each stage row must reserve room for its label (~1.25rem) + the
+       textarea's 4rem floor. Previously `flex:1 1 0; min-height:0` let the
+       row shrink to ~0 in short layouts (e.g. single+queue) while the
+       textarea kept its 4rem min-height — so the textarea overflowed its
+       collapsed row and the NEXT row's label rendered on top of it.
+       A real min-height makes the rows stack without colliding; when the
+       card is too short the panel's `overflow-y:auto` scrolls instead of
+       overlapping, and when it's tall the rows still flex-grow to fill. */
+    flex: 1 1 auto;
+    min-height: 5.25rem;
 }
 
 body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
