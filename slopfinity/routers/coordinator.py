@@ -1,12 +1,28 @@
-import json
+import asyncio
 import subprocess
 import os
 import time
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
-import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 from slopfinity.paths import EXP_DIR
+
+
+# ---------------------------------------------------------------------------
+# Coordinator (Phase 4) singleton. Imported at module load so the
+# /coordinator/* endpoints can report import health gracefully when Phases
+# 1-3 haven't landed yet. Mirrors the original wiring in server.py:
+#   try import slopfinity.coordinator -> _coordinator; on failure capture
+#   the error repr in _coord_imp_err_repr so endpoints surface a clear 500
+#   instead of a NameError.
+# ---------------------------------------------------------------------------
+try:
+    from slopfinity import coordinator as _coordinator  # noqa: E402
+except Exception as _coord_imp_err:  # pragma: no cover
+    _coordinator = None
+    _coord_imp_err_repr = repr(_coord_imp_err)
+else:
+    _coord_imp_err_repr = None
 
 
 router = APIRouter()
