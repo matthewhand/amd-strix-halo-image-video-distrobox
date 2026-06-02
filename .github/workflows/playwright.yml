@@ -99,7 +99,35 @@ jobs:
             | base64 -d > "$SLOPFINITY_EXP_DIR/slop_1_f1.png"
           printf '\x00\x00\x00\x18ftypmp42' > "$SLOPFINITY_EXP_DIR/FINAL_1.mp4"
 
+      - name: Start mock LLM backend in background
+        run: |
+          # The backend-gated specs (e2e/_fixtures.js) drive the
+          # suggestion / story / chat machinery, which talks to a local
+          # OpenAI-compat LLM behind the dashboard. tests/mock_llm_server.py
+          # is a stdlib-only stand-in that serves /v1/models +
+          # /v1/chat/completions with canned, contract-shaped responses
+          # (multi-mode suggestion dicts, STRICT-JSON distribute, etc.).
+          # We bind it on 11500 (not the Ollama-default 11434) and point
+          # the dashboard's LLM pool at it via SLOPFINITY_LLM_PRIMARY_URL
+          # below, so /subjects/suggest et al. return deterministic data.
+          (LLM_MOCK_HOST=127.0.0.1 LLM_MOCK_PORT=11500 \
+            python3 tests/mock_llm_server.py >artifacts/mock-llm.log 2>&1 &)
+          for i in $(seq 1 30); do
+            curl -fs http://127.0.0.1:11500/v1/models >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::mock LLM did not respond on :11500 within 30s"
+          tail -50 artifacts/mock-llm.log
+          exit 1
+
       - name: Boot Slopfinity dashboard in background
+        env:
+          # Point BOTH the primary and the CPU/failover LLM slots at the
+          # mock so /subjects/suggest, /enhance and chat resolve to it
+          # regardless of which slot the scheduler prefers (pool.py reads
+          # these; an empty model auto-picks the mock's single model id).
+          SLOPFINITY_LLM_PRIMARY_URL: http://127.0.0.1:11500/v1
+          SLOPFINITY_LLM_CPU_URL: http://127.0.0.1:11500/v1
         run: |
           # Bind to loopback (matches default since #142). The Playwright
           # config picks up SLOPFINITY_URL=http://localhost:9099 by
@@ -120,9 +148,11 @@ jobs:
       - name: Run Playwright tests
         env:
           CI: '1'
-          # SLOPFINITY_HAS_LLM is intentionally NOT set: the backend-gated
-          # specs (see e2e/_fixtures.js) self-skip without a live LLM, so
-          # CI runs only the static layout / chrome / contract specs.
+          # The mock LLM backend is up (started above) and the dashboard
+          # is pointed at it, so the backend-gated specs (e2e/_fixtures.js)
+          # should RUN, not self-skip. Setting SLOPFINITY_HAS_LLM=1 flips
+          # the gate on so the full suite executes against the mock.
+          SLOPFINITY_HAS_LLM: '1'
         run: npx playwright test
 
       - name: Extract failed tests + build markdown packet
@@ -176,4 +206,5 @@ jobs:
             playwright-report/
             test-results/
             artifacts/slopfinity.log
+            artifacts/mock-llm.log
           retention-days: 7

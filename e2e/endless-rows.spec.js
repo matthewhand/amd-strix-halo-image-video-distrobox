@@ -3,12 +3,34 @@
 // never wait for the live LLM (~3 min per call) AND assertions don't
 // depend on the LLM's mood. Each chip's text encodes the prompt_id
 // it came from so we can verify per-row prompt routing.
+//
+// PRODUCT MODEL (v316+): endless mode no longer has a separate "Start
+// Story" gesture. Entering endless mode IS starting the story
+// (_setSubjectsMode flips body.endless-running and seeds the row-prompt
+// array). The shared #p-core seed textarea is HIDDEN in endless (the
+// story-pane owns the per-beat inputs), so tests drive row creation
+// through the "+" badge button (#subjects-suggest-add-btn) and the
+// per-row − / ↻ controls. Endless chip rows live in their OWN stack,
+// #subject-chips-stack-endless (simple mode has a sibling
+// #subject-chips-stack-simple); both carry the .subject-chips-stack
+// class.
+//
+// SYNCED BASELINE: the per-row indices (data-endless-row-lead, the −/↻/
+// picker onclick args) are positions into the persisted row-prompt array
+// `slopfinity-endless-row-prompts`. _removeEndlessRow / _regenEndlessRow
+// look survivors up by that index, so the array and the rendered rows must
+// stay 1:1. The natural in-product "story running with N beat rows" state
+// achieves that by rendering one row per saved prompt (_renderEndlessRows).
+// We reproduce it deterministically: seed the prompt array, enter endless,
+// then paint the rows with window._renderEndlessRows. Every + / − / ↻
+// afterwards keeps the array and DOM in lockstep.
 
 // Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
 const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 const VIEWPORT = { width: 1440, height: 900 };
+const STACK = '#subject-chips-stack-endless';
 
 test.use({ viewport: VIEWPORT });
 
@@ -16,7 +38,9 @@ test.use({ viewport: VIEWPORT });
 // Shared setup
 // ---------------------------------------------------------------------------
 
-async function bootstrap(page) {
+// Boot endless mode with `seedRows` saved beat-prompts rendered as rows.
+// Default: one row. Pass 0 for an empty stack.
+async function bootstrap(page, seedRows = 1) {
     // Stub /subjects/suggest BEFORE any page load. Returns 6 chips
     // tagged with the prompt_id so we can assert which prompt produced
     // each row's chips.
@@ -24,12 +48,8 @@ async function bootstrap(page) {
         const url = new URL(route.request().url());
         const promptId = url.searchParams.get('prompt_id') || 'default';
         const opener = url.searchParams.get('opener');
-        // Server response shape (post-23ec1b1) is a per-mode dict, not
-        // a flat array. _fetchSuggestBatch picks dict.story for endless
-        // and dict.simple for simple/raw. Opener path is handled by
-        // _startEndlessStory which still reads d.suggestions[0]; we keep
-        // a flat list for that case (server returns the dict either way
-        // but _startEndlessStory only looks at the first entry).
+        // Server response shape is a per-mode dict. _fetchSuggestBatch picks
+        // dict.story for endless and dict.simple for simple/raw.
         if (opener === '1') {
             return route.fulfill({
                 status: 200, contentType: 'application/json',
@@ -42,14 +62,18 @@ async function bootstrap(page) {
             body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
         });
     });
-    await page.addInitScript(() => {
+    await page.addInitScript((n) => {
         try {
             localStorage.clear();
             // Generous upper-pane height so the full Prompt card body
             // fits without splitter-cropping the chip stack.
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            // Seed exactly `n` beat-prompts (all the default 'yes-and') so
+            // the rendered rows and the saved array start 1:1.
+            localStorage.setItem('slopfinity-endless-row-prompts',
+                JSON.stringify(Array.from({ length: n }, () => 'yes-and')));
         } catch (_) { }
-    });
+    }, seedRows);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => {
         const splash = document.getElementById('splash-overlay');
@@ -58,26 +82,51 @@ async function bootstrap(page) {
         return !splash && opacity >= 1;
     }, null, { timeout: 5000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
-    await page.waitForTimeout(200);
+    // Entering endless auto-starts the story (body.endless-running).
+    await page.waitForFunction(() => document.body.classList.contains('endless-running'), null, { timeout: 4000 });
+    // Let the dashboard settle (first WS tick / any one-shot reload) before
+    // driving the render — otherwise the evaluate can race a navigation and
+    // throw "Execution context was destroyed". Retry the render once.
+    await page.waitForLoadState('networkidle').catch(() => {});
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            // Paint one chip row per saved beat-prompt (the in-product
+            // "story running" state) so prompt-array indices and DOM rows
+            // stay aligned.
+            await page.evaluate(() => window._renderEndlessRows(6));
+            await page.waitForFunction(
+                (n) => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === n,
+                seedRows,
+                { timeout: 8000 },
+            );
+            return;
+        } catch (e) {
+            if (attempt === 1) throw e;
+            await page.waitForTimeout(500);
+        }
+    }
 }
 
-async function startStory(page, seed = 'A lighthouse keeper meets a sea creature.') {
-    await page.fill('#p-core', seed);
-    await page.click('#btn-start-stop-inline');
-    // Wait for the initial endless render to land.
-    await page.waitForSelector('#subject-chips-stack .suggest-marquee-row', { timeout: 5000 });
-    await page.waitForTimeout(200);
+// Add one row via the "+" badge and wait for it to render.
+async function addRow(page) {
+    const before = await rowCount(page);
+    await page.click('#subjects-suggest-add-btn');
+    await page.waitForFunction(
+        (n) => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === n,
+        before + 1,
+        { timeout: 5000 },
+    );
 }
 
 async function rowCount(page) {
-    return await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+    return await page.locator(`${STACK} .suggest-marquee-row`).count();
 }
 
 // Returns [{rowIdx, promptLabel, firstChipText}, ...] for every row.
 async function rowSnapshot(page) {
     return await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
-        return Array.from(rows).map((r, i) => {
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
+        return Array.from(rows).map((r) => {
             const lead = r.querySelector('[data-endless-row-lead]');
             const promptBtn = r.querySelector('[data-row-prompt-btn]');
             const label = promptBtn ? promptBtn.textContent.trim() : null;
@@ -94,33 +143,28 @@ async function rowSnapshot(page) {
 }
 
 // ---------------------------------------------------------------------------
-// CONTRACT: Start Story → exactly ONE row using current default prompt.
+// CONTRACT: the seeded baseline renders exactly one row from the default
+// prompt; chips route from that prompt_id.
 // ---------------------------------------------------------------------------
 
-test('endless-rows: Start Story creates exactly 1 row with default prompt', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    const rows = await rowCount(page);
-    expect(rows).toBe(1);
+test('endless-rows: baseline renders one row with default prompt', async ({ page }) => {
+    await bootstrap(page, 1);
+    expect(await rowCount(page)).toBe(1);
     const snap = await rowSnapshot(page);
+    expect(snap).toHaveLength(1);
     expect(snap[0].rowIdx).toBe(0);
-    // Default prompt id is 'yes-and' in fresh localStorage state.
+    // Default prompt id is 'yes-and' → chips routed from that prompt.
     expect(snap[0].firstChip).toMatch(/^chip-yes-and-/);
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: + button appends ONE row using whatever the dropdown is
-// currently set to (not the row that's already there).
+// CONTRACT: each + appends ONE row using the current default prompt.
 // ---------------------------------------------------------------------------
 
 test('endless-rows: + click adds 1 row with current default', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
+    await bootstrap(page, 1);
     expect(await rowCount(page)).toBe(1);
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => {
-        return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2;
-    }, null, { timeout: 5000 });
+    await addRow(page);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(2);
     // Both rows came from the default prompt → same chip-text family.
@@ -131,18 +175,12 @@ test('endless-rows: + click adds 1 row with current default', async ({ page }) =
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: + click N times adds N rows, all with sequential rowIdx.
+// CONTRACT: N + clicks add N rows with sequential indices.
 // ---------------------------------------------------------------------------
 
 test('endless-rows: 3 sequential + clicks → 4 total rows, indices 0..3', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    for (let i = 0; i < 3; i++) {
-        await page.click('#subjects-suggest-add-btn');
-        await page.waitForFunction((expected) => {
-            return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === expected;
-        }, i + 2, { timeout: 5000 });
-    }
+    await bootstrap(page, 1);
+    for (let i = 0; i < 3; i++) await addRow(page);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(4);
     expect(snap.map(r => r.rowIdx)).toEqual([0, 1, 2, 3]);
@@ -154,31 +192,31 @@ test('endless-rows: 3 sequential + clicks → 4 total rows, indices 0..3', async
 // ---------------------------------------------------------------------------
 
 test('endless-rows: − click removes row + reindexes survivors', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    // Add 3 more so we have 4 total.
-    for (let i = 0; i < 3; i++) {
-        await page.click('#subjects-suggest-add-btn');
-        await page.waitForFunction((n) => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === n, i + 2);
-    }
+    // Seed 4 rows directly so the array and DOM start aligned at 4.
+    await bootstrap(page, 4);
     expect(await rowCount(page)).toBe(4);
 
-    // Remove the row at index 1 (second from top) via its − button.
-    await page.click('#subject-chips-stack .suggest-marquee-row:nth-child(2) [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
-    const snap = await rowSnapshot(page);
-    expect(snap).toHaveLength(3);
-    // Surviving rows must have indices 0,1,2 (REINDEXED). The bug being
-    // pinned: if remove leaves indices as 0,2,3 then subsequent + adds
-    // and onclick handlers go to the wrong rowIdx.
-    expect(snap.map(r => r.rowIdx)).toEqual([0, 1, 2]);
-
-    // localStorage should reflect the shrunk array.
-    const saved = await page.evaluate(() => {
+    const promptsBefore = await page.evaluate(() => {
         const raw = localStorage.getItem('slopfinity-endless-row-prompts');
         return raw ? JSON.parse(raw) : null;
     });
-    expect(saved).toHaveLength(3);
+
+    // Remove the row at index 1 (second from top) via its − button.
+    await page.click(`${STACK} .suggest-marquee-row:nth-child(2) [data-row-remove]`);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 3, null, { timeout: 5000 });
+    const snap = await rowSnapshot(page);
+    expect(snap).toHaveLength(3);
+    // Surviving rows must have contiguous indices 0,1,2 (REINDEXED). The
+    // bug being pinned: if remove leaves a gap then subsequent + adds and
+    // onclick handlers go to the wrong rowIdx.
+    expect(snap.map(r => r.rowIdx)).toEqual([0, 1, 2]);
+
+    // localStorage prompt array shrank by exactly one entry.
+    const promptsAfter = await page.evaluate(() => {
+        const raw = localStorage.getItem('slopfinity-endless-row-prompts');
+        return raw ? JSON.parse(raw) : null;
+    });
+    expect(promptsAfter.length).toBe(promptsBefore.length - 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -186,14 +224,12 @@ test('endless-rows: − click removes row + reindexes survivors', async ({ page 
 // ---------------------------------------------------------------------------
 
 test('endless-rows: − click on last row leaves N-1 clean rows', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2);
+    await bootstrap(page, 2);
+    expect(await rowCount(page)).toBe(2);
     // Click − on the LAST row.
-    const remBtns = page.locator('#subject-chips-stack [data-row-remove]');
+    const remBtns = page.locator(`${STACK} [data-row-remove]`);
     await remBtns.nth(1).click();
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 1, null, { timeout: 5000 });
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(1);
     expect(snap[0].rowIdx).toBe(0);
@@ -201,16 +237,13 @@ test('endless-rows: − click on last row leaves N-1 clean rows', async ({ page 
 
 // ---------------------------------------------------------------------------
 // CONTRACT: − click on the ONLY row removes it. Stack ends empty.
-// (Edge case — user removes everything, then needs a way back to 1
-// row via +. Tested separately below.)
 // ---------------------------------------------------------------------------
 
 test('endless-rows: − click on only row → 0 rows', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
+    await bootstrap(page, 1);
     expect(await rowCount(page)).toBe(1);
-    await page.click('#subject-chips-stack [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 0);
+    await page.click(`${STACK} [data-row-remove]`);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 0, null, { timeout: 5000 });
     expect(await rowCount(page)).toBe(0);
 });
 
@@ -221,12 +254,10 @@ test('endless-rows: − click on only row → 0 rows', async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test('endless-rows: + after empty stack adds row at idx=0', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subject-chips-stack [data-row-remove]');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 0);
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1);
+    await bootstrap(page, 1);
+    await page.click(`${STACK} [data-row-remove]`);
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 0, null, { timeout: 5000 });
+    await addRow(page);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(1);
     expect(snap[0].rowIdx).toBe(0);
@@ -239,69 +270,48 @@ test('endless-rows: + after empty stack adds row at idx=0', async ({ page }) => 
 // ---------------------------------------------------------------------------
 
 test('endless-rows: ↻ refresh stays at original index', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subjects-suggest-add-btn');
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await bootstrap(page, 3);
+    expect(await rowCount(page)).toBe(3);
     // Refresh row 1 (middle).
-    await page.click('#subject-chips-stack .suggest-marquee-row:nth-child(2) [data-row-refresh]');
-    // Wait for the row content to swap (any chip is OK; we just want
-    // the loading class to clear).
+    await page.click(`${STACK} .suggest-marquee-row:nth-child(2) [data-row-refresh]`);
+    // Wait for the row content to swap (loading class clears).
     await page.waitForFunction(() => {
-        const row = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row')[1];
+        const row = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row')[1];
         return row && !row.querySelector('.suggest-marquee-mask.row-loading');
     }, null, { timeout: 5000 });
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(3);
-    // Indices stay 0,1,2 — the refreshed row didn't move.
+    // Indices stay 0,1,2 — the refreshed row didn't move to the bottom.
     expect(snap.map(r => r.rowIdx)).toEqual([0, 1, 2]);
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: When a story is RUNNING, the cycle does NOT add naked rows.
-// All rows have a [data-endless-row-lead] cluster. (regression: cycle
-// used to call _appendSuggestBatchRow with no opts → naked rows.)
+// CONTRACT: every rendered row has a lead cluster ([data-endless-row-lead]
+// = the dropdown + refresh + minus chip group). (regression: cycle used
+// to call _appendSuggestBatchRow with no opts → naked rows.)
 // ---------------------------------------------------------------------------
 
 test('endless-rows: every row has a lead cluster', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subjects-suggest-add-btn');
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await bootstrap(page, 3);
     const allHaveLead = await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack .suggest-marquee-row');
-        return Array.from(rows).every(r => r.querySelector('[data-endless-row-lead]'));
+        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
+        return Array.from(rows).length > 0 && Array.from(rows).every(r => r.querySelector('[data-endless-row-lead]'));
     });
     expect(allHaveLead).toBe(true);
 });
 
 // ---------------------------------------------------------------------------
-// CONTRACT: After Submit, the story ends — _endlessRunning flips false,
-// body.endless-running is removed, and the seed textarea is cleared.
-// (Prior versions of this test asserted that the + button re-disables
-// and body got an `endless-pill-locked` class. Both behaviours were
-// REMOVED in v316/v317 — the user asked for the + and prompt-name to
-// never look greyed out. See app.js _refreshSuggestBadge ~line 1414 +
-// the "isEndless: allow=true" branch ~line 1472.)
+// CONTRACT: endless mode keeps body.endless-running for the whole session
+// and the + button stays enabled (the user asked for the + to never look
+// greyed out — see app.js _refreshSuggestBadge "isEndless: allow=true").
 // ---------------------------------------------------------------------------
 
-test('endless-rows: Submit ends story (clears running flag + seed)', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 2);
-    // Submit ends the story.
-    await page.click('#subjects-story-submit');
-    await page.waitForTimeout(400);
-    // body.endless-running must be cleared.
+test('endless-rows: + stays enabled and story stays running', async ({ page }) => {
+    await bootstrap(page, 2);
+    // body.endless-running persists across the session.
     const isRunning = await page.evaluate(() => document.body.classList.contains('endless-running'));
-    expect(isRunning).toBe(false);
-    // Seed textarea was emptied (per _submitEndlessStory).
-    const seed = await page.locator('#p-core').inputValue();
-    expect(seed).toBe('');
-    // + button stays enabled in endless mode (see contract update).
+    expect(isRunning).toBe(true);
+    // + button stays enabled in endless mode.
     const addDisabled = await page.locator('#subjects-suggest-add-btn').evaluate(el => el.disabled);
     expect(addDisabled).toBe(false);
 });
@@ -317,14 +327,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
     await page.route('**/subjects/suggest**', async (route) => {
         const url = new URL(route.request().url());
         const promptId = url.searchParams.get('prompt_id') || 'default';
-        const opener = url.searchParams.get('opener');
         await new Promise(r => setTimeout(r, 800));
-        if (opener === '1') {
-            return route.fulfill({
-                status: 200, contentType: 'application/json',
-                body: JSON.stringify({ suggestions: [`opener-from-${promptId}`] }),
-            });
-        }
         const arr = Array.from({ length: 6 }, (_, i) => `chip-${promptId}-${i + 1}`);
         return route.fulfill({
             status: 200, contentType: 'application/json',
@@ -335,14 +338,17 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
         try {
             localStorage.clear();
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            // Start from one synced row so the array/DOM are aligned.
+            localStorage.setItem('slopfinity-endless-row-prompts', JSON.stringify(['yes-and']));
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'));
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
-    await page.fill('#p-core', 'seed');
-    await page.click('#btn-start-stop-inline');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 1, null, { timeout: 5000 });
+    await page.waitForFunction(() => document.body.classList.contains('endless-running'), null, { timeout: 4000 });
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.evaluate(() => window._renderEndlessRows(6));
+    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length === 1, null, { timeout: 8000 });
 
     // Double-click + with no delay between.
     await page.click('#subjects-suggest-add-btn');
@@ -350,7 +356,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
     // Wait long enough for both fetches to land.
     await page.waitForTimeout(2000);
     const rows = await rowCount(page);
-    // Should be 1 (initial) + 1 (only one + landed) = 2, NOT 3.
+    // Should be 1 (baseline) + 1 (only one + landed) = 2, NOT 3.
     expect(rows).toBe(2);
 });
 
@@ -359,11 +365,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
 // ---------------------------------------------------------------------------
 
 test('endless-rows: 3-row endless screenshot', async ({ page }) => {
-    await bootstrap(page);
-    await startStory(page);
-    await page.click('#subjects-suggest-add-btn');
-    await page.click('#subjects-suggest-add-btn');
-    await page.waitForFunction(() => document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length === 3);
+    await bootstrap(page, 3);
     await page.waitForTimeout(300);
     await page.screenshot({ path: '/tmp/endless-rows-3.png', fullPage: false });
 });

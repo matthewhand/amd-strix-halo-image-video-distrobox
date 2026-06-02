@@ -297,7 +297,11 @@ test.describe('chat-mode suggestion chips + direct send', () => {
             };
         });
         console.log('[chat-thought stats]', JSON.stringify(stats, null, 2));
-        expect(stats.thoughtCount, 'expected at least one .chat-thought (assistant tool_calls + tool result)').toBeGreaterThanOrEqual(2);
+        // The renderer groups a single assistant-tool_calls + tool-result
+        // run into ONE .chat-thought bubble (see app.js _renderChatLog ~line
+        // 3163 — one bubble per thinking run, not per message). The seeded
+        // history above is a single run, so we expect exactly one bubble.
+        expect(stats.thoughtCount, 'expected at least one .chat-thought (assistant tool_calls + tool result)').toBeGreaterThanOrEqual(1);
         // KNOWN BUG: app.css uses `hsl(var(--bc) / 0.35)` but daisyUI 4.10
         // ships OKLCH-formatted theme vars (e.g. dracula --bc:
         // "97.7477% 0.007913 106.545"). hsl() can't parse OKLCH triples,

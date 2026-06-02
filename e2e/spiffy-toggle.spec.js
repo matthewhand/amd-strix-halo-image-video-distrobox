@@ -75,8 +75,12 @@ test.describe('spiffy toggle (set-suggest-per-row-prompts)', () => {
         // Make sure simple mode is selected.
         await page.click('.subjects-mode-pill button[data-subj-mode="simple"]');
         await page.waitForTimeout(200);
-        // Confirm no rows exist yet.
-        const before = await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+        // Confirm no rows exist yet. Simple mode now uses its own stack
+        // element (#subject-chips-stack-simple); endless has a separate
+        // #subject-chips-stack-endless. Both carry the .subject-chips-stack
+        // class. _onPerRowPromptsToggle appends to whichever the current
+        // mode owns, so we target the simple-mode stack explicitly here.
+        const before = await page.locator('#subject-chips-stack-simple .suggest-marquee-row').count();
         expect(before).toBe(0);
 
         // Open settings and flip the toggle ON. The inline onchange handler
@@ -88,26 +92,29 @@ test.describe('spiffy toggle (set-suggest-per-row-prompts)', () => {
         await closeSettings(page);
 
         await page.waitForFunction(() => {
-            return document.querySelectorAll('#subject-chips-stack .suggest-marquee-row').length >= 1;
+            return document.querySelectorAll('#subject-chips-stack-simple .suggest-marquee-row').length >= 1;
         }, null, { timeout: 4000 });
 
-        const rowCount = await page.locator('#subject-chips-stack .suggest-marquee-row').count();
+        const rowCount = await page.locator('#subject-chips-stack-simple .suggest-marquee-row').count();
         expect(rowCount).toBe(1);
 
         // The lead cluster ([data-row-prompt-btn]) must be present in
         // simple mode WHEN the spiffy toggle is on (normally simple omits it).
-        const promptBtnCount = await page.locator('#subject-chips-stack [data-row-prompt-btn]').count();
+        const promptBtnCount = await page.locator('#subject-chips-stack-simple [data-row-prompt-btn]').count();
         expect(promptBtnCount).toBeGreaterThanOrEqual(1);
     });
 
-    // FIXME: server.py POST /settings handler doesn't recognize the
-    // `suggest_per_row_prompts` key today (only allow_cloud_endpoints,
-    // suggest_use_subjects, suggest_custom_prompt, suggest_auto_disabled
-    // are explicitly persisted in settings_post). The client serializes
-    // the value into saveSettings's body, but the server drops it on the
-    // floor — so the round-trip via GET /settings returns the default.
-    // Add the explicit handler in server.py:settings_post to enable.
-    test.fixme('toggle persists across reload (config.suggest_per_row_prompts saved server-side)', async ({ page }) => {
+    // RESOLVED (was .fixme): the round-trip is now wired end-to-end.
+    //   * POST /settings persists `suggest_per_row_prompts`
+    //     (slopfinity/routers/config.py:settings_post — the explicit branch
+    //     was already present here).
+    //   * GET /settings now ALSO returns the key (it was missing from the
+    //     response dict, so a reload could never rehydrate the toggle from
+    //     the server). Added to settings_get so the value round-trips.
+    // The client hydrates the checkbox from the GET response in app.js
+    // (#set-suggest-per-row-prompts ← sr.suggest_per_row_prompts), so the
+    // toggle now survives a reload.
+    test('toggle persists across reload (config.suggest_per_row_prompts saved server-side)', async ({ page }) => {
         // Spy on /settings POSTs so we can prove the key was sent.
         const settingsPosts = [];
         await page.route('**/settings', async (route) => {

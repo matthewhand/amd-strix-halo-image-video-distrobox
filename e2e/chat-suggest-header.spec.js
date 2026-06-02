@@ -1,15 +1,21 @@
-// Chat-mode suggestions header — the pill cluster + count stepper that
+// Chat-mode suggestions header — the named-prompt pill cluster that
 // drives reply suggestions. Also covers the thinking-bubble run states
 // (active vs done) which gate the cog animation.
 //
+// NOTE (v324): the per-mode chip-count stepper (#chat-suggest-count +
+// .chat-suggest-step − / + buttons, persisted via
+// `slopfinity-chat-suggest-count`) was REMOVED from the chat header per
+// user request ("under chat mode the tally counter should be removed").
+// Chat replies now render whatever the server returns (capped server-side
+// via suggest_max_len_chat) with no client-side display-count gate. The
+// tests below assert that current contract: pills present, stepper ABSENT.
+//
 // Verifies:
 //   1. #chat-suggest-prompt-pills populated from suggest_prompts (≥3 buttons)
-//   2. #chat-suggest-count displays the current count (default 3)
-//   3. − decrements (min 1) and + increments (max 6); tally + chip count
-//      update in lockstep
-//   4. localStorage `slopfinity-chat-suggest-count` persists across reload
-//   5. in-flight thinking run has .chat-thought-active .chat-cog
-//   6. resolved thinking run has .chat-thought-done (no animation gating)
+//   2. the removed count stepper (#chat-suggest-count / .chat-suggest-step)
+//      is NOT present in the chat header
+//   3. in-flight thinking run has .chat-thought-active .chat-cog
+//   4. resolved thinking run has .chat-thought-done (no animation gating)
 
 // Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
 const { test, expect } = require('./_fixtures');
@@ -44,7 +50,7 @@ async function bootChat(page, history) {
 }
 
 test.describe('chat suggestions header (pill cluster + count stepper)', () => {
-    test('pill cluster populated and count badge defaults to 3', async ({ page }) => {
+    test('pill cluster populated from suggest_prompts', async ({ page }) => {
         await bootChat(page);
         // Pills hydrate from suggest_prompts via _renderChatSuggestPromptPills.
         await page.waitForFunction(() => {
@@ -53,73 +59,23 @@ test.describe('chat suggestions header (pill cluster + count stepper)', () => {
         }, null, { timeout: 5000 });
         const pillCount = await page.locator('#chat-suggest-prompt-pills button').count();
         expect(pillCount).toBeGreaterThanOrEqual(3);
-
-        // Count badge is at #chat-suggest-count, default 3.
-        const badge = page.locator('#chat-suggest-count');
-        await expect(badge).toHaveCount(1);
-        const txt = (await badge.textContent() || '').trim();
-        expect(txt).toBe('3');
-        const dataCount = await badge.getAttribute('data-count');
-        expect(dataCount).toBe('3');
     });
 
-    test('+/- step badge in lockstep, clamped to 1..6', async ({ page }) => {
+    test('count stepper was removed (v324) — badge + step buttons absent', async ({ page }) => {
         await bootChat(page);
-        await page.waitForSelector('#chat-suggest-count', { timeout: 5000 });
-        // The − button is the join-item btn before the badge; the + is after.
-        const minus = page.locator('.chat-suggest-step').first();
-        const plus = page.locator('.chat-suggest-step').last();
-        const badge = page.locator('#chat-suggest-count');
+        // Pills are the surviving control; wait for them so the cluster has
+        // fully hydrated before we assert the stepper's absence.
+        await page.waitForFunction(() => {
+            const host = document.getElementById('chat-suggest-prompt-pills');
+            return host && host.querySelectorAll('button').length >= 3;
+        }, null, { timeout: 5000 });
 
-        // From 3, click − twice → expect 1 (floor at 1).
-        await minus.click();
-        await page.waitForFunction(() => document.getElementById('chat-suggest-count').textContent.trim() === '2');
-        await minus.click();
-        await page.waitForFunction(() => document.getElementById('chat-suggest-count').textContent.trim() === '1');
-
-        // Another − should be a no-op (clamped at min 1).
-        await minus.click();
-        await page.waitForTimeout(200);
-        expect((await badge.textContent() || '').trim()).toBe('1');
-
-        // Now ramp + up to 6 then beyond — expect cap at 6.
-        for (let i = 0; i < 6; i++) {
-            await plus.click();
-            await page.waitForTimeout(80);
-        }
-        const final = (await badge.textContent() || '').trim();
-        expect(final).toBe('6');
-        const finalAttr = await badge.getAttribute('data-count');
-        expect(finalAttr).toBe('6');
-    });
-
-    test('count persists across reload via localStorage', async ({ page }) => {
-        // Pre-seed the localStorage value DIRECTLY via addInitScript and
-        // navigate. addInitScript fires on every navigation including
-        // reload, so we encode the seeded value into the script itself
-        // (which means no clear() between page visits).
-        await page.route('**/subjects/suggest**', (route) => {
-            const arr = ['reply-1', 'reply-2', 'reply-3'];
-            return route.fulfill({
-                status: 200, contentType: 'application/json',
-                body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
-            });
-        });
-        await page.addInitScript(() => {
-            try {
-                localStorage.setItem('slopfinity-chat-suggest-count', '5');
-                localStorage.setItem('slopfinity_ui_split_upper_px', '700');
-            } catch (_) { }
-        });
-        await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
-        await page.click('.subjects-mode-pill button[data-subj-mode="chat"]');
-        await page.waitForSelector('#chat-suggest-count', { timeout: 5000 });
-
-        // _initChatSuggestCluster reads the persisted count and paints
-        // the badge — should read "5" instead of the default "3".
-        const restored = (await page.locator('#chat-suggest-count').textContent() || '').trim();
-        expect(restored).toBe('5');
+        // The per-mode chip-count stepper (badge + − / + step buttons) was
+        // removed from the chat header. Neither should exist in the DOM.
+        const badgeCount = await page.locator('#chat-suggest-count').count();
+        expect(badgeCount).toBe(0);
+        const stepCount = await page.locator('.chat-suggest-cluster .chat-suggest-step').count();
+        expect(stepCount).toBe(0);
     });
 
     test('in-flight thinking run is .chat-thought-active; resolved is .chat-thought-done', async ({ page }) => {
