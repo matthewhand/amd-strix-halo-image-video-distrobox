@@ -19,24 +19,120 @@ inference is forbidden in CI, even via `workflow_dispatch`.
 2. Spawn the mock via `subprocess.Popen` from your test, point the
    relevant env var (or seeded `config.json`) at it, and tear down on
    exit (`atexit` + `try/finally`).
-3. The lightweight CI job
-   (`.github/workflows/e2e-qwen-web-test.yml::e2e-qwen-web-light`) MUST
-   run your test.
+3. A pytest test under `tests/` is picked up automatically by the
+   gating `.github/workflows/python-tests.yml` job (it runs all of
+   `tests/` except `e2e_qwen_web_test.py`). The lightweight
+   `.github/workflows/e2e-qwen-web-test.yml::e2e-qwen-web-light` job
+   also runs the mock-backed surface.
 4. **NEVER call a real model in CI** — even via `workflow_dispatch`. The
    heavy `e2e-qwen-web` job is already locked to a self-hosted runner
    that doesn't exist; keep it that way.
 
+## The mock backends
+
+Three stdlib-only (`http.server`, no extra pip deps) mock servers stand
+in for the AI surfaces. Each is spawnable as a `subprocess` and binds to
+loopback. Verified against the module docstrings + handlers:
+
+| Mock | Default bind | Provides |
+|---|---|---|
+| `tests/mock_llm_server.py` | `127.0.0.1:${LLM_MOCK_PORT:-11434}` | OpenAI-compat LLM. `GET /v1/models` (one mock model), `POST /v1/chat/completions`, `POST /v1/completions`. The completion body is shaped from the request: a system prompt mentioning "STRICT JSON" / "image, video, music, tts" returns a distribute-shaped JSON dict; a user prompt mentioning "Suggest" / "subject ideas" returns a JSON array of subject strings; otherwise a one-sentence rewrite. |
+| `tests/mock_qwen_server.py` | `127.0.0.1:${QWEN_MOCK_PORT}` (set by the e2e test when `MOCK_QWEN_WEB=1`) | Qwen-Image web worker. `GET /` -> `{"status":"ok"}`, `POST /api/generate` -> `{"job_id":...}` and writes a tiny valid PNG to `~/.qwen-image-studio/`, `GET /api/job/<id>` -> `{"status":"completed"}`. |
+| `tests/mock_tts_server.py` | `127.0.0.1:${TTS_MOCK_PORT:-8010}` | TTS worker proxied by `/tts`. `GET /health`, `POST /tts` -> JSON + writes a tiny valid 1 s 16 kHz mono WAV (44-byte RIFF header + 32000 silence bytes) to `/tmp/mock-tts/`. |
+
+> The `mock_llm_server.py` default port is **11434** (the Ollama
+> default) so probe code that targets a local Ollama also hits the mock.
+> When you run a host Ollama on `:11434`, point the mock elsewhere
+> (`LLM_MOCK_PORT=11500`) — CI uses 11500 for exactly this reason.
+
 ## Integration test
 
-`tests/test_ai_mock_integration.py` spawns all three mocks plus a real
-`uvicorn slopfinity.server:app` and exercises `/enhance`,
-`/enhance?distribute`, `/subjects/suggest`, and `/tts`. Run via:
+`tests/test_ai_mock_integration.py` spawns the LLM + TTS mocks plus a
+real `uvicorn slopfinity.server:app` (env: `TTS_WORKER_URL` and
+`LLM_PROVIDER_BASE_URL` pointed at the mocks; ports default to free
+ports, overridable via `LLM_MOCK_PORT` / `TTS_MOCK_PORT`) and exercises
+`/enhance`, `/enhance?distribute`, `/subjects/suggest`, and `/tts`. Run via:
 
 ```bash
 python -m pytest tests/test_ai_mock_integration.py -v
 # or directly:
 python tests/test_ai_mock_integration.py
 ```
+
+> **Host Ollama caveat.** This test inherits your environment
+> (`os.environ.copy()`), and the dashboard's LLM pool defaults its CPU
+> slot to `http://localhost:11434/v1`
+> (`slopfinity/llm/pool.py:get_env_pool_config`). If a real Ollama is
+> listening on `:11434` it can be probed instead of the mock and skew
+> the result. Blank it with `SLOPFINITY_LLM_CPU_URL=""` (or point
+> `SLOPFINITY_LLM_PRIMARY_URL` at the mock) before running.
+
+## Running the full Python suite locally
+
+CI runs the whole suite as a gate (see below). To reproduce locally:
+
+```bash
+# A writable experiment/state dir is REQUIRED — paths.py otherwise
+# falls back to a path that may be read-only (e.g. /workspace).
+export SLOPFINITY_EXP_DIR="$(mktemp -d)"
+export SLOPFINITY_STATE_DIR="$SLOPFINITY_EXP_DIR"
+# Avoid a host Ollama on :11434 interfering with test_ai_mock_integration:
+export SLOPFINITY_LLM_CPU_URL=""        # or point SLOPFINITY_LLM_PRIMARY_URL at the mock
+# No ComfyUI locally -> let scheduler.free_between() fail fast:
+export SLOPFINITY_COMFY_URL="http://127.0.0.1:1"
+
+python -m pytest tests/ --ignore=tests/e2e_qwen_web_test.py -q
+```
+
+`tests/e2e_qwen_web_test.py` is excluded because it needs a real AMD
+GPU / ROCm (covered by the self-hosted job in `e2e-qwen-web-test.yml`).
+
+Test deps beyond the runtime requirements: `pytest`, `pytest-asyncio`,
+`requests`, plus `numpy` + `pillow` (so `tests/test_vae_grid.py`'s
+`pytest.importorskip("numpy")` / `importorskip("PIL.Image")` actually
+runs instead of skipping).
+
+## CI gate — `.github/workflows/python-tests.yml`
+
+Runs on every push / PR to `main` (and `workflow_dispatch`). It installs
+the runtime + test deps (`fastapi`, `uvicorn[standard]`, `jinja2`,
+`python-multipart`, `httpx`, `psutil`, `pyyaml`, `python-dotenv`,
+`sqlmodel`, `tiktoken`, `numpy`, `pillow`, `pytest`, `pytest-asyncio`,
+`requests`), sets `SLOPFINITY_EXP_DIR` / `SLOPFINITY_STATE_DIR` to a
+writable workspace path, `SLOPFINITY_LLM_CPU_URL=""`, and
+`SLOPFINITY_COMFY_URL="http://127.0.0.1:1"`, then runs:
+
+```bash
+python -m pytest tests/ --ignore=tests/e2e_qwen_web_test.py -q
+```
+
+This job **gates** (no `continue-on-error`) — a failing test fails the
+build. `tests/test_ai_mock_integration.py` starts its own mock LLM/TTS
+servers from its fixture, so the job does not start mocks manually.
+
+## Current test inventory
+
+The `tests/test_*.py` suite is **31 files / 382 test functions**
+(`grep -rhE '^\s*(async )?def test_' tests/test_*.py | wc -l`). Highlights:
+
+| File | Area |
+|---|---|
+| `test_ai_mock_integration.py` | full mock-backed `/enhance` + `/tts` round-trip |
+| `test_llm_pool.py`, `test_llm_pool_dedup.py` | LLM pool config + endpoint de-duplication |
+| `test_llm_probe.py`, `test_llm_providers.py` | provider probing + OpenAI-compat client |
+| `test_router_smoke.py` | FastAPI route smoke |
+| `test_config_internals.py` | config load/merge internals |
+| `test_branding.py`, `test_branding_loading.py` | branding asset loading |
+| `test_stats.py` | system stats endpoint |
+| `test_vae_grid.py` | VAE grid helper (numpy/PIL, importorskip-gated) |
+| `test_scheduler*.py`, `test_memory_planner.py` | GPU scheduler + memory planning |
+| `test_worker_*.py` | per-stage workers (image, video, audio, tts, merge, post, base) |
+| `test_server_*.py`, `test_queue_schema.py` | server config/assets/queue + SQLite schema |
+| `test_ssrf_guard.py` | SSRF guard on outbound probes |
+
+The `tests/run_*.py` files (`run_smoke.py`, `run_matrix.py`,
+`run_all_permutations.py`, the `run_*_wave.py` family) are manual
+pipeline drivers, not pytest cases.
 
 ---
 

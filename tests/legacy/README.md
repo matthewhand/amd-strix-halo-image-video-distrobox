@@ -4,26 +4,27 @@ Pre-LTX-2.3 prototypes. Kept for reference, not for extension.
 
 These scripts were the iterative scaffolding used while bringing up the
 Qwen image -> LTX-2 video pipeline on Strix Halo. They have been
-superseded by the LTX-2.3 wave runner family:
+superseded by the active wave-runner family in `tests/`:
 
-- `tests/test_qwen_to_ltx23.py` - canonical image -> video pipeline
-- `tests/test_ironic_wave.py`, `test_chained_wave.py`, `test_tone_wave.py` - themed batch runners
-- `tests/matrix_runner.py` - parameter-sweep harness
+- `tests/run_ironic_wave.py`, `run_chained_wave.py`, `run_tone_wave.py` - themed batch runners
+- `tests/run_matrix.py` - parameter-sweep harness
+- `tests/run_all_permutations.py` - full cartesian model sweep
+- `tests/run_smoke.py` - quick pipeline smoke
 
 ## Files in this directory
 
 | File | Replaced by |
 |------|-------------|
-| `test_qwen_to_ltx2.py` | `test_qwen_to_ltx23.py` |
+| `test_qwen_to_ltx2.py` | the wave runners (`run_*_wave.py`) |
 | `test_ltx2_audio_video.py` | wave runners (audio path now in workflow) |
-| `test_ltx2_variations.py` | `matrix_runner.py` |
-| `test_qwen_variations.py` | `matrix_runner.py` |
+| `test_ltx2_variations.py` | `run_matrix.py` |
+| `test_qwen_variations.py` | `run_matrix.py` |
 | `test_qwen_generation.py` | covered by wave runners' image phase |
 | `test_waldo_birdseye.py` | one-off prompt; rolled into wave runners |
-| `test_comfyui_ltx2.sh` | `test_qwen_to_ltx23.py` |
-| `run_pipeline.sh` | `test_qwen_to_ltx23.py` |
+| `test_comfyui_ltx2.sh` | the wave runners (`run_*_wave.py`) |
+| `run_pipeline.sh` | the wave runners (`run_*_wave.py`) |
 | `run_pipeline_wave2.sh` | wave runners |
-| `run_both_waves.sh` | wave runners + `matrix_runner.py` |
+| `run_both_waves.sh` | wave runners + `run_matrix.py` |
 
 ## Policy
 
