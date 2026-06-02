@@ -120,6 +120,11 @@ async def settings_get():
         "suggest_auto_disabled": bool(
             c.get("suggest_auto_disabled", cfg.DEFAULT_SUGGEST_AUTO_DISABLED)
         ),
+        # Spiffy mode — per-row prompt-pill cluster in simple mode. The POST
+        # handler persists this (see settings_post below), but the GET was
+        # missing it, so a reload could never rehydrate the toggle from the
+        # server. Surface it so the Settings → LLM checkbox round-trips.
+        "suggest_per_row_prompts": bool(c.get("suggest_per_row_prompts", False)),
         "disk_min_pct": float(
             c.get("disk_min_pct") if c.get("disk_min_pct") is not None else 1
         ),

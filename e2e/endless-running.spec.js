@@ -1,15 +1,20 @@
-// Endless mode RUNNING state — the user's reported "+ button locked"
-// and "submit/reset above story" issues only show up after a story has
-// started. This spec drives the actual flow:
-//   1. Switch to endless mode
-//   2. Type a seed in the textarea
-//   3. Click Start Story
-//   4. Verify + button is enabled (was reading window._endlessRunning,
-//      always undefined → button stayed locked)
-//   5. Verify story-pane is visible
-//   6. Verify story-pane footer (Copy/Submit/Reset/Stitch) is BELOW
-//      the story log, not in a header row alongside "Story so far"
-//   7. Screenshot for visual verification
+// Endless mode RUNNING state. Historically this exercised a separate
+// "Start Story" gesture (type a seed in #p-core, click the big button)
+// and asserted a story-pane footer rendered BELOW the log. Both have
+// changed:
+//
+//   * v316+: there is no separate Start Story state — ENTERING endless
+//     mode auto-starts the story (body.endless-running flips on). The
+//     shared #p-core seed textarea is HIDDEN in endless (the story-pane
+//     owns the per-beat inputs).
+//   * The story-pane controls (Copy / Reset / Auto-Stitch) now live in a
+//     HEADER row ABOVE #subjects-story-log, not a footer below it.
+//
+// This spec asserts the current contract:
+//   1. switching to endless flips body.endless-running on (no Start click)
+//   2. the + badge button is enabled
+//   3. the story pane is visible (no .hidden)
+//   4. the story log exists and the header controls sit ABOVE it
 
 // Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
 const { test, expect } = require('./_fixtures');
@@ -18,7 +23,15 @@ const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test('endless story running — + enabled, story pane visible, buttons below log', async ({ page }) => {
+test('endless auto-starts on mode switch — running flag, + enabled, pane visible', async ({ page }) => {
+    // Stub /subjects/suggest so any row render is deterministic + fast.
+    await page.route('**/subjects/suggest**', (route) => {
+        const arr = ['beat-1', 'beat-2', 'beat-3', 'beat-4', 'beat-5', 'beat-6'];
+        return route.fulfill({
+            status: 200, contentType: 'application/json',
+            body: JSON.stringify({ suggestions: { story: arr, simple: arr, chat: arr } }),
+        });
+    });
     await page.addInitScript(() => {
         try {
             localStorage.clear();
@@ -35,75 +48,48 @@ test('endless story running — + enabled, story pane visible, buttons below log
         return !splash && mainOpacity >= 1;
     }, null, { timeout: 5000 });
 
-    // Switch to endless mode.
+    // Switch to endless mode — this IS starting the story now.
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
-    await page.waitForTimeout(300);
 
-    // Snapshot pre-start — + button SHOULD be disabled here.
-    const addBtn = page.locator('#subjects-suggest-add-btn');
-    const preStartDisabled = await addBtn.evaluate(el => el.disabled);
-    if (!preStartDisabled) {
-        console.warn('[endless-prestart] + button should be disabled before Start Story, but isn\'t');
-    }
-    await page.screenshot({ path: '/tmp/endless-prestart.png', fullPage: false });
-
-    // Type a seed + click Start Story.
-    await page.fill('#p-core', 'A lonely lighthouse keeper discovers a stranded sea creature.');
-    await page.waitForTimeout(150);
-    await page.click('#btn-start-stop-inline');
-
-    // Give the start handler time to flip _endlessRunning + repaint.
-    await page.waitForTimeout(600);
-
-    // Verify _endlessRunning is true module-side.
-    const isRunning = await page.evaluate(() => {
-        // _endlessRunning is module-scoped; we expose it indirectly via
-        // body.endless-running class set in _startEndlessStory.
-        return document.body.classList.contains('endless-running');
-    });
-    if (!isRunning) {
-        console.warn('[endless-start] body.endless-running class missing after Start Story click');
-    }
+    // body.endless-running flips on immediately (no Start Story click).
+    await page.waitForFunction(() => document.body.classList.contains('endless-running'), null, { timeout: 4000 });
+    const isRunning = await page.evaluate(() => document.body.classList.contains('endless-running'));
     expect(isRunning).toBe(true);
 
-    // + button should now be enabled.
-    const postStartDisabled = await addBtn.evaluate(el => el.disabled);
-    expect(postStartDisabled).toBe(false);
-    if (postStartDisabled) {
-        console.warn('[endless-poststart] + button STILL disabled after Start Story — gating bug');
-    }
+    // + button is enabled (the user asked for it to never look greyed out).
+    const addBtn = page.locator('#subjects-suggest-add-btn');
+    const addDisabled = await addBtn.evaluate(el => el.disabled);
+    expect(addDisabled).toBe(false);
 
-    // Story pane should be visible (no .hidden class).
+    // Story pane is visible (no .hidden class) for the whole endless session.
     const storyPane = page.locator('#subjects-story-pane');
     const storyPaneHidden = await storyPane.evaluate(el => el.classList.contains('hidden'));
     expect(storyPaneHidden).toBe(false);
 
-    // Story-pane structure check: footer (with Submit + Reset + Stitch
-    // buttons) should appear AFTER the story-log <pre>, not BEFORE.
+    // Story-pane structure: the controls header (Copy / Reset) sits BEFORE
+    // the story-log in document order (header-above-log layout).
     const order = await page.evaluate(() => {
         const pane = document.getElementById('subjects-story-pane');
         if (!pane) return null;
         const log = pane.querySelector('#subjects-story-log');
-        const submit = pane.querySelector('#subjects-story-submit');
-        if (!log || !submit) return null;
-        // Compare DOM positions — Node.DOCUMENT_POSITION_FOLLOWING (4)
-        // means submit FOLLOWS log in document order.
-        return (log.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING) ? 'after' : 'before';
+        const reset = pane.querySelector('#subjects-story-reset');
+        if (!log || !reset) return null;
+        // DOCUMENT_POSITION_FOLLOWING (4) means log FOLLOWS reset.
+        return (reset.compareDocumentPosition(log) & Node.DOCUMENT_POSITION_FOLLOWING) ? 'header-above-log' : 'log-above-header';
     });
-    expect(order).toBe('after');
+    expect(order).toBe('header-above-log');
 
     await page.screenshot({ path: '/tmp/endless-running.png', fullPage: false });
 
-    // Bonus: verify a suggestion row is rendering with a lead cluster
-    // (the [data-endless-row-lead] container — that's the dropdown +
-    // refresh + minus chip group). Wait for the cycle to inject one;
-    // the first row should have promptId+rowIdx → lead cluster present.
-    await page.waitForTimeout(2500);
+    // A "+" click renders an endless suggestion row with a lead cluster
+    // (dropdown + refresh + minus chip group).
+    await page.click('#subjects-suggest-add-btn');
+    await page.waitForFunction(() => {
+        return !!document.querySelector('#subject-chips-stack-endless .suggest-marquee-row [data-endless-row-lead]');
+    }, null, { timeout: 6000 });
     const hasLead = await page.evaluate(() => {
-        return !!document.querySelector('#subject-chips-stack .suggest-marquee-row [data-endless-row-lead]');
+        return !!document.querySelector('#subject-chips-stack-endless .suggest-marquee-row [data-endless-row-lead]');
     });
-    if (!hasLead) {
-        console.warn('[endless-lead] no [data-endless-row-lead] cluster on any rendered row — endless rows are missing the dropdown');
-    }
+    expect(hasLead).toBe(true);
     await page.screenshot({ path: '/tmp/endless-running-with-rows.png', fullPage: false });
 });
