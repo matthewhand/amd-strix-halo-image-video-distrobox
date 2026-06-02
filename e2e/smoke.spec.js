@@ -59,17 +59,26 @@ test.describe('slopfinity dashboard smoke', () => {
             'mode pill segments'
         ).toHaveCount(4);
         // Either the ↻ refresh button (#subjects-suggest-btn) OR the +
-        // add button (#subjects-suggest-add-btn) should be visible at
+        // add button (#subjects-suggest-add-btn) should be active at
         // any given time — never both. The badge swaps between them
         // based on mode + state (simple pre-first-batch shows +;
         // simple post-batch shows ↻; endless always shows +; raw/chat
         // hide both). On a fresh load with no cached suggestions the
-        // simple mode is active and + shows.
+        // simple mode is active and + is the un-hidden one.
+        //
+        // We assert the badge-swap COUNT (exactly one un-hidden) rather
+        // than on-screen visibility: the suggestion cluster lives inside
+        // a collapsible whose open/closed state persists in localStorage
+        // (`suggest-cluster-collapsed`), and suggestions render disabled
+        // when no LLM endpoint is healthy. Both are orthogonal to "key
+        // cards render" — gating smoke on them made it fail with an empty
+        // experiments dir / no backend, which this smoke check should
+        // tolerate. The interactive suggestion behaviour is covered by
+        // the backend-gated suggestion-contracts / endless-rows specs.
         const refreshOrAdd = page.locator(
             '#subjects-suggest-btn:not(.hidden), #subjects-suggest-add-btn:not(.hidden)'
         );
         await expect(refreshOrAdd, 'Suggest refresh OR add button').toHaveCount(1);
-        await expect(refreshOrAdd.first(), 'Suggest refresh/add visible').toBeVisible();
 
         // Top-bar nav: settings cog + view dropdown should be reachable.
         await expect(page.locator('#btn-settings'), 'settings cog button').toBeVisible();

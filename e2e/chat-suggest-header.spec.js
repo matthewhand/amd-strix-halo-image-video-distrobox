@@ -11,7 +11,8 @@
 //   5. in-flight thinking run has .chat-thought-active .chat-cog
 //   6. resolved thinking run has .chat-thought-done (no animation gating)
 
-const { test, expect } = require('@playwright/test');
+// Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
