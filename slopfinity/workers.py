@@ -108,6 +108,7 @@ async def run_audio_heartmula(prompt: str, out: str) -> int:
         cmd = _base_docker_cmd() + [
             "python3", "/opt/heartmula_launcher.py",
             "--prompt", prompt, "--out", out,
+            "--real",
         ]
         return await _run(cmd)
 
