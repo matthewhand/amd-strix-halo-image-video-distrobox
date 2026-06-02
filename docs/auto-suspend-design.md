@@ -1,5 +1,17 @@
 # Auto-suspend framework
 
+> **Status (as of this update):** Landed as designed —
+> `slopfinity/auto_suspend.py` implements `suspend_all` / `resume_all`, the
+> central `_dispatch`, the legacy `/llm/suspend` / `/llm/resume` wrappers, and
+> `DEFAULT_AUTO_SUSPEND` lives under `config.auto_suspend` in
+> `slopfinity/config.py` (merged on load by `_merge_auto_suspend`). The
+> scheduler fires `suspend_all` / `resume_all` around each GPU stage. One
+> addition beyond this doc: a **fifth method, `script`**, now exists alongside
+> `sigstop` / `rest_unload` / `docker_stop` / `sigterm` — it runs a
+> user-supplied shell command on suspend (no-op on resume), falling back to
+> `pkill -STOP -f <process_name>`. The Methods table below lists only the
+> original four.
+
 ## Why generalize
 
 PR #40 added a single hard-coded toggle: "Auto-suspend LLM during GPU

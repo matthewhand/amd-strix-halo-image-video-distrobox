@@ -4,6 +4,19 @@ This is the running design doc for the four-phase queueing refactor that
 replaces the linear fleet runner with a fan of concurrent stage workers
 backed by a per-stage queue.
 
+> **Status (as of this update):** Phases 1-3 have landed. `slopfinity/queue_schema.py`
+> ships the per-stage `stages.<stage>.status` map + migration, and the seven
+> per-stage workers exist as individual modules under `slopfinity/workers/`
+> (`concept.py`, `image.py`, `video.py`, `audio.py`, `tts.py`, `post.py`,
+> `merge.py`). Consequently `slopfinity/coordinator.py` now imports those
+> worker classes directly and its defensive `_WORKERS_AVAILABLE` flag is
+> `True` — the "raises a clear error until they land" stub path below is no
+> longer the live behavior. The coordinator's per-stage status vocabulary in
+> code is `needs / working / done / failed / skipped` (not the
+> `pending / running / …` wording used in the Phases table below). The
+> legacy fleet runner is now `run_fleet.py` (renamed from
+> `run_philosophical_experiments.py`). The body below is the original design.
+
 ## Motivation
 
 The legacy `run_philosophical_experiments.py` fleet runner walks one job

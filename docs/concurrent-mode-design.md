@@ -2,6 +2,8 @@
 
 **Status:** UI toggle is currently **locked** (disabled). This document tracks the design that needs to land before unlocking.
 
+> **Status (as of this update):** The core of this design has landed. `slopfinity/scheduler.py` now defines the budget-accounted `GPUReservation` (with `resident_gb` / `in_flight` and an `asyncio.Condition`) described under "Target architecture" below, and `gpu_lock` is now just an alias for that condition's mutex. The `concurrent-on` UI toggle is **no longer locked** — it has moved out of the Pipeline popup into the Diagnostics tab in `slopfinity/templates/index.html` and renders as a live `experimental` toggle (tooltip: "Concurrent mode (Phase 5) … Backed by GPUReservation"). The "Step 3 — UI unlock" steps below are therefore historical. The legacy fleet runner referenced throughout is now `run_fleet.py` (the old `run_philosophical_experiments.py` name no longer exists). The rest of this note is kept as the original design rationale.
+
 ## Why it's locked today
 
 The `concurrent` toggle in the pipeline popup is a no-op with foot-gun potential:
