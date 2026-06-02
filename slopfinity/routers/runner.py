@@ -2,22 +2,53 @@ import os
 import json
 import time
 import asyncio
-import subprocess
-from fastapi import APIRouter, Form, Request, UploadFile, File, Body
-from fastapi.responses import JSONResponse, HTMLResponse
-from typing import List
-from slopfinity.paths import EXP_DIR, TTS_OUT_DIR
+from fastapi import APIRouter, UploadFile, File, Body
+from fastapi.responses import JSONResponse
+from slopfinity.paths import EXP_DIR
 import slopfinity.config as cfg
-from slopfinity.stats import get_sys_stats, get_outputs_disk, get_ram_estimate, check_disk_guard
-from fastapi.templating import Jinja2Templates
-from slopfinity.paths import TEMPLATES_DIR
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
-import os
+from slopfinity.stats import get_outputs_disk, get_ram_estimate, check_disk_guard
 TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
 from slopfinity.workers import ffmpeg_mux as _ffmpeg_mux
 import urllib.request
 import urllib.error
 import slopfinity.scheduler as sched
+
+
+# ---------------------------------------------------------------------------
+# File-extension allowlists + seed-upload cap. Restored from server.py (the
+# Phase-1 split dropped them here). Kept verbatim so the /pipeline/slopped,
+# /seeds/list and /upload endpoints behave identically.
+# ---------------------------------------------------------------------------
+# Slopped sub-select per role. Voice (TTS) and music both produce WAVs so they
+# share the same set.
+_SLOPPED_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp"),
+    "audio": (".wav", ".mp3", ".flac", ".ogg"),
+    "tts": (".wav", ".mp3", ".flac", ".ogg"),
+}
+_SEED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+_SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
+
+
+def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
+    """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
+
+    Relocated here from server.py: server.py imports this router at module
+    load, so importing _call_tts_worker back FROM server.py would hit a
+    partially-initialised module (circular import). Keeping the helper local
+    avoids the cycle — all its deps (json, urllib, TTS_WORKER_URL) live here.
+    Isolated for test mocking.
+    """
+    payload = json.dumps({"text": text, "voice": voice}).encode("utf-8")
+    req = urllib.request.Request(
+        TTS_WORKER_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
 
 
 router = APIRouter()
@@ -414,7 +445,7 @@ async def pipeline_plan(lookahead: int = 2):
         savings: {naive_loads, planned_loads, saved_loads, est_saved_seconds},
       }
     """
-    from .memory_planner import (
+    from slopfinity.memory_planner import (
         build_sequence_for_job,
         plan_resident_set,
         naive_load_count,
