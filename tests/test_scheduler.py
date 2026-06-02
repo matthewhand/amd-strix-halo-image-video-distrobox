@@ -239,3 +239,61 @@ def test_stage_budget_gb_includes_overhead():
     assert sched.stage_budget_gb("image", "qwen") == 28 + sched.OVERHEAD_GB
     assert sched.stage_budget_gb("video", "wan2.5") == 96 + sched.OVERHEAD_GB
     assert sched.stage_budget_gb("bogus", "bogus") == sched.OVERHEAD_GB
+
+
+def test_emergency_free_clears_resident_set_and_pkills(monkeypatch):
+    """emergency_free should free_between, pkill launchers, AND wipe the
+    scheduler's resident-set / in-flight tracking, emitting an event."""
+    # Stub free_between so no real ComfyUI/network is touched.
+    async def _fake_free_between(*a, **k):
+        return {"ok": True, "before_gb": 10.0, "after_gb": 42.0, "freed_gb": 32.0}
+
+    monkeypatch.setattr(sched, "free_between", _fake_free_between)
+
+    # pkill returns 0 (process found) for every launcher pattern.
+    def _fake_run(cmd, *a, **k):
+        class _R:
+            returncode = 0
+        return _R()
+
+    monkeypatch.setattr(sched.subprocess, "run", _fake_run)
+
+    # Drain any stale events.
+    while not sched.SchedulerEvents.empty():
+        sched.SchedulerEvents.get_nowait()
+
+    def main():
+        sched.GPU = sched.GPUReservation()
+        sched.gpu_lock = sched.GPU.cond
+        # Seed bookkeeping that emergency_free must wipe.
+        sched.GPU.resident_models = {"qwen": 1.0, "wan2.5": 2.0}
+        sched.GPU.in_flight = {"job-1": {"stage": "image", "model": "qwen", "gb": 34}}
+        sched.GPU.resident_gb = 34.0
+        return asyncio.run(sched.emergency_free())
+
+    result = main()
+
+    # free_between result is propagated.
+    assert result["ok"] is True
+    assert result["freed_gb"] == 32.0
+    # All three launchers reported killed.
+    assert set(result["killed"]) == {
+        "qwen_launcher.py",
+        "ernie_launcher.py",
+        "wan_launcher.py",
+    }
+    # Resident set + in-flight reported and actually cleared.
+    assert set(result["evicted_models"]) == {"qwen", "wan2.5"}
+    assert result["cleared_in_flight"] == 1
+    assert sched.GPU.resident_models == {}
+    assert sched.GPU.in_flight == {}
+    assert sched.GPU.resident_gb == 0.0
+
+    # An emergency_free event was emitted.
+    events = []
+    while not sched.SchedulerEvents.empty():
+        events.append(sched.SchedulerEvents.get_nowait())
+    ef = [e for e in events if e["type"] == "emergency_free"]
+    assert ef, events
+    assert ef[0]["freed_gb"] == 32.0
+    assert set(ef[0]["evicted_models"]) == {"qwen", "wan2.5"}
