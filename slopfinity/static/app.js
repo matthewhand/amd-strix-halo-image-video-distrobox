@@ -8579,6 +8579,22 @@ function _settingsTabsScroll(direction) {
     strip.scrollBy({ left: direction * 240, behavior: 'smooth' });
 }
 window._settingsTabsScroll = _settingsTabsScroll;
+// Keep the *active* tab visible. With 10 tabs in a ~576px drawer the strip
+// overflows; selecting a right-side tab (Diagnostics / Layout) — whether by
+// click or programmatically (e.g. the "open LLM settings" deep-links) — left
+// its indicator scrolled off-screen, so you couldn't tell which tab was
+// active. Center the checked tab within the strip's viewport on every change.
+function _scrollActiveSettingsTabIntoView() {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    const active = strip.querySelector('input[name="settings_tabs"]:checked');
+    if (!active) return;
+    const sRect = strip.getBoundingClientRect();
+    const aRect = active.getBoundingClientRect();
+    const delta = (aRect.left - sRect.left) - (strip.clientWidth - aRect.width) / 2;
+    strip.scrollBy({ left: delta, behavior: 'smooth' });
+}
+window._scrollActiveSettingsTabIntoView = _scrollActiveSettingsTabIntoView;
 function _refreshSettingsTabsArrows() {
     const strip = document.getElementById('settings-tab-strip');
     const wrap = strip && strip.parentElement;
@@ -8592,10 +8608,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const strip = document.getElementById('settings-tab-strip');
     if (!strip) return;
     strip.addEventListener('scroll', _refreshSettingsTabsArrows, { passive: true });
+    // Radio 'change' bubbles to the strip → scroll the newly-active tab into
+    // view so its indicator is always visible, even for off-screen tabs.
+    strip.addEventListener('change', _scrollActiveSettingsTabIntoView);
     // Also recompute when the drawer opens (strip dims may have been 0
     // before the drawer-content hydrated).
     const tog = document.getElementById('settings-drawer-toggle');
-    if (tog) tog.addEventListener('change', () => setTimeout(_refreshSettingsTabsArrows, 60));
+    if (tog) tog.addEventListener('change', () => setTimeout(() => {
+        _refreshSettingsTabsArrows();
+        _scrollActiveSettingsTabIntoView();
+    }, 60));
     _refreshSettingsTabsArrows();
 });
 
