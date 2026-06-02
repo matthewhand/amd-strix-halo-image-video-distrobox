@@ -35,6 +35,13 @@ module.exports = defineConfig({
     timeout: 30_000,
     expect: { timeout: 5_000 },
     fullyParallel: false, // dashboard is shared state
+    // One retry in CI. A couple of specs assert on short animation /
+    // buffer-refill windows (e.g. chat-reply-refill's ~700ms chip swap)
+    // that race under a loaded GitHub-hosted runner. A single retry turns
+    // those rare flakes green without masking a genuine, repeatable
+    // failure (which fails both attempts and still surfaces). Local runs
+    // keep retries=0 so flakes are visible immediately.
+    retries: process.env.CI ? 1 : 0,
     // CI lane vs local lane:
     //   * Local: 'list' reporter (per-test inline pass/fail) + html for review
     //   * CI:    'dot' (concise) + json/junit (machine-readable) + html

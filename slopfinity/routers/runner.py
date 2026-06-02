@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import asyncio
 import subprocess
 from fastapi import APIRouter, Form, Request, UploadFile, File, Body
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from typing import List
 from slopfinity.paths import EXP_DIR, TTS_OUT_DIR
 import slopfinity.config as cfg
-from slopfinity.stats import get_sys_stats, get_outputs_disk, get_ram_estimate
+from slopfinity.stats import get_sys_stats, get_outputs_disk, get_ram_estimate, check_disk_guard
 from fastapi.templating import Jinja2Templates
 from slopfinity.paths import TEMPLATES_DIR
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -53,7 +54,7 @@ async def disk_guard_endpoint():
     """Live disk-guard check. Used by the dashboard to pre-warn the user
     before they click Queue Slop instead of failing the /inject call.
     Returns {ok, reason, free_pct, free_gb, threshold_pct, threshold_gb}."""
-    ok, reason = _check_disk_guard()
+    ok, reason = check_disk_guard()
     config = cfg.load_config()
     try:
         d = get_outputs_disk(EXP_DIR)
@@ -82,6 +83,10 @@ async def runner_status():
     terminate. Used by e2e tests + the dashboard's pause-button retry
     logic to distinguish "runner stuck" from "runner not running".
     """
+    # Process-table helper lives in server.py; imported lazily to dodge
+    # the circular import (server.py includes this router). Without it the
+    # endpoint raised NameError and 500'd.
+    from slopfinity.server import _find_pids_by_cmdline
     pids = _find_pids_by_cmdline("run_fleet.py")
     info = []
     now = time.time()
@@ -121,6 +126,7 @@ async def runner_terminate():
     Returns the flag path + the pids touched (signal + escalation).
     Both succeed independently."""
     import signal
+    from slopfinity.server import _find_pids_by_cmdline  # see runner_status
     flag_path = os.path.join(EXP_DIR, "terminate.flag")
     flag_written = False
     try:
@@ -267,7 +273,10 @@ async def vae_grid_check(file: str):
     abs_path = os.path.join(EXP_DIR, file)
     if not os.path.isfile(abs_path):
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    from . import vae_grid as _vg
+    # vae_grid lives at slopfinity.vae_grid (package root), not under
+    # slopfinity.routers — `from . import vae_grid` raised ImportError and
+    # 500'd the /vae_grid endpoint.
+    from slopfinity import vae_grid as _vg
     cached = _vg.read_sidecar(abs_path)
     if cached:
         return {"ok": True, "cached": True, **cached}
