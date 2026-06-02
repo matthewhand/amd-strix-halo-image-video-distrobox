@@ -1276,6 +1276,11 @@ function _applySuggestionsHiddenState() {
     const endlessBtn = document.getElementById('subjects-endless-story');
     if (area) area.style.display = hidden ? 'none' : '';
     if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
+    // Body hook for the "Suggestions ON" CSS treatment: on desktop the
+    // secondary controls (prompt picker / regen / add) dim and recede
+    // (restored on hover); on mobile (≤767px) the cluster collapses to
+    // just the toggle so the prompt textarea reclaims the space.
+    document.body.classList.toggle('suggestions-on', !hidden);
     // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
     // controls. Endless toggle now stays VISIBLE alongside Suggestions but
     // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
