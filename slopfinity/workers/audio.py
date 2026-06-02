@@ -9,10 +9,13 @@ Output WAV path lands in `item.stages.audio.asset`.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict
 
 from ._compat import StageWorker, stage_get, item_v_idx
+
+logger = logging.getLogger(__name__)
 
 
 class AudioWorker(StageWorker):
@@ -23,17 +26,24 @@ class AudioWorker(StageWorker):
     def __init__(self, role: str = "audio") -> None:
         super().__init__(role=role)
 
-    async def run_stage(self, item: Any) -> Dict[str, Any]:
-        from slopfinity.workers import run_audio_heartmula  # lazy import avoids circular
-
+    async def run_stage(self, item: Any, stage: str = "audio") -> Dict[str, Any]:
         prompt = stage_get(item, "concept", "output") or ""
         if not prompt:
-            # No concept output — fall through silently so the queue advances.
+            # No concept/music prompt available. Intentionally skip music
+            # generation so the queue advances, but make the skip explicit
+            # (logged + flagged) so the pipeline/UI can distinguish an
+            # intentional skip from a successful run that produced an asset.
+            v_idx = item_v_idx(item)
+            reason = "no music prompt"
+            logger.info("AudioWorker: skipping music for v%s — %s", v_idx, reason)
             return {
                 "ok": True,
                 "output": None,
+                # `asset` stays None so downstream merge.py treats this as
+                # "no audio" rather than a produced asset.
                 "asset": None,
-                "skipped": "audio skipped — no concept prompt available",
+                "skipped": True,
+                "reason": reason,
             }
 
         v_idx = item_v_idx(item)
@@ -42,6 +52,10 @@ class AudioWorker(StageWorker):
             or os.environ.get("SLOPFINITY_OUT_DIR", "/tmp")
         )
         out_path = os.path.join(out_dir, f"v{v_idx}_audio.wav")
+
+        # Lazy import (only when we actually have a prompt to generate from)
+        # avoids a circular import and keeps the skip path above dependency-free.
+        from slopfinity.workers import run_audio_heartmula
 
         try:
             rc = await run_audio_heartmula(prompt, out_path)
