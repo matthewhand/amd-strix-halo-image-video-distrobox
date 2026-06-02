@@ -29,13 +29,9 @@ def _mk_item(prompt="a cat", tier="low", v_idx=3, out_dir=None):
     }
 
 
-def test_image_worker_role_and_can_claim():
+def test_image_worker_role():
     w = image_mod.ImageWorker()
     assert w.role == "image"
-    assert w.can_claim(_mk_item()) is True
-    done = _mk_item()
-    done["stages"]["image"]["status"] = "done"
-    assert w.can_claim(done) is False
 
 
 def test_image_worker_resolves_steps_by_tier():

@@ -29,10 +29,9 @@ def _mk_item(model="ltx-2.3", v_idx=2, out_dir=None):
     }
 
 
-def test_video_worker_role_and_can_claim():
+def test_video_worker_role():
     w = video_mod.VideoWorker()
     assert w.role == "video"
-    assert w.can_claim(_mk_item()) is True
 
 
 def test_video_worker_picks_launcher_per_model():

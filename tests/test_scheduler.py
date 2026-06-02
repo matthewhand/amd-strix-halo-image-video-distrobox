@@ -71,11 +71,27 @@ def test_acquire_gpu_concurrent_when_budget_fits(monkeypatch):
     well under the 190 GB headroom, both stages should overlap.
     """
     # Plenty of host RAM; safety_gb=10 -> 190 GB headroom.
-    m = mock.mock_open(read_data=_mk_meminfo(200 * 1024 * 1024))
-    monkeypatch.setattr("builtins.open", m)
+    #
+    # NB: use a fresh-handle fake `open` rather than mock.mock_open. A single
+    # mock_open handle exhausts its line iterator after the first read, so the
+    # SECOND concurrent _mem_available_gb() call would iterate an empty file
+    # and see 0 GB available — spuriously blocking the second reservation and
+    # making the genuinely-concurrent path look serialized. _mem_available_gb
+    # re-opens /proc/meminfo on every call, so the fake must too.
+    meminfo = _mk_meminfo(200 * 1024 * 1024)
+
+    def fake_open(path, *a, **k):
+        return mock.mock_open(read_data=meminfo)(path, *a, **k)
+
+    monkeypatch.setattr("builtins.open", fake_open)
     async def _noop(*a, **k):
         return {"ok": True, "before_gb": 100.0, "after_gb": 100.0, "freed_gb": 0.0}
     monkeypatch.setattr(sched, "free_between", _noop)
+    # Stub auto-suspend: the default config has the LM-Studio entry ENABLED
+    # (method=sigstop), so without this stub acquire_gpu would shell out to
+    # pgrep/kill on every reservation — variable-latency subprocess work that
+    # races against this test's barrier and is irrelevant to GPU budgeting.
+    monkeypatch.setattr(sched, "_load_auto_suspend_entries", lambda: [])
     while not sched.SchedulerEvents.empty():
         sched.SchedulerEvents.get_nowait()
 
@@ -86,22 +102,36 @@ def test_acquire_gpu_concurrent_when_budget_fits(monkeypatch):
         sched.paused.set()
 
         order = []
+        # Barrier instead of wall-clock timing: each worker records its
+        # "start", waits until BOTH have started (proving they hold the GPU
+        # concurrently — if acquire_gpu serialized, the second worker would
+        # never reach the barrier and gather would deadlock/timeout), and
+        # only then records its "end". This is deterministic and immune to
+        # event-loop scheduling jitter between the awaits inside acquire_gpu.
+        both_started = asyncio.Event()
+        started_count = {"n": 0}
 
         async def worker(name: str):
             async with sched.acquire_gpu("image", "qwen"):
-                order.append(("start", name, time.time()))
-                await asyncio.sleep(0.05)
-                order.append(("end", name, time.time()))
+                order.append(("start", name))
+                started_count["n"] += 1
+                if started_count["n"] == 2:
+                    both_started.set()
+                # Wait for the other worker to also be inside the GPU
+                # reservation. If reservations serialized, this blocks forever.
+                await asyncio.wait_for(both_started.wait(), timeout=2.0)
+                order.append(("end", name))
 
         await asyncio.gather(worker("a"), worker("b"))
         return order
 
     order = asyncio.run(main())
     assert len(order) == 4
-    # Concurrent: both starts happen before either end.
-    starts = [o for o in order if o[0] == "start"]
-    ends = [o for o in order if o[0] == "end"]
-    assert max(s[2] for s in starts) <= min(e[2] for e in ends) + 1e-3
+    # Concurrent: both starts recorded before either end (guaranteed by the
+    # barrier — both workers were simultaneously inside acquire_gpu).
+    starts = [i for i, o in enumerate(order) if o[0] == "start"]
+    ends = [i for i, o in enumerate(order) if o[0] == "end"]
+    assert max(starts) < min(ends)
 
 
 def test_acquire_gpu_serializes_when_budget_tight(monkeypatch):
