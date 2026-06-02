@@ -3,6 +3,8 @@ import re
 import json
 import random
 import asyncio
+import os
+import random
 from fastapi import APIRouter, Form, Body
 from fastapi.responses import JSONResponse
 import slopfinity.config as cfg
