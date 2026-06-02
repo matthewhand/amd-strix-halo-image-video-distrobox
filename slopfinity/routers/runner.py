@@ -333,10 +333,8 @@ async def tts(data: dict = Body(...)):
     # so a mid-fleet click queues correctly and LM Studio gets suspended
     # (Qwen-TTS shares the GPU). safety_gb=4: the worker already lives in
     # its own process holding ~10 GB, this lock just gates concurrent demand.
-    # Lazy import to avoid a circular import at module load (server.py imports
-    # this router at top level). _call_tts_worker isolates the worker HTTP call
-    # so tests can mock it / urllib.
-    from slopfinity.server import _call_tts_worker
+    # _call_tts_worker is defined module-level in this file (relocated from
+    # server.py to avoid the import cycle) — no lazy import needed.
     try:
         async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
             result = await asyncio.to_thread(_call_tts_worker, text, voice)
