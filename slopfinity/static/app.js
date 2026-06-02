@@ -2676,9 +2676,15 @@ function _updateQueueStatusChip(d) {
     // doing work" at a glance — Queue card has the per-stage detail.
     const state = (d && d.state) || {};
     let status = 'Idle';
-    if (state.step) {
-        status = 'Generating';
-    } else if (state.mode && state.mode !== 'Idle') {
+    // "Generating" only when the fleet is genuinely doing work. A bare step
+    // of "Waiting"/"Idle" while mode is Idle means the runner is polling for
+    // work, NOT generating — so don't flag it. (Matches the heartbeat guard
+    // in broadcaster.py: `mode != 'Idle' and step`.) The old condition
+    // (`if (state.step)`) lit up "Generating" the moment step was non-null,
+    // showing "Generating" on a freshly-started, empty, idle dashboard.
+    const _step = (state.step || '').trim();
+    const _idleStep = !_step || /^(waiting|idle)$/i.test(_step);
+    if ((state.mode && state.mode !== 'Idle') || !_idleStep) {
         status = 'Generating';
     }
     if (d && d.paused) status = 'Paused';
