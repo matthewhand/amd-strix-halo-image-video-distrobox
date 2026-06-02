@@ -896,6 +896,62 @@ async def settings_post(data: dict = Body(...)):
     return {"ok": True}
 
 
+# Hostnames that resolve to nothing useful for a real LLM provider but
+# are classic SSRF probe targets. Blocked regardless of the
+# allow_cloud_endpoints toggle.
+_BLOCKED_METADATA_HOSTS = frozenset(
+    {
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
+
+# Loopback hostnames that local LLM providers (LM Studio, Ollama, llama.cpp)
+# legitimately bind to. Always permitted even when cloud endpoints are off.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _ip_is_blocked(ip: str) -> tuple[bool, str]:
+    """Return (blocked, reason) for a resolved IP address.
+
+    Blocks cloud-metadata, link-local (incl. 169.254.0.0/16),
+    RFC1918 private ranges, and other non-public address space that a
+    user-supplied *cloud* base_url must never reach. Loopback is handled
+    by the caller (it is allowed for local providers).
+    """
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True, f"unresolvable address '{ip}'"
+    # Cloud-metadata IPs — never legitimate for an LLM provider.
+    if str(addr) in ("169.254.169.254", "100.100.100.200"):
+        return True, f"address '{ip}' is a cloud-metadata endpoint"
+    # Link-local covers 169.254.0.0/16 (and fe80::/10 for v6).
+    if addr.is_link_local:
+        return True, f"address '{ip}' is link-local (169.254.0.0/16) and blocked"
+    # RFC1918 private ranges: 10/8, 172.16/12, 192.168/16 (and v6 ULA).
+    if addr.is_private and not addr.is_loopback:
+        return True, f"address '{ip}' is a private/RFC1918 range and blocked"
+    if addr.is_reserved or addr.is_multicast or addr.is_unspecified:
+        return True, f"address '{ip}' is in reserved/non-routable space and blocked"
+    return False, ""
+
+
+def _resolve_host(host: str) -> list[str]:
+    """Resolve a hostname to its IP addresses (v4 + v6).
+
+    Returns the list of resolved IP strings. Raises on resolution
+    failure. Pulled out as a module-level function so tests can monk/
+    patch it for hermetic (no-network) DNS behaviour.
+    """
+    import socket
+
+    infos = socket.getaddrinfo(host, None)
+    return [info[4][0] for info in infos]
+
+
 def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
     """Reject SSRF-prone llm.base_url values BEFORE the URL hits urlopen.
 
@@ -909,6 +965,11 @@ def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
     The dashboard's own integrations only ever target localhost/loopback
     LLM endpoints (LM Studio, Ollama, etc.) or — when explicitly opted
     in via `allow_cloud_endpoints=true` — public cloud APIs.
+
+    Beyond the literal-host checks, the host is RESOLVED and every
+    returned IP is screened (resolve-then-check) so a public hostname
+    that maps to an internal/metadata address — i.e. DNS rebinding — is
+    rejected too.
 
     Returns (ok, error_msg). Empty error_msg on ok=True.
     """
@@ -925,27 +986,44 @@ def _validate_llm_base_url(base_url: str) -> tuple[bool, str]:
     host = (u.hostname or "").lower()
     if not host:
         return False, "missing host"
-    # When cloud endpoints are NOT explicitly enabled, restrict to
-    # loopback hostnames. This is the safe default.
-    cfg_dict = cfg.load_config()
-    if not bool(cfg_dict.get("allow_cloud_endpoints", False)):
-        if host not in ("localhost", "127.0.0.1", "::1"):
-            return False, (
-                f"host '{host}' blocked: enable Settings → Allow Cloud Endpoints "
-                "to permit non-loopback LLM endpoints"
-            )
-    # Even with cloud endpoints enabled, block link-local and metadata
-    # endpoints that no legitimate LLM provider uses but are common
-    # SSRF probe targets.
-    if host in (
-        "169.254.169.254",  # AWS / GCP / Azure metadata
-        "metadata.google.internal",
-        "100.100.100.200",  # Alibaba metadata
-    ):
+
+    # Loopback is always allowed — local LLM providers live here. Short
+    # circuit before any DNS work so offline/local setups never depend on
+    # a resolver.
+    if host in _LOOPBACK_HOSTS:
+        return True, ""
+
+    # Metadata hostnames are blocked regardless of the cloud toggle.
+    if host in _BLOCKED_METADATA_HOSTS:
         return (
             False,
             f"host '{host}' is a cloud-metadata endpoint and is always blocked",
         )
+
+    # When cloud endpoints are NOT explicitly enabled, restrict to
+    # loopback (handled above). Anything else is rejected. This is the
+    # safe default.
+    cfg_dict = cfg.load_config()
+    if not bool(cfg_dict.get("allow_cloud_endpoints", False)):
+        return False, (
+            f"host '{host}' blocked: enable Settings → Allow Cloud Endpoints "
+            "to permit non-loopback LLM endpoints"
+        )
+
+    # Cloud endpoints enabled. Resolve the host and screen every IP so
+    # internal/metadata/private addresses are blocked even if reached via
+    # a public-looking hostname (DNS rebinding mitigation). If the host is
+    # already a literal IP, getaddrinfo returns it unchanged.
+    try:
+        addrs = _resolve_host(host)
+    except Exception as e:
+        return False, f"host '{host}' could not be resolved: {e}"
+    if not addrs:
+        return False, f"host '{host}' resolved to no addresses"
+    for ip in addrs:
+        blocked, reason = _ip_is_blocked(ip)
+        if blocked:
+            return False, f"host '{host}' {reason}"
     return True, ""
 
 
