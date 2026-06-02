@@ -48,7 +48,10 @@ STAGE_BUDGETS = {
 
 OVERHEAD_GB = 6
 SAFETY_GB = 10
-COMFY_URL = "http://localhost:8188"
+# ComfyUI base URL for the /free unload calls. Overridable so deployments
+# (and CI, where no ComfyUI runs) can point it elsewhere or at a dead port
+# to make free_between() fail fast instead of hanging on a real instance.
+COMFY_URL = os.environ.get("SLOPFINITY_COMFY_URL", "http://localhost:8188")
 
 
 # Global singletons. asyncio primitives bind to the running loop at first use.

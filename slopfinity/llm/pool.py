@@ -6,10 +6,33 @@ from .providers import get_provider
 
 load_dotenv()
 
+def _config_llm_fallback():
+    """Primary (url, model) from config.json's `llm` block.
+
+    The env pool (SLOPFINITY_LLM_*) is the deployment override, but when no
+    primary URL is set in the environment we honor the operator's saved
+    config.json instead of silently defaulting to localhost:1234. This keeps
+    the documented config.json → LLM contract working (and lets the mock
+    integration tests, which seed config.json with a dynamic port, resolve
+    the right endpoint). Imported lazily to avoid an import cycle.
+    """
+    try:
+        from .. import config as _cfg
+        llm = (_cfg.load_config() or {}).get("llm") or {}
+        return llm.get("base_url") or "", llm.get("model_id") or ""
+    except Exception:
+        return "", ""
+
+
 def get_env_pool_config():
-    """Reads the LLM endpoint pool from .env."""
-    primary_url = os.environ.get("SLOPFINITY_LLM_PRIMARY_URL", "http://localhost:1234/v1")
-    primary_model = os.environ.get("SLOPFINITY_LLM_PRIMARY_MODEL", "")
+    """Reads the LLM endpoint pool from the environment (SLOPFINITY_LLM_*).
+
+    The primary endpoint falls back to config.json's `llm` block, then to the
+    legacy localhost:1234 default, when no SLOPFINITY_LLM_PRIMARY_URL is set.
+    """
+    cfg_url, cfg_model = _config_llm_fallback()
+    primary_url = os.environ.get("SLOPFINITY_LLM_PRIMARY_URL") or cfg_url or "http://localhost:1234/v1"
+    primary_model = os.environ.get("SLOPFINITY_LLM_PRIMARY_MODEL") or cfg_model or ""
     
     cpu_url = os.environ.get("SLOPFINITY_LLM_CPU_URL", "http://localhost:11434/v1")
     cpu_model = os.environ.get("SLOPFINITY_LLM_CPU_MODEL", "")
