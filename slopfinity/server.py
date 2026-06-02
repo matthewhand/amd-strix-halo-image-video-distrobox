@@ -518,28 +518,11 @@ _SLOPPED_EXTS = {
 }
 
 
-def _check_disk_guard():
-    """Return (ok, reason) — False when the outputs partition is below
-    the user-configured low-water marks. Two thresholds; either trips
-    the guard. Setting either to 0 disables that check."""
-    config = cfg.load_config()
-    min_pct = float(config.get("disk_min_pct") or 0)
-    min_gb = float(config.get("disk_min_gb") or 0)
-    if min_pct <= 0 and min_gb <= 0:
-        return True, ""
-    try:
-        d = get_outputs_disk(EXP_DIR)
-        free_gb = d.get("free_gb")
-        if free_gb is None:
-            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
-        free_pct = 100 - (d.get("pct") or 0)
-    except Exception:
-        return True, ""  # fail open if we can't read disk stats
-    if min_pct > 0 and free_pct <= min_pct:
-        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
-    if min_gb > 0 and free_gb <= min_gb:
-        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
-    return True, ""
+# Canonical disk-guard helper now lives in slopfinity.stats so the queue
+# and runner routers can import it without a circular dependency on this
+# module (server.py imports every router). Re-exported here under the old
+# private name for any legacy in-module callers.
+from .stats import check_disk_guard as _check_disk_guard
 
 
 def _find_pids_by_cmdline(needle: str) -> list[int]:

@@ -125,6 +125,40 @@ def get_outputs_disk(path):
         return {"used_gb": 0, "total_gb": 0, "pct": 0, "status": "ok", "missing": True}
 
 
+def check_disk_guard():
+    """Return (ok, reason) — False when the outputs partition is below
+    the user-configured low-water marks. Two thresholds; either trips
+    the guard. Setting either to 0 disables that check.
+
+    Lives here (rather than server.py) so every router that needs it
+    (queue.py /inject, runner.py /disk/guard) can import it without a
+    circular dependency on server.py, which itself imports all routers.
+    """
+    # Lazy imports: config + paths are cheap but importing them at module
+    # top would tangle the import graph (paths is imported widely).
+    import slopfinity.config as cfg
+    from slopfinity.paths import EXP_DIR
+
+    config = cfg.load_config()
+    min_pct = float(config.get("disk_min_pct") or 0)
+    min_gb = float(config.get("disk_min_gb") or 0)
+    if min_pct <= 0 and min_gb <= 0:
+        return True, ""
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = 100 - (d.get("pct") or 0)
+    except Exception:
+        return True, ""  # fail open if we can't read disk stats
+    if min_pct > 0 and free_pct <= min_pct:
+        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
+    if min_gb > 0 and free_gb <= min_gb:
+        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
+    return True, ""
+
+
 def get_storage():
     """Return list of {mount, used_gb, total_gb, pct, status}."""
     mounts = ["/", "/mnt/data", "/mnt/downloads"]
