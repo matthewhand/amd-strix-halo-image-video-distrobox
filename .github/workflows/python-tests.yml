@@ -1,0 +1,70 @@
+name: Python Tests
+
+# Runs the FULL Python unit + integration suite on every push / PR.
+#
+# Why this exists: previously only tests/test_ai_mock_integration.py ran in CI
+# (inside e2e-qwen-web-test.yml). The rest of tests/ never executed, so real
+# breakage stayed invisible. This job runs the whole suite and GATES (no
+# continue-on-error) so regressions are caught.
+#
+# tests/e2e_qwen_web_test.py is excluded — it needs a real AMD GPU / ROCm and
+# is covered by the self-hosted job in e2e-qwen-web-test.yml.
+#
+# tests/test_ai_mock_integration.py spins up its own stdlib mock LLM/TTS
+# servers (subprocess, free ports) from its fixture, so this job does not need
+# to start them manually. It DOES need:
+#   - SLOPFINITY_LLM_CPU_URL="" so the "smart" CPU-preference path doesn't try
+#     a real Ollama on localhost:11434 (there is none in CI -> connection
+#     refused is fast, but we make it explicit + deterministic).
+#   - SLOPFINITY_COMFY_URL pointed at a dead port so scheduler.free_between()
+#     fails fast instead of hanging if anything ever did listen on :8188.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Writable experiment/state dir for tests that read/write config + outputs.
+      SLOPFINITY_EXP_DIR: ${{ github.workspace }}/.pytest-exp
+      SLOPFINITY_STATE_DIR: ${{ github.workspace }}/.pytest-exp
+      # Make the LLM "smart CPU" path a no-op in CI (no Ollama on :11434).
+      SLOPFINITY_LLM_CPU_URL: ""
+      # No ComfyUI in CI — point /free at a dead port so it fails fast.
+      SLOPFINITY_COMFY_URL: "http://127.0.0.1:1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Runtime + test deps. numpy + pillow are included so
+          # tests/test_vae_grid.py's importorskip actually runs (not skipped).
+          python -m pip install \
+            fastapi 'uvicorn[standard]' jinja2 python-multipart httpx \
+            psutil pyyaml python-dotenv sqlmodel tiktoken \
+            numpy pillow \
+            pytest pytest-asyncio requests
+
+      - name: Create experiment dir
+        run: mkdir -p "$SLOPFINITY_EXP_DIR"
+
+      - name: Run full pytest suite
+        run: |
+          python -m pytest tests/ \
+            --ignore=tests/e2e_qwen_web_test.py \
+            -q

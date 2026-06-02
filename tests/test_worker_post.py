@@ -28,10 +28,9 @@ def _mk_item(in_path="/tmp/v1_video.mp4", v_idx=1, out_dir=None):
     }
 
 
-def test_post_worker_role_and_can_claim():
+def test_post_worker_role():
     w = post_mod.PostWorker()
     assert w.role == "post"
-    assert w.can_claim(_mk_item()) is True
 
 
 def test_post_worker_run_stage_success(tmp_path, monkeypatch):

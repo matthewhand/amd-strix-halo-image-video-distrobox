@@ -107,7 +107,11 @@ def test_tts_proxy_forwards_text_and_voice():
         srv.urllib.request, "urlopen",
         side_effect=_fake_urlopen({"text": "hi there", "voice": "ryan"}),
     ):
-        r = client.post("/tts", json={"text": "hi there", "voice": "ryan"})
+        r = client.post(
+            "/tts",
+            json={"text": "hi there", "voice": "ryan"},
+            headers={"Origin": "http://testserver"},
+        )
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
@@ -125,7 +129,11 @@ def test_tts_proxy_worker_unreachable_returns_503_not_sine():
         srv.urllib.request, "urlopen",
         side_effect=urllib.error.URLError("Connection refused"),
     ):
-        r = client.post("/tts", json={"text": "hi", "voice": "ryan"})
+        r = client.post(
+            "/tts",
+            json={"text": "hi", "voice": "ryan"},
+            headers={"Origin": "http://testserver"},
+        )
     assert r.status_code == 503
     body = r.json()
     assert body["ok"] is False
@@ -137,7 +145,11 @@ def test_tts_proxy_empty_text_returns_400():
     import slopfinity.server as srv
 
     client = TestClient(srv.app)
-    r = client.post("/tts", json={"text": "", "voice": "ryan"})
+    r = client.post(
+        "/tts",
+        json={"text": "", "voice": "ryan"},
+        headers={"Origin": "http://testserver"},
+    )
     assert r.status_code == 400
 
 

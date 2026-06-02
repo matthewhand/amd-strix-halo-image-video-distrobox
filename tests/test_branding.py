@@ -32,7 +32,12 @@ class TestBuiltinDefaults:
 
 class TestEnvAestheticsOverlay:
     def test_env_overlay_skips_empty(self, monkeypatch):
-        monkeypatch.delenv("SLOPFINITY_BG_IMAGE", raising=False)
+        # Clear ALL SLOPFINITY_BG_* keys so the test is hermetic regardless
+        # of ambient environment (a host shell, CI secrets, or a .env file
+        # loaded via python-dotenv on import) — deleting only BG_IMAGE left
+        # the overlay populated by other keys.
+        for env_key in br._ENV_AESTHETICS_KEYS:
+            monkeypatch.delenv(env_key, raising=False)
         result = br._env_aesthetics_overlay()
         assert result == {}
 
