@@ -228,7 +228,16 @@ async def free_between(comfy_url: str = COMFY_URL) -> dict:
 
 
 async def emergency_free() -> dict:
-    """free_between() then pkill stray model launchers."""
+    """Aggressive operator escape hatch.
+
+    More forceful than `free_between()`: in addition to asking ComfyUI to
+    unload models, it force-kills any stray model launcher processes AND
+    drops the scheduler's resident-set / planner tracking. After a pkill
+    the launched models are gone, so leaving entries in
+    ``GPU.resident_models`` would make the planner report false hits and
+    skip a required reload. Clearing it (and stale in-flight reservations)
+    resets the scheduler to a known-empty state.
+    """
     result = await free_between()
     killed = []
     for pat in ("qwen_launcher.py", "ernie_launcher.py", "wan_launcher.py"):
@@ -243,6 +252,24 @@ async def emergency_free() -> dict:
         except Exception:
             pass
     result["killed"] = killed
+
+    # Drop all scheduler GPU bookkeeping — the resident set and any
+    # in-flight reservations are no longer valid once we've force-evicted.
+    evicted_models = []
+    cleared_in_flight = 0
+    try:
+        async with GPU.cond:
+            evicted_models = list(GPU.resident_models.keys())
+            cleared_in_flight = len(GPU.in_flight)
+            GPU.resident_models.clear()
+            GPU.in_flight.clear()
+            GPU.resident_gb = 0.0
+            GPU.cond.notify_all()
+    except Exception:
+        pass
+    result["evicted_models"] = evicted_models
+    result["cleared_in_flight"] = cleared_in_flight
+
     await _emit(
         {
             "type": "emergency_free",
@@ -250,6 +277,8 @@ async def emergency_free() -> dict:
             "model": None,
             "freed_gb": result.get("freed_gb", 0.0),
             "killed": killed,
+            "evicted_models": evicted_models,
+            "cleared_in_flight": cleared_in_flight,
             "ts": _now(),
         }
     )
