@@ -8593,11 +8593,21 @@ async function updatePipeline() {
     if ($('chaos-on')) body.chaos_mode = $('chaos-on').checked;
     if ($('when-idle-on')) body.when_idle = $('when-idle-on').checked;
     if ($('date-time-on')) body.show_date_time = $('date-time-on').checked;
-    await fetch('/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+    try {
+        const _cfgRes = await fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        // Known-broken hardware states (ERNIE@>512² GPU-hang, WAN flake, …) come
+        // back as { warnings: [{severity, message}] }. Toast each so the user
+        // sees the caveat the moment they pick the model. danger→error, else warning.
+        const _cfgData = await _cfgRes.json().catch(() => null);
+        if (_cfgData && Array.isArray(_cfgData.warnings) && window._toast) {
+            _cfgData.warnings.forEach(w =>
+                window._toast(w.message, w.severity === 'danger' ? 'error' : 'warning'));
+        }
+    } catch (e) { /* save is best-effort; RAM tick will reconcile */ }
     // Snappy feedback: recompute RAM estimate immediately without waiting for WS tick.
     try {
         const qs = new URLSearchParams({

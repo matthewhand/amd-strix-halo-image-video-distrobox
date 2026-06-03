@@ -12,9 +12,12 @@ from .probe import discover, ping
 
 
 DEFAULT_LLM_CONFIG = {
-    "provider": "lmstudio",
-    "base_url": "http://localhost:1234/v1",
-    "model_id": "",
+    # Default to the local ollama gemma4:26b — the same model the host's
+    # hermes agent uses, so the whole box shares one warm model rather than
+    # cold-loading a second 26B. Override per-install via Settings → LLM.
+    "provider": "ollama",
+    "base_url": "http://127.0.0.1:11434/v1",
+    "model_id": "gemma4:26b",
     "api_key": "",
     "temperature": 0.7,
     "max_retries": 2,

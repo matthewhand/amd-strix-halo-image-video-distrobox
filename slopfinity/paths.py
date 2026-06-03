@@ -4,12 +4,15 @@ PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(PKG_DIR, "templates")
 STATIC_DIR = os.path.join(PKG_DIR, "static")
 
-# Where generated artifacts live. In the container /workspace is mounted;
-# in local dev we fall back to the experiments directory.
-EXP_DIR = "/workspace"
-if not os.path.isdir(EXP_DIR):
+# Where generated artifacts live. Honour SLOPFINITY_STATE_DIR (set by
+# bin/slopfinity and already read by config.py / db.py / coordinator.py) so a
+# host-native run agrees with the rest of the stack. In the container
+# /workspace is the mount; fall back to the local experiments dir when the
+# chosen dir isn't set or isn't writable (e.g. a root-owned /workspace on host).
+EXP_DIR = os.environ.get("SLOPFINITY_STATE_DIR") or "/workspace"
+if not os.path.isdir(EXP_DIR) or not os.access(EXP_DIR, os.W_OK):
     EXP_DIR = os.path.abspath("./comfy-outputs/experiments")
-    os.makedirs(EXP_DIR, exist_ok=True)
+os.makedirs(EXP_DIR, exist_ok=True)
 
 TTS_OUT_DIR = os.path.join(EXP_DIR, "tts")
 os.makedirs(TTS_OUT_DIR, exist_ok=True)

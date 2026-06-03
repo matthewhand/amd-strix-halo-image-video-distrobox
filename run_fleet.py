@@ -22,6 +22,13 @@ import glob
 import math
 import fleet_config as cfg
 
+# Known-broken-state guards (single source of truth: slopfinity/compat.py).
+# Imported defensively so a path/packaging hiccup never blocks the runner.
+try:
+    from slopfinity.compat import ERNIE_MAX_DIM as _ERNIE_MAX_DIM
+except Exception:  # pragma: no cover — fallback keeps the ceiling explicit
+    _ERNIE_MAX_DIM = 512
+
 # Default Configuration
 OUTPUT_DIR = "comfy-outputs/experiments"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -658,9 +665,16 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "baidu/ERNIE-Image-Turbo",
             "--steps",
             "8",
+            # GUARD: ERNIE VAE decode GPU-hangs above 512² on gfx1151. Cap it so
+            # the runner can't wedge the GPU (and ComfyUI with it). See compat.py.
+            "--width",
+            str(_ERNIE_MAX_DIM),
+            "--height",
+            str(_ERNIE_MAX_DIM),
             "--out",
             out_path,
         ]
+        print(f"   🛡️  ernie capped to {_ERNIE_MAX_DIM}² (gfx1151 VAE-decode GPU-hang guard)")
         run_with_timeout(cmd, ito, label="ernie_launcher")
         return True
     else:

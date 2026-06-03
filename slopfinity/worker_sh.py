@@ -61,12 +61,18 @@ async def run_image_qwen(prompt: str, out: str) -> int:
 
 
 async def run_image_ernie(prompt: str, out: str, steps: int = 8) -> int:
+    # GUARD: ERNIE VAE decode GPU-hangs above 512² on gfx1151 — cap dimensions
+    # so this path can't wedge the GPU. Single source of truth: compat.py.
+    from .compat import clamp_ernie_dims
+    w, h = clamp_ernie_dims()
     async with acquire_gpu("image", "ernie"):
         cmd = _base_docker_cmd() + [
             "python3", "/opt/ernie_launcher.py",
             "--prompt", prompt,
             "--model", "baidu/ERNIE-Image-Turbo",
             "--steps", str(steps),
+            "--width", str(w),
+            "--height", str(h),
             "--out", out,
         ]
         return await _run(cmd)
