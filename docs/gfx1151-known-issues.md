@@ -66,6 +66,9 @@ surfaces a UI warning when ERNIE is selected (toasted by `app.js`).
 
 ## Other known-broken states (in `compat.py`)
 
+See also the full [Compatibility Matrix](../COMPATIBILITY_MATRIX.md) for
+supported resolutions / aspect ratios per image & video model.
+
 | State | Severity | Note |
 | --- | --- | --- |
 | `base_model=ernie` | danger | GPU-hangs >512² (above); auto-capped to 512². |

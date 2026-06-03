@@ -4,6 +4,7 @@
 !README.slopfinity.md
 !COMFYUI_SETUP_GUIDE.md
 !CONTRIBUTING.md
+!COMPATIBILITY_MATRIX.md
 !docs/*.md
 # AGENTS.md is a local agent playbook, intentionally not committed —
 # contents drift per-machine and per-session.
