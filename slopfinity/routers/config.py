@@ -4,6 +4,7 @@ import random
 from fastapi import APIRouter, Request, Body
 from fastapi.responses import JSONResponse, HTMLResponse
 import slopfinity.config as cfg
+import slopfinity.compat as compat
 from slopfinity.llm.probe import discover as llm_discover, ping as llm_ping
 from slopfinity.llm import DEFAULT_LLM_CONFIG, list_providers
 from fastapi.templating import Jinja2Templates
@@ -61,7 +62,11 @@ async def update_config(data: dict = Body(...)):
             data[role] = random.choice(pool) if pool else "none"
     config.update(data)
     cfg.save_config(config)
-    return {"status": "ok"}
+    # Surface any known-broken hardware states (e.g. ERNIE@>512² GPU-hang) so
+    # the dashboard can warn at the moment of selection. The pipeline guards
+    # the same states in run_fleet.py / worker_sh, so a warning with auto-fix
+    # means "we capped it", not "this will break".
+    return {"status": "ok", "warnings": compat.check_config(config)}
 
 
 @router.get("/settings")
