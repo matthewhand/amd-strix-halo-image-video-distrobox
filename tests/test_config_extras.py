@@ -70,6 +70,30 @@ def test_queue_lock_is_exclusive():
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def test_config_lock_is_exclusive():
+    import fcntl
+    import pytest
+    from slopfinity import config as cfg
+    with cfg.config_lock():
+        with open(cfg._CONFIG_LOCK_FILE, "a+") as fd:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    # config_lock and queue_lock are independent flocks — holding one must not
+    # block the other.
+    with cfg.queue_lock():
+        with open(cfg._CONFIG_LOCK_FILE, "a+") as fd:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def test_mutate_config_reads_modifies_saves():
+    from slopfinity import config as cfg
+    cfg.save_config({"infinity_index": 5, "infinity_themes": ["x"]})
+    out = cfg.mutate_config(lambda c: {**c, "infinity_index": c.get("infinity_index", 0) + 1})
+    assert out["infinity_index"] == 6
+    assert cfg.load_config()["infinity_index"] == 6
+
+
 def test_mutate_queue_reads_modifies_saves():
     from slopfinity import config as cfg
     try:

@@ -391,11 +391,24 @@ def generate_prompt(model_id, v_idx):
 
     config = cfg.load_config()
     if config.get("infinity_mode"):
-        themes = config["infinity_themes"]
-        idx = config.get("infinity_index", 0) % len(themes)
-        theme = themes[idx]
-        config["infinity_index"] = idx + 1
-        cfg.save_config(config)
+        # Pick the current theme and advance the index atomically under the
+        # config lock so the broadcaster's chaos_rotator (which rewrites
+        # infinity_themes + resets the index) can't be reverted by our save,
+        # and vice-versa. `config` is refreshed from the locked read.
+        _picked = {}
+
+        def _advance(c):
+            th = c.get("infinity_themes") or []
+            if not th:
+                return c
+            i = c.get("infinity_index", 0) % len(th)
+            _picked["theme"] = th[i]
+            c["infinity_index"] = i + 1
+            return c
+
+        config = cfg.mutate_config(_advance)
+        themes = config.get("infinity_themes") or []
+        theme = _picked.get("theme", themes[0] if themes else "")
 
         # Honour Settings → Prompts overrides for the infinity-mode call.
         # System prompt = philosophical_prompt; user template uses {theme}.
@@ -1960,6 +1973,21 @@ def main():
                             ["cp", next_in, f"{OUTPUT_DIR}/{_stem}_f{c_idx}.png"],
                             check=True,
                         )
+
+            # Clean up this iter's chain-handoff frames from comfy-input/. They
+            # are transient inputs for the continuation workflow (and the ffmpeg
+            # extraction writes a few margin frames beyond the K we keep); none
+            # are needed once the chain loop is done, and they'd otherwise grow
+            # comfy-input/ without bound across thousands of iters.
+            try:
+                for _hf in os.listdir("comfy-input"):
+                    if _hf.startswith(f"{_stem}_h") or _hf.startswith(f"{_stem}_f"):
+                        try:
+                            os.remove(os.path.join("comfy-input", _hf))
+                        except OSError:
+                            pass
+            except OSError:
+                pass
 
             update_state(
                 mode="Finalizing", step="Final Merge", video=v_idx, total=1000, prompt=p

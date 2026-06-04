@@ -669,3 +669,41 @@ def mutate_queue(mutator):
         q = result if isinstance(result, list) else q
         save_queue(q)
         return q
+
+
+_CONFIG_LOCK_FILE = CONFIG_FILE + ".lock"
+
+
+@contextlib.contextmanager
+def config_lock():
+    """Cross-process advisory lock for a load_config → save_config round-trip.
+    Separate flock from queue_lock; non-recursive (don't nest)."""
+    os.makedirs(os.path.dirname(_CONFIG_LOCK_FILE), exist_ok=True)
+    with open(_CONFIG_LOCK_FILE, "a+") as fd:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def mutate_config(mutator):
+    """Locked read→modify→write of the config.
+
+    save_config upserts per key, but callers pass the WHOLE config dict, so two
+    unsynchronised loops (run_fleet's infinity-index increment and the
+    broadcaster's chaos_rotator theme refresh) can revert each other's keys —
+    e.g. run_fleet saving a stale infinity_themes back over a fresh rotation.
+    Routing both through this serialises them.
+
+    NOTE: dashboard settings endpoints still call save_config directly and are
+    not yet serialised against this — opt-in callers only. CONTRACT: the mutator
+    must not call load_config/save_config/mutate_config (non-recursive lock) or
+    block on I/O while held.
+    """
+    with config_lock():
+        c = load_config()
+        result = mutator(c)
+        c = result if isinstance(result, dict) else c
+        save_config(c)
+        return c

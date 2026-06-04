@@ -2,6 +2,7 @@ import os
 import json
 import time
 import asyncio
+import logging
 import subprocess
 from typing import List, Set
 from . import config as cfg
@@ -16,6 +17,19 @@ from .paths import EXP_DIR
 from .llm import _LLM_LOCK, lmstudio_call
 from .ws_manager import clients
 from . import scheduler as sched
+
+_log = logging.getLogger(__name__)
+# Throttle: the broadcast loop ticks every 2s, so a persistent fault would spam
+# the log. Only emit when the error signature changes (and re-emit on change).
+_last_bcast_err = {"sig": None}
+
+
+def _log_broadcast_error(e):
+    sig = repr(e)
+    if sig != _last_bcast_err["sig"]:
+        _last_bcast_err["sig"] = sig
+        _log.warning("broadcast tick error: %s", sig, exc_info=True)
+
 
 _RECENT_EVENTS_MAX = 20
 _recent_events = []
@@ -240,7 +254,8 @@ async def broadcast():
                             await c.send_json({"type": "new_file", "file": f})
                         except Exception: pass
             known = curr
-        except Exception: pass
+        except Exception as e:
+            _log_broadcast_error(e)
         await asyncio.sleep(2)
 
 async def chaos_rotator():
@@ -282,9 +297,13 @@ async def chaos_rotator():
                     except Exception: arr = []
             arr = [str(x).strip() for x in arr if str(x).strip()][:8]
             if arr:
-                config["infinity_themes"] = arr
-                config["infinity_index"] = 0
-                cfg.save_config(config)
+                # Locked RMW so run_fleet's infinity-index increment can't
+                # revert this fresh theme list (and vice-versa).
+                def _set_themes(c):
+                    c["infinity_themes"] = arr
+                    c["infinity_index"] = 0
+                    return c
+                config = cfg.mutate_config(_set_themes)
             await asyncio.sleep(5)
         except Exception:
             await asyncio.sleep(30)

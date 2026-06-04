@@ -299,6 +299,13 @@ async def tts(data: dict = Body(...)):
         speed = float(speed_raw) if speed_raw is not None else None
     except (TypeError, ValueError):
         speed = None
+    # Clamp to the supported TTS range instead of forwarding e.g. speed=999 to
+    # the worker (the chat tool already validates 0.5–2.0; match it here).
+    if speed is not None and not (0.5 <= speed <= 2.0):
+        return JSONResponse(
+            {"ok": False, "error": "speed must be between 0.5 and 2.0"},
+            status_code=400,
+        )
 
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
