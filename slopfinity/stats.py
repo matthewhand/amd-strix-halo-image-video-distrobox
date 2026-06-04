@@ -75,7 +75,7 @@ def get_sys_stats():
         for l in res.stdout.split('\n'):
             if "GPU use (%)" in l: s["gpu"] = int(l.split(':')[-1].strip())
             if "GPU Memory Allocated (VRAM%)" in l: s["vram"] = int(l.split(':')[-1].strip())
-    except: pass
+    except Exception: pass
     try:
         # Load average — better than instantaneous CPU% on Linux: captures pending
         # work + IO wait. /proc/loadavg gives 1m/5m/15m running averages. Express
@@ -97,7 +97,7 @@ def get_sys_stats():
             m = {ln.split(':')[0]: ln.split(':')[1].strip() for ln in f}
         s["ram_u"] = round((int(m['MemTotal'].split()[0]) - int(m['MemAvailable'].split()[0])) / (1024 * 1024), 1)
         s["ram_t"] = round(int(m['MemTotal'].split()[0]) / (1024 * 1024), 1)
-    except: pass
+    except Exception: pass
     return s
 
 

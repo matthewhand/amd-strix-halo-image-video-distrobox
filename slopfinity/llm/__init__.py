@@ -105,7 +105,7 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
         base_url = ep["url"].rstrip("/")
         model_id = ep["model"]
         
-        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        provider_name = ep.get("provider") or ("ollama" if "11434" in base_url else "lmstudio")
         provider = get_provider(provider_name)
         
         if not model_id:
@@ -186,7 +186,7 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
         base_url = ep["url"].rstrip("/")
         model_id = ep["model"]
         
-        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        provider_name = ep.get("provider") or ("ollama" if "11434" in base_url else "lmstudio")
         provider = get_provider(provider_name)
         
         if not model_id:
