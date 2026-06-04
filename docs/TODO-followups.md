@@ -150,11 +150,10 @@ Deferred (rationale):
 
 ## 6. Known-flaky test (not a regression — leave or fix upstream)
 
-- [ ] 🟢 **`tests/test_ai_mock_integration.py`** — `test_subjects_suggest` /
-  `test_enhance_distribute` intermittently time out (10s) on the mock-LLM
-  endpoint under machine load; pass on retry and in isolation. Env-coupled
-  subprocess timing, unrelated to any queue/run_fleet code. Could be hardened
-  with a longer timeout / readiness wait, or marked `flaky`.
+- [x] 🟢 **`tests/test_ai_mock_integration.py`** — FIXED (`f697ae2`). The 10s
+  mock-LLM request timeout in `test_subjects_suggest` / `test_enhance_distribute`
+  expired under full-suite load; bumped to 30s. 3/3 consecutive full-suite runs
+  clean afterward.
 
 ---
 
