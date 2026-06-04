@@ -34,6 +34,13 @@ OUTPUT_DIR = "comfy-outputs/experiments"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("comfy-input", exist_ok=True)
 
+
+class _IterCancelled(Exception):
+    """Raised to unwind the current iter when the user cancels the running item
+    mid-flight (dashboard writes cancel.flag). Handled distinctly from real
+    errors so a cancel isn't logged/recorded as a failure."""
+
+
 # ---- Tiered quality ramp ---------------------------------------------------
 # Incrementally ramp up framerate + resolution across videos so we validate
 # the pipeline on cheap passes before committing to slow max-quality runs.
@@ -1561,6 +1568,16 @@ def main():
             )
     except Exception as e:
         print(f"[FLEET] startup working-sweep failed: {e!r}", flush=True)
+    # Clear a stale terminate.flag from a previous run. It's checked at the top
+    # of the loop below, so leaving it would make a freshly-started fleet exit
+    # immediately — un-restartable until someone manually removes the flag.
+    try:
+        _stale_term = os.path.join(OUTPUT_DIR, "terminate.flag")
+        if os.path.exists(_stale_term):
+            os.remove(_stale_term)
+            print("[FLEET] cleared stale terminate.flag from a previous run", flush=True)
+    except OSError:
+        pass
     while True:
         # Terminate gate — dashboard's POST /runner/terminate writes
         # terminate.flag in OUTPUT_DIR. We exit cleanly at the top of
@@ -1853,6 +1870,13 @@ def main():
 
             chain_vids = []
             _flf2v_active = len(_per_chain_seeds) >= 2
+            if _flf2v_active:
+                # FLF2V puts its end keyframe at frame index max(8, …); a latent
+                # shorter than 9 frames places that guide out of [0, frames-1]
+                # and yields a malformed graph / wrong output. Enforce the LTX
+                # 9-frame minimum (only reachable via a hand-set frames<9 + per-
+                # chain seeds; default/Fast-Track frame counts are already ≥9).
+                _frames_per_chain = max(9, _frames_per_chain)
             # Multi-frame chain handoff — anchor the next chain's first K
             # frames to the previous chain's last K frames via stacked
                 # LTXVAddGuide nodes. K=1 reverts to legacy last-frame chaining.
@@ -1863,7 +1887,24 @@ def main():
             )
             _handoff_k = max(1, min(_handoff_k, 8))
             _handoff_frames: list = []  # populated after chain c, used by chain c+1
+            _iter_cancelled = False
             for c_idx in range(1, _n_chains + 1):
+                # Honour a mid-flight cancel of the running item: the dashboard
+                # writes cancel.flag when the active (`working`) item is
+                # cancelled. Check at each chain boundary so a long multi-chain
+                # render stops promptly instead of finishing. mtime-gated against
+                # this iter's start so a stale flag from a prior iter is ignored.
+                _cf = os.path.join(OUTPUT_DIR, "cancel.flag")
+                try:
+                    if os.path.exists(_cf) and os.path.getmtime(_cf) >= _iter_started_ts:
+                        print(
+                            f"[FLEET] cancel.flag — aborting iter v{v_idx} at chain {c_idx}/{_n_chains}",
+                            flush=True,
+                        )
+                        _iter_cancelled = True
+                        break
+                except OSError:
+                    pass
                 update_state(
                     mode="Rendering",
                     step="Video Chains",
@@ -2000,6 +2041,12 @@ def main():
             except OSError:
                 pass
 
+            if _iter_cancelled and not chain_vids:
+                # Cancelled before any chain finished — nothing to finalize.
+                # (If ≥1 chain rendered we still mux a partial clip below so the
+                # user keeps what was produced before the cancel.)
+                raise _IterCancelled(f"iter v{v_idx} cancelled (no chains rendered)")
+
             update_state(
                 mode="Finalizing", step="Final Merge", video=v_idx, total=1000, prompt=p
             )
@@ -2079,20 +2126,31 @@ def main():
                 except Exception as e:
                     print(f"[FLEET] ⚠️  ffmpeg mux failed: {e!r}", flush=True)
         except Exception as e:
-            iter_failed = True
-            import traceback
+            if isinstance(e, _IterCancelled) or _iter_cancelled:
+                # User-initiated cancel of the running item — not a failure.
+                # The queue already marks it cancelled (so the archive path
+                # below won't requeue it); just update state and move on.
+                print(f"[FLEET] ⏹ {e}", flush=True)
+                try:
+                    update_state(mode="Cancelled", step="User cancelled",
+                                 video=v_idx, total=1000, prompt=p)
+                except Exception:
+                    pass
+            else:
+                iter_failed = True
+                import traceback
 
-            print(f"[FLEET] ❌ Error Video {v_idx}: {e!r}", flush=True)
-            traceback.print_exc()
-            # Reflect the failure in dashboard state immediately — otherwise the
-            # UI keeps showing the last successful step (e.g. "Rendering") until
-            # the next iter starts, which can be never if this was the last item.
-            try:
-                update_state(mode="Completed", step="Failed (see log)",
-                             video=v_idx, total=1000, prompt=p)
-            except Exception:
-                pass
-            time.sleep(10)
+                print(f"[FLEET] ❌ Error Video {v_idx}: {e!r}", flush=True)
+                traceback.print_exc()
+                # Reflect the failure in dashboard state immediately — otherwise
+                # the UI keeps showing the last successful step until the next
+                # iter starts, which can be never if this was the last item.
+                try:
+                    update_state(mode="Completed", step="Failed (see log)",
+                                 video=v_idx, total=1000, prompt=p)
+                except Exception:
+                    pass
+                time.sleep(10)
         # ALWAYS advance v_idx — even on failure — so every iter gets a unique
         # filename. Otherwise repeated chain failures keep clobbering v1_base.png.
         v_idx += 1

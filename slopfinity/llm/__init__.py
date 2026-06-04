@@ -38,6 +38,16 @@ def _load_llm_cfg() -> dict:
     return llm
 
 
+def _llm_cpu_mode() -> str:
+    """LLM CPU-offload mode, read from config['scheduler']['llm_cpu_mode'] —
+    the bucket the settings endpoint actually persists it under. The previous
+    read used the llm sub-config's 'scheduler' key, which never exists, so the
+    user's choice silently fell back to 'smart' every time."""
+    from .. import config as cfg
+    c = cfg.load_config()
+    return (c.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+
+
 def _auto_pick_model(provider, base_url, api_key, timeout) -> str | None:
     try:
         models = provider.list_models(base_url, api_key=api_key or None, timeout=timeout)
@@ -67,7 +77,7 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
     temperature = float(llm.get("temperature") or 0.7)
     extra_headers = llm.get("extra_headers") or None
     
-    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+    cpu_mode = _llm_cpu_mode()
     gpu = scheduler.get_gpu()
     is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
     
@@ -148,7 +158,7 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
     temp = float(temperature if temperature is not None else (llm.get("temperature") or 0.7))
     extra_headers = llm.get("extra_headers") or None
     
-    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+    cpu_mode = _llm_cpu_mode()
     gpu = scheduler.get_gpu()
     is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
     
