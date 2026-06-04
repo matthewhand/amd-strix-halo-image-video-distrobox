@@ -68,41 +68,42 @@ class StageWorker:
         flipped the stage to `working` is observed; we then skip and look
         for the next eligible item.
         """
-        queue = _config.get_queue()
-        # Migrate v1 items on read so stage_status() finds the dict.
-        migrated_any = False
-        for i, item in enumerate(queue):
-            if item.get("schema_version") != 2:
-                queue[i] = qs.migrate_legacy(item)
-                migrated_any = True
+        with _config.queue_lock():
+            queue = _config.get_queue()
+            # Migrate v1 items on read so stage_status() finds the dict.
+            migrated_any = False
+            for i, item in enumerate(queue):
+                if item.get("schema_version") != 2:
+                    queue[i] = qs.migrate_legacy(item)
+                    migrated_any = True
 
-        for idx, item in enumerate(queue):
-            # next_stage_for_role takes a *list* and returns (item, stage);
-            # pass a single-item list and unpack so we get a bare stage name.
-            res = qs.next_stage_for_role([item], self.role)
-            if res is None:
-                continue
-            _, stage = res
-            if qs.stage_status(item, stage) != "needs":
-                continue
-            if not qs.prerequisites_met(item, stage):
-                continue
-            # Claim. set_stage_status mutates the item in place.
-            qs.set_stage_status(
-                item,
-                stage,
-                "working",
-                worker=self.worker_id,
-                started_ts=time.time(),
-            )
-            queue[idx] = item
-            _config.save_queue(queue)
-            return item, stage
+            for idx, item in enumerate(queue):
+                # next_stage_for_role takes a *list* and returns (item, stage);
+                # pass a single-item list and unpack so we get a bare stage name.
+                res = qs.next_stage_for_role([item], self.role)
+                if res is None:
+                    continue
+                _, stage = res
+                if qs.stage_status(item, stage) != "needs":
+                    continue
+                if not qs.prerequisites_met(item, stage):
+                    continue
+                # Claim. set_stage_status mutates the item in place.
+                qs.set_stage_status(
+                    item,
+                    stage,
+                    "working",
+                    worker=self.worker_id,
+                    started_ts=time.time(),
+                )
+                queue[idx] = item
+                _config.save_queue(queue)
+                return item, stage
 
-        # If we migrated items but didn't find work, persist the migration.
-        if migrated_any:
-            _config.save_queue(queue)
-        return None
+            # If we migrated items but didn't find work, persist the migration.
+            if migrated_any:
+                _config.save_queue(queue)
+            return None
 
     def can_claim(self, item: dict) -> bool:
         """True if this worker's role still has an unfinished stage for `item`
@@ -133,39 +134,40 @@ class StageWorker:
         await asyncio.to_thread(self._finalize_sync, item_id, stage, result)
 
     def _finalize_sync(self, item_id: str, stage: str, result: dict) -> None:
-        queue = _config.get_queue()
-        for idx, qi in enumerate(queue):
-            if qi.get("id") != item_id:
-                continue
-            now = time.time()
-            if result.get("ok"):
-                kwargs = {"completed_ts": now}
-                if "output" in result:
-                    kwargs["output"] = result["output"]
-                if "asset" in result:
-                    kwargs["asset"] = result["asset"]
-                    # Accumulate asset paths so the queue item records every
-                    # output file across all stages (not just the last one).
-                    asset_val = result["asset"]
-                    if asset_val:
-                        existing = qi.get("asset_paths") or []
-                        if not isinstance(existing, list):
-                            existing = []
-                        if asset_val not in existing:
-                            existing.append(asset_val)
-                        qi["asset_paths"] = existing
-                qs.set_stage_status(qi, stage, "done", **kwargs)
-            else:
-                qs.set_stage_status(
-                    qi,
-                    stage,
-                    "failed",
-                    completed_ts=now,
-                    error=str(result.get("error") or "unknown error"),
-                )
-            queue[idx] = qi
-            _config.save_queue(queue)
-            return
+        with _config.queue_lock():
+            queue = _config.get_queue()
+            for idx, qi in enumerate(queue):
+                if qi.get("id") != item_id:
+                    continue
+                now = time.time()
+                if result.get("ok"):
+                    kwargs = {"completed_ts": now}
+                    if "output" in result:
+                        kwargs["output"] = result["output"]
+                    if "asset" in result:
+                        kwargs["asset"] = result["asset"]
+                        # Accumulate asset paths so the queue item records every
+                        # output file across all stages (not just the last one).
+                        asset_val = result["asset"]
+                        if asset_val:
+                            existing = qi.get("asset_paths") or []
+                            if not isinstance(existing, list):
+                                existing = []
+                            if asset_val not in existing:
+                                existing.append(asset_val)
+                            qi["asset_paths"] = existing
+                    qs.set_stage_status(qi, stage, "done", **kwargs)
+                else:
+                    qs.set_stage_status(
+                        qi,
+                        stage,
+                        "failed",
+                        completed_ts=now,
+                        error=str(result.get("error") or "unknown error"),
+                    )
+                queue[idx] = qi
+                _config.save_queue(queue)
+                return
 
     # ------------------------------------------------------------------
     # Drive

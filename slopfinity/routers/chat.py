@@ -189,7 +189,6 @@ def _chat_tool_queue_clip(args: dict) -> dict:
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
         return {"ok": False, "error": "empty prompt"}
-    q = cfg.get_queue()
     task = {
         "prompt": prompt,
         "priority": "next",
@@ -210,12 +209,16 @@ def _chat_tool_queue_clip(args: dict) -> dict:
         snap["tier"] = args["tier"]
     if snap:
         task["config_snapshot"] = snap
-    pending = [x for x in q if x.get("status") in (None, "pending")]
-    working = [x for x in q if x.get("status") == "working"]
-    done = [x for x in q if x.get("status") == "done"]
-    cancelled = [x for x in q if x.get("status") == "cancelled"]
-    pending.insert(0, task)
-    cfg.save_queue(working + pending + done + cancelled)
+
+    def _queue_clip(q):
+        pending = [x for x in q if x.get("status") in (None, "pending")]
+        working = [x for x in q if x.get("status") == "working"]
+        done = [x for x in q if x.get("status") == "done"]
+        cancelled = [x for x in q if x.get("status") == "cancelled"]
+        pending.insert(0, task)
+        return working + pending + done + cancelled
+
+    cfg.mutate_queue(_queue_clip)
     return {"ok": True, "ts": task["ts"], "prompt": prompt, "overrides": snap}
 
 
@@ -253,19 +256,22 @@ def _chat_tool_cancel_item(args: dict) -> dict:
     try: ts_f = float(ts)
     except (TypeError, ValueError):
         return {"ok": False, "error": "ts must be a number"}
-    q = cfg.get_queue()
-    hit = None
-    for item in q:
-        if abs(float(item.get("ts") or 0) - ts_f) < 0.001:
-            if item.get("status") in (None, "pending", "working"):
-                item["status"] = "cancelled"
-                item["cancelled_ts"] = time.time()
-                hit = item
-                break
+    hit: list = []
+
+    def _cancel(q):
+        for item in q:
+            if abs(float(item.get("ts") or 0) - ts_f) < 0.001:
+                if item.get("status") in (None, "pending", "working"):
+                    item["status"] = "cancelled"
+                    item["cancelled_ts"] = time.time()
+                    hit.append(item)
+                    break
+        return q
+
+    cfg.mutate_queue(_cancel)
     if not hit:
         return {"ok": False, "error": "no matching pending/running item"}
-    cfg.save_queue(q)
-    return {"ok": True, "cancelled_prompt": (hit.get("prompt") or "")[:80]}
+    return {"ok": True, "cancelled_prompt": (hit[0].get("prompt") or "")[:80]}
 
 
 def _chat_tool_recent_finals(args: dict) -> dict:
@@ -308,7 +314,6 @@ def _chat_tool_generate_image(args: dict) -> dict:
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
         return {"ok": False, "error": "empty prompt"}
-    q = cfg.get_queue()
     task = {
         "prompt": prompt,
         "priority": "next",
@@ -317,12 +322,16 @@ def _chat_tool_generate_image(args: dict) -> dict:
         "image_only": True,
         "chaos": False,
     }
-    pending = [x for x in q if x.get("status") in (None, "pending")]
-    working = [x for x in q if x.get("status") == "working"]
-    done = [x for x in q if x.get("status") == "done"]
-    cancelled = [x for x in q if x.get("status") == "cancelled"]
-    pending.insert(0, task)
-    cfg.save_queue(working + pending + done + cancelled)
+
+    def _gen_image(q):
+        pending = [x for x in q if x.get("status") in (None, "pending")]
+        working = [x for x in q if x.get("status") == "working"]
+        done = [x for x in q if x.get("status") == "done"]
+        cancelled = [x for x in q if x.get("status") == "cancelled"]
+        pending.insert(0, task)
+        return working + pending + done + cancelled
+
+    cfg.mutate_queue(_gen_image)
     return {"ok": True, "ts": task["ts"], "prompt": prompt, "kind": "image_only"}
 
 
