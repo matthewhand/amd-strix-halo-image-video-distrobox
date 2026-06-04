@@ -84,10 +84,14 @@ class _SchemaStub:
         return True
 
     @staticmethod
-    def next_stage_for_role(item: dict, role: str) -> Optional[str]:
-        for stage in ROLE_STAGE.get(role, []):
-            if _SchemaStub.stage_status(item, stage) == "needs":
-                return stage
+    def next_stage_for_role(items: list, role: str) -> Optional[tuple]:
+        # Mirror the real queue_schema contract: take a *list*, return
+        # (item, stage) for the first needs+prereqs-met stage, else None.
+        for item in items:
+            for stage in ROLE_STAGE.get(role, []):
+                if (_SchemaStub.stage_status(item, stage) == "needs"
+                        and _SchemaStub.prerequisites_met(item, stage)):
+                    return (item, stage)
         return None
 
 
