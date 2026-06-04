@@ -21,6 +21,20 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
 
+
+def _confine_to_exp(p: str):
+    """Resolve a user-supplied path (absolute, as /music returns, or relative to
+    EXP_DIR) and return it only if it stays inside EXP_DIR. Returns None on a
+    `../` / absolute-escape attempt. Lexical (no symlink follow) so in-gallery
+    evidence symlinks still resolve. Guards /mux + /music path traversal."""
+    if not p:
+        return None
+    base = os.path.abspath(EXP_DIR)
+    cand = os.path.abspath(p if os.path.isabs(p) else os.path.join(base, p.lstrip("/")))
+    if cand == base or cand.startswith(base + os.sep):
+        return cand
+    return None
+
 _SLOPPED_EXTS = {
     "image": (".png", ".jpg", ".jpeg", ".webp"),
     "audio": (".wav", ".mp3", ".flac", ".ogg"),
@@ -328,8 +342,10 @@ async def music(data: dict = Body(...)):
     
     if not prompt:
         return JSONResponse({"ok": False, "error": "prompt required"}, status_code=400)
-        
-    out_path = os.path.join(EXP_DIR, out_name)
+
+    out_path = _confine_to_exp(out_name)
+    if out_path is None:
+        return JSONResponse({"ok": False, "error": "out_name must stay within the outputs dir"}, status_code=400)
     
     async with sched.acquire_gpu("audio", "heartmula"):
         cmd = [
@@ -372,13 +388,11 @@ async def mux(data: dict = Body(...)):
     if not vrel or not arel:
         return JSONResponse({"ok": False, "error": "video_path and audio_path required"}, status_code=400)
 
-    def _resolve(p: str) -> str:
-        if os.path.isabs(p): return p
-        return os.path.join(EXP_DIR, p.lstrip("/"))
-
-    video = _resolve(vrel)
-    audio = _resolve(arel)
-    out_path = os.path.join(EXP_DIR, out_name)
+    video = _confine_to_exp(vrel)
+    audio = _confine_to_exp(arel)
+    out_path = _confine_to_exp(out_name)
+    if video is None or audio is None or out_path is None:
+        return JSONResponse({"ok": False, "error": "paths must stay within the outputs dir"}, status_code=400)
 
     try:
         ok = _ffmpeg_mux.mux(
