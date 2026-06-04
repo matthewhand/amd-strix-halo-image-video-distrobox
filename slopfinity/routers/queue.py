@@ -13,6 +13,15 @@ import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 
 
+def _truthy(v) -> bool:
+    """Parse a form/string boolean flag. 'false'/'0'/'no'/'off'/'' → False.
+    (Plain bool(str) treats every non-empty string as True, so 'false'/'0'
+    silently enabled flags — and terminate='false' would cancel the queue.)"""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "on", "y", "t")
+
+
 router = APIRouter()
 
 def _check_disk_guard():
@@ -64,6 +73,7 @@ async def inject(
     # User can lift the guard in Settings → General if they really want
     # to push past it. terminate=1 still works (it cancels rather than
     # creates work).
+    terminate = _truthy(terminate)
     if not terminate:
         ok, reason = _check_disk_guard()
         if not ok:
@@ -94,15 +104,15 @@ async def inject(
         "priority": priority,
         "status": "pending",
         "ts": time.time(),
-        "concurrent": bool(concurrent),
-        "infinity": bool(infinity),
-        "when_idle": bool(when_idle),
-        "chaos": bool(chaos),
-        "image_only": bool(image_only),
+        "concurrent": _truthy(concurrent),
+        "infinity": _truthy(infinity),
+        "when_idle": _truthy(when_idle),
+        "chaos": _truthy(chaos),
+        "image_only": _truthy(image_only),
         # Fast Track — orchestrator overrides chains/frames/tier and
         # skips audio/tts for THIS iter only when set. Use the dashboard's
         # 🏃 button (Subjects card) to flip this on per-injection.
-        "fast_track": bool(fast_track),
+        "fast_track": _truthy(fast_track),
     }
     if title:
         task["title"] = title
@@ -242,15 +252,15 @@ async def cancel_all():
 
 @router.post("/queue/cancel")
 async def queue_cancel(data: dict = Body(...)):
-    """Cancel a single queue item by ts. If it's the active job (matched by
-    `current` flag in the future, or just the first pending item today), also
-    write a cancel.flag so the fleet runner aborts gracefully."""
+    """Cancel a single queue item by ts. Only when the *actively running*
+    (`working`) item is cancelled do we write a cancel.flag so the fleet runner
+    aborts the in-flight iter. Cancelling a merely-pending item must NOT abort
+    whatever is currently running."""
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
     q = cfg.get_queue()
     found = False
-    is_first_pending = True
     for item in q:
         # Match pending OR the in-flight `working` sentinel — cancelling
         # a working item flips its requeue off via the same
@@ -261,7 +271,9 @@ async def queue_cancel(data: dict = Body(...)):
             item["cancelled_ts"] = time.time()
             # Strip infinity so it doesn't re-loop after cancellation.
             item["infinity"] = False
-            if is_first_pending or was_working:
+            # Abort the in-flight iter ONLY when the running item is the one
+            # being cancelled — not for any pending item earlier in the queue.
+            if was_working:
                 try:
                     with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
                         f.write(str(time.time()))
@@ -269,8 +281,6 @@ async def queue_cancel(data: dict = Body(...)):
                     pass
             found = True
             break
-        if item.get("status") in (None, "pending"):
-            is_first_pending = False
     if not found:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     cfg.save_queue(q)
