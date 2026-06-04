@@ -32,7 +32,12 @@ const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
     testDir: './e2e',
-    timeout: 30_000,
+    // CI runners are ~3-4x slower than a dev box, so the suggestion/endless
+    // specs (which settle in ~7s locally) brushed the 30s ceiling and flaked.
+    // Give CI headroom + a couple of retries so genuine slowness isn't a hard
+    // fail; local stays tight at 30s for fast feedback.
+    timeout: process.env.CI ? 60_000 : 30_000,
+    retries: process.env.CI ? 2 : 0,
     expect: { timeout: 5_000 },
     fullyParallel: false, // dashboard is shared state
     // CI lane vs local lane:

@@ -172,7 +172,10 @@ async function harvestForMode(page, mode) {
 
 for (const vp of VIEWPORTS) {
     test(`deep-ui prompt+suggestions @ ${vp.tier} ${vp.width}x${vp.height}`, async ({ page }) => {
-        test.setTimeout(120000);
+        // Heavy harvest (3 viewports x modes x surface inspection); CI runners
+        // are far slower, so give generous headroom there to avoid a flaky
+        // timeout. Local keeps 120s.
+        test.setTimeout(process.env.CI ? 300000 : 120000);
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.addInitScript(() => {
             try {
