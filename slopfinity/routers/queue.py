@@ -138,6 +138,11 @@ async def inject(
     mode = (seeds_mode or "").strip().lower()
     if mode not in ("per-task", "per-chain"):
         mode = "per-task"
+    # per-chain spans seed[i]→seed[i+1], so it needs ≥2 seeds; with a single
+    # seed there's nothing to span and run_fleet would ignore it. Demote to
+    # per-task so the one seed is still used as the chain-0 base image.
+    if mode == "per-chain" and len(seeds) < 2:
+        mode = "per-task"
 
     tasks_to_queue: list = []
     if seeds and mode == "per-task":
@@ -469,6 +474,8 @@ async def queue_requeue(data: dict = Body(...)):
                     fresh.pop("error", None)
                     fresh.pop("asset_paths", None)
                     fresh.pop("logs", None)
+                    # Drop the failed run's stage states so a re-pend starts clean.
+                    fresh.pop("stages", None)
                     new_q.append(fresh)
                     requeued.append(1)
                     continue
@@ -547,6 +554,8 @@ async def queue_requeue_failed():
                 fresh.pop("error", None)
                 fresh.pop("asset_paths", None)
                 fresh.pop("logs", None)
+                # Drop the failed run's stage states so a re-pend starts clean.
+                fresh.pop("stages", None)
                 new_q.append(fresh)
                 requeued.append(1)
                 # original failed entry is dropped (not appended to new_q)

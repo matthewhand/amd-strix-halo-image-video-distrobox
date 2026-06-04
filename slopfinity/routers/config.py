@@ -191,11 +191,30 @@ async def settings_post(data: dict = Body(...)):
     """
     c = cfg.load_config()
 
-    # Endpoints tab — direct top-level keys.
-    if "tts_worker_url" in data:
-        c["tts_worker_url"] = str(data["tts_worker_url"]).strip()
-    if "comfy_url" in data:
-        c["comfy_url"] = str(data["comfy_url"]).strip()
+    # Endpoints tab — direct top-level keys. The server fetches these URLs, so
+    # run them through the same SSRF guard as the LLM base_url (blocks the
+    # cloud-metadata IP, multicast/reserved ranges, non-http schemes).
+    import slopfinity.net_guard as _net_guard
+    for _uk in ("tts_worker_url", "comfy_url"):
+        if _uk in data:
+            _u = str(data[_uk]).strip()
+            if _u:
+                try:
+                    _net_guard.validate_llm_base_url(_u)
+                except Exception as _e:
+                    return JSONResponse(
+                        {"ok": False, "error": f"{_uk}: {_e}"}, status_code=400
+                    )
+            c[_uk] = _u
+
+    # Disk-guard thresholds (General tab) — settings_get surfaces these, so the
+    # POST must persist them too (they were silently dropped before).
+    for _dk in ("disk_min_pct", "disk_min_gb"):
+        if _dk in data:
+            try:
+                c[_dk] = max(0.0, float(data.get(_dk) or 0))
+            except (TypeError, ValueError):
+                pass
 
     llm_in = data.get("llm") or {}
     if isinstance(llm_in, dict):

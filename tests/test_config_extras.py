@@ -70,6 +70,18 @@ def test_queue_lock_is_exclusive():
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def test_llm_cpu_mode_reads_scheduler_bucket():
+    # The setting is persisted at config['scheduler']['llm_cpu_mode']; the LLM
+    # layer used to read it from the llm sub-config (wrong namespace) and always
+    # got 'smart'. _llm_cpu_mode must read the scheduler bucket.
+    from slopfinity import config as cfg
+    from slopfinity.llm import _llm_cpu_mode
+    cfg.save_config({"scheduler": {"llm_cpu_mode": "cpu"}})
+    assert _llm_cpu_mode() == "cpu"
+    cfg.save_config({"scheduler": {"llm_cpu_mode": "smart"}})
+    assert _llm_cpu_mode() == "smart"
+
+
 def test_config_lock_is_exclusive():
     import fcntl
     import pytest
