@@ -269,7 +269,9 @@ def test_enhance_distribute():
     status, body = _post_json(
         base + "/enhance",
         {"prompt": "a robot", "distribute": True},
-        timeout=10,
+        # Generous timeout: the in-process mock LLM gets slow under full-suite
+        # load, which made this intermittently time out at 10s.
+        timeout=30,
     )
     assert status == 200, body
     assert body.get("distribute") is True, body
@@ -287,7 +289,7 @@ def test_subjects_suggest():
     # /subjects/suggest is a GET in the current server. Response shape is a
     # per-mode dict ({"story": [...], "simple": [...], "chat": [...]}); the
     # legacy flat-list shape was retired alongside the per-mode budgets.
-    status, body = _get_json(base + "/subjects/suggest?n=3", timeout=10)
+    status, body = _get_json(base + "/subjects/suggest?n=3", timeout=30)
     assert status == 200, body
     assert "suggestions" in body, body
     sug = body["suggestions"]
