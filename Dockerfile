@@ -94,6 +94,13 @@ RUN python -m pip install --no-deps -e /opt/heartlib && \
     pip install sqlmodel && \
     python -c "from heartlib import HeartMuLaGenPipeline" || echo "WARN: heartlib import failed"
 
+# Qwen3-TTS engine. --no-deps so its pinned transformers==4.57.3 / accelerate /
+# torch don't clobber the ROCm torch + image-model stack (already satisfied).
+# gradio/sox extras are demo-only and not needed for Qwen3TTSModel inference.
+# Runs on gfx1151 via HSA_OVERRIDE_GFX_VERSION=11.5.1 (set in qwen_tts_launcher.py).
+RUN pip install --no-deps qwen-tts && \
+    python -c "from qwen_tts import Qwen3TTSModel" 2>/dev/null || echo "WARN: qwen-tts import failed"
+
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
     find /opt/venv -type f -name "*.so" -exec strip -s {} + 2>/dev/null || true && \
