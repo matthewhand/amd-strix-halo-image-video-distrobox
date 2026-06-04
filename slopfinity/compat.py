@@ -41,17 +41,10 @@ KNOWN_ISSUES = [
         ),
         "auto_fix": False,
     },
-    {
-        "id": "qwen-tts-broken",
-        "role": "tts_model",
-        "value": "qwen-tts",
-        "severity": "warning",
-        "message": (
-            "qwen-tts is broken on this hardware (gfx1151 + disk-low guard). "
-            "Use kokoro or dramabox."
-        ),
-        "auto_fix": False,
-    },
+    # NOTE: qwen-tts was previously listed here as broken on gfx1151. It now
+    # works after the HSA_OVERRIDE_GFX_VERSION 11.0.0→11.5.1 + device-sync fix
+    # (commit fix(qwen-tts)) and the disk reclaim, so the known-broken entry was
+    # removed. All three TTS engines (kokoro/dramabox/qwen-tts) are functional.
 ]
 
 
