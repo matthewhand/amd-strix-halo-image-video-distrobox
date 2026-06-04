@@ -1,10 +1,33 @@
 # slopfinity — remaining follow-ups
 
-Status snapshot after queue-concurrency + round-3 + round-4 sweeps.
-Test suite: **235 passed, 2 skipped, 3 xfailed**. Tree clean (only `slop_test/`
-scratch dir untracked). HEAD `61094b0`.
+Status snapshot after queue-concurrency + round-3/4/5 sweeps.
+Test suite: **238 passed, 2 skipped, 3 xfailed**. Tree clean (only `slop_test/`
+scratch dir untracked). HEAD `d9becc4`.
 
 Severity legend: 🔴 high · 🟠 med · 🟢 low · ⚪ housekeeping
+
+---
+
+## 0. Done — round-5 sweep (`wf_69b498bb-62a`, 13 confirmed, 12 fixed in `ddab557`+`d9becc4`)
+
+- [x] 🟠 terminate.flag never cleared → fleet un-restartable after a terminate.
+- [x] 🟠 cancel.flag written but never read → cancelling the RUNNING item didn't
+  abort it. Now checked at each chain boundary (mtime-gated).
+- [x] 🟠 FLF2V with frames<9 placed end keyframe past latent → clamp to ≥9.
+- [x] 🟠 `llm_cpu_mode` read from wrong namespace → always 'smart'. Fixed.
+- [x] 🟠 `disk_min_pct`/`disk_min_gb` shown by GET but POST dropped them. Persist.
+- [x] 🟠 SSRF guard now applied to `tts_worker_url`/`comfy_url`.
+- [x] 🟠 `stage_prompts` {image,video,music} were persisted but never applied in
+  run_fleet — now used per stage.
+- [x] 🟢 per-chain seed mode with 1 seed → demote to per-task.
+- [x] 🟢 requeue/requeue-failed now reset the failed run's `stages`.
+- [x] 🟢 /tts default voice is engine-aware (qwen→ryan, not af_heart).
+- [ ] 🟢 **fanout() doesn't pass `response_format`** (round-5 #12) — DEFERRED.
+  `/enhance/distribute` isn't constrained to the JSON schema, but fanout already
+  has retry + JSON-parse + seed-text fallback, so it's a marginal first-try
+  reliability gain. Wiring it means changing the `llm_call(sys,user)` callback
+  signature across callers + building the schema. Do it if enhance output proves
+  flaky in practice.
 
 ---
 
