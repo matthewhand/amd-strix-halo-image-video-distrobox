@@ -1,0 +1,520 @@
+{
+  "kokoro_af_alloy": {
+    "engine": "kokoro",
+    "voice": "af_alloy",
+    "dur_s": 3.5,
+    "bytes": 166956,
+    "status": "new",
+    "gen_s": 2
+  },
+  "kokoro_af_aoede": {
+    "engine": "kokoro",
+    "voice": "af_aoede",
+    "dur_s": 2.8,
+    "bytes": 136236,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_bella": {
+    "engine": "kokoro",
+    "voice": "af_bella",
+    "dur_s": 4.6,
+    "bytes": 221228,
+    "status": "have"
+  },
+  "kokoro_af_heart": {
+    "engine": "kokoro",
+    "voice": "af_heart",
+    "dur_s": 4.5,
+    "bytes": 214060,
+    "status": "have"
+  },
+  "kokoro_af_jessica": {
+    "engine": "kokoro",
+    "voice": "af_jessica",
+    "dur_s": 2.9,
+    "bytes": 139308,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_kore": {
+    "engine": "kokoro",
+    "voice": "af_kore",
+    "dur_s": 3.0,
+    "bytes": 145452,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_nicole": {
+    "engine": "kokoro",
+    "voice": "af_nicole",
+    "dur_s": 4.5,
+    "bytes": 216108,
+    "status": "new",
+    "gen_s": 2
+  },
+  "kokoro_af_nova": {
+    "engine": "kokoro",
+    "voice": "af_nova",
+    "dur_s": 3.3,
+    "bytes": 159788,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_river": {
+    "engine": "kokoro",
+    "voice": "af_river",
+    "dur_s": 2.8,
+    "bytes": 135212,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_sarah": {
+    "engine": "kokoro",
+    "voice": "af_sarah",
+    "dur_s": 2.9,
+    "bytes": 141356,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_af_sky": {
+    "engine": "kokoro",
+    "voice": "af_sky",
+    "dur_s": 3.1,
+    "bytes": 147500,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_adam": {
+    "engine": "kokoro",
+    "voice": "am_adam",
+    "dur_s": 3.0,
+    "bytes": 142380,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_echo": {
+    "engine": "kokoro",
+    "voice": "am_echo",
+    "dur_s": 3.4,
+    "bytes": 163884,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_eric": {
+    "engine": "kokoro",
+    "voice": "am_eric",
+    "dur_s": 2.9,
+    "bytes": 139308,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_fenrir": {
+    "engine": "kokoro",
+    "voice": "am_fenrir",
+    "dur_s": 2.8,
+    "bytes": 136236,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_liam": {
+    "engine": "kokoro",
+    "voice": "am_liam",
+    "dur_s": 2.8,
+    "bytes": 135212,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_michael": {
+    "engine": "kokoro",
+    "voice": "am_michael",
+    "dur_s": 5.0,
+    "bytes": 238636,
+    "status": "have"
+  },
+  "kokoro_am_onyx": {
+    "engine": "kokoro",
+    "voice": "am_onyx",
+    "dur_s": 3.6,
+    "bytes": 172076,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_puck": {
+    "engine": "kokoro",
+    "voice": "am_puck",
+    "dur_s": 3.0,
+    "bytes": 145452,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_am_santa": {
+    "engine": "kokoro",
+    "voice": "am_santa",
+    "dur_s": 13.3,
+    "bytes": 636972,
+    "status": "have"
+  },
+  "kokoro_bf_alice": {
+    "engine": "kokoro",
+    "voice": "bf_alice",
+    "dur_s": 3.2,
+    "bytes": 153644,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bf_emma": {
+    "engine": "kokoro",
+    "voice": "bf_emma",
+    "dur_s": 4.1,
+    "bytes": 198700,
+    "status": "have"
+  },
+  "kokoro_bf_isabella": {
+    "engine": "kokoro",
+    "voice": "bf_isabella",
+    "dur_s": 3.1,
+    "bytes": 147500,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bf_lily": {
+    "engine": "kokoro",
+    "voice": "bf_lily",
+    "dur_s": 3.2,
+    "bytes": 151596,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bm_daniel": {
+    "engine": "kokoro",
+    "voice": "bm_daniel",
+    "dur_s": 3.0,
+    "bytes": 143404,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bm_fable": {
+    "engine": "kokoro",
+    "voice": "bm_fable",
+    "dur_s": 3.6,
+    "bytes": 173100,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bm_george": {
+    "engine": "kokoro",
+    "voice": "bm_george",
+    "dur_s": 3.7,
+    "bytes": 178220,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_bm_lewis": {
+    "engine": "kokoro",
+    "voice": "bm_lewis",
+    "dur_s": 3.5,
+    "bytes": 165932,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_ef_dora": {
+    "engine": "kokoro",
+    "voice": "ef_dora",
+    "dur_s": 2.7,
+    "bytes": 131116,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_em_alex": {
+    "engine": "kokoro",
+    "voice": "em_alex",
+    "dur_s": 2.8,
+    "bytes": 132140,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_em_santa": {
+    "engine": "kokoro",
+    "voice": "em_santa",
+    "dur_s": 2.8,
+    "bytes": 133164,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_ff_siwis": {
+    "engine": "kokoro",
+    "voice": "ff_siwis",
+    "dur_s": 3.0,
+    "bytes": 143404,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_hf_alpha": {
+    "engine": "kokoro",
+    "voice": "hf_alpha",
+    "dur_s": 3.2,
+    "bytes": 154668,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_hf_beta": {
+    "engine": "kokoro",
+    "voice": "hf_beta",
+    "dur_s": 2.9,
+    "bytes": 139308,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_hm_omega": {
+    "engine": "kokoro",
+    "voice": "hm_omega",
+    "dur_s": 3.2,
+    "bytes": 155692,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_hm_psi": {
+    "engine": "kokoro",
+    "voice": "hm_psi",
+    "dur_s": 3.2,
+    "bytes": 155692,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_if_sara": {
+    "engine": "kokoro",
+    "voice": "if_sara",
+    "dur_s": 2.8,
+    "bytes": 133164,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_im_nicola": {
+    "engine": "kokoro",
+    "voice": "im_nicola",
+    "dur_s": 3.1,
+    "bytes": 147500,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_jf_alpha": {
+    "engine": "kokoro",
+    "voice": "jf_alpha",
+    "dur_s": 4.4,
+    "bytes": 210988,
+    "status": "have"
+  },
+  "kokoro_jf_gongitsune": {
+    "engine": "kokoro",
+    "voice": "jf_gongitsune",
+    "dur_s": 3.9,
+    "bytes": 189484,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_jf_nezumi": {
+    "engine": "kokoro",
+    "voice": "jf_nezumi",
+    "dur_s": 3.8,
+    "bytes": 184364,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_jf_tebukuro": {
+    "engine": "kokoro",
+    "voice": "jf_tebukuro",
+    "dur_s": 3.7,
+    "bytes": 178220,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_jm_kumo": {
+    "engine": "kokoro",
+    "voice": "jm_kumo",
+    "dur_s": 3.2,
+    "bytes": 153644,
+    "status": "new",
+    "gen_s": 2
+  },
+  "kokoro_pf_dora": {
+    "engine": "kokoro",
+    "voice": "pf_dora",
+    "dur_s": 2.8,
+    "bytes": 132140,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_pm_alex": {
+    "engine": "kokoro",
+    "voice": "pm_alex",
+    "dur_s": 2.8,
+    "bytes": 133164,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_pm_santa": {
+    "engine": "kokoro",
+    "voice": "pm_santa",
+    "dur_s": 2.9,
+    "bytes": 140332,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zf_xiaobei": {
+    "engine": "kokoro",
+    "voice": "zf_xiaobei",
+    "dur_s": 3.3,
+    "bytes": 160812,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zf_xiaoni": {
+    "engine": "kokoro",
+    "voice": "zf_xiaoni",
+    "dur_s": 2.9,
+    "bytes": 137260,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zf_xiaoxiao": {
+    "engine": "kokoro",
+    "voice": "zf_xiaoxiao",
+    "dur_s": 2.8,
+    "bytes": 133164,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zf_xiaoyi": {
+    "engine": "kokoro",
+    "voice": "zf_xiaoyi",
+    "dur_s": 2.7,
+    "bytes": 130092,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zm_yunjian": {
+    "engine": "kokoro",
+    "voice": "zm_yunjian",
+    "dur_s": 2.8,
+    "bytes": 135212,
+    "status": "new",
+    "gen_s": 2
+  },
+  "kokoro_zm_yunxi": {
+    "engine": "kokoro",
+    "voice": "zm_yunxi",
+    "dur_s": 2.9,
+    "bytes": 137260,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zm_yunxia": {
+    "engine": "kokoro",
+    "voice": "zm_yunxia",
+    "dur_s": 2.8,
+    "bytes": 133164,
+    "status": "new",
+    "gen_s": 1
+  },
+  "kokoro_zm_yunyang": {
+    "engine": "kokoro",
+    "voice": "zm_yunyang",
+    "dur_s": 2.8,
+    "bytes": 132140,
+    "status": "new",
+    "gen_s": 1
+  },
+  "qwen_aiden": {
+    "engine": "qwen",
+    "voice": "aiden",
+    "dur_s": 3.0,
+    "bytes": 142124,
+    "status": "new",
+    "gen_s": 77
+  },
+  "qwen_dylan": {
+    "engine": "qwen",
+    "voice": "dylan",
+    "dur_s": 5.0,
+    "bytes": 238124,
+    "status": "new",
+    "gen_s": 135
+  },
+  "qwen_eric": {
+    "engine": "qwen",
+    "voice": "eric",
+    "dur_s": 4.0,
+    "bytes": 192044,
+    "status": "new",
+    "gen_s": 78
+  },
+  "qwen_ono_anna": {
+    "engine": "qwen",
+    "voice": "ono_anna",
+    "dur_s": 2.6,
+    "bytes": 122924,
+    "status": "new",
+    "gen_s": 321
+  },
+  "qwen_ryan": {
+    "engine": "qwen",
+    "voice": "ryan",
+    "dur_s": 4.5,
+    "bytes": 215084,
+    "status": "new",
+    "gen_s": 229
+  },
+  "qwen_serena": {
+    "engine": "qwen",
+    "voice": "serena",
+    "dur_s": 5.3,
+    "bytes": 253484,
+    "status": "have"
+  },
+  "qwen_sohee": {
+    "engine": "qwen",
+    "voice": "sohee",
+    "dur_s": 5.0,
+    "bytes": 241964,
+    "status": "new",
+    "gen_s": 100
+  },
+  "qwen_uncle_fu": {
+    "engine": "qwen",
+    "voice": "uncle_fu",
+    "dur_s": 6.6,
+    "bytes": 318764,
+    "status": "have"
+  },
+  "qwen_vivian": {
+    "engine": "qwen",
+    "voice": "vivian",
+    "dur_s": 4.1,
+    "bytes": 195884,
+    "status": "new",
+    "gen_s": 81
+  },
+  "dramabox_kid": {
+    "engine": "dramabox",
+    "voice": "kid",
+    "dur_s": 8.3,
+    "bytes": 1599438,
+    "status": "have"
+  },
+  "dramabox_narrator-female": {
+    "engine": "dramabox",
+    "voice": "narrator-female",
+    "dur_s": 9.7,
+    "bytes": 1860558,
+    "status": "have"
+  },
+  "dramabox_narrator-male": {
+    "engine": "dramabox",
+    "voice": "narrator-male",
+    "dur_s": 7.0,
+    "bytes": 1345998,
+    "status": "new",
+    "gen_s": 180
+  }
+}
