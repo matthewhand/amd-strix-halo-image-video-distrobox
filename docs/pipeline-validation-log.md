@@ -49,8 +49,18 @@ Invocation gotchas:
   (`-v …:ro`) **and** `HSA_OVERRIDE_GFX_VERSION=11.5.1` — without the mount it
   exits `FATAL: model root not found`.
 
-## Pending
+## 2026-06-03 — Video stage
 
-| Stage | Engine / model | Verdict |
+| Stage | Engine / model | Verdict | Evidence |
+| --- | --- | --- | --- |
+| Video | **LTX-2.3** (T2V, distilled-fp8) | ✅ | 768×512 · 2.04s mp4 **with audio track** · 646 KB · 267s render via ComfyUI (49 frames, 8 steps) |
+
+## Remaining (won't-fix / hardware-gated)
+
+| Stage | Engine | Why not fixed |
 | --- | --- | --- |
-| Video | LTX-2.3 | ⬜ not validated this session (WAN-2.x removed during reclaim — flaky on gfx1151) |
+| Image | ERNIE >512² | gfx1151 CK grouped-conv **kernel hang** — needs a ROCm rebuild gamble |
+| TTS | Qwen-TTS | needs absent `qwen-tts` pkg + undownloaded model; redundant with Kokoro/DramaBox |
+| Video | WAN 2.x | removed during reclaim — flaky on this hardware |
+
+Every core stage (image · app E2E · music · TTS · **video**) is now proven on this box.
