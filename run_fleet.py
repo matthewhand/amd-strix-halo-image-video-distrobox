@@ -767,18 +767,11 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             )
             with urllib.request.urlopen(req, timeout=30) as r:
                 p_id = json.loads(r.read())["prompt_id"]
-            while True:
-                time.sleep(5)
-                with urllib.request.urlopen(
-                    f"http://127.0.0.1:8188/history/{p_id}"
-                ) as r:
-                    h = json.loads(r.read())
-                    if p_id in h:
-                        fn = h[p_id]["outputs"]["12"]["images"][0]["filename"]
-                        subprocess.run(
-                            ["cp", f"comfy-outputs/{fn}", out_path], check=True
-                        )
-                        return True
+            imgs = _poll_comfy_history(p_id, "12", poll_s=5, label="image")
+            subprocess.run(
+                ["cp", f"comfy-outputs/{imgs[0]}", out_path], check=True
+            )
+            return True
         except Exception as e:
             if hasattr(e, "read"):
                 print(f"❌ ComfyUI Error Body: {e.read().decode('utf-8')}")
@@ -887,6 +880,90 @@ def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=
     return True
 
 
+def _poll_comfy_history(p_id, out_node_id, timeout_s=600, poll_s=10,
+                        settle_s=0, label="job"):
+    """Poll ComfyUI /history/<p_id> until the job completes, then return the
+    list of output filenames for ``out_node_id``.
+
+    Hardened against a hung / restarted / GPU-stalled ComfyUI (a real gfx1151
+    failure mode): a hard ``timeout_s`` deadline, a per-request socket timeout,
+    and a consecutive-error cap. Without these the caller's `while True:` poll
+    would spin — or block on a dead socket — forever, freezing the whole serial
+    orchestrator. Raises RuntimeError on timeout / prolonged unreachability /
+    ComfyUI execution_error.
+    """
+    if settle_s:
+        time.sleep(settle_s)
+    deadline = time.time() + timeout_s
+    consecutive_errors = 0
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:8188/history/{p_id}", timeout=15
+            ) as r:
+                h = json.loads(r.read())
+            consecutive_errors = 0
+        except (urllib.error.URLError, OSError) as poll_err:
+            consecutive_errors += 1
+            print(f"   ⚠️  History poll error ({consecutive_errors}) [{label}]: {poll_err}")
+            if consecutive_errors > 18:
+                raise RuntimeError(
+                    f"ComfyUI unreachable for >3 min during {label} poll"
+                ) from poll_err
+            time.sleep(poll_s)
+            continue
+        if p_id not in h:
+            time.sleep(poll_s)
+            continue
+        status = h[p_id].get("status", {})
+        # Some workflows don't populate status.completed; fall back to the
+        # presence of the output node's images below. Only an explicit
+        # completed==False means "still running".
+        if status.get("completed") is False:
+            time.sleep(poll_s)
+            continue
+        errors = [m for m in status.get("messages", []) if m and m[0] == "execution_error"]
+        if errors:
+            raise RuntimeError(f"ComfyUI execution error during {label}: {errors[0]}")
+        node_out = (h[p_id].get("outputs") or {}).get(str(out_node_id))
+        if not node_out or "images" not in node_out:
+            time.sleep(poll_s)
+            continue
+        return [f["filename"] for f in node_out["images"]]
+    raise RuntimeError(
+        f"ComfyUI {label} timed out after {int(timeout_s // 60)} min (prompt_id={p_id[:8]})"
+    )
+
+
+def _encode_frames_to_mp4(imgs, out_path):
+    """Encode ComfyUI output PNG frames (in comfy-outputs/) to an MP4 at
+    out_path, then delete the source frames. Shared by every LTX video poller
+    so the frame→MP4 logic can't drift between them."""
+    first = imgs[0]
+    match = re.search(r"(\d+)(?=_\.png)", first)
+    num = match.group(1) if match else "00001"
+    parts = first.rsplit(num, 1)
+    patt = f"%0{len(num)}d".join(parts)
+    print(f"   🎞️  Encoding {len(imgs)} frames → MP4…")
+    repo_root = os.path.abspath(os.path.dirname(__file__))
+    args = [
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-framerate", "24",
+        "-start_number", str(int(num)),
+        "-i", f"comfy-outputs/{patt}",
+        "-c:v", _ffmpeg_h264_encoder(),
+        "-pix_fmt", "yuv420p",
+        "-b:v", "8M",
+        out_path,
+    ]
+    _ffmpeg_run(args, check=True)
+    for f in imgs:
+        try:
+            os.remove(os.path.join(repo_root, "comfy-outputs", f))
+        except OSError:
+            pass
+
+
 def run_comfy_job(workflow, out_node_id, target_file):
     try:
         req = urllib.request.Request(
@@ -896,55 +973,16 @@ def run_comfy_job(workflow, out_node_id, target_file):
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(5)
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:8188/history/{p_id}"
-            ) as h_res:
-                h = json.loads(h_res.read())
-                if p_id in h:
-                    out = h[p_id]["outputs"][str(out_node_id)]
-                    if "images" in out:
-                        imgs = sorted([i["filename"] for i in out["images"]])
-                        if len(imgs) == 1:
-                            subprocess.run(
-                                ["cp", f"comfy-outputs/{imgs[0]}", target_file],
-                                check=True,
-                            )
-                            return True
-                        else:
-                            first = imgs[0]
-                            match = re.search(r"(\d+)(?=_\.png)", first)
-                            num = match.group(1) if match else "00001"
-                            patt = (
-                                first.rsplit(num, 1)[0]
-                                + f"%0{len(num)}d"
-                                + first.rsplit(num, 1)[1]
-                            )
-                            print(f"   🎞️  Encoding {len(imgs)} frames...")
-                            args = [
-                                "-y",
-                                "-framerate",
-                                "24",
-                                "-start_number",
-                                str(int(num)),
-                                "-i",
-                                f"comfy-outputs/{patt}",
-                                "-c:v",
-                                _ffmpeg_h264_encoder(),
-                                "-pix_fmt",
-                                "yuv420p",
-                                "-b:v",
-                                "8M",
-                                target_file,
-                            ]
-                            _ffmpeg_run(args, check=True)
-                            for f in imgs:
-                                try:
-                                    os.remove(f"comfy-outputs/{f}")
-                                except:
-                                    pass
-                            return True
+        # Base-image jobs are quick — poll a little faster than the video path.
+        imgs = _poll_comfy_history(p_id, out_node_id, poll_s=5, label="image")
+        if len(imgs) == 1:
+            subprocess.run(
+                ["cp", f"comfy-outputs/{imgs[0]}", target_file],
+                check=True,
+            )
+            return True
+        _encode_frames_to_mp4(sorted(imgs), target_file)
+        return True
     except Exception as e:
         if hasattr(e, "read"):
             print(f"❌ ComfyUI Error Body: {e.read().decode('utf-8')}")
@@ -1168,58 +1206,9 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
             resp = json.loads(r.read())
             p_id = resp["prompt_id"]
         print(f"   ⏳ Submitted {p_id[:8]}… polling for completion (max 10 min)…")
-        time.sleep(60)
-        deadline = time.time() + 600
-        consecutive_errors = 0
-        repo_root = os.path.abspath(os.path.dirname(__file__))
-        while time.time() < deadline:
-            try:
-                with urllib.request.urlopen(
-                    f"http://127.0.0.1:8188/history/{p_id}", timeout=15
-                ) as r:
-                    h = json.loads(r.read())
-                consecutive_errors = 0
-                if p_id in h:
-                    status = h[p_id].get("status", {})
-                    if not status.get("completed"):
-                        time.sleep(10)
-                        continue
-                    errors = [m for m in status.get("messages", []) if m[0] == "execution_error"]
-                    if errors:
-                        raise RuntimeError(f"ComfyUI execution error: {errors[0]}")
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding {len(imgs)} frames → MP4…")
-                    args = [
-                        "-y", "-hide_banner", "-loglevel", "error",
-                        "-framerate", "24",
-                        "-start_number", str(int(num)),
-                        "-i", f"comfy-outputs/{patt}",
-                        "-c:v", _ffmpeg_h264_encoder(),
-                        "-pix_fmt", "yuv420p",
-                        "-b:v", "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except Exception:
-                            pass
-                    return
-                else:
-                    time.sleep(10)
-            except (urllib.error.URLError, OSError) as poll_err:
-                consecutive_errors += 1
-                print(f"   ⚠️  History poll error ({consecutive_errors}): {poll_err}")
-                if consecutive_errors > 18:
-                    raise RuntimeError("ComfyUI unreachable for >3 min during video poll") from poll_err
-                time.sleep(10)
-        raise RuntimeError(f"Video timed out after 10 min (prompt_id={p_id[:8]})")
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, settle_s=60, label="video")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1349,45 +1338,9 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
-                if p_id in h:
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding...")
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    args = [
-                        "-y",
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-framerate",
-                        "24",
-                        "-start_number",
-                        str(int(num)),
-                        "-i",
-                        f"comfy-outputs/{patt}",
-                        "-c:v",
-                        _ffmpeg_h264_encoder(),
-                        "-pix_fmt",
-                        "yuv420p",
-                        "-b:v",
-                        "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except OSError:
-                            pass
-                    return
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, label="flf2v")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1526,36 +1479,9 @@ def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_st
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
-                if p_id in h:
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding…")
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    args = [
-                        "-y", "-hide_banner", "-loglevel", "error",
-                        "-framerate", "24",
-                        "-start_number", str(int(num)),
-                        "-i", f"comfy-outputs/{patt}",
-                        "-c:v", _ffmpeg_h264_encoder(),
-                        "-pix_fmt", "yuv420p",
-                        "-b:v", "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except OSError:
-                            pass
-                    return
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, label="continuation")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
