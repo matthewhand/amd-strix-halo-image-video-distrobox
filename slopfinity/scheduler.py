@@ -194,6 +194,18 @@ def stage_budget_gb(stage: str, model: str) -> float:
     return float(base + OVERHEAD_GB)
 
 
+def check_budget(stage: str, model: str, safety_gb: int = 10):
+    """Does a (stage, model) reservation fit in host RAM right now?
+
+    Returns (ok, available_gb, need_gb) where need = model+overhead budget plus
+    a `safety_gb` headroom. Pure/read-only (reads /proc/meminfo) — does not
+    touch the GPU lock, so it's safe to call for gating decisions and tests.
+    """
+    need = stage_budget_gb(stage, model) + float(safety_gb)
+    avail = _mem_available_gb()
+    return (avail >= need, avail, need)
+
+
 async def _emit(event: dict) -> None:
     try:
         SchedulerEvents.put_nowait(event)
