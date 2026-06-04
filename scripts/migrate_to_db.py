@@ -44,27 +44,11 @@ def migrate():
                     # Check if exists
                     existing = session.get(QueueItem, item.get("id"))
                     if not existing:
-                        q_item = QueueItem(
-                            id=item.get("id"),
-                            ts=item.get("ts"),
-                            status=item.get("status", "pending"),
-                            prompt=item.get("prompt"),
-                            title=item.get("title"),
-                            priority=item.get("priority", "normal"),
-                            concurrent=bool(item.get("concurrent")),
-                            infinity=bool(item.get("infinity")),
-                            when_idle=bool(item.get("when_idle")),
-                            chaos=bool(item.get("chaos")),
-                            image_only=bool(item.get("image_only")),
-                            fast_track=bool(item.get("fast_track")),
-                            config_snapshot=item.get("config_snapshot", {}),
-                            stages=item.get("stages", {}),
-                            completed_ts=item.get("completed_ts"),
-                            cancelled_ts=item.get("cancelled_ts"),
-                            succeeded=item.get("succeeded"),
-                            error=item.get("error"),
-                            asset_paths=item.get("asset_paths", [])
-                        )
+                        # Use the canonical splitter so non-column fields
+                        # (seed_image, stage_prompts, seeds_mode, polymorphic,
+                        # started_ts, …) are funnelled into `extra` instead of
+                        # being dropped — same path as config.get_queue().
+                        q_item = QueueItem(**cfg._split_queue_item(item))
                         session.add(q_item)
                 session.commit()
             except Exception as e:

@@ -37,9 +37,13 @@ class AudioWorker(StageWorker):
             }
 
         v_idx = item_v_idx(item)
+        # Default to the experiments dir, not /tmp — /tmp is ephemeral in
+        # containers (wiped on restart), which would silently lose the WAV.
+        from slopfinity.paths import EXP_DIR
         out_dir = (
             (item.get("config_snapshot") or {}).get("out_dir")
-            or os.environ.get("SLOPFINITY_OUT_DIR", "/tmp")
+            or os.environ.get("SLOPFINITY_OUT_DIR")
+            or EXP_DIR
         )
         out_path = os.path.join(out_dir, f"v{v_idx}_audio.wav")
 

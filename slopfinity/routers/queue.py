@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import time
+import asyncio
 from typing import Optional, List
 
 from fastapi import APIRouter, Body, Form
@@ -195,7 +196,7 @@ async def inject(
         # consumes pending items first.
         return working + pending + done + cancelled
 
-    cfg.mutate_queue(_do_inject)
+    await asyncio.to_thread(cfg.mutate_queue, _do_inject)
     if _cancel_ts:
         try:
             with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
@@ -255,7 +256,7 @@ async def cancel_all():
                 counted.append(1)
         return q
 
-    cfg.mutate_queue(_cancel_all)
+    await asyncio.to_thread(cfg.mutate_queue, _cancel_all)
     try:
         with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
             f.write(str(now_ts))
@@ -291,7 +292,7 @@ async def queue_cancel(data: dict = Body(...)):
                 break
         return q
 
-    cfg.mutate_queue(_cancel_one)
+    await asyncio.to_thread(cfg.mutate_queue, _cancel_one)
     if not found:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     # Abort the in-flight iter ONLY when the running item is the one being
@@ -330,7 +331,7 @@ async def queue_edit(data: dict = Body(...)):
                 break
         return q
 
-    cfg.mutate_queue(_edit)
+    await asyncio.to_thread(cfg.mutate_queue, _edit)
     if not found:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     return {"ok": True}
@@ -358,7 +359,7 @@ async def queue_toggle_infinity(data: dict = Body(...)):
                 break
         return q
 
-    cfg.mutate_queue(_toggle_inf)
+    await asyncio.to_thread(cfg.mutate_queue, _toggle_inf)
     if not new_val:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     return {"ok": True, "infinity": new_val[0]}
@@ -385,7 +386,7 @@ async def queue_toggle_polymorphic(data: dict = Body(...)):
                 break
         return q
 
-    cfg.mutate_queue(_toggle_poly)
+    await asyncio.to_thread(cfg.mutate_queue, _toggle_poly)
     if not new_val:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     return {"ok": True, "chaos": new_val[0]}
@@ -474,7 +475,7 @@ async def queue_requeue(data: dict = Body(...)):
             new_q.append(item)
         return new_q
 
-    cfg.mutate_queue(_requeue)
+    await asyncio.to_thread(cfg.mutate_queue, _requeue)
     if not requeued:
         return JSONResponse({"ok": False, "error": "not requeueable (must be cancelled or done-failed)"}, status_code=404)
     return {"ok": True}
@@ -495,7 +496,7 @@ async def queue_clear_failed():
         removed.append(len(q) - len(kept))
         return kept
 
-    cfg.mutate_queue(_clear_failed)
+    await asyncio.to_thread(cfg.mutate_queue, _clear_failed)
     return {"ok": True, "removed": removed[0] if removed else 0}
 
 @router.post("/queue/clear-completed")
@@ -515,7 +516,7 @@ async def queue_clear_completed():
         removed.append(len(q) - len(kept))
         return kept
 
-    cfg.mutate_queue(_clear_completed)
+    await asyncio.to_thread(cfg.mutate_queue, _clear_completed)
     return {"ok": True, "removed": removed[0] if removed else 0}
 
 @router.post("/queue/requeue-failed")
@@ -553,5 +554,5 @@ async def queue_requeue_failed():
                 new_q.append(item)
         return new_q
 
-    cfg.mutate_queue(_requeue_failed)
+    await asyncio.to_thread(cfg.mutate_queue, _requeue_failed)
     return {"ok": True, "requeued": len(requeued)}

@@ -939,7 +939,9 @@ def _poll_comfy_history(p_id, out_node_id, timeout_s=600, poll_s=10,
         if errors:
             raise RuntimeError(f"ComfyUI execution error during {label}: {errors[0]}")
         node_out = (h[p_id].get("outputs") or {}).get(str(out_node_id))
-        if not node_out or "images" not in node_out:
+        # Also guard an empty images list — returning [] would IndexError in
+        # _encode_frames_to_mp4 (imgs[0]); keep waiting until frames appear.
+        if not node_out or not node_out.get("images"):
             time.sleep(poll_s)
             continue
         return [f["filename"] for f in node_out["images"]]
@@ -1643,6 +1645,12 @@ def main():
                 _ft_snap["tts_model"] = "none"
                 _ft_snap["upscale_model"] = "none"
                 _task_opts["_config_snapshot"] = _ft_snap
+                # Re-point the sidecar/state snapshot at the Fast Track values —
+                # it was bound to the pre-override snapshot above, so without
+                # this the sidecar would report the full-quality chains/frames.
+                _ft_snap.setdefault("base_model", b_mod)
+                _ft_snap["_v_idx"] = v_idx
+                _CURRENT_ITER_CONFIG = _ft_snap
                 print(
                     f"[FLEET] 🏃 Fast Track v{v_idx}: chains=1 frames=9 "
                     f"tier=low audio/tts/upscale skipped",
@@ -1796,6 +1804,9 @@ def main():
             _frames_per_chain = int(
                 (_task_opts.get("_config_snapshot") or config or {}).get("frames", 49)
             )
+            # Clamp to a sane minimum — a malformed snapshot with frames<=0 would
+            # produce an invalid LTX latent and a divide-by-zero in chain math.
+            _frames_per_chain = max(1, _frames_per_chain)
             # Honor the per-task snapshot's size + frames for the ACTUAL clips,
             # not just the chain-count math — otherwise a user who injected
             # frames=17/size=… silently gets the global config's values rendered.
