@@ -98,13 +98,15 @@ def _fake_urlopen(expected_payload):
     return _opener
 
 
-def test_tts_proxy_forwards_text_and_voice():
+def test_tts_proxy_forwards_text_and_voice(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
+    import slopfinity.routers.runner as _runner
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     with mock.patch.object(
-        srv.urllib.request, "urlopen",
+        _runner.urllib.request, "urlopen",
         side_effect=_fake_urlopen({"text": "hi there", "voice": "ryan"}),
     ):
         r = client.post("/tts", json={"text": "hi there", "voice": "ryan"})
@@ -116,13 +118,15 @@ def test_tts_proxy_forwards_text_and_voice():
     assert body["voice"] == "ryan"
 
 
-def test_tts_proxy_worker_unreachable_returns_503_not_sine():
+def test_tts_proxy_worker_unreachable_returns_503_not_sine(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
+    import slopfinity.routers.runner as _runner
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     with mock.patch.object(
-        srv.urllib.request, "urlopen",
+        _runner.urllib.request, "urlopen",
         side_effect=urllib.error.URLError("Connection refused"),
     ):
         r = client.post("/tts", json={"text": "hi", "voice": "ryan"})
@@ -132,10 +136,11 @@ def test_tts_proxy_worker_unreachable_returns_503_not_sine():
     assert "qwen-tts-service" in body["error"]
 
 
-def test_tts_proxy_empty_text_returns_400():
+def test_tts_proxy_empty_text_returns_400(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     r = client.post("/tts", json={"text": "", "voice": "ryan"})
     assert r.status_code == 400
