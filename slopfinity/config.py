@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import queue_schema
 
@@ -398,7 +398,7 @@ def _merge_auto_suspend(stored):
 
 
 from .db import engine, init_db as _init_db_raw
-from .models import Configuration, QueueItem, ChatSession, ChatMessage, StoryLog
+from .models import Configuration, QueueItem
 from sqlmodel import Session, select
 
 _DB_INITIALIZED = False
@@ -456,7 +456,7 @@ def save_config(config):
             existing = session.get(Configuration, key)
             if existing:
                 existing.value = value
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 session.add(existing)
             else:
                 session.add(Configuration(key=key, value=value))

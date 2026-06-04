@@ -12,13 +12,12 @@ import gc
 import itertools
 import json
 import os
-import signal
 import subprocess
 import time
 import urllib.request
 import urllib.error
 from collections import deque
-from typing import Optional, Tuple
+from typing import Optional
 
 from . import config as _config
 from . import auto_suspend as _auto_suspend
@@ -283,7 +282,6 @@ async def acquire_gpu(
     blocks = 0
     ok = False
     need = base_need
-    planner_hit = False
 
     while True:
         async with gpu.cond:

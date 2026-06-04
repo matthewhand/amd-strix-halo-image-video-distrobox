@@ -1,9 +1,8 @@
 import os
 import json
-import uuid
 import time
 import asyncio
-from typing import Optional, List
+from typing import Optional
 
 from fastapi import APIRouter, Body, Form
 from fastapi.responses import JSONResponse
@@ -11,7 +10,6 @@ from fastapi.responses import JSONResponse
 from slopfinity.paths import EXP_DIR
 from slopfinity.stats import get_outputs_disk
 import slopfinity.config as cfg
-import slopfinity.scheduler as sched
 
 
 def _truthy(v) -> bool:

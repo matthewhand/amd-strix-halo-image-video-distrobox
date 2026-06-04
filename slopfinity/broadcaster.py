@@ -4,7 +4,7 @@ import time
 import asyncio
 import logging
 import subprocess
-from typing import List, Set
+from typing import List
 from . import config as cfg
 from .stats import (
     get_storage,

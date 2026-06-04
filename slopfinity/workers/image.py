@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ._compat import StageWorker, config_snapshot_get, item_v_idx, stage_get
 

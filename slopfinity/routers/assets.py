@@ -6,7 +6,7 @@ import glob
 import asyncio
 
 from fastapi import APIRouter, UploadFile, File
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 
 from slopfinity.paths import EXP_DIR
 import slopfinity.config as cfg

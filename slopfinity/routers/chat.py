@@ -5,18 +5,15 @@ import asyncio
 import subprocess
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
-from typing import List
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request, Body
+from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 import slopfinity.config as cfg
 import slopfinity.scheduler as sched
-from slopfinity.routers.assets import _list_outputs
 from slopfinity.paths import EXP_DIR
 from slopfinity.llm import _LLM_LOCK, lmstudio_chat_raw
-from slopfinity.workers import ffmpeg_mux as _ffmpeg_mux
 
 from sqlmodel import Session, select
 from slopfinity.db import engine
@@ -78,7 +75,7 @@ async def update_history(payload: dict = Body(...)):
             )
             session.add(msg)
         
-        active_session.updated_at = datetime.utcnow()
+        active_session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(active_session)
         session.commit()
         return {"ok": True}
@@ -92,7 +89,7 @@ async def archive_history():
         ).first()
         if active_session:
             active_session.is_active = False
-            active_session.updated_at = datetime.utcnow()
+            active_session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(active_session)
         
         # Create new active session
@@ -104,7 +101,7 @@ async def archive_history():
 @router.get("/chat/archive")
 async def list_archive():
     """List archived chat sessions from the last week."""
-    one_week_ago = datetime.utcnow() - timedelta(days=7)
+    one_week_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
     with Session(engine) as session:
         archived = session.exec(
             select(ChatSession)

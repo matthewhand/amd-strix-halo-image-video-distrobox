@@ -1,9 +1,5 @@
-import json
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
-import asyncio
 import slopfinity.scheduler as sched
-import slopfinity.config as cfg
 
 
 router = APIRouter()
