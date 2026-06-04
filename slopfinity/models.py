@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlmodel import SQLModel, Field, Column, JSON, create_engine, Session, select
+import time
 import uuid
 
 class Configuration(SQLModel, table=True):
@@ -10,7 +11,9 @@ class Configuration(SQLModel, table=True):
 
 class QueueItem(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
-    ts: float = Field(index=True)
+    # default to "now" so creating an item without an explicit ts (tests,
+    # migrate_legacy) doesn't hit a NOT NULL IntegrityError on save.
+    ts: float = Field(default_factory=time.time, index=True)
     status: str = Field(default="pending", index=True)
     prompt: str
     title: Optional[str] = None

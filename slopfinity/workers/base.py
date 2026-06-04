@@ -77,9 +77,12 @@ class StageWorker:
                 migrated_any = True
 
         for idx, item in enumerate(queue):
-            stage = qs.next_stage_for_role(item, self.role)
-            if stage is None:
+            # next_stage_for_role takes a *list* and returns (item, stage);
+            # pass a single-item list and unpack so we get a bare stage name.
+            res = qs.next_stage_for_role([item], self.role)
+            if res is None:
                 continue
+            _, stage = res
             if qs.stage_status(item, stage) != "needs":
                 continue
             if not qs.prerequisites_met(item, stage):
