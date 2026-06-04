@@ -137,6 +137,10 @@ def test_image_generation_via_api():
         print(f"❌ API request failed: {e}")
         return False
 
+import pytest as _pytest
+
+@_pytest.mark.skip(reason="e2e: requires a `job_data` fixture (a real qwen web "
+                          "generation run) that isn't defined for unit collection.")
 def test_image_persistence(job_data):
     """Test that generated image persists to host filesystem"""
     print("💾 Testing image persistence...")

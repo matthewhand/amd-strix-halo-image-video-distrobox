@@ -314,7 +314,8 @@ async def tts(data: dict = Body(...)):
             )
     except urllib.error.URLError as e:
         return JSONResponse(
-            {"ok": False, "status": "worker-unreachable", "error": str(e), "voice": voice},
+            {"ok": False, "status": "worker-unreachable",
+             "error": f"qwen-tts-service unreachable: {e}", "voice": voice},
             status_code=503,
         )
     except Exception as e:
