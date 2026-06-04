@@ -64,7 +64,10 @@ jobs:
       - name: Install Slopfinity Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi 'uvicorn[standard]' jinja2 python-multipart httpx psutil pyyaml
+          # sqlmodel/tiktoken/python-dotenv are imported on the app's boot path
+          # (models/db/config + llm); without them uvicorn crashes on import and
+          # the dashboard never answers /healthz.
+          pip install fastapi 'uvicorn[standard]' jinja2 python-multipart httpx psutil pyyaml sqlmodel tiktoken python-dotenv
 
       - name: Make artifacts dir
         run: mkdir -p artifacts
