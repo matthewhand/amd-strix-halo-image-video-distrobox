@@ -116,7 +116,7 @@ make up
 What URLs you point at:
 - **LLM**: anything OpenAI-compatible. LM Studio (`:1234/v1`), Ollama (`:11434/v1`), vLLM, OpenRouter, OpenAI itself.
 - **ComfyUI**: any ComfyUI install with `/prompt` HTTP API. Default port 8188.
-- **TTS**: any HTTP service that takes `{ text, voice }` and returns a WAV. The bundled stack uses [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice); Kokoro-82M is a documented fallback. Roll your own with ~30 LOC of FastAPI if needed.
+- **TTS**: any HTTP service that takes `{ text, voice, engine }` and returns a WAV. The bundled stack ships **three engines**: **Kokoro-82M** (54 voices across 9 languages, fast — the default), **DramaBox** (dramatic/cloned narration), and **[Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)** (9 premium timbres). Roll your own with ~30 LOC of FastAPI if needed.
 
 ---
 
