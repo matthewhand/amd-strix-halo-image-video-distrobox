@@ -145,7 +145,7 @@ def test_tts_proxy_empty_text_returns_400():
 
 def test_serve_invokes_launcher_with_correct_args(tmp_path, monkeypatch):
     """qwen_tts_serve.py must shell out to qwen_tts_launcher.py with the
-    text/voice/out/model args and HSA_OVERRIDE_GFX_VERSION=11.0.0."""
+    text/voice/out/model args and HSA_OVERRIDE_GFX_VERSION=11.5.1."""
     monkeypatch.setenv("TTS_OUT_DIR", str(tmp_path))
     for mod in [m for m in list(sys.modules) if m.startswith("qwen_tts_serve")]:
         del sys.modules[mod]
@@ -188,4 +188,4 @@ def test_serve_invokes_launcher_with_correct_args(tmp_path, monkeypatch):
     assert "--voice" in cmd and cmd[cmd.index("--voice") + 1] == "ryan"
     assert "--out" in cmd
     assert "--model" in cmd
-    assert captured["env"]["HSA_OVERRIDE_GFX_VERSION"] == "11.0.0"
+    assert captured["env"]["HSA_OVERRIDE_GFX_VERSION"] == "11.5.1"
