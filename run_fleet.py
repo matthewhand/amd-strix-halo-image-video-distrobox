@@ -39,6 +39,22 @@ class _IterCancelled(Exception):
     errors so a cancel isn't logged/recorded as a failure."""
 
 
+def _resolve_stage_prompt(stage_prompts, stage, fallback):
+    """Per-stage prompt override: use stage_prompts[stage] when the inject form
+    supplied a non-blank one, else the main prompt. Pure → unit-testable."""
+    return ((stage_prompts or {}).get(stage) or "").strip() or fallback
+
+
+def _cancel_requested(flag_path, iter_started_ts):
+    """True when a cancel.flag exists and was (re)written at or after this iter
+    started — mtime-gated so a stale flag from a prior iter can't abort a fresh
+    one. Pure (filesystem) → unit-testable."""
+    try:
+        return os.path.exists(flag_path) and os.path.getmtime(flag_path) >= iter_started_ts
+    except OSError:
+        return False
+
+
 # ---- Tiered quality ramp ---------------------------------------------------
 # Incrementally ramp up framerate + resolution across videos so we validate
 # the pipeline on cheap passes before committing to slow max-quality runs.
@@ -1688,9 +1704,9 @@ def main():
             # main prompt `p`. (The slug/filename + sidecar keep `p` for a
             # stable identity.) These were persisted but never applied before.
             _stage_prompts = _task_opts.get("stage_prompts") or {}
-            _img_prompt = (_stage_prompts.get("image") or "").strip() or p
-            _vid_prompt = (_stage_prompts.get("video") or "").strip() or p
-            _music_prompt = (_stage_prompts.get("music") or "").strip() or p
+            _img_prompt = _resolve_stage_prompt(_stage_prompts, "image", p)
+            _vid_prompt = _resolve_stage_prompt(_stage_prompts, "video", p)
+            _music_prompt = _resolve_stage_prompt(_stage_prompts, "music", p)
 
             # ─── Audio (Heartmula) — runs BEFORE Base Image ──────────────
             # Honors config.audio_model (no longer matrix-mode-gated). When
@@ -1905,17 +1921,13 @@ def main():
                 # cancelled. Check at each chain boundary so a long multi-chain
                 # render stops promptly instead of finishing. mtime-gated against
                 # this iter's start so a stale flag from a prior iter is ignored.
-                _cf = os.path.join(OUTPUT_DIR, "cancel.flag")
-                try:
-                    if os.path.exists(_cf) and os.path.getmtime(_cf) >= _iter_started_ts:
-                        print(
-                            f"[FLEET] cancel.flag — aborting iter v{v_idx} at chain {c_idx}/{_n_chains}",
-                            flush=True,
-                        )
-                        _iter_cancelled = True
-                        break
-                except OSError:
-                    pass
+                if _cancel_requested(os.path.join(OUTPUT_DIR, "cancel.flag"), _iter_started_ts):
+                    print(
+                        f"[FLEET] cancel.flag — aborting iter v{v_idx} at chain {c_idx}/{_n_chains}",
+                        flush=True,
+                    )
+                    _iter_cancelled = True
+                    break
                 update_state(
                     mode="Rendering",
                     step="Video Chains",

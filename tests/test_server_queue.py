@@ -58,26 +58,33 @@ class TestQueueCancel:
 
 
 class TestQueuePauseResume:
-    async def test_pause_sets_flag(self, client):
-        config = {"queue_paused": False}
-        with mock.patch("slopfinity.config.load_config", return_value=config), \
-             mock.patch("slopfinity.config.save_config"):
-            resp = await client.post("/queue/pause")
+    async def test_pause_sets_flag(self, client, tmp_path, monkeypatch):
+        # The handler writes pause.flag in EXP_DIR (not config) — verify the
+        # actual file is created and pause-state reflects it.
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        flag = tmp_path / "pause.flag"
+        assert not flag.exists()
+        resp = await client.post("/queue/pause")
         assert resp.status_code == 200
+        assert flag.exists(), "pause.flag was not written"
+        state = await client.get("/queue/pause-state")
+        assert state.json().get("paused") is True
 
-    async def test_resume_clears_flag(self, client):
-        config = {"queue_paused": True}
-        with mock.patch("slopfinity.config.load_config", return_value=config), \
-             mock.patch("slopfinity.config.save_config"):
-            resp = await client.post("/queue/resume")
+    async def test_resume_clears_flag(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        flag = tmp_path / "pause.flag"
+        flag.write_text("1")  # start paused
+        resp = await client.post("/queue/resume")
         assert resp.status_code == 200
+        assert not flag.exists(), "pause.flag was not removed"
+        state = await client.get("/queue/pause-state")
+        assert state.json().get("paused") is False
 
-    async def test_pause_state_endpoint(self, client):
-        # pause-state reads config directly; just verify endpoint responds 200
-        with mock.patch("slopfinity.config.load_config", return_value={"queue_paused": True}):
-            resp = await client.get("/queue/pause-state")
+    async def test_pause_state_endpoint(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        resp = await client.get("/queue/pause-state")
         assert resp.status_code == 200
-        assert "paused" in resp.json()
+        assert resp.json().get("paused") is False  # no flag → not paused
 
 
 class TestCancelAll:
