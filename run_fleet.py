@@ -1595,6 +1595,15 @@ def main():
                 f"[MATRIX] v{v_idx}: {b_mod} → {v_mod_forced} + audio={a_mod_forced}",
                 flush=True,
             )
+            # Actually APPLY the forced combo (previously only printed): write
+            # the models into this iter's effective snapshot so audio selection
+            # (which gates heartmula on audio_model) and the sidecar honor it.
+            # Built from config so frames/chains/tier/size aren't dropped.
+            _m_snap = dict(_task_opts.get("_config_snapshot") or config or {})
+            _m_snap["base_model"] = b_mod
+            _m_snap["video_model"] = v_mod_forced
+            _m_snap["audio_model"] = a_mod_forced
+            _task_opts["_config_snapshot"] = _m_snap
         # Snapshot per-iter config for the markdown sidecar writer. Prefer
         # the queue item's `config_snapshot` (it captures what the user had
         # selected when they injected the prompt) and fall back to the
@@ -1708,7 +1717,17 @@ def main():
             update_state(
                 mode="Rendering", step="Base Image", video=v_idx, total=1000, prompt=p
             )
-            tier = "low" if _task_opts.get("fast_track") else pick_tier(v_idx)
+            # Honor a user-selected tier from the per-task snapshot; fall back
+            # to the rotating pick_tier only when none was specified. Fast Track
+            # always forces low. Previously the snapshot tier was ignored.
+            _snap_tier = (_task_opts.get("_config_snapshot") or {}).get("tier")
+            tier = "low" if _task_opts.get("fast_track") else (
+                _snap_tier if _snap_tier in ("low", "med", "high") else pick_tier(v_idx)
+            )
+            # Reflect the tier actually used back into the iter snapshot so the
+            # sidecar metadata writer (_write_md_sidecar reads _CURRENT_ITER_CONFIG)
+            # reports the real tier instead of the stale snapshot/config value.
+            _CURRENT_ITER_CONFIG["tier"] = tier
             # Seed-image short-circuit: when the task carries a user-supplied
             # seed (per-task) OR per-chain mode (where chain 0 starts from
             # seed_images[0]), copy the seed to in_img and skip generate_base_*.
@@ -1763,6 +1782,13 @@ def main():
             # duration. Otherwise honor config.chains (legacy default 10).
             _frames_per_chain = int(
                 (_task_opts.get("_config_snapshot") or config or {}).get("frames", 49)
+            )
+            # Honor the per-task snapshot's size + frames for the ACTUAL clips,
+            # not just the chain-count math — otherwise a user who injected
+            # frames=17/size=… silently gets the global config's values rendered.
+            _eff_size = (
+                (_task_opts.get("_config_snapshot") or config or {}).get("size")
+                or config.get("size")
             )
             _audio_driven = bool(
                 (_task_opts.get("_config_snapshot") or config or {}).get(
@@ -1844,7 +1870,7 @@ def main():
                     )
                     generate_video_ltx_flf2v(
                         _start_fn, _end_fn, p, seg,
-                        config["size"], config["frames"],
+                        _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
                         seg,
@@ -1861,7 +1887,7 @@ def main():
                     # _handoff_frames was populated after chain c-1 below.
                     generate_video_ltx_continuation(
                         _handoff_frames, p, seg,
-                        config["size"], config["frames"],
+                        _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
                         seg,
@@ -1876,7 +1902,7 @@ def main():
                     # First chain (any mode), or chains where K=1 (legacy
                     # single-frame handoff) — original I2V workflow.
                     generate_video_ltx(
-                        os.path.basename(in_img), p, seg, config["size"], config["frames"]
+                        os.path.basename(in_img), p, seg, _eff_size, _frames_per_chain
                     )
                     _write_sidecar(
                         seg,
@@ -2019,6 +2045,14 @@ def main():
 
             print(f"[FLEET] ❌ Error Video {v_idx}: {e!r}", flush=True)
             traceback.print_exc()
+            # Reflect the failure in dashboard state immediately — otherwise the
+            # UI keeps showing the last successful step (e.g. "Rendering") until
+            # the next iter starts, which can be never if this was the last item.
+            try:
+                update_state(mode="Completed", step="Failed (see log)",
+                             video=v_idx, total=1000, prompt=p)
+            except Exception:
+                pass
             time.sleep(10)
         # ALWAYS advance v_idx — even on failure — so every iter gets a unique
         # filename. Otherwise repeated chain failures keep clobbering v1_base.png.
