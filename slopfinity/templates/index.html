@@ -1540,7 +1540,7 @@
                                                         {% set part_n = '' %}
                                                         {% set final_n = '' %}
                                                         {% set _known_models =
-                                                        ['qwen','ernie','ltx-2.3','ltx-bridge','wan2.2','wan2.5','heartmula','qwen-tts','kokoro']
+                                                        ['qwen','ernie','ltx-2.3','ltx-bridge','wan2.2','wan2.5','heartmula','qwen-tts','kokoro','dramabox']
                                                         %}
                                                         {% if f.startswith('test_') and f.split('_')[1]|lower in
                                                         _known_models %}{% set model_id =
@@ -1573,6 +1573,7 @@
                                                         'heartmula': ('Heartmula Music', 'badge-secondary'),
                                                         'qwen-tts': ('Qwen TTS', 'badge-warning'),
                                                         'kokoro': ('Kokoro TTS', 'badge-warning'),
+                                                        'dramabox': ('DramaBox TTS', 'badge-warning'),
                                                         } %}
                                                         {# Card outer border is uniform across all asset kinds (matches
                                                         the parent #output-section's border-primary). The per-asset
@@ -1935,6 +1936,8 @@
                         <option value="qwen-tts" {% if config.tts_model=='qwen-tts' %}selected{% endif %}>Qwen-TTS
                         </option>
                         <option value="kokoro" {% if config.tts_model=='kokoro' %}selected{% endif %}>Kokoro-TTS
+                        </option>
+                        <option value="dramabox" {% if config.tts_model=='dramabox' %}selected{% endif %}>DramaBox-TTS
                         </option>
                         <option disabled>──────────</option>
                         <option value="__slopped__">Use existing slop…</option>
@@ -3372,6 +3375,7 @@
                                         ('heartmula', 'Heartmula', 'audio'),
                                         ('qwen-tts', 'Qwen-TTS', 'tts'),
                                         ('kokoro', 'Kokoro-TTS', 'tts'),
+                                        ('dramabox', 'DramaBox-TTS', 'tts'),
                                         ('ltx-spatial', 'LTX Spatial', 'upscale'),
                                         ] %}
                                         <span class="font-mono text-[11px]">{{ mlabel }} <span class="opacity-40">· {{

@@ -5545,6 +5545,17 @@ async function openAssetInfo(filename) {
     try {
         const r = await fetch('/asset/' + encodeURIComponent(filename));
         const m = await r.json();
+        // Server returns file/size_bytes/mtime(epoch); derive the display fields
+        // the template uses, which were rendering as literal "undefined".
+        m.filename = m.file || filename;
+        m.size_human = (() => {
+            let b = m.size_bytes; if (b == null) return '—';
+            const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+            while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+            return `${b.toFixed(i ? 1 : 0)} ${u[i]}`;
+        })();
+        m.age_seconds = m.mtime ? Math.max(0, Math.round(Date.now() / 1000 - m.mtime)) : '?';
+        m.mtime_human = m.mtime ? new Date(m.mtime * 1000).toLocaleString() : '—';
         if (!m.ok) {
             // Surface the filename so the user can confirm what was
             // requested. "not found" with no filename is undebuggable.
@@ -5836,7 +5847,7 @@ function _slopBadgeMeta(file) {
     }
     let model = '';
     let part = '';
-    const knownModels = new Set(['qwen', 'ernie', 'ltx-2.3', 'ltx-bridge', 'wan2.2', 'wan2.5', 'heartmula', 'qwen-tts', 'kokoro']);
+    const knownModels = new Set(['qwen', 'ernie', 'ltx-2.3', 'ltx-bridge', 'wan2.2', 'wan2.5', 'heartmula', 'qwen-tts', 'kokoro', 'dramabox']);
     const testMatch = file.match(/^test_([a-z0-9.-]+)_/i);
     if (testMatch && knownModels.has(testMatch[1].toLowerCase())) {
         model = testMatch[1].toLowerCase();
@@ -5882,6 +5893,7 @@ function _slopBadgeMeta(file) {
         'heartmula': { label: 'Heartmula Music', color: 'badge-secondary' },
         'qwen-tts': { label: 'Qwen TTS', color: 'badge-warning' },
         'kokoro': { label: 'Kokoro TTS', color: 'badge-warning' },
+        'dramabox': { label: 'DramaBox TTS', color: 'badge-warning' },
     };
     const borderByKind = { 'video': 'border-primary', 'image': 'border-secondary', 'audio': 'border-warning' };
     if (model && map[model]) {
@@ -6301,6 +6313,7 @@ function _modelDisplayName(id, role) {
         'heartmula': 'Heartmula Music',
         'qwen-tts': 'Qwen TTS',
         'kokoro': 'Kokoro TTS',
+        'dramabox': 'DramaBox TTS',
     };
     return map[id] || id;
 }

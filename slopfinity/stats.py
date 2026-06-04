@@ -192,12 +192,12 @@ _MODEL_GB = {
     # voice (TTS)
     "qwen-tts": 4,
     "kokoro": 1,
+    "dramabox": 2,
     # upscale
     "ltx-spatial": 18,
-    # none / empty
+    # skip sentinels — only the lowercase "none" and "" are real (persisted
+    # values come from option value="none" / run_fleet's empty->"none" normalize).
     "none": 0,
-    "No Audio": 0,
-    "No Upscale": 0,
     "": 0,
 }
 
@@ -212,6 +212,7 @@ _MODEL_LABEL = {
     "heartmula": "Heartmula",
     "qwen-tts": "Qwen-TTS",
     "kokoro": "Kokoro-TTS",
+    "dramabox": "DramaBox-TTS",
     "ltx-spatial": "LTX Spatial x2",
 }
 

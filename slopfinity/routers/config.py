@@ -18,7 +18,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 _RANDOM_CANDIDATES = {
     "base_model": ["qwen", "ernie"],
     "audio_model": ["heartmula"],
-    "tts_model": ["qwen-tts", "kokoro"],
+    "tts_model": ["qwen-tts", "kokoro", "dramabox"],
 }
 
 
