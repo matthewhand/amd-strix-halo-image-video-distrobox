@@ -73,7 +73,10 @@ supported resolutions / aspect ratios per image & video model.
 | --- | --- | --- |
 | `base_model=ernie` | danger | GPU-hangs >512² (above); auto-capped to 512². |
 | `video_model=wan2.2 / wan2.5` | warning | Unreliable on this hardware — ComfyUI timeouts. Use LTX-2.3. |
-| `tts_model=qwen-tts` | warning | Broken on gfx1151 (+ disk-low guard). Use kokoro / dramabox. |
+
+`tts_model=qwen-tts` was previously listed here as broken — it now **works** after
+the `HSA_OVERRIDE_GFX_VERSION` 11.0.0→11.5.1 + device-sync fix (see the Qwen-TTS
+section in `pipeline-validation-log.md`), so it was removed from the registry.
 
 ---
 

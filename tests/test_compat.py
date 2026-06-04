@@ -40,14 +40,14 @@ class TestCheckConfig:
             ids = [w["id"] for w in compat.check_config({"video_model": m})]
             assert "wan-video-flake" in ids
 
-    def test_qwen_tts_broken(self):
-        ids = [w["id"] for w in compat.check_config({"tts_model": "qwen-tts"})]
-        assert "qwen-tts-broken" in ids
+    def test_qwen_tts_not_flagged(self):
+        # qwen-tts now works on gfx1151 (HSA fix) — must NOT warn.
+        assert compat.check_config({"tts_model": "qwen-tts"}) == []
 
     def test_multiple_issues_accumulate(self):
-        warns = compat.check_config({"base_model": "ernie", "tts_model": "qwen-tts"})
+        warns = compat.check_config({"base_model": "ernie", "video_model": "wan2.2"})
         ids = {w["id"] for w in warns}
-        assert ids == {"ernie-hires-vae-hang", "qwen-tts-broken"}
+        assert ids == {"ernie-hires-vae-hang", "wan-video-flake"}
 
     def test_empty_config_no_warnings(self):
         assert compat.check_config({}) == []
