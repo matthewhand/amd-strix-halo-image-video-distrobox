@@ -19,6 +19,48 @@ _ASSET_EXTS = ('.mp4', '.png', '.wav', '.webm', '.mov', '.mp3', '.ogg', '.flac')
 _SEED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 _SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file
 
+# --- Evidence gallery -------------------------------------------------------
+# One canonical example per config permutation lives under evidence/{image,
+# video,music,tts}/ (see docs/asset-evidence-matrix.md). On startup we symlink
+# each into EXP_DIR as `evidence_<cat>_<name>` so the existing gallery scan +
+# file-serving surface them with no other changes. Idempotent, best-effort, and
+# a no-op when the evidence dir doesn't exist ("...load on startup, if they exist").
+EVIDENCE_DIR = os.environ.get("SLOPFINITY_EVIDENCE_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "evidence",
+)
+
+
+def seed_evidence_into_gallery() -> int:
+    """Symlink evidence/{cat}/* into EXP_DIR as evidence_<cat>_<name>. Returns
+    the number of new links created. Safe to call repeatedly."""
+    linked = 0
+    try:
+        if not os.path.isdir(EVIDENCE_DIR):
+            return 0
+        for cat in ("image", "video", "music", "tts"):
+            d = os.path.join(EVIDENCE_DIR, cat)
+            if not os.path.isdir(d):
+                continue
+            for fn in os.listdir(d):
+                if not fn.lower().endswith(_ASSET_EXTS):
+                    continue
+                link = os.path.join(EXP_DIR, f"evidence_{cat}_{fn}")
+                if os.path.lexists(link):
+                    continue
+                try:
+                    os.symlink(os.path.join(d, fn), link)
+                    linked += 1
+                except OSError:
+                    pass
+    except Exception:
+        pass
+    return linked
+
+
+# Run once at import (server startup imports this router).
+seed_evidence_into_gallery()
+
 def _kind_of(f: str) -> str:
     """Classify an asset filename into 'video', 'audio', or 'image'."""
     fl = f.lower()
