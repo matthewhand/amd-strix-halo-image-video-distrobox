@@ -6,7 +6,7 @@ at `/files/tts/<name>` (served by the slopfinity dashboard).
 
 Implementation strategy: shell out to qwen_tts_launcher.py so model load
 failures don't take the HTTP server down. The launcher enforces the
-HSA_OVERRIDE_GFX_VERSION=11.0.0 override and disk-space guard.
+HSA_OVERRIDE_GFX_VERSION=11.5.1 override (gfx1151) and disk-space guard.
 """
 from __future__ import annotations
 
@@ -210,7 +210,10 @@ def tts(data: dict = Body(...)):
             "--model", DEFAULT_MODEL,
         ]
         env = os.environ.copy()
-        env["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+        # gfx1151 (Strix Halo) is RDNA 3.5 → 11.5.1. The old 11.0.0 (gfx1100)
+        # loads wrong-arch kernels → hipErrorInvalidImage. The launcher force-
+        # overrides this anyway, but keep the env it inherits correct/consistent.
+        env["HSA_OVERRIDE_GFX_VERSION"] = "11.5.1"
     else:  # kokoro
         cmd = [
             sys.executable, KOKORO_LAUNCHER,
