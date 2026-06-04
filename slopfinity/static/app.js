@@ -8536,7 +8536,17 @@ async function inject(prio, terminate, concurrent, opts) {
             f.append('story_id', storyId);
             f.append('story_title', storyTitle);
         }
-        await fetch('/inject', { method: 'POST', body: f });
+        const _injResp = await fetch('/inject', { method: 'POST', body: f });
+        if (!_injResp.ok && window._toast) {
+            // Surface disk-guard (409) / server errors instead of silently
+            // pretending the beat was queued.
+            let _msg = `Queue failed (HTTP ${_injResp.status})`;
+            try {
+                const _d = await _injResp.json();
+                if (_d && (_d.reason || _d.error)) _msg = `Queue failed: ${_d.reason || _d.error}`;
+            } catch (e) { /* non-JSON body */ }
+            window._toast(_msg, _injResp.status === 409 ? 'warning' : 'error');
+        }
     }
     // Only blank the per-stage overrides — leave the Subjects textarea alone
     // so the user can re-queue the same set quickly if they want to.
@@ -8991,9 +9001,13 @@ async function reloadModels() {
         const models = (d && d.models) || [];
         sel.innerHTML = '';
         if (!models.length) {
+            // Surface the server's error (e.g. SSRF-blocked base_url, unreachable
+            // endpoint) instead of a bare "(none found)".
+            const _err = (!r.ok || (d && d.ok === false)) ? (d && d.error) : '';
             const opt = document.createElement('option');
-            opt.value = ''; opt.innerText = '(none found)';
+            opt.value = ''; opt.innerText = _err ? `(error: ${String(_err).slice(0, 80)})` : '(none found)';
             sel.appendChild(opt);
+            if (_err && window._toast) window._toast(`Model list failed: ${_err}`, 'error');
         }
         models.forEach(m => {
             const opt = document.createElement('option');
