@@ -24,7 +24,6 @@ Cost: ~30-80 ms for a 1024x1024 PNG on Strix Halo.
 """
 from __future__ import annotations
 
-import math
 import os
 from typing import Optional
 

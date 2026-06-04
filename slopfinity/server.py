@@ -22,7 +22,6 @@ from fastapi.templating import Jinja2Templates
 import os
 import time
 import asyncio
-from typing import List
 
 from . import config as cfg
 from . import branding as _branding
@@ -343,7 +342,6 @@ async def branding_endpoint():
 
 @app.post("/branding")
 async def branding_switch(data: dict = Body(...)):
-    from fastapi import Body
     name = (data.get("active") or "").strip()
     if not name: return JSONResponse({"ok": False, "error": "missing 'active'"}, status_code=400)
     if name not in _branding.list_profiles():

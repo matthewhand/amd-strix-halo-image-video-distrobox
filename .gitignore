@@ -103,3 +103,4 @@ evidence/**/*.wav
 evidence/**/*.png
 evidence/**/*.mp4
 !evidence/**/manifest.json
+slop_test/

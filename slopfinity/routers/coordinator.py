@@ -1,11 +1,9 @@
 import asyncio
-import json
 import subprocess
 import os
 import time
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
-import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 from slopfinity.paths import EXP_DIR
 

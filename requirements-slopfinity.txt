@@ -14,3 +14,8 @@ sqlmodel>=0.0.38
 jinja2>=3.1
 tiktoken>=0.12
 python-dotenv>=1.2
+# VAE-grid artefact detection (routers/assets.py -> vae_grid.py). The imports
+# are try/except-guarded for graceful degradation, but the /vae_grid endpoint is
+# auto-called by the gallery for every card, so declare them.
+pillow>=9.0
+numpy>=1.20

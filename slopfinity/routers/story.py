@@ -2,8 +2,7 @@ from fastapi import APIRouter, Body
 from sqlmodel import Session, select
 from slopfinity.db import engine
 from slopfinity.models import StoryLog
-from datetime import datetime
-import json
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -40,7 +39,7 @@ async def update_story_log(payload: dict = Body(...)):
         
         active.lines = lines
         active.active_idx = active_idx
-        active.updated_at = datetime.utcnow()
+        active.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(active)
         session.commit()
         return {"ok": True}
@@ -54,7 +53,7 @@ async def reset_story_log():
         ).first()
         if active:
             active.is_active = False
-            active.updated_at = datetime.utcnow()
+            active.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(active)
         
         new_log = StoryLog()

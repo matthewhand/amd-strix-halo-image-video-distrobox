@@ -1,8 +1,6 @@
-import os
-import json
 import random
-from fastapi import APIRouter, Request, Body
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import APIRouter, Body
+from fastapi.responses import JSONResponse
 import slopfinity.config as cfg
 import slopfinity.compat as compat
 from slopfinity.llm.probe import discover as llm_discover, ping as llm_ping

@@ -5,13 +5,12 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
-from typing import List
 
-from fastapi import APIRouter, Form, Request, UploadFile, File, Body
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import APIRouter, Body
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from slopfinity.paths import EXP_DIR, TTS_OUT_DIR, TEMPLATES_DIR
+from slopfinity.paths import EXP_DIR, TEMPLATES_DIR
 import slopfinity.config as cfg
 from slopfinity.stats import get_outputs_disk, get_ram_estimate
 import slopfinity.scheduler as sched
