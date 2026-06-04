@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import time
 from datetime import datetime
 
 from . import queue_schema
+
+_log = logging.getLogger(__name__)
 
 # In-container slopfinity has cwd=/ but the bind-mount lives at /workspace,
 # so a relative path like "comfy-outputs/..." silently resolves to a ghost
@@ -193,8 +196,15 @@ DEFAULT_AUTO_SUSPEND = [
 ]
 
 DEFAULT_CONFIG = {
-    "base_model": "ltx-2.3",
+    # qwen is the canonical, reliable base image model (standalone LTX-image has
+    # no launcher); the rest of the codebase already falls back to 'qwen'.
+    "base_model": "qwen",
     "video_model": "ltx-2.3",
+    # Pipeline role defaults so fresh configs return "none" (a real skip
+    # sentinel) instead of None for these keys.
+    "audio_model": "none",
+    "tts_model": "none",
+    "upscale_model": "none",
     "upscale": False,
     "frames": 49,
     "size": "1280*720",
@@ -548,15 +558,23 @@ def get_queue():
             try:
                 with open(QUEUE_FILE, "r") as f:
                     file_data = json.load(f)
-                for item in file_data:
+            except Exception as e:
+                file_data = []
+                _log.warning("get_queue: could not read legacy %s: %s", QUEUE_FILE, e)
+            # Per-row so one corrupt legacy item is skipped (and logged) rather
+            # than silently aborting the entire migration.
+            for item in file_data:
+                try:
                     queue_schema.migrate_legacy(item)
                     q_item = QueueItem(**{k: v for k, v in item.items() if k in QueueItem.model_fields})
                     session.add(q_item)
+                except Exception as e:
+                    _log.warning("get_queue: skipping un-migratable legacy item: %s", e)
+            try:
                 session.commit()
-                # Re-fetch after migration
                 items = session.exec(statement).all()
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("get_queue: legacy migration commit failed: %s", e)
 
         return [m.model_dump() for m in items]
 
@@ -571,6 +589,11 @@ def save_queue(q):
             session.delete(item)
         
         for item_dict in q:
+            # Stamp a stable id on rows that lack one (run_fleet appends iter
+            # rows without an id). Without this, the QueueItem id default_factory
+            # mints a fresh uuid on EVERY save, so an item's id churns each round
+            # and status tracking ("working"→"done") can't follow it across saves.
+            item_dict.setdefault("id", queue_schema.make_id())
             # Handle potential extra keys in the dict
             filtered = {k: v for k, v in item_dict.items() if k in QueueItem.model_fields}
             session.add(QueueItem(**filtered))
