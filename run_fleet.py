@@ -329,6 +329,10 @@ def generate_prompt(model_id, v_idx):
             "seed_image": task.get("seed_image") or "",
             "seed_images": list(task.get("seed_images") or []),
             "seeds_mode": (task.get("seeds_mode") or "").strip().lower(),
+            # Per-stage prompt overrides {image,video,music,tts} from the
+            # multi-beat / Raw-mode inject form. Empty/missing => the stage uses
+            # the main prompt. (Were persisted but never consumed before.)
+            "stage_prompts": dict(task.get("stage_prompts") or {}),
             # `polymorphic` (UI toggle, also persisted as `chaos` on
             # injected tasks for backwards compat):
             # True  → LLM rewrites the seed afresh on EVERY cycle
@@ -1681,6 +1685,15 @@ def main():
             # iteration index for chronological grouping + uniqueness.
             _stem = f"slop_{v_idx}_{_slug}"
 
+            # Per-stage prompt overrides {image,video,music} from the inject
+            # form — each stage uses its override text when supplied, else the
+            # main prompt `p`. (The slug/filename + sidecar keep `p` for a
+            # stable identity.) These were persisted but never applied before.
+            _stage_prompts = _task_opts.get("stage_prompts") or {}
+            _img_prompt = (_stage_prompts.get("image") or "").strip() or p
+            _vid_prompt = (_stage_prompts.get("video") or "").strip() or p
+            _music_prompt = (_stage_prompts.get("music") or "").strip() or p
+
             # ─── Audio (Heartmula) — runs BEFORE Base Image ──────────────
             # Honors config.audio_model (no longer matrix-mode-gated). When
             # audio_driven_chains is enabled, the resulting WAV's duration
@@ -1708,7 +1721,7 @@ def main():
                 if _audio_model == "heartmula":
                     audio_wav = f"{OUTPUT_DIR}/{_stem}_music.wav"
                     try:
-                        ok = heartmula_wav(p, audio_wav, duration_s=target_dur)
+                        ok = heartmula_wav(_music_prompt, audio_wav, duration_s=target_dur)
                         if ok and os.path.exists(audio_wav):
                             audio_duration_s = target_dur
                             _write_sidecar(
@@ -1787,7 +1800,7 @@ def main():
                     flush=True,
                 )
             elif b_mod in ["qwen", "ernie"]:
-                run_image_gen(b_mod, p, in_img, tier=tier, size_str=config.get("size"))
+                run_image_gen(b_mod, _img_prompt, in_img, tier=tier, size_str=config.get("size"))
             else:
                 generate_base_image_ltx23(p, in_img, config["size"])
 
@@ -1934,7 +1947,7 @@ def main():
                          f"comfy-input/{_end_fn}"], check=True,
                     )
                     generate_video_ltx_flf2v(
-                        _start_fn, _end_fn, p, seg,
+                        _start_fn, _end_fn, _vid_prompt, seg,
                         _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
@@ -1951,7 +1964,7 @@ def main():
                     # Multi-frame continuation: c_idx > 1 with handoff_k > 1.
                     # _handoff_frames was populated after chain c-1 below.
                     generate_video_ltx_continuation(
-                        _handoff_frames, p, seg,
+                        _handoff_frames, _vid_prompt, seg,
                         _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
@@ -1967,7 +1980,7 @@ def main():
                     # First chain (any mode), or chains where K=1 (legacy
                     # single-frame handoff) — original I2V workflow.
                     generate_video_ltx(
-                        os.path.basename(in_img), p, seg, _eff_size, _frames_per_chain
+                        os.path.basename(in_img), _vid_prompt, seg, _eff_size, _frames_per_chain
                     )
                     _write_sidecar(
                         seg,

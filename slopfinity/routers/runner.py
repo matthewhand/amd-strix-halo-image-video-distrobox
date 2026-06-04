@@ -291,8 +291,13 @@ async def tts_voices():
 async def tts(data: dict = Body(...)):
     """Proxy to the TTS worker."""
     text = (data.get("text") or "").strip()
-    voice = data.get("voice") or "af_heart"
     engine = data.get("engine")
+    # Engine-appropriate default voice — 'af_heart' is a Kokoro voice; forwarding
+    # it to qwen (voices ryan/serena/…) makes the worker reject the request.
+    _DEFAULT_VOICE = {"kokoro": "af_heart", "qwen": "ryan"}
+    voice = data.get("voice") or _DEFAULT_VOICE.get(
+        (engine or "").strip().lower(), "af_heart"
+    )
     lang = data.get("lang")
     speed_raw = data.get("speed")
     try:
