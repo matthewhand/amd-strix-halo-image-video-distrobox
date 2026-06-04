@@ -121,13 +121,18 @@ async def broadcast():
 
             queue = cfg.get_queue()
             cutoff = time.time() - 48 * 3600
-            kept = [
-                x for x in queue
-                if not (x.get("status") == "cancelled" and (x.get("cancelled_ts") or 0) < cutoff)
-            ]
-            if len(kept) != len(queue):
-                cfg.save_queue(kept)
-                queue = kept
+
+            def _is_stale(x):
+                return x.get("status") == "cancelled" and (x.get("cancelled_ts") or 0) < cutoff
+
+            # This tick runs frequently; only take the cross-process lock + write
+            # when there's actually something to prune (the unlocked read above is
+            # just a cheap pre-check — the mutator re-filters fresh under the lock,
+            # so a concurrent writer can't be clobbered).
+            if any(_is_stale(x) for x in queue):
+                queue = cfg.mutate_queue(
+                    lambda q: [x for x in q if not _is_stale(x)]
+                )
                 
             config = cfg.load_config()
             storage = get_storage()

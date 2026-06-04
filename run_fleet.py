@@ -274,28 +274,32 @@ def get_lmstudio_model():
 
 
 def generate_prompt(model_id, v_idx):
-    q = cfg.get_queue()
     config_now = cfg.load_config()
     default_base = config_now.get("base_model", "qwen")
-    # Pop the FIRST pending item (skipping any done/cancelled at the front).
-    # done/cancelled records stay in queue.json for the audit log.
-    pending_idx = next(
-        (i for i, x in enumerate(q) if x.get("status") in (None, "pending")), -1
-    )
-    if pending_idx >= 0:
-        task = q.pop(pending_idx)
-        # Stamp a sentinel "working" record back onto the queue so:
-        #   1. The dashboard can show that this item is mid-flight.
-        #   2. The /queue/toggle-infinity and /queue/toggle-polymorphic
-        #      endpoints can edit the in-flight flags (honoured at
-        #      requeue time).
-        #   3. The requeue path re-reads this record to pick up any
-        #      mid-flight toggles before deciding whether to re-append.
-        working = dict(task)
-        working["status"] = "working"
-        working["started_ts"] = time.time()
-        q.append(working)
-        cfg.save_queue(q)
+    # Claim the FIRST pending item (skipping done/cancelled at the front) under
+    # the queue lock so a concurrent dashboard inject/cancel can't be clobbered
+    # by save_queue's blind delete-all+reinsert. Stamp a `working` sentinel back
+    # so: (1) the dashboard shows mid-flight; (2) toggle-infinity/polymorphic can
+    # edit the in-flight flags; (3) the requeue path reads mid-flight toggles.
+    # done/cancelled rows stay in queue.json for the audit log.
+    _claimed = []
+
+    def _claim(q):
+        pending_idx = next(
+            (i for i, x in enumerate(q) if x.get("status") in (None, "pending")), -1
+        )
+        if pending_idx >= 0:
+            t = q.pop(pending_idx)
+            working = dict(t)
+            working["status"] = "working"
+            working["started_ts"] = time.time()
+            q.append(working)
+            _claimed.append(t)
+        return q
+
+    cfg.mutate_queue(_claim)
+    if _claimed:
+        task = _claimed[0]
         opts = {
             "image_only": bool(task.get("image_only")),
             "skip_video": bool(task.get("skip_video")),
@@ -1598,16 +1602,19 @@ def main():
     # promote them to `cancelled` so the dashboard reflects "the prior
     # run died" rather than showing a phantom in-flight item.
     try:
-        q0 = cfg.get_queue()
-        cleaned = False
-        for it in q0:
-            if it.get("status") == "working":
-                it["status"] = "cancelled"
-                it["cancelled_ts"] = time.time()
-                it["infinity"] = False
-                cleaned = True
-        if cleaned:
-            cfg.save_queue(q0)
+        _cleaned = []
+
+        def _sweep(q0):
+            for it in q0:
+                if it.get("status") == "working":
+                    it["status"] = "cancelled"
+                    it["cancelled_ts"] = time.time()
+                    it["infinity"] = False
+                    _cleaned.append(1)
+            return q0
+
+        cfg.mutate_queue(_sweep)
+        if _cleaned:
             print(
                 "[FLEET] swept stale `working` sentinels from previous run", flush=True
             )
@@ -2106,139 +2113,140 @@ def main():
         # row.
         try:
             if _task_opts.get("_seed_prompt"):
-                q_now = cfg.get_queue()
-                # Pull (and remove) the in-flight row matching this iter
-                # so we can read the user's most recent toggle / cancel
-                # state. The row may be `status=working` (untouched) OR
-                # `status=cancelled` (user clicked cancel mid-flight) —
-                # both share the same ts as the originally-popped item.
-                orig_ts = _task_opts.get("_orig_task_ts")
-                live_record = None
-                kept = []
-                for it in q_now:
-                    if (
-                        it.get("ts") == orig_ts
-                        and it.get("status") in ("working", "cancelled")
-                        and live_record is None
-                    ):
-                        live_record = it
-                        continue  # drop the in-flight sentinel
-                    kept.append(it)
-                q_now = kept
+                with cfg.queue_lock():
+                    q_now = cfg.get_queue()
+                    # Pull (and remove) the in-flight row matching this iter
+                    # so we can read the user's most recent toggle / cancel
+                    # state. The row may be `status=working` (untouched) OR
+                    # `status=cancelled` (user clicked cancel mid-flight) —
+                    # both share the same ts as the originally-popped item.
+                    orig_ts = _task_opts.get("_orig_task_ts")
+                    live_record = None
+                    kept = []
+                    for it in q_now:
+                        if (
+                            it.get("ts") == orig_ts
+                            and it.get("status") in ("working", "cancelled")
+                            and live_record is None
+                        ):
+                            live_record = it
+                            continue  # drop the in-flight sentinel
+                        kept.append(it)
+                    q_now = kept
 
-                # Effective flags: the live record's flags win over the
-                # snapshot in `_task_opts` so the user's mid-flight
-                # toggles take effect. Cancellation also sticks: a user
-                # who clicked "cancel" on the active item set the live
-                # record's status to "cancelled" — that disables requeue.
-                live = live_record or {}
-                eff_infinity = bool(live.get("infinity", _task_opts.get("infinity")))
-                eff_polymorphic = bool(
-                    live.get(
-                        "polymorphic",
-                        live.get("chaos", _task_opts.get("polymorphic", True)),
-                    )
-                )
-                eff_chaos = bool(
-                    live.get(
-                        "chaos", live.get("polymorphic", _task_opts.get("chaos", True))
-                    )
-                )
-                eff_image_only = bool(
-                    live.get("image_only", _task_opts.get("image_only"))
-                )
-                eff_skip_video = bool(
-                    live.get("skip_video", _task_opts.get("skip_video"))
-                )
-                eff_when_idle = bool(
-                    live.get("when_idle", _task_opts.get("_when_idle", False))
-                )
-                eff_priority = live.get("priority", _task_opts.get("_priority", "next"))
-                eff_config_snapshot = live.get("config_snapshot") or _task_opts.get(
-                    "_config_snapshot"
-                )
-                cancelled_mid_flight = live.get("status") == "cancelled"
-
-                # 1) Done archive — audit log entry.
-                q_now.append(
-                    {
-                        "prompt": _task_opts["_seed_prompt"],
-                        "status": "done",
-                        "succeeded": not iter_failed,
-                        "ts": orig_ts or _iter_started_ts,
-                        "started_ts": _iter_started_ts,
-                        "completed_ts": time.time(),
-                        "duration_s": time.time() - _iter_started_ts,
-                        "v_idx": v_idx - 1,
-                        "image_only": eff_image_only,
-                        "infinity": eff_infinity,
-                        "chaos": eff_chaos,
-                        "config_snapshot": eff_config_snapshot,
-                        # Asset basenames produced this iter, in the order they
-                        # were written (base image → final mp4 → muxed audio mp4).
-                        "assets": list(_iter_assets),
-                    }
-                )
-
-                # 2) Requeue — only if the user still wants infinity AND
-                # they didn't cancel mid-flight.
-                if eff_infinity and not cancelled_mid_flight:
-                    if eff_polymorphic:
-                        # Re-append the SEED so the next pop runs the LLM
-                        # rewriter again — every cycle gets fresh prose.
-                        new_task = {
-                            "prompt": _task_opts["_seed_prompt"],
-                            "polymorphic": True,
-                            "chaos": True,
-                        }
-                    else:
-                        # Cache the rewrite on the task so future cycles
-                        # skip the LLM round-trip entirely.
-                        rewritten = (
-                            _task_opts.get("_rewritten_prompt")
-                            or _task_opts["_seed_prompt"]
+                    # Effective flags: the live record's flags win over the
+                    # snapshot in `_task_opts` so the user's mid-flight
+                    # toggles take effect. Cancellation also sticks: a user
+                    # who clicked "cancel" on the active item set the live
+                    # record's status to "cancelled" — that disables requeue.
+                    live = live_record or {}
+                    eff_infinity = bool(live.get("infinity", _task_opts.get("infinity")))
+                    eff_polymorphic = bool(
+                        live.get(
+                            "polymorphic",
+                            live.get("chaos", _task_opts.get("polymorphic", True)),
                         )
-                        new_task = {
-                            "prompt": rewritten,
-                            "polymorphic": False,
-                            "chaos": False,
-                            "pre_rewritten": True,
-                            "seed_prompt": _task_opts["_seed_prompt"],
+                    )
+                    eff_chaos = bool(
+                        live.get(
+                            "chaos", live.get("polymorphic", _task_opts.get("chaos", True))
+                        )
+                    )
+                    eff_image_only = bool(
+                        live.get("image_only", _task_opts.get("image_only"))
+                    )
+                    eff_skip_video = bool(
+                        live.get("skip_video", _task_opts.get("skip_video"))
+                    )
+                    eff_when_idle = bool(
+                        live.get("when_idle", _task_opts.get("_when_idle", False))
+                    )
+                    eff_priority = live.get("priority", _task_opts.get("_priority", "next"))
+                    eff_config_snapshot = live.get("config_snapshot") or _task_opts.get(
+                        "_config_snapshot"
+                    )
+                    cancelled_mid_flight = live.get("status") == "cancelled"
+
+                    # 1) Done archive — audit log entry.
+                    q_now.append(
+                        {
+                            "prompt": _task_opts["_seed_prompt"],
+                            "status": "done",
+                            "succeeded": not iter_failed,
+                            "ts": orig_ts or _iter_started_ts,
+                            "started_ts": _iter_started_ts,
+                            "completed_ts": time.time(),
+                            "duration_s": time.time() - _iter_started_ts,
+                            "v_idx": v_idx - 1,
+                            "image_only": eff_image_only,
+                            "infinity": eff_infinity,
+                            "chaos": eff_chaos,
+                            "config_snapshot": eff_config_snapshot,
+                            # Asset basenames produced this iter, in the order they
+                            # were written (base image → final mp4 → muxed audio mp4).
+                            "assets": list(_iter_assets),
                         }
-                    requeued = {
-                        **new_task,
-                        "priority": eff_priority,
-                        "status": "pending",
-                        # +1µs offset so the new pending row can never
-                        # share a ts with the done archive we just wrote
-                        # (the queue keys are de facto (ts) primaries).
-                        "ts": time.time() + 1e-6,
-                        "infinity": True,
-                        "when_idle": eff_when_idle,
-                        "image_only": eff_image_only,
-                        "skip_video": eff_skip_video,
-                        "config_snapshot": eff_config_snapshot,
-                        "requeued_from_ts": orig_ts,
-                    }
-                    q_now.append(requeued)
-                    tag = "polymorphic" if eff_polymorphic else "fixed-prompt"
-                    print(
-                        f"[FLEET] ♾  re-queued infinity prompt ({tag}) to back of queue",
-                        flush=True,
-                    )
-                elif _task_opts.get("infinity") and cancelled_mid_flight:
-                    print(
-                        f"[FLEET] ♾  infinity item cancelled mid-flight — NOT re-queueing",
-                        flush=True,
-                    )
-                elif _task_opts.get("infinity") and not eff_infinity:
-                    print(
-                        f"[FLEET] ♾  user toggled infinity OFF mid-flight — NOT re-queueing",
-                        flush=True,
                     )
 
-                # Single commit of done + (maybe) requeued + working-row drop.
-                cfg.save_queue(q_now)
+                    # 2) Requeue — only if the user still wants infinity AND
+                    # they didn't cancel mid-flight.
+                    if eff_infinity and not cancelled_mid_flight:
+                        if eff_polymorphic:
+                            # Re-append the SEED so the next pop runs the LLM
+                            # rewriter again — every cycle gets fresh prose.
+                            new_task = {
+                                "prompt": _task_opts["_seed_prompt"],
+                                "polymorphic": True,
+                                "chaos": True,
+                            }
+                        else:
+                            # Cache the rewrite on the task so future cycles
+                            # skip the LLM round-trip entirely.
+                            rewritten = (
+                                _task_opts.get("_rewritten_prompt")
+                                or _task_opts["_seed_prompt"]
+                            )
+                            new_task = {
+                                "prompt": rewritten,
+                                "polymorphic": False,
+                                "chaos": False,
+                                "pre_rewritten": True,
+                                "seed_prompt": _task_opts["_seed_prompt"],
+                            }
+                        requeued = {
+                            **new_task,
+                            "priority": eff_priority,
+                            "status": "pending",
+                            # +1µs offset so the new pending row can never
+                            # share a ts with the done archive we just wrote
+                            # (the queue keys are de facto (ts) primaries).
+                            "ts": time.time() + 1e-6,
+                            "infinity": True,
+                            "when_idle": eff_when_idle,
+                            "image_only": eff_image_only,
+                            "skip_video": eff_skip_video,
+                            "config_snapshot": eff_config_snapshot,
+                            "requeued_from_ts": orig_ts,
+                        }
+                        q_now.append(requeued)
+                        tag = "polymorphic" if eff_polymorphic else "fixed-prompt"
+                        print(
+                            f"[FLEET] ♾  re-queued infinity prompt ({tag}) to back of queue",
+                            flush=True,
+                        )
+                    elif _task_opts.get("infinity") and cancelled_mid_flight:
+                        print(
+                            f"[FLEET] ♾  infinity item cancelled mid-flight — NOT re-queueing",
+                            flush=True,
+                        )
+                    elif _task_opts.get("infinity") and not eff_infinity:
+                        print(
+                            f"[FLEET] ♾  user toggled infinity OFF mid-flight — NOT re-queueing",
+                            flush=True,
+                        )
+
+                    # Single commit of done + (maybe) requeued + working-row drop.
+                    cfg.save_queue(q_now)
         except Exception as e:
             print(f"[FLEET] archive/requeue failed: {e!r}", flush=True)
     update_state(mode="Completed")

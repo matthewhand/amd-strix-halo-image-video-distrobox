@@ -497,34 +497,37 @@ def set_state(mode="Idle", step="Waiting", video=0, total=0, chain=0, total_chai
     with open(STATE_FILE, "w") as f: json.dump(s, f)
 
 # Queue file is the IPC layer between the dashboard handlers, the worker
-# fleet, and the legacy run_fleet runner. Multiple writers race today —
-# `_claim_sync` in workers/base.py reads-mutates-writes without a lock,
-# and ~12 FastAPI endpoints (/inject, /queue/cancel, /queue/edit,
-# /queue/requeue, /queue/clear-failed, /queue/clear-completed,
-# /queue/toggle-infinity, /queue/toggle-polymorphic, /queue/pause, etc.)
-# do the same get-modify-save dance. Two writers in the same window
-# silently overwrite each other: stage status flips back to "pending"
-# after a worker just claimed it, edits get wiped by a finalizer, jobs
-# run twice. The audit's #1 high-priority correctness bug.
+# fleet, and the legacy run_fleet runner. Multiple writers can race:
+# run_fleet's claim/sweep/requeue, the worker base claim/finalize, and the
+# FastAPI endpoints (/inject, /queue/cancel, /queue/edit, /queue/requeue,
+# /queue/clear-failed, /queue/clear-completed, /queue/toggle-infinity,
+# /queue/toggle-polymorphic, /cancel-all, the chat queue tools, and the
+# broadcaster's stale-cancelled pruner) all do a get-modify-save dance.
+# Because save_queue() does a blind delete-all + reinsert of the WHOLE list,
+# two writers in the same window silently overwrite each other: an edit gets
+# wiped by a finalizer, a fresh inject vanishes behind a requeue, jobs run
+# twice. This was the audit's #1 high-priority correctness bug.
 #
-# Two complementary locks:
+# FIX (see docs/queue-concurrency.md): every read-modify-write site now goes
+# through the cross-process lock below — either via mutate_queue() (the
+# preferred one-shot RMW helper) or an explicit `with queue_lock():` span for
+# the few sites with mid-block early-returns / conditional saves. Pure reads
+# (get_queue alone, /queue/paginated) intentionally stay lock-free.
+#
+# Two complementary protections:
 #   * _QUEUE_LOCK_FILE  — flock-based filesystem mutex. Survives across
 #     processes (host run_fleet vs container slopfinity dashboard) and
 #     across worker restarts. Cheap on Linux. Held only for the read +
 #     write window; doesn't serialize unrelated callers.
-#   * _QUEUE_TMPFILE    — atomic write-rename so a torn write (process
-#     killed mid-fwrite) can't leave a corrupt JSON on disk. Readers
-#     either see the previous valid state or the new one — never half.
+#   * atomic write-rename in save_queue() — a torn write (process killed
+#     mid-fwrite) can't leave corrupt JSON on disk. Readers see either the
+#     previous valid state or the new one — never half.
 #
-# `queue_lock()` is a context manager — call sites do
-#     with cfg.queue_lock():
-#         q = cfg.get_queue()
-#         ...mutate...
-#         cfg.save_queue(q)
-# to safely round-trip. Existing call sites that don't hold the lock
-# remain functional (the file lock + atomic write still cover the
-# torn-write case); they're just exposed to the read-then-write race
-# until updated.
+# `queue_lock()` is a context manager; mutate_queue() wraps the common
+# get→modify→save round-trip. Any NEW write path MUST use one of them.
+# queue_lock is non-recursive (flock on a fresh fd re-blocks the same
+# process) — never nest, and never call get_queue/save_queue/mutate_queue
+# from inside a mutator or an open lock span.
 import contextlib
 import fcntl
 
@@ -610,3 +613,27 @@ def save_queue(q):
         os.replace(tmp, QUEUE_FILE)
     except Exception:
         pass
+
+
+def mutate_queue(mutator):
+    """Atomic read→modify→write of the queue under the cross-process lock.
+
+    save_queue does a blind delete-all + reinsert of the whole list, so two
+    processes doing get_queue→modify→save_queue concurrently (host run_fleet +
+    container dashboard + worker subprocesses) lose each other's edits. This
+    runs the full cycle inside queue_lock() (an flock shared via the same
+    SLOPFINITY_STATE_DIR), serialising all writers.
+
+    `mutator(queue_list)` mutates the list in place and/or returns a new list;
+    the resulting list is persisted and returned.
+
+    CONTRACT: the mutator must NOT call get_queue/save_queue/mutate_queue
+    (queue_lock is non-recursive → re-entry deadlocks) and must not block on
+    network/subprocess/GPU work while the lock is held — keep it pure list work.
+    """
+    with queue_lock():
+        q = get_queue()
+        result = mutator(q)
+        q = result if isinstance(result, list) else q
+        save_queue(q)
+        return q
