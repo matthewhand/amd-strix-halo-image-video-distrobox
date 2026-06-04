@@ -60,6 +60,28 @@ def test_poll_times_out_without_hanging(monkeypatch):
         run_fleet._poll_comfy_history("pid", "14", timeout_s=1, poll_s=0, label="t")
 
 
+def test_poll_skips_empty_images_then_returns(monkeypatch):
+    # An empty images list must NOT be returned (would IndexError in
+    # _encode_frames_to_mp4); keep polling until real frames appear.
+    monkeypatch.setattr(run_fleet.time, "sleep", lambda *_: None)
+    seq = [
+        {"pid": {"status": {"completed": True}, "outputs": {"14": {"images": []}}}},
+        {"pid": {"status": {"completed": True},
+                 "outputs": {"14": {"images": [{"filename": "a.png"}]}}}},
+    ]
+    calls = {"i": 0}
+
+    def _urlopen(*a, **k):
+        payload = seq[min(calls["i"], len(seq) - 1)]
+        calls["i"] += 1
+        return _FakeResp(payload)
+
+    monkeypatch.setattr(run_fleet.urllib.request, "urlopen", _urlopen)
+    out = run_fleet._poll_comfy_history("pid", "14", poll_s=0, label="t")
+    assert out == ["a.png"]
+    assert calls["i"] >= 2  # it waited past the empty-images tick
+
+
 def test_poll_raises_when_unreachable(monkeypatch):
     # urlopen always errors → must raise after the consecutive-error cap, not
     # block on a dead connection forever.

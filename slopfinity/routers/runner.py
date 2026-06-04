@@ -376,7 +376,12 @@ async def music(data: dict = Body(...)):
         ]
         
         def _do() -> int:
-            return subprocess.run(cmd, check=False).returncode
+            # Hard timeout so a wedged docker/GPU can't pin the GPU lock (held
+            # by the enclosing acquire_gpu) forever and starve every other
+            # serialized pipeline. Mirrors run_fleet's run_with_timeout(600);
+            # 20 min gives heartmula generous headroom. TimeoutExpired is an
+            # Exception → caught below, and the lock releases on `async with` exit.
+            return subprocess.run(cmd, check=False, timeout=1200).returncode
             
         try:
             rc = await asyncio.to_thread(_do)

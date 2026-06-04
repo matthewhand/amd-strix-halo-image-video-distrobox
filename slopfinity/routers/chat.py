@@ -758,7 +758,10 @@ async def chat_endpoint(payload: dict = Body(...)):
                         result = {"ok": False, "error": f"unknown tool: {name}"}
                     else:
                         try:
-                            result = handler(args)
+                            # Tool handlers are sync and may block (queue I/O +
+                            # flock, subprocess for tts/mux/concat) — run off the
+                            # event loop so one tool call can't stall the server.
+                            result = await asyncio.to_thread(handler, args)
                         except Exception as e:
                             result = {"ok": False, "error": f"{name} raised: {e!r}"}
                     tool_audit.append({"name": name, "args": args, "result": result})

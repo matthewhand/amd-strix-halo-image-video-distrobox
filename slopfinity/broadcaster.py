@@ -144,8 +144,8 @@ async def broadcast():
             # just a cheap pre-check — the mutator re-filters fresh under the lock,
             # so a concurrent writer can't be clobbered).
             if any(_is_stale(x) for x in queue):
-                queue = cfg.mutate_queue(
-                    lambda q: [x for x in q if not _is_stale(x)]
+                queue = await asyncio.to_thread(
+                    cfg.mutate_queue, lambda q: [x for x in q if not _is_stale(x)]
                 )
                 
             config = cfg.load_config()
@@ -226,7 +226,8 @@ async def broadcast():
                         if sched.is_paused():
                             # If anything is holding a GPU reservation, we are still "pausing"
                             # the pipeline (waiting for current stage to finish).
-                            if sched.GPU.resident_gb > 0 or sched.GPU.in_flight:
+                            _gpu = sched.get_gpu()
+                            if _gpu.resident_gb > 0 or _gpu.in_flight:
                                 _hb_text = 'pausing'
                             else:
                                 _hb_text = 'paused'
@@ -303,7 +304,7 @@ async def chaos_rotator():
                     c["infinity_themes"] = arr
                     c["infinity_index"] = 0
                     return c
-                config = cfg.mutate_config(_set_themes)
+                config = await asyncio.to_thread(cfg.mutate_config, _set_themes)
             await asyncio.sleep(5)
         except Exception:
             await asyncio.sleep(30)
