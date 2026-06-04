@@ -28,8 +28,17 @@ Key proofs:
 | --- | --- | --- | --- |
 | Music | **Heartmula** (3B) | ✅ | 20.1s 48kHz **stereo** WAV, 3.86 MB (gen ~4 min: 250-step gen + 10-step codec decode) |
 | TTS | **Kokoro** (`af_heart` / `am_michael` / `am_puck`) | ✅ | 3 real WAVs ~200–240 KB, **~1–2s each** via `:8010/tts` |
-| TTS | **DramaBox** | ⚠️ blocked | engine works (prior 2.4 MB outputs exist) but its disk guard trips: needs 4 GB on `/opt/dramabox-hf` (`/mnt/downloads`), only **3.5 GB free** |
-| TTS | **Qwen-TTS** | ❌ broken | `ModuleNotFoundError: qwen_tts` (matches the known-broken status in `compat.py`) |
+| TTS | **DramaBox** | ✅ (after disk reclaim) | 1.67 MB WAV, **215s cold** (Gemma load) — was disk-blocked until ~153 GB freed (see below) |
+| TTS | **Qwen-TTS** | 🚫 won't-fix | needs the `qwen-tts` pip package (absent — only Alibaba's cloud `dashscope` SDK present) **and** the Qwen3-TTS model (not downloaded); uncertain on gfx1151 and redundant with Kokoro/DramaBox |
+
+## 2026-06-03 — disk reclaim (unblocked DramaBox)
+
+Audit of `/mnt/downloads` (848 G, was 3.5 G free). **Nothing is hardlinked** —
+every LTX/WAN weight is a distinct `links=1` copy; the redundancy is *version*
+redundancy, not duplicates. Removed (user-approved) old/dev LTX + comfy-models
+WAN ⇒ **3.5 G → 157 G free** (~153 G reclaimed). Kept the active
+`ltx-2.3-22b-distilled-fp8` stack. **Still pending:** `/mnt/downloads/wan-models/`
+(~40 G) is root-owned — needs `sudo rm -rf` by the operator.
 
 Invocation gotchas:
 - TTS server `:8010` (`strix-halo-qwen-tts`) mounts the **main repo's**
@@ -44,5 +53,4 @@ Invocation gotchas:
 
 | Stage | Engine / model | Verdict |
 | --- | --- | --- |
-| Video | LTX-2.3 / WAN 2.x | ⬜ not validated this session (WAN flaky per `compat.py`) |
-| TTS | DramaBox at 1024-equivalent | blocked on disk — free ≥0.6 GB on `/mnt/downloads` to retry |
+| Video | LTX-2.3 | ⬜ not validated this session (WAN-2.x removed during reclaim — flaky on gfx1151) |
