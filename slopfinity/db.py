@@ -27,6 +27,9 @@ def _migrate_sqlite_columns():
         ("queueitem", "story_id",    "TEXT"),
         ("queueitem", "story_title", "TEXT"),
         ("queueitem", "schema_version", "INTEGER DEFAULT 1"),
+        # Catch-all JSON for fields without a dedicated column (seed_image,
+        # stage_prompts, seeds_mode, polymorphic, started_ts, …). See QueueItem.
+        ("queueitem", "extra", "JSON DEFAULT '{}'"),
     ]
     try:
         with engine.connect() as conn:
