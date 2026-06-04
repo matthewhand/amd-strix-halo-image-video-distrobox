@@ -488,13 +488,21 @@ def get_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f: return json.load(f)
-        except: pass
+        except Exception: pass  # torn/corrupt read → fall back to Idle (set_state writes atomically)
     return {"mode": "Idle", "step": "Waiting", "video_index": 0, "total_videos": 0, "chain_index": 0, "total_chains": 0, "current_prompt": "None"}
 
 def set_state(mode="Idle", step="Waiting", video=0, total=0, chain=0, total_chains=0, prompt=""):
     s = {"mode": mode, "step": step, "video_index": video, "total_videos": total, "chain_index": chain, "total_chains": total_chains, "current_prompt": prompt, "ts": time.time()}
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f: json.dump(s, f)
+    # Atomic write — get_state() is read on every broadcaster tick; a torn
+    # write (reader catching a half-flushed file) would otherwise surface as a
+    # transient JSONDecodeError and a spurious "Idle" flash on the dashboard.
+    tmp = STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(s, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, STATE_FILE)
 
 # Queue file is the IPC layer between the dashboard handlers, the worker
 # fleet, and the legacy run_fleet runner. Multiple writers can race:
