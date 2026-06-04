@@ -31,6 +31,48 @@ Severity legend: 🔴 high · 🟠 med · 🟢 low · ⚪ housekeeping
 
 ---
 
+## 0b. QA sweep across build/run/test (`wf_6ef4106a-9d2`, 40 confirmed)
+
+Resolved (`0a4a407` build · `7cac0d9` run · `8f0042e` test):
+
+- [x] 🟠 LLM provider detection heuristic (`"11434" in url`) → provider tagged at
+  the pool source + read in both loops (env-overridable).
+- [x] 🟢 Declare `pillow`+`numpy` (vae_grid); add `requirements-dev.txt` (test deps).
+- [x] 🟢 Replace deprecated `datetime.utcnow()` everywhere (warnings 81→7).
+- [x] 🟢 `ruff` F401: removed 41 unused imports (excl. `db.py` side-effect import
+  + `__init__.py` re-exports); dropped unused `planner_hit`.
+- [x] 🟢 `config.set_state` atomic write (tmp+fsync+replace) — no more torn reads
+  / "Idle" flashes; narrowed bare `except:` in `get_state` + `stats.py`.
+- [x] 🟢 Tests: new `test_qa_coverage.py` (stage-prompt resolution, cancel.flag
+  mtime-gating, `extra` catch-all merge — via two new pure helpers in run_fleet);
+  strengthened pause/resume (assert the flag file) + gpu-guard assertion.
+
+Deferred (rationale):
+
+- [ ] 🟢 **FastAPI `on_event` → `lifespan`** (server.py) — deprecated but still
+  works; a startup/shutdown rewire is better done deliberately than AFK.
+- [ ] 🟢 **Docker/compose env consistency** (HSA_OVERRIDE / FLASH_ATTENTION /
+  `--force-fp16` mismatches across Dockerfile, docker-compose, start_docker.sh) —
+  can't build/test docker here; needs a real image build to verify.
+- [ ] 🟢 **Hardcoded endpoints** (`:8188` ComfyUI, `localhost:8010` TTS,
+  import-time DB init) — work on the standard single-box setup; env-override has
+  many touch points. Low impact until someone runs a non-standard topology.
+- [ ] 🟢 **Integration-test harness** — `test_pipeline_slow` returns bool instead
+  of asserting (only "passes" without a live server because of it; needs a
+  skip-if-no-server guard); `sched.GPU` test-only-attribute pattern diverges from
+  prod `get_gpu()`; xfail review; `test_ai_mock_integration._main` list. These are
+  test-infra redesigns — a naive fix breaks the suite.
+- [ ] 🟢 **Minor consistency** — `/settings/models` HTTP status codes; LLM timeout
+  default 60 vs 120 (arguably intentional for chat tool-loops); the duplicated
+  endpoint-selection block in `lmstudio_call`/`lmstudio_chat_raw` (the provider
+  bug in it is fixed; the duplication itself remains).
+- [ ] 🟢 **Deeper run_fleet test coverage** — FLF2V `max(9,…)` clamp, per-chain
+  seed demotion, broadcaster 48h prune, polymorphic mid-flight demotion. Each
+  needs a small pure-helper extraction (like the two added this round) or
+  endpoint/seed-file fixtures to test without a GPU.
+
+---
+
 ## 1. Done — round-4 sweep (`wf_a968c3a5-8bf`, 10 confirmed, all fixed in `61094b0`)
 
 - [x] 🟠 `/music` subprocess had no timeout inside `acquire_gpu` → GPU-lock
