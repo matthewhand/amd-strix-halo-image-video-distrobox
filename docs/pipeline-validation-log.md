@@ -29,7 +29,16 @@ Key proofs:
 | Music | **Heartmula** (3B) | ✅ | 20.1s 48kHz **stereo** WAV, 3.86 MB (gen ~4 min: 250-step gen + 10-step codec decode) |
 | TTS | **Kokoro** (`af_heart` / `am_michael` / `am_puck`) | ✅ | 3 real WAVs ~200–240 KB, **~1–2s each** via `:8010/tts` |
 | TTS | **DramaBox** | ✅ (after disk reclaim) | 1.67 MB WAV, **215s cold** (Gemma load) — was disk-blocked until ~153 GB freed (see below) |
-| TTS | **Qwen-TTS** | 🚫 won't-fix | needs the `qwen-tts` pip package (absent — only Alibaba's cloud `dashscope` SDK present) **and** the Qwen3-TTS model (not downloaded); uncertain on gfx1151 and redundant with Kokoro/DramaBox |
+| TTS | **Qwen-TTS** | ✅ (fixed) | 24kHz mono 4.2s WAV, 82s gen. Took 3 fixes — see below |
+
+### Qwen-TTS fix (2026-06-03)
+
+Was failing on three separate blockers, all now resolved:
+1. **Package absent** — `pip install --no-deps qwen-tts` (provides `qwen_tts.Qwen3TTSModel`). `--no-deps` keeps its pinned `transformers==4.57.3`/`torch` from clobbering the ROCm torch + image-model stack (already satisfied; gradio/sox extras are demo-only).
+2. **`hipErrorInvalidImage`** — the launcher forced `HSA_OVERRIDE_GFX_VERSION=11.0.0` (gfx1100), wrong for this gfx1151 GPU → kernels for the wrong arch. Changed to **11.5.1** (native, same as the working heartmula launcher).
+3. **cpu/cuda device mismatch** — the `Qwen3TTSModel` wrapper caches `self.device` at load time (cpu); the launcher moved `model.model` to GPU but not the cached device, so `_tokenize_texts()` put `input_ids` on cpu. Fixed by re-syncing `model.device` (and `processor.device`) after the move.
+
+Baked into the Dockerfile (`pip install --no-deps qwen-tts`); launcher fixes in `scripts/qwen_tts_launcher.py`. **All 3 TTS engines (Kokoro · DramaBox · Qwen-TTS) now work.**
 
 ## 2026-06-03 — disk reclaim (unblocked DramaBox)
 
@@ -60,7 +69,6 @@ Invocation gotchas:
 | Stage | Engine | Why not fixed |
 | --- | --- | --- |
 | Image | ERNIE >512² | gfx1151 CK grouped-conv **kernel hang** — needs a ROCm rebuild gamble |
-| TTS | Qwen-TTS | needs absent `qwen-tts` pkg + undownloaded model; redundant with Kokoro/DramaBox |
 | Video | WAN 2.x | removed during reclaim — flaky on this hardware |
 
 Every core stage (image · app E2E · music · TTS · **video**) is now proven on this box.

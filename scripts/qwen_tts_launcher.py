@@ -5,9 +5,11 @@ Usage:
     python3 qwen_tts_launcher.py --text "hello world" --voice ryan --out /path/out.wav \
         [--model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice]
 
-Forces HSA_OVERRIDE_GFX_VERSION=11.0.0 (required for this model on gfx1151 —
-NOT 11.5.1 like the rest of the stack) and attn_implementation="sdpa"
-(flash-attn-2 does not build on gfx1151 for Qwen3-TTS).
+Forces HSA_OVERRIDE_GFX_VERSION=11.5.1 (native gfx1151 — the old 11.0.0/gfx1100
+value loads kernels for the wrong arch and throws hipErrorInvalidImage on first
+generate) and attn_implementation="eager" (flash-attn-2 / the precompiled SDPA
+path do not work on gfx1151 for Qwen3-TTS). After moving the model to GPU we
+re-sync the wrapper's cached `.device` so input_ids land on cuda, not cpu.
 
 Weights are resumably downloaded via huggingface_hub.snapshot_download to
 ${HF_HOME:-~/.cache/huggingface}. A disk-space pre-flight guard aborts with
@@ -24,8 +26,12 @@ import shutil
 import sys
 import traceback
 
-# Force gfx1151-compatible ROCm env BEFORE torch imports.
-os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+# Force gfx1151-compatible ROCm env BEFORE torch imports. gfx1151 (Strix Halo)
+# is RDNA 3.5 → 11.5.1; the old 11.0.0 (gfx1100) value loads kernels for the
+# wrong arch and the first generate() throws hipErrorInvalidImage. 11.5.1 is the
+# value the working heartmula launcher uses. Force it (the TTS server inherits a
+# stale 11.0.0 in its env, so this must overwrite, not setdefault).
+os.environ["HSA_OVERRIDE_GFX_VERSION"] = os.environ.get("QWEN_TTS_GFX_OVERRIDE", "11.5.1")
 
 MIN_FREE_GB = 15
 DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
@@ -97,6 +103,17 @@ def synthesize(text: str, voice: str, out_path: str, model_id: str) -> None:
     )
     if hasattr(model, "model"):
         model.model = model.model.to(device).eval()
+    # The wrapper caches `self.device` at from_pretrained time (cpu, since HF
+    # loads to cpu first). We just moved the weights to `device`, so re-sync the
+    # cached device — otherwise _tokenize_texts() puts input_ids on the stale
+    # cpu device while the embedding weights are on cuda → device-mismatch.
+    try:
+        model.device = torch.device(device)
+        proc = getattr(model, "processor", None)
+        if proc is not None and hasattr(proc, "device"):
+            proc.device = torch.device(device)
+    except Exception:
+        pass
 
     # CustomVoice models accept `speaker` (one of 9 premium timbres) +
     # optional `language` hint. The legacy `voice` arg in this launcher's
