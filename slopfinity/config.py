@@ -551,6 +551,41 @@ def queue_lock():
             fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def _split_queue_item(item_dict):
+    """Split a queue dict into QueueItem(**kwargs) form, funneling any key
+    without a dedicated column into the `extra` JSON catch-all.
+
+    Without this, save_queue's `k in model_fields` filter silently drops
+    fields like seed_image / stage_prompts / seeds_mode / polymorphic /
+    started_ts on the DB roundtrip — breaking the seed-image + FLF2V +
+    stage-prompt features whose live consumer (run_fleet) reads them back
+    out of the DB. A stable id is stamped if missing.
+    """
+    item_dict.setdefault("id", queue_schema.make_id())
+    known = QueueItem.model_fields
+    extra = {k: v for k, v in item_dict.items() if k not in known}
+    filtered = {k: v for k, v in item_dict.items() if k in known and k != "extra"}
+    # Defensive: if an un-flattened `extra` dict slipped through, merge it
+    # (newer top-level unknowns win over stale nested copies).
+    prev = item_dict.get("extra")
+    if isinstance(prev, dict):
+        extra = {**prev, **extra}
+    filtered["extra"] = extra
+    return filtered
+
+
+def _flatten_queue_item(m):
+    """model_dump() a QueueItem and lift its `extra` catch-all back to the top
+    level so callers see one flat dict (exactly as before the column existed).
+    setdefault so a real column is never clobbered by a stale extra entry."""
+    d = m.model_dump()
+    extra = d.pop("extra", None)
+    if isinstance(extra, dict):
+        for k, v in extra.items():
+            d.setdefault(k, v)
+    return d
+
+
 def get_queue():
     """Retrieve the queue from the database, falling back to JSON for migration."""
     init_db()
@@ -569,7 +604,7 @@ def get_queue():
             for item in file_data:
                 try:
                     queue_schema.migrate_legacy(item)
-                    q_item = QueueItem(**{k: v for k, v in item.items() if k in QueueItem.model_fields})
+                    q_item = QueueItem(**_split_queue_item(item))
                     session.add(q_item)
                 except Exception as e:
                     _log.warning("get_queue: skipping un-migratable legacy item: %s", e)
@@ -579,7 +614,7 @@ def get_queue():
             except Exception as e:
                 _log.warning("get_queue: legacy migration commit failed: %s", e)
 
-        return [m.model_dump() for m in items]
+        return [_flatten_queue_item(m) for m in items]
 
 def save_queue(q):
     """Save the queue to the database and sync to JSON."""
@@ -592,14 +627,11 @@ def save_queue(q):
             session.delete(item)
         
         for item_dict in q:
-            # Stamp a stable id on rows that lack one (run_fleet appends iter
-            # rows without an id). Without this, the QueueItem id default_factory
-            # mints a fresh uuid on EVERY save, so an item's id churns each round
-            # and status tracking ("working"→"done") can't follow it across saves.
-            item_dict.setdefault("id", queue_schema.make_id())
-            # Handle potential extra keys in the dict
-            filtered = {k: v for k, v in item_dict.items() if k in QueueItem.model_fields}
-            session.add(QueueItem(**filtered))
+            # _split_queue_item stamps a stable id (run_fleet appends iter rows
+            # without one — otherwise the id default_factory churns a fresh uuid
+            # every save and status tracking can't follow an item across saves)
+            # and funnels non-column keys into `extra` so they aren't dropped.
+            session.add(QueueItem(**_split_queue_item(item_dict)))
         session.commit()
 
     # Sync to JSON as backup

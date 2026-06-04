@@ -24,6 +24,37 @@ def test_save_queue_stamps_stable_id():
         cfg.save_queue([])
 
 
+def test_queue_item_extra_fields_survive_db_roundtrip():
+    """Fields without a dedicated QueueItem column (seed_image, stage_prompts,
+    seeds_mode, polymorphic, started_ts, …) must survive the DB roundtrip via
+    the `extra` catch-all — they used to be silently dropped, breaking the
+    seed-image / FLF2V / stage-prompt features in run_fleet."""
+    from slopfinity import config as cfg
+    payload = {
+        "prompt": "p", "ts": 7.0, "status": "pending",
+        "seed_image": "seed_x.png", "seeds_mode": "per-task",
+        "seed_images": ["seed_a.png", "seed_b.png"], "seed_prompt": "edited",
+        "stage_prompts": {"video": "vp"}, "stage_prompts_raw": "raw",
+        "polymorphic": True, "started_ts": 11.0, "requeued_from_ts": 3.0,
+    }
+    extras = [k for k in payload if k not in ("prompt", "ts", "status")]
+    try:
+        cfg.save_queue([dict(payload)])
+        got = cfg.get_queue()
+        assert len(got) == 1
+        g = got[0]
+        assert "extra" not in g, "extra wrapper must be flattened, not exposed"
+        for k in extras:
+            assert g.get(k) == payload[k], f"dropped/changed on roundtrip: {k}"
+        # second roundtrip (run_fleet claim->mutate->save) must also preserve
+        cfg.save_queue(got)
+        g2 = cfg.get_queue()[0]
+        for k in extras:
+            assert g2.get(k) == payload[k], f"dropped on 2nd roundtrip: {k}"
+    finally:
+        cfg.save_queue([])
+
+
 def test_queue_lock_is_exclusive():
     # queue_lock holds an exclusive flock — a second non-blocking acquire fails.
     import fcntl

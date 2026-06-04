@@ -30,7 +30,16 @@ class QueueItem(SQLModel, table=True):
     fast_track: bool = Field(default=False)
     config_snapshot: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     stages: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    
+    # Catch-all for queue fields that don't have a dedicated column yet — e.g.
+    # seed_image, seed_images, seeds_mode, seed_prompt, stage_prompts,
+    # stage_prompts_raw, polymorphic, started_ts, requeued_from_ts. Writers
+    # (the /inject + run_fleet seed/FLF2V paths) stamp these onto the task dict;
+    # without this column save_queue's `k in model_fields` filter would silently
+    # drop them on the DB roundtrip, breaking those features. config.save_queue
+    # funnels unknown keys in here and get_queue flattens them back to the top
+    # level, so callers see a flat dict exactly as before.
+    extra: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+
     # Tracking
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_ts: Optional[float] = None
