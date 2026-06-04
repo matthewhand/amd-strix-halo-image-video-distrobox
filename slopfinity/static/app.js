@@ -5567,18 +5567,22 @@ async function openAssetInfo(filename) {
         // fetch below. We render the row first with a placeholder and
         // hydrate it after the MD fetch resolves.
         const mdHref = '/files/' + encodeURIComponent(filename) + '.md';
+        // Escape server/sidecar-supplied strings before innerHTML — the prompt
+        // (and filename/model) are attacker-influencable and were injected raw.
+        const _esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         body.innerHTML = `
             <div id="asset-info-md-row" class="hidden mb-2">
                 <a href="${mdHref}" target="_blank" rel="noopener" class="link link-primary text-xs uppercase tracking-widest">Prompt notes</a>
                 <pre id="asset-info-md-preview" class="text-xs whitespace-pre-wrap leading-snug bg-base-200/40 rounded p-2 max-h-48 overflow-y-auto mt-1"></pre>
             </div>
             <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1 text-xs font-mono">
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${m.filename}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${_esc(m.filename)}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Kind</div><div><span class="badge badge-xs ${badgeColor}">${m.kind}</span></div>
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Model</div><div>${m.model || '—'}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Model</div><div>${_esc(m.model) || '—'}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Size</div><div>${m.size_human}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Created</div><div>${m.mtime_human} <span class="text-base-content/50">(${m.age_seconds}s ago)</span></div>
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt || '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt ? _esc(m.prompt) : '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
             </div>
         `;
         // For FINAL_*.mp4, append a Components section listing the source

@@ -327,9 +327,18 @@ async def settings_models(
 
     if not base_url:
         return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
-    # If the api_key arrives as the mask, resolve it from stored config.
+    # SSRF guard: this GET is reachable cross-origin (CSRF middleware only guards
+    # mutating methods) and fetches base_url server-side — block metadata/file:// etc.
+    import slopfinity.net_guard as _net_guard
+    try:
+        _net_guard.validate_llm_base_url(base_url)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e), "models": []}, status_code=400)
+    # Resolve the masked api_key ONLY for the configured endpoint — never send the
+    # stored secret to an arbitrary base_url (key-exfiltration guard).
     if api_key in ("***",):
-        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
+        _llm = cfg.load_config().get("llm") or {}
+        api_key = _llm.get("api_key", "") if base_url == _llm.get("base_url") else ""
     p = get_provider(provider)
     try:
         models = p.list_models(base_url, api_key=api_key or None, timeout=5)
@@ -346,10 +355,16 @@ async def settings_test(data: dict = Body(...)):
     provider = (data.get("provider") or "lmstudio").strip()
     model_id = (data.get("model_id") or "").strip()
     api_key = data.get("api_key") or ""
-    if api_key in ("***",):
-        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
     if not base_url or not model_id:
         return {"ok": False, "error": "base_url and model_id required", "latency_ms": 0}
+    import slopfinity.net_guard as _net_guard
+    try:
+        _net_guard.validate_llm_base_url(base_url)
+    except ValueError as e:
+        return {"ok": False, "error": str(e), "latency_ms": 0}
+    if api_key in ("***",):
+        _llm = cfg.load_config().get("llm") or {}
+        api_key = _llm.get("api_key", "") if base_url == _llm.get("base_url") else ""
     # Also count models to enrich the ✓ badge
     from slopfinity.llm.providers import get_provider
 

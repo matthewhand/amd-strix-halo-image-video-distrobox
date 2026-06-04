@@ -24,7 +24,7 @@ class AudioWorker(StageWorker):
         super().__init__(role=role)
 
     async def run_stage(self, item: Any) -> Dict[str, Any]:
-        from slopfinity.workers import run_audio_heartmula  # lazy import avoids circular
+        from slopfinity.worker_sh import run_audio_heartmula  # lazy import avoids circular
 
         prompt = stage_get(item, "concept", "output") or ""
         if not prompt:
