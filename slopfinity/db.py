@@ -26,6 +26,7 @@ def _migrate_sqlite_columns():
         # (table_name, column_name, column_def)
         ("queueitem", "story_id",    "TEXT"),
         ("queueitem", "story_title", "TEXT"),
+        ("queueitem", "schema_version", "INTEGER DEFAULT 1"),
     ]
     try:
         with engine.connect() as conn:

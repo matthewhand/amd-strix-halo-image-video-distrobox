@@ -104,6 +104,17 @@ class StageWorker:
             _config.save_queue(queue)
         return None
 
+    def can_claim(self, item: dict) -> bool:
+        """True if this worker's role still has an unfinished stage for `item`
+        (i.e. a stage mapped to self.role whose status isn't terminal/working).
+        Lets the coordinator skip items it can't act on without a full claim."""
+        role_stages = [s for s, r in getattr(qs, "ROLE_STAGE", {}).items()
+                       if r == self.role]
+        return any(
+            qs.stage_status(item, s) not in ("done", "skipped", "working", "failed")
+            for s in role_stages
+        )
+
     # ------------------------------------------------------------------
     # Run + finalize
     # ------------------------------------------------------------------

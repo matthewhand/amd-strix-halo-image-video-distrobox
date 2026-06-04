@@ -14,6 +14,10 @@ class QueueItem(SQLModel, table=True):
     # default to "now" so creating an item without an explicit ts (tests,
     # migrate_legacy) doesn't hit a NOT NULL IntegrityError on save.
     ts: float = Field(default_factory=time.time, index=True)
+    # Persist the queue-schema version so a migrated (v2) item isn't re-migrated
+    # on every read (which would reset its `stages`). default=1 ⇒ legacy items
+    # without it get migrated once. See _migrate_sqlite_columns in db.py.
+    schema_version: int = Field(default=1)
     status: str = Field(default="pending", index=True)
     prompt: str
     title: Optional[str] = None
