@@ -27,6 +27,14 @@ async function bootstrap(page, layout = 'default', endlessRowSeed = null) {
             if (seed !== null) {
                 localStorage.setItem('slopfinity-endless-row-prompts', JSON.stringify(seed));
             }
+            // Seed Suggestions toggle as VISIBLE — new browsers default to
+            // `slopfinity_suggestions_hidden=null` which the app treats as
+            // hidden (intentional UX — new users opt in). Without this
+            // seed, the +/regen badges get inline style.display='none'
+            // applied by _applySuggestionsHiddenState() at DOMContentLoaded,
+            // and any test that clicks them times out on "not visible".
+            // Same fix as smoke.spec.js (commit c159d69).
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) {}
     }, endlessRowSeed);
     await page.goto(`${BASE}/?layout=${layout}`, { waitUntil: 'domcontentloaded' });
@@ -35,7 +43,7 @@ async function bootstrap(page, layout = 'default', endlessRowSeed = null) {
         const main = document.querySelector('main');
         const opacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && opacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 }
 
 async function setMode(page, mode) {
@@ -66,8 +74,12 @@ async function stubSuggestionResponse(page, suggestions) {
     }, suggestions);
 }
 
-// Endless and simple now have separate chip stacks; default to the
-// class selector that matches whichever is active.
+// Chip stacks are mode-suffixed (#subject-chips-stack-simple /
+// -endless / -chat); they share class `.subject-chips-stack`. Endless and
+// simple now have separate stacks, so pass the mode-suffixed selector when
+// you want one specific stack. The default `.subject-chips-stack` class
+// matches whichever is active (the HTML keeps a stale `.hidden` class on
+// non-default stacks, but body.subj-mode-<mode> CSS overrides it).
 async function countRows(page, sel = '.subject-chips-stack') {
     return await page.locator(`${sel} .suggest-marquee-row`).count();
 }
@@ -117,6 +129,9 @@ async function enterEndlessSynced(page, n) {
 test('endless: every row has [data-endless-row-lead]', async ({ page }) => {
     await stubSuggestionResponse(page, ['lonely lighthouse keeper', 'cyberpunk dragon', 'hermit crab lawyer', 'neon jellyfish', 'clay robot rebellion', 'symbiotic mushroom city']);
     // Seed 2 beat-prompts so the synced render paints 2 endless rows.
+    // (setMode/enterEndlessSynced flips _endlessRunning=true and seeds the
+    // row-prompts — no separate Start Story button anymore; see
+    // _setSubjectsMode in app.js line ~2589.)
     await bootstrap(page, 'default', ['yes-and', 'plot-twist']);
     await enterEndlessSynced(page, 2);
     const allHaveLead = await rowsHaveLead(page, '#subject-chips-stack-endless');
@@ -178,6 +193,10 @@ test('endless: + click renders empty mask, no blank-chip placeholders', async ({
 
 test('endless: + always enabled in endless mode', async ({ page }) => {
     await stubSuggestionResponse(page, ['a', 'b']);
+    // setMode('endless') *is* the Start Story trigger now (Story-mode
+    // redesign removed the separate Start-Story button — see
+    // _setSubjectsMode in app.js ~line 2589). Test asserts the +
+    // button stays enabled both at entry and after a row is painted/added.
     await bootstrap(page, 'default', ['yes-and']);
     await setMode(page, 'endless');
     // Enabled immediately on entering endless (auto-started).
@@ -216,9 +235,13 @@ test('endless: idle prefetch does not fire', async ({ page }) => {
     // Enter endless with NO seeded rows so nothing is painted automatically.
     await bootstrap(page, 'default', []);
     await setMode(page, 'endless');
+    await page.waitForTimeout(400); // let any setMode-time fetches settle
     const callsAfterModeSwitch = suggestCalls;
-    // Sit idle past the prefetch idle trigger (8s). No prefetch should fire.
-    await page.waitForTimeout(9000);
+    // Sit idle past the prefetch idle trigger (8s). The shared #p-core seed
+    // textarea is hidden in endless now, so there's nothing to type into;
+    // we just assert no prefetch fires while idle. If the prefetch leaked,
+    // this would be callsAfterModeSwitch + 1+.
+    await page.waitForTimeout(9000); // > _PREFETCH_IDLE_TRIGGER_MS (8s)
     const callsAfterIdle = suggestCalls;
     expect(callsAfterIdle).toBeLessThanOrEqual(callsAfterModeSwitch);
 });
@@ -250,11 +273,14 @@ test('suggest: junk filter drops markdown / errors / scaffolding', async ({ page
     await page.waitForSelector('#subject-chips-stack-simple .suggest-marquee-row', { timeout: 5000 });
     await page.waitForTimeout(300);
     const chipTexts = await page.evaluate(() => {
+        // Filter to the VISIBLE stack via computed style — class
+        // `.hidden` is on every non-default stack as stale baseline
+        // markup but CSS overrides it for the active mode.
+        const stacks = Array.from(document.querySelectorAll('.subject-chips-stack'))
+            .filter(s => getComputedStyle(s).display !== 'none');
+        const buttons = stacks.flatMap(s => Array.from(s.querySelectorAll('.btn[data-suggest]')));
         // Marquee duplicates chips for the wraparound — dedupe via Set.
-        return Array.from(new Set(
-            Array.from(document.querySelectorAll('#subject-chips-stack-simple .btn[data-suggest]'))
-                .map(b => (b.dataset.suggest || '').trim())
-        ));
+        return Array.from(new Set(buttons.map(b => (b.dataset.suggest || '').trim())));
     });
     expect(chipTexts).toContain('lonely lighthouse');
     expect(chipTexts).toContain('cyberpunk dragon');
@@ -286,13 +312,15 @@ test('mode swap: chips do not leak across modes', async ({ page }) => {
     expect(simpleRowCount).toBeGreaterThan(0);
     // Swap to endless — endless owns its OWN stack, so the simple chips
     // can't leak in. The endless stack starts empty (no rows painted until
-    // the first +). Each mode's stack is independent.
+    // the first +). CSS hides the simple stack via display:none, so it
+    // can't leak into the endless view. Each mode's stack is independent.
     await setMode(page, 'endless');
     await page.waitForTimeout(300);
     const endlessRowCount = await countRows(page, '#subject-chips-stack-endless');
     expect(endlessRowCount).toBe(0);
     // The endless stack has no chip rows and none of simple's chips leaked
-    // into it (it may show an idle hint string, but no clickable chips).
+    // into it (it may show an idle-state placeholder hint string —
+    // #subject-chips-empty-endless — but no clickable chips).
     const endlessChips = await page.evaluate(() => Array.from(
         document.querySelectorAll('#subject-chips-stack-endless .btn[data-suggest]')
     ).map(b => (b.dataset.suggest || '').trim()));
@@ -339,6 +367,11 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
             // Pre-seed the simple-mode chip cache.
             localStorage.setItem('slopfinity_suggestions_v1',
                 JSON.stringify(['cached-1', 'cached-2', 'cached-3']));
+            // Seed Suggestions visible — without this the chip stack is
+            // inline-style display:none-d by _applySuggestionsHiddenState
+            // and no hydration happens (or it happens but the stack is
+            // never made visible). Same fix as smoke.spec.js c159d69.
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) {}
     });
     let suggestCalls = 0;
@@ -350,10 +383,10 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
         });
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.waitForTimeout(800); // give the cache hydrate a moment
-    // Cached chips should appear (in the simple stack) without any
-    // /subjects/suggest call.
+    // Cached chips should appear (in the simple stack — the default mode on
+    // a cold load) without any /subjects/suggest call.
     const chipTexts = await page.evaluate(() => Array.from(new Set(
         Array.from(document.querySelectorAll('#subject-chips-stack-simple .btn[data-suggest]'))
             .map(b => (b.dataset.suggest || '').trim())
@@ -376,6 +409,8 @@ test('simple: cached chips hydrate without LLM call on reload', async ({ page })
 
 test('endless: pill is never locked (class removed in v316/v317)', async ({ page }) => {
     await stubSuggestionResponse(page, ['a', 'b']);
+    // The Start-Story button + lock class were both removed in v316/v317.
+    // Entering endless mode IS the start; it never reinstates the dimmer.
     await bootstrap(page, 'default', ['yes-and']);
     // Enter endless + paint one synced row.
     await enterEndlessSynced(page, 1);
@@ -389,7 +424,8 @@ test('endless: pill is never locked (class removed in v316/v317)', async ({ page
     });
     expect(pillPointerEvents).not.toBe('none');
 
-    // After adding another row — still no lock.
+    // After adding another row — still no lock. (The Submit affordance was
+    // removed in v316/v317, so we exercise the + path instead.)
     await page.click('#subjects-suggest-add-btn');
     await page.waitForFunction(
         () => document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row').length >= 2,

@@ -374,7 +374,7 @@ def test_http_json_get_no_body(monkeypatch):
         captured["timeout"] = timeout
         return FakeResp()
 
-    monkeypatch.setattr(P.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(P._OPENER, "open", fake_urlopen)
     out = P._http_json("GET", "http://x/v1/models", timeout=3)
     assert out == {"ok": True}
     assert captured["method"] == "GET"
@@ -400,7 +400,7 @@ def test_http_json_post_encodes_body(monkeypatch):
         captured["ct"] = req.get_header("Content-type")
         return FakeResp()
 
-    monkeypatch.setattr(P.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(P._OPENER, "open", fake_urlopen)
     out = P._http_json("POST", "http://x", body={"a": 1})
     assert out == {}
     assert json.loads(captured["data"].decode()) == {"a": 1}

@@ -18,7 +18,6 @@ import os
 import signal
 import subprocess
 import urllib.request
-from typing import Any
 
 
 # ---------------------------------------------------------------------------

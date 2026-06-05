@@ -98,13 +98,15 @@ def _fake_urlopen(expected_payload):
     return _opener
 
 
-def test_tts_proxy_forwards_text_and_voice():
+def test_tts_proxy_forwards_text_and_voice(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
+    import slopfinity.routers.runner as _runner
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     with mock.patch.object(
-        srv.urllib.request, "urlopen",
+        _runner.urllib.request, "urlopen",
         side_effect=_fake_urlopen({"text": "hi there", "voice": "ryan"}),
     ):
         r = client.post(
@@ -120,13 +122,15 @@ def test_tts_proxy_forwards_text_and_voice():
     assert body["voice"] == "ryan"
 
 
-def test_tts_proxy_worker_unreachable_returns_503_not_sine():
+def test_tts_proxy_worker_unreachable_returns_503_not_sine(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
+    import slopfinity.routers.runner as _runner
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     with mock.patch.object(
-        srv.urllib.request, "urlopen",
+        _runner.urllib.request, "urlopen",
         side_effect=urllib.error.URLError("Connection refused"),
     ):
         r = client.post(
@@ -140,10 +144,11 @@ def test_tts_proxy_worker_unreachable_returns_503_not_sine():
     assert "qwen-tts-service" in body["error"]
 
 
-def test_tts_proxy_empty_text_returns_400():
+def test_tts_proxy_empty_text_returns_400(monkeypatch):
     from fastapi.testclient import TestClient
     import slopfinity.server as srv
 
+    monkeypatch.setenv("SLOPFINITY_DISABLE_CSRF", "1")
     client = TestClient(srv.app)
     r = client.post(
         "/tts",
@@ -157,7 +162,7 @@ def test_tts_proxy_empty_text_returns_400():
 
 def test_serve_invokes_launcher_with_correct_args(tmp_path, monkeypatch):
     """qwen_tts_serve.py must shell out to qwen_tts_launcher.py with the
-    text/voice/out/model args and HSA_OVERRIDE_GFX_VERSION=11.0.0."""
+    text/voice/out/model args and HSA_OVERRIDE_GFX_VERSION=11.5.1."""
     monkeypatch.setenv("TTS_OUT_DIR", str(tmp_path))
     for mod in [m for m in list(sys.modules) if m.startswith("qwen_tts_serve")]:
         del sys.modules[mod]
@@ -200,4 +205,4 @@ def test_serve_invokes_launcher_with_correct_args(tmp_path, monkeypatch):
     assert "--voice" in cmd and cmd[cmd.index("--voice") + 1] == "ryan"
     assert "--out" in cmd
     assert "--model" in cmd
-    assert captured["env"]["HSA_OVERRIDE_GFX_VERSION"] == "11.0.0"
+    assert captured["env"]["HSA_OVERRIDE_GFX_VERSION"] == "11.5.1"

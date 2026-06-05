@@ -70,33 +70,47 @@ What's preview-tier:
 
 ---
 
-## Quick start (bundled toolbox image)
+## Quick start (bundled toolbox)
 
-The fastest path: run the AMD Strix Halo Image+Video toolbox stack via docker-compose. Slopfinity is included.
+The fastest path: clone the toolbox repo, start the backend services via docker-compose, run the dashboard on the host.
 
 ```bash
 git clone https://github.com/matthewhand/amd-strix-halo-image-video-distrobox.git
 cd amd-strix-halo-image-video-distrobox
-cp docker-compose.override.yaml.example docker-compose.override.yaml
+
+# Backend services (ComfyUI + Qwen-Image + Qwen3-TTS + Heartmula) — docker
 docker compose --profile slop up -d
+
+# Dashboard — host-native, picks up changes without rebuilds
+pip install -r requirements-slopfinity.txt
+make up                       # or `bin/slopfinity up`
 # Dashboard at http://localhost:9099
 ```
 
-That gives you Slopfinity + ComfyUI + Qwen-Image + Qwen3-TTS + Heartmula all wired together.
+> **Why host-native?** The dashboard is a thin FastAPI + Jinja app — running it on the host means edit-save-refresh works without rebuilding a container, and `uvicorn --reload` restarts on Python changes. The heavy GPU/model services stay in docker.
+
+For active UI work, swap `make up` for `make dev` to also get `tailwindcss --watch` running alongside the server (requires [overmind](https://github.com/DarthSim/overmind) + tmux):
+
+```bash
+# one-time overmind install (no apt package; download the release binary)
+curl -L https://github.com/DarthSim/overmind/releases/latest/download/overmind-v2.5.1-linux-amd64.gz \
+  | gunzip > bin/overmind && chmod +x bin/overmind
+export PATH="$PWD/bin:$PATH"
+
+make dev
+```
 
 ---
 
 ## Quick start (standalone, against your own backends)
 
-Slopfinity itself is a Python+FastAPI app that talks to three URLs. If you have your own LLM / ComfyUI / TTS already running, you can run Slopfinity standalone:
+If you already run your own LLM / ComfyUI / TTS, you only need the dashboard:
 
 ```bash
 git clone https://github.com/matthewhand/slopfinity.git    # (post-spinoff)
 cd slopfinity
 pip install -r requirements-slopfinity.txt
-SLOPFINITY_BIND_HOST=127.0.0.1 \
-  SLOPFINITY_EXP_DIR=$PWD/comfy-outputs/experiments \
-  python3 dark_server.py
+make up
 # Open http://localhost:9099
 # Then: Settings → Endpoints → set LLM / TTS / ComfyUI URLs to your services
 ```
@@ -104,7 +118,7 @@ SLOPFINITY_BIND_HOST=127.0.0.1 \
 What URLs you point at:
 - **LLM**: anything OpenAI-compatible. LM Studio (`:1234/v1`), Ollama (`:11434/v1`), vLLM, OpenRouter, OpenAI itself.
 - **ComfyUI**: any ComfyUI install with `/prompt` HTTP API. Default port 8188.
-- **TTS**: any HTTP service that takes `{ text, voice }` and returns a WAV. The bundled stack uses [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice); Kokoro-82M is a documented fallback. Roll your own with ~30 LOC of FastAPI if needed.
+- **TTS**: any HTTP service that takes `{ text, voice, engine }` and returns a WAV. The bundled stack ships **three engines**: **Kokoro-82M** (54 voices across 9 languages, fast — the default), **DramaBox** (dramatic/cloned narration), and **[Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)** (9 premium timbres). Roll your own with ~30 LOC of FastAPI if needed.
 
 ---
 
@@ -148,14 +162,45 @@ Items 3 + 4 are the parts that tie Slopfinity to a specific backend image. The p
 
 ---
 
+## Stack
+
+Cheat-sheet of every meaningful choice — useful for comparing across projects and spotting overlaps.
+
+| Layer | Choice |
+|---|---|
+| Server language | Python 3.12 |
+| Web framework | FastAPI + Jinja2 |
+| ASGI server | Uvicorn (`--reload` in dev) |
+| Persistence | SQLModel over SQLite |
+| Tokenizer | tiktoken |
+| Real-time | WebSocket (broadcaster) |
+| Frontend language | Vanilla JS — hand-authored, no bundler |
+| CSS | DaisyUI (CDN) + Tailwind CLI + hand-authored `app.css` |
+| Service worker | Custom hash-versioned shell cache |
+| Auth | None — single-user loopback by default |
+| CSRF | Auto-derived origin allowlist (Host header) |
+| LLM API | OpenAI-compatible HTTP (any provider) |
+| ComfyUI API | `/prompt` HTTP |
+| TTS API | `{ text, voice } → wav` HTTP |
+| Task runner | Make → `bin/slopfinity` shell launcher |
+| Dev supervisor | overmind + Procfile (optional, for tailwind `--watch`) |
+| Backend deps | Docker Compose with profiles (`slop`, `comfyui`, `qwen-image`, …) |
+| App runtime | Host-native (no container for the dashboard) |
+| Tests | pytest + Vitest + Playwright |
+| Healthchecks | `/healthz`, `/readyz` |
+| Logs | `logs/slopfinity.log` (text) |
+| Lint | stylelint + `node --check` + `py_compile` |
+
+---
+
 ## Configuration
 
 **Loopback bind by default** (since v330). The dashboard binds `127.0.0.1:9099` so it isn't exposed to the LAN by default. Operators who need LAN/proxy access:
 
 ```bash
-export SLOPFINITY_BIND_HOST=0.0.0.0           # or specific interface
-export SLOPFINITY_TRUSTED_ORIGINS=http://my-host:9099,https://kiosk.local
-python3 dark_server.py
+SLOPFINITY_BIND_HOST=0.0.0.0 \
+SLOPFINITY_TRUSTED_ORIGINS=http://my-host:9099,https://kiosk.local \
+  make up
 ```
 
 The CSRF middleware accepts only same-origin (the bind host) by default; `SLOPFINITY_TRUSTED_ORIGINS` extends the allowlist.

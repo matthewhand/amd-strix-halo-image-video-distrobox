@@ -44,7 +44,7 @@ async function bootChat(page, history) {
         } catch (_) { }
     }, history || null);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="chat"]');
     await page.waitForTimeout(400);
 }
@@ -59,6 +59,14 @@ test.describe('chat suggestions header (pill cluster + count stepper)', () => {
         }, null, { timeout: 5000 });
         const pillCount = await page.locator('#chat-suggest-prompt-pills button').count();
         expect(pillCount).toBeGreaterThanOrEqual(3);
+
+        // v324: per-mode count badge was REMOVED from the chat-suggest
+        // cluster per user request "under chat mode the tally counter
+        // should be removed". The default count (3) lives on in the
+        // localStorage key + _getChatSuggestCount() — no visible badge.
+        await expect(page.locator('#chat-suggest-count')).toHaveCount(0);
+        const defaultCount = await page.evaluate(() => (typeof window._getChatSuggestCount === 'function' ? window._getChatSuggestCount() : null));
+        expect(defaultCount).toBe(3);
     });
 
     test('count stepper was removed (v324) — badge + step buttons absent', async ({ page }) => {
@@ -76,6 +84,25 @@ test.describe('chat suggestions header (pill cluster + count stepper)', () => {
         expect(badgeCount).toBe(0);
         const stepCount = await page.locator('.chat-suggest-cluster .chat-suggest-step').count();
         expect(stepCount).toBe(0);
+    });
+
+    test.skip('+/- step badge in lockstep, clamped to 1..6', async ({ page }) => {
+        // v324: the +/- stepper buttons + count badge were REMOVED from
+        // the chat-suggest cluster (user request "under chat mode the
+        // tally counter should be removed"). Chat replies now render
+        // whatever the server returns (capped server-side via
+        // suggest_max_len_chat) without a client-side display-count
+        // gate. The clamp logic lives in _setChatSuggestCount() — see
+        // js-tests/ for that unit coverage.
+    });
+
+    test.skip('count persists across reload via localStorage', async ({ page }) => {
+        // v324: the count badge was REMOVED from the chat-suggest
+        // cluster (user request "under chat mode the tally counter
+        // should be removed"). The localStorage key
+        // slopfinity-chat-suggest-count still exists for
+        // _getChatSuggestCount() but there is no longer a visible
+        // badge to read it back into.
     });
 
     test('in-flight thinking run is .chat-thought-active; resolved is .chat-thought-done', async ({ page }) => {

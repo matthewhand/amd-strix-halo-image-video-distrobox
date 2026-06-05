@@ -11,7 +11,6 @@ main { padding: calc(1rem * var(--slop-density)); }
 @media (min-width: 768px) {
     main { padding: calc(1.5rem * var(--slop-density)); }
 }
-.ui-split-card { border-width: calc(2px * var(--slop-density)); }
 
 /* Compact viewport: hide the theme selector dropdown — it eats nav
    real estate that the brand + critical metrics need more.
@@ -1172,13 +1171,30 @@ textarea.subjects-autogrow {
 /* The Subjects+Queue row fills its parent pane's height so each card sees
    100% of the available vertical room (capped, not unbounded). */
 .ui-split-row {
+    flex: 1 1 0;
     min-height: 0;
+    height: 100%;
+    /* overflow: hidden removed globally to ensure dropdowns can escape when stacked */
+}
+
+.ui-split-card {
+    min-height: 0;
+    /* density-scaled border (merged here from the former duplicate selector
+       to satisfy stylelint no-duplicate-selectors) */
+    border-width: calc(2px * var(--slop-density));
+    /* max-height: 100% removed globally to let natural stacking occur if needed,
+       but we want flex-1 to fill space */
+}
+
+.ui-split-cardbody {
+    min-height: 0;
+    flex: 1 1 0;
+    overflow: visible;
 }
 
 /* Queue list — keep the rendered height stable regardless of how many items
    are queued. New items scroll internally instead of pushing the whole page
-   down. The lg+ block below replaces this cap with the splitter's flex
-   constraints once the side-by-side layout kicks in. */
+   down. */
 #q-list {
     max-height: 50vh;
     min-height: 0;
@@ -1186,26 +1202,14 @@ textarea.subjects-autogrow {
     padding: 2px; /* Prevent clipping of ring-2 / focus borders on items */
 }
 
-@media (min-width: 1280px) {
-    .ui-split-row {
+@media (min-width: 768px) {
+    /* In medium mode (stacked), let both cards fill available vertical space equally */
+    #split-left, #split-right {
         flex: 1 1 0;
-        min-height: 0;
-        height: 100%;
-        overflow: hidden;
     }
-
+    
     .ui-split-card {
-        min-height: 0;
         max-height: 100%;
-        /* overflow visible (was hidden) so per-item action dropdowns
-           in the queue can render outside the card border. The internal
-           scrolling concern is handled by #q-list's own overflow-y: auto. */
-        overflow: visible;
-    }
-
-    .ui-split-cardbody {
-        min-height: 0;
-        flex: 1 1 0;
         overflow: visible;
     }
 
@@ -1215,6 +1219,12 @@ textarea.subjects-autogrow {
     #split-left #p-core {
         flex: 1 1 auto;
         min-height: 0;
+    }
+}
+
+@media (min-width: 1280px) {
+    .ui-split-row {
+        overflow: hidden;
     }
 
     /* Queue list — scroll internally when squashed instead of pushing the
@@ -2718,12 +2728,21 @@ body.subj-mode-raw .subjects-pane[data-pane-mode="raw"]>.flex.gap-2.items-stretc
 body.subj-mode-raw #subjects-per-stage {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    /* Comfortable separation between the four label+textarea rows.
+       8px (was 6px) gives the labels visible breathing room above
+       their textarea instead of butting against the previous one. */
+    gap: 0.5rem;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
 }
 
+/* Each row keeps its natural height (label ~1.25rem + textarea
+   `min-height: 4rem` floor). Previously `flex: 1 1 0` + `min-height: 0`
+   let rows shrink to ~31 px when the parent card was short, and the
+   textarea's `min-height: 4rem !important` then overflowed UPWARD
+   into the next row's label — the cramped, label-crashing-into-
+   textarea look the user reported at md/lg viewports. */
 body.subj-mode-raw #subjects-per-stage>div {
     display: flex;
     flex-direction: column;
@@ -2737,6 +2756,8 @@ body.subj-mode-raw #subjects-per-stage>div {
        overlapping, and when it's tall the rows still flex-grow to fill. */
     flex: 1 1 auto;
     min-height: 5.25rem;
+    /* Small intra-row gap so the label sits slightly off its textarea. */
+    gap: 0.25rem;
 }
 
 body.subj-mode-raw #subjects-per-stage>div>.flex.items-center {
@@ -2767,6 +2788,33 @@ body.subj-mode-raw #split-left {
 }
 body.subj-mode-raw #split-left > .card-body {
     min-height: 0;
+}
+
+/* At md+ viewports give raw mode enough vertical room that all four
+   label+textarea rows fit without scrolling.
+     4 rows × 96px (label 20 + textarea 64 + gap 8 + padding ~4)    = 384px
+     between-row gaps + panel padding                               = ~32px
+     mode pill + Queue Slop button cluster + status chip            = ~160px
+   Floor: 38rem (608px). The card sibling (Queue) stretches with us
+   via the split row's align-items: stretch. */
+@media (min-width: 768px) {
+    body.subj-mode-raw #split-left {
+        min-height: 38rem;
+    }
+}
+
+/* At xl+ the .ui-split-row is `height: 100%; overflow: hidden` so
+   cards inherit (and get clipped to) the cramped pane height (~380
+   px). Raw mode needs more room than that — override to a min-height
+   matching the card's 38rem floor and let overflow be visible so the
+   card border isn't chopped mid-content. The Queue card sibling
+   still stretches with us. */
+@media (min-width: 1280px) {
+    body.subj-mode-raw .ui-split-row {
+        min-height: 38rem;
+        height: auto;
+        overflow: visible;
+    }
 }
 
 /* The raw pane wraps its panel + Queue button in an intermediate
@@ -3058,143 +3106,98 @@ body[data-layout="subjects"].subj-mode-endless #p-core {
    the navbar appear stationary we have to keep the parent visible
    throughout the slide and just translate. The mobile-nav-bar lives
    OUTSIDE <main> + uses position:fixed → unaffected by all of this. */
-main.layout-sliding-left,
-main.layout-sliding-right {
+#layout-slider-wrap {
     transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-main.layout-sliding-left {
+#layout-slider-wrap.layout-sliding-left {
     transform: translateX(-30%);
 }
 
-main.layout-sliding-right {
+#layout-slider-wrap.layout-sliding-right {
     transform: translateX(30%);
 }
 
-/* Counter-translate the stats navbar so it appears glued in place
-   while the rest of <main> slides under it. Same easing/duration so
-   the cancellation is exact frame-by-frame. The navbar is full-width
-   (same width as <main>), so 30% of its width == 30% of main's width
-   and the two translates cancel cleanly. */
-main.layout-sliding-left #stats-navbar,
-main.layout-sliding-right #stats-navbar {
-    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ─── Flanking-nav Buttons (Moved to Navbar) ──────────────────────────────
+   The prev/next buttons live inside the sticky top navbar.
+   They use primary fill to read as interactive controls. */
 
-main.layout-sliding-left #stats-navbar {
-    transform: translateX(30%);
-}
-
-main.layout-sliding-right #stats-navbar {
-    transform: translateX(-30%);
-}
-
-/* ─── Flanking-nav PILL ────────────────────────────────────────────────
-   Both focus-fab buttons live inside one bottom-center pill container.
-   The pill's fill + border match the page bg (--b1) so it visually
-   blends into the page; only the contained primary-circle buttons
-   read as interactive controls. A subtle shadow gives floating depth.
-   The cards behind can extend full-height (calc(100vh - 88px)) since
-   the pill is overlay, not in the document flow. */
-#focus-fab-pill {
-    /* The container itself is now just a wrapper; children are positioned fixed */
+#focus-fab-prev,
+#focus-fab-next {
     display: none;
 }
 
-body[data-layout="subjects"] #focus-fab-pill,
-body[data-layout="queue"] #focus-fab-pill,
-body[data-layout="gallery"] #focus-fab-pill {
-    display: block;
-}
-
-#focus-fab-prev {
-    position: fixed;
-    bottom: 1.5rem;
-    left: 3rem;
-    z-index: 40;
-}
-
-#focus-fab-next {
-    position: fixed;
-    bottom: 1.5rem;
-    right: 3rem;
-    z-index: 40;
-}
-
-/* Pill rules removed since we broke them out to fixed flank buttons */
-
 .focus-fab {
-    width: 4.25rem;
-    height: 4.25rem;
+    width: auto;
+    height: 2rem;
+    padding: 0 1rem;
     border-radius: 9999px;
-    /* Solid primary fill */
     background: hsl(var(--p));
     color: hsl(var(--pc));
-    /* Contrasting border: primary-content at 60% gives a visible rim
-       that separates the button from the page without clashing with
-       the fill. 3px width makes it legible at a glance. */
-    border: 3px solid hsl(var(--pc) / 0.6);
-    /* Layered shadow: a tight primary-tinted inner glow + a wider
-       neutral drop shadow for floating depth. */
-    box-shadow:
-        0 0 0 1px hsl(var(--p) / 0.35),
-        0 4px 14px hsl(var(--p) / 0.45),
-        0 2px 4px hsl(0 0% 0% / 0.35);
+    border: 2px solid hsl(var(--pc) / 0.4);
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 0.5rem;
     cursor: pointer;
-    transition: transform 0.15s, background 0.15s, box-shadow 0.15s, border-color 0.15s;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
+    font-weight: 800;
+    font-size: 11px;
+}
+
+.focus-fab .indicator-item {
+    top: -4px !important;
+    right: 50% !important;
+    transform: translateX(50%) translateY(-50%) !important;
+    font-size: 9px;
+    height: 1.1rem;
+    min-height: 1.1rem;
+    padding: 0 0.4rem;
+    border: 1px solid hsl(var(--pc) / 0.3);
+    z-index: 50;
 }
 
 .focus-fab:hover {
-    transform: scale(1.07);
+    transform: translateY(-2px) scale(1.04);
     background: hsl(var(--pf, var(--p)));
-    border-color: hsl(var(--pc) / 0.9);
+    border-color: hsl(var(--pc) / 0.7);
     box-shadow:
-        0 0 0 2px hsl(var(--p) / 0.5),
-        0 6px 20px hsl(var(--p) / 0.55),
-        0 3px 8px hsl(0 0% 0% / 0.4);
+        0 6px 16px hsl(var(--p) / 0.5),
+        0 3px 6px hsl(0 0% 0% / 0.4);
 }
 
 .focus-fab:active {
-    transform: scale(0.95);
-    box-shadow:
-        0 0 0 1px hsl(var(--p) / 0.3),
-        0 2px 6px hsl(var(--p) / 0.35),
-        0 1px 3px hsl(0 0% 0% / 0.3);
+    transform: translateY(1px) scale(0.98);
 }
 
 .focus-fab .fab-label {
-    font-size: 0.7rem;
-    font-weight: 700;
-    line-height: 1;
+    opacity: 0.9;
 }
 
 .focus-fab .fab-arrow {
     flex: none;
-    opacity: 0.85;
 }
 
-/* Per-layout: hide the prev or next button when at the start or end
-   of the linear cycle (Prompt → Queue → Slop). Subjects has no prev
-   (start of cycle); gallery has no next (end). The pill stays
-   visible — it just contains a single button when at an end. */
-body[data-layout="subjects"] #focus-fab-prev,
-body[data-layout="gallery"] #focus-fab-next {
-    display: none;
+/* Per-layout visibility: only show the flanking buttons when we are
+   in a single-card focused layout. */
+body[data-layout="subjects"] #focus-fab-next,
+body[data-layout="queue"] #focus-fab-prev,
+body[data-layout="queue"] #focus-fab-next,
+body[data-layout="gallery"] #focus-fab-prev {
+    display: flex;
 }
 
 @media (max-width: 767px) {
-
-    /* Mobile uses the bottom nav bar for navigation — hide the
-       desktop flanking pill to avoid overlap with that bar. */
-    #focus-fab-pill {
-        display: none !important;
+    /* Compact view: collapse navbar flank buttons to just their arrows */
+    .focus-fab .fab-label {
+        display: none;
+    }
+    .focus-fab {
+        padding: 0 0.5rem;
+        width: 2rem;
     }
 }
 
@@ -3402,12 +3405,10 @@ body.subj-mode-chat #subjects-action-cluster {
     display: none !important;
 }
 
-/* Endless mode — hide the shared textarea (the story-pane has its own
-   per-beat inputs). Keep the shared #subjects-action-cluster (Queue Slop
-   button) visible so it sits BELOW the suggestion chips in the natural
-   flex order (chips → button), matching simple-mode and removing the
-   duplicate Queue Slop that used to live inside the story pane. */
-body.subj-mode-endless #subjects-input-row {
+/* Endless mode — hide the shared textarea ONLY when the story
+   is running (since the story-pane provides its own per-beat inputs).
+   Before the story starts, the user needs the shared input. */
+body.subj-mode-endless.endless-running #subjects-input-row {
     display: none !important;
 }
 
@@ -3821,7 +3822,11 @@ body:has(#splash-overlay) #focus-fab-pill {
    classes on the wrap so they hide automatically at the edges. */
 .tabs-scroll-wrap {
     display: flex;
-    align-items: stretch;
+    /* flex-start aligns the scroll arrows with the tab strip at the top
+       of the wrap. Without this they `align-self: center`-ed against the
+       full panel height (~700px) and floated in the middle of the
+       content, clipping section dividers like INTERFACE / DISK GUARD. */
+    align-items: flex-start;
     position: relative;
     max-width: 100%;
 }
@@ -3831,6 +3836,25 @@ body:has(#splash-overlay) #focus-fab-pill {
     min-width: 0;
     /* Smooth scroll for keyboard / arrow-button paging. */
     scroll-behavior: smooth;
+    /* container-type: inline-size lets the panel below size itself to
+       the visible (.tabs) width via 100cqi instead of inheriting the
+       grid-auto-columns:max-content sum of all tab labels (which was
+       blowing out tab panels to 896px–20780px and clipping the right
+       edge of every settings page). */
+    container-type: inline-size;
+}
+
+/* daisyUI tabs-lifted lays panels in a CSS grid where tabpanels span
+   `1 / span 9999` of auto-sized columns; the panel renders at the
+   intrinsic width of all tab labels combined (or, in some states, of
+   every panel side-by-side — measured at 20780px on prod). Pin the
+   panel to the visible inline size of `.tabs` so right-edge content
+   stops getting clipped at the modal boundary. */
+#settings-modal .settings-tabs > [role="tabpanel"].tab-content {
+    width: 100cqi;
+    max-width: 100cqi;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .tabs-scroll-arrow {
@@ -3840,8 +3864,10 @@ body:has(#splash-overlay) #focus-fab-pill {
     justify-content: center;
     width: 32px;
     height: 32px;
-    align-self: center;
-    margin: 0 4px;
+    /* Pin arrows to the top of the wrap so they sit next to the tab
+       strip, not floating in the middle of the panel content. */
+    align-self: flex-start;
+    margin: 4px 4px 0;
     border-radius: 9999px;
     background: oklch(var(--b2) / 0.95);
     border: 1px solid oklch(var(--bc) / 0.2);
@@ -4269,6 +4295,85 @@ body.subj-mode-endless:not(.endless-running):not([data-layout="subjects"]) #p-co
     flex: 1 1 auto;
     min-height: 0;
     height: auto;
+}
+
+/* Chat context pill — growing width/scale as context increases. */
+#chat-context-pill {
+    min-width: 100px;
+    transform-origin: center right;
+}
+
+#chat-context-pill.context-warning {
+    border-color: oklch(var(--wa) / 0.5);
+    background-color: oklch(var(--wa) / 0.1);
+}
+
+#chat-context-pill.context-danger {
+    border-color: oklch(var(--er) / 0.5);
+    background-color: oklch(var(--er) / 0.1);
+}
+
+.chat-notice-reset {
+    font-size: 10px;
+    opacity: 0.5;
+    text-align: center;
+    font-style: italic;
+    margin: 0.5rem 0;
+    border-top: 1px dashed currentColor;
+    padding-top: 0.25rem;
+}
+@media (max-width: 1023px) {
+    #btn-view, #btn-theme {
+        display: none !important;
+    }
+    
+    /* Reveal wrapper: parent of buttons + gear */
+    .navbar-end-reveal {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .navbar-end-reveal:hover #btn-view,
+    .navbar-end-reveal:hover #btn-theme {
+        display: inline-flex !important;
+        animation: slide-in-right 0.2s ease-out;
+    }
+}
+
+@keyframes slide-in-right {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Suggestions toggle pill — animated slide-out and curved corners. */
+#subjects-suggest-cluster {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overflow: hidden;
+    max-width: 140px; /* Collapsed width: just the toggle */
+    border-radius: 9999px !important;
+}
+
+#subjects-suggest-cluster.suggest-expanded {
+    max-width: 600px; /* Expanded width: reveal prompt name + regen */
+}
+
+/* Ensure children within the join don't break the curved corners when collapsed. */
+#subjects-suggest-cluster.join > .join-item:first-child:not(:last-child),
+#subjects-suggest-cluster.join > .join-item:last-child:not(:first-child) {
+    border-radius: 9999px;
+}
+
+#subjects-suggest-cluster.suggest-expanded.join > .join-item:first-child:not(:last-child) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+#subjects-suggest-cluster.suggest-expanded.join > .join-item:last-child:not(:first-child) {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+#subjects-suggest-cluster.suggest-expanded.join > .join-item:not(:first-child):not(:last-child) {
+    border-radius: 0;
 }
 
 /* Suggestions stack — auto-scroll internally when too many rows pile

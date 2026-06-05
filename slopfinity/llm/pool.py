@@ -46,12 +46,25 @@ def get_env_pool_config():
     # Pad models list if shorter than urls
     while len(failover_models) < len(failover_urls):
         failover_models.append("")
-        
-    failovers = [{"url": u, "model": m} for u, m in zip(failover_urls, failover_models)]
+
+    # Tag each bucket with its provider at the source. The documented
+    # convention (.env.example) is primary=LMStudio/OpenAI-compat, cpu+failovers
+    # =Ollama; override per-bucket via env. Callers read this instead of
+    # re-guessing the provider from "11434" in the URL — which misclassifies an
+    # Ollama node on a non-default port as lmstudio and loses OllamaProvider's
+    # native /api/* fallback.
+    primary_provider = os.environ.get("SLOPFINITY_LLM_PRIMARY_PROVIDER", "lmstudio")
+    cpu_provider = os.environ.get("SLOPFINITY_LLM_CPU_PROVIDER", "ollama")
+    failover_provider = os.environ.get("SLOPFINITY_LLM_FAILOVER_PROVIDER", "ollama")
+
+    failovers = [
+        {"url": u, "model": m, "provider": failover_provider}
+        for u, m in zip(failover_urls, failover_models)
+    ]
 
     return {
-        "primary": {"url": primary_url, "model": primary_model},
-        "cpu": {"url": cpu_url, "model": cpu_model},
+        "primary": {"url": primary_url, "model": primary_model, "provider": primary_provider},
+        "cpu": {"url": cpu_url, "model": cpu_model, "provider": cpu_provider},
         "failovers": failovers
     }
 
@@ -130,11 +143,14 @@ async def get_pool_status():
     redundant *failovers* are dropped from the probed set.
     """
     cfg = get_env_pool_config()
+    
+    primary_task = probe_endpoint(cfg["primary"]["url"], cfg["primary"]["model"],
+                                  provider_name=cfg["primary"].get("provider", "lmstudio"))
+    cpu_task = probe_endpoint(cfg["cpu"]["url"], cfg["cpu"]["model"],
+                              provider_name=cfg["cpu"].get("provider", "ollama"))
 
-    primary_task = probe_endpoint(cfg["primary"]["url"], cfg["primary"]["model"])
-    cpu_task = probe_endpoint(cfg["cpu"]["url"], cfg["cpu"]["model"], provider_name="ollama")
-
-    # Dedup failovers against the primary/cpu slots and against each other.
+    # Dedup failovers against the primary/cpu slots and against each other so
+    # the same endpoint is never probed twice (priority order preserved).
     seen = {
         (_normalize_url(cfg["primary"]["url"]), (cfg["primary"]["model"] or "").strip()),
         (_normalize_url(cfg["cpu"]["url"]), (cfg["cpu"]["model"] or "").strip()),
@@ -150,7 +166,7 @@ async def get_pool_status():
         unique_failovers.append(f)
 
     failover_tasks = [
-        probe_endpoint(f["url"], f["model"], provider_name="ollama")
+        probe_endpoint(f["url"], f["model"], provider_name=f.get("provider", "ollama"))
         for f in unique_failovers
     ]
 

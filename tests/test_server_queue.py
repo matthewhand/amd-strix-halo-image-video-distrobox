@@ -58,26 +58,33 @@ class TestQueueCancel:
 
 
 class TestQueuePauseResume:
-    async def test_pause_sets_flag(self, client):
-        config = {"queue_paused": False}
-        with mock.patch("slopfinity.config.load_config", return_value=config), \
-             mock.patch("slopfinity.config.save_config"):
-            resp = await client.post("/queue/pause")
+    async def test_pause_sets_flag(self, client, tmp_path, monkeypatch):
+        # The handler writes pause.flag in EXP_DIR (not config) — verify the
+        # actual file is created and pause-state reflects it.
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        flag = tmp_path / "pause.flag"
+        assert not flag.exists()
+        resp = await client.post("/queue/pause")
         assert resp.status_code == 200
+        assert flag.exists(), "pause.flag was not written"
+        state = await client.get("/queue/pause-state")
+        assert state.json().get("paused") is True
 
-    async def test_resume_clears_flag(self, client):
-        config = {"queue_paused": True}
-        with mock.patch("slopfinity.config.load_config", return_value=config), \
-             mock.patch("slopfinity.config.save_config"):
-            resp = await client.post("/queue/resume")
+    async def test_resume_clears_flag(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        flag = tmp_path / "pause.flag"
+        flag.write_text("1")  # start paused
+        resp = await client.post("/queue/resume")
         assert resp.status_code == 200
+        assert not flag.exists(), "pause.flag was not removed"
+        state = await client.get("/queue/pause-state")
+        assert state.json().get("paused") is False
 
-    async def test_pause_state_endpoint(self, client):
-        # pause-state reads config directly; just verify endpoint responds 200
-        with mock.patch("slopfinity.config.load_config", return_value={"queue_paused": True}):
-            resp = await client.get("/queue/pause-state")
+    async def test_pause_state_endpoint(self, client, tmp_path, monkeypatch):
+        monkeypatch.setattr("slopfinity.routers.queue.EXP_DIR", str(tmp_path))
+        resp = await client.get("/queue/pause-state")
         assert resp.status_code == 200
-        assert "paused" in resp.json()
+        assert resp.json().get("paused") is False  # no flag → not paused
 
 
 class TestCancelAll:
@@ -120,3 +127,54 @@ class TestQueueToggleInfinity:
             resp = await client.post("/queue/toggle-infinity", json={"ts": ts})
         assert resp.status_code == 200
         assert resp.json().get("ok") is True
+
+
+class TestInjectFlagParsing:
+    """/inject form booleans: 'false'/'0' must be False (was bool(str) -> True)."""
+
+    async def test_truthy_helper(self, client):
+        from slopfinity.routers.queue import _truthy
+        assert all(_truthy(x) for x in ("1", "true", "TRUE", "yes", "on", "y", "t", True))
+        assert not any(_truthy(x) for x in ("0", "false", "no", "off", "", "nope", None, False))
+
+    async def test_inject_parses_false_strings(self, client, default_config):
+        saved = {}
+        with mock.patch("slopfinity.config.get_queue", return_value=[]), \
+             mock.patch("slopfinity.config.save_queue", side_effect=lambda q: saved.update(q=list(q))), \
+             mock.patch("slopfinity.config.load_config", return_value=dict(default_config)):
+            resp = await client.post("/inject", data={
+                "prompt": "flagtest", "priority": "normal",
+                "image_only": "false", "concurrent": "0",
+                "infinity": "true", "fast_track": "1",
+            })
+        assert resp.status_code == 200
+        task = next(t for t in saved["q"] if t.get("prompt") == "flagtest")
+        assert task["image_only"] is False
+        assert task["concurrent"] is False
+        assert task["infinity"] is True
+        assert task["fast_track"] is True
+
+
+class TestQueueCancelFlagScope:
+    """cancel.flag (aborts the running iter) only for the WORKING item, not pending."""
+
+    async def test_cancel_pending_does_not_write_flag(self, client, tmp_path, monkeypatch):
+        import slopfinity.routers.queue as qmod
+        monkeypatch.setattr(qmod, "EXP_DIR", str(tmp_path))
+        q = [{"ts": 1.0, "status": "working", "prompt": "running"},
+             {"ts": 2.0, "status": "pending", "prompt": "next"}]
+        with mock.patch("slopfinity.config.get_queue", return_value=q), \
+             mock.patch("slopfinity.config.save_queue"):
+            resp = await client.post("/queue/cancel", json={"ts": 2.0})
+        assert resp.status_code == 200
+        assert not (tmp_path / "cancel.flag").exists()
+
+    async def test_cancel_working_writes_flag(self, client, tmp_path, monkeypatch):
+        import slopfinity.routers.queue as qmod
+        monkeypatch.setattr(qmod, "EXP_DIR", str(tmp_path))
+        q = [{"ts": 1.0, "status": "working", "prompt": "running"}]
+        with mock.patch("slopfinity.config.get_queue", return_value=q), \
+             mock.patch("slopfinity.config.save_queue"):
+            resp = await client.post("/queue/cancel", json={"ts": 1.0})
+        assert resp.status_code == 200
+        assert (tmp_path / "cancel.flag").exists()

@@ -14,7 +14,7 @@
 //   4. saving settings persists allow_cloud_endpoints in config
 //      (POST /settings body has the key, GET /settings returns it)
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
@@ -28,7 +28,7 @@ async function bootstrap(page) {
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
 }
 
 async function openLLMTab(page) {

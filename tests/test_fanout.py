@@ -70,7 +70,7 @@ def test_verify_locked_ignores_unlocked_stages():
 # ---------- JSON parse fallback ---------------------------------------------
 
 def test_fanout_parses_prose_wrapped_json():
-    def fake_llm(sys_p, user_msg):
+    def fake_llm(sys_p, user_msg, response_format=None):
         return (
             "Sure! Here you go:\n\n"
             '{"image": "a blue sky", "video": "clouds drift",'
@@ -92,7 +92,7 @@ def test_fanout_parses_prose_wrapped_json():
 def test_fanout_retries_when_unparseable_then_succeeds():
     calls = {"n": 0}
 
-    def flaky_llm(sys_p, user_msg):
+    def flaky_llm(sys_p, user_msg, response_format=None):
         calls["n"] += 1
         if calls["n"] == 1:
             return "I refuse to return JSON, here is a haiku instead."
@@ -113,7 +113,7 @@ def test_fanout_retries_when_unparseable_then_succeeds():
 
 
 def test_fanout_falls_back_to_seed_when_all_retries_fail():
-    def garbage_llm(sys_p, user_msg):
+    def garbage_llm(sys_p, user_msg, response_format=None):
         return "no json ever"
     seed = {"image": "SEED-IMG", "video": "SEED-VID", "music": "SEED-MUS", "tts": "SEED-TTS"}
     r = fanout.fanout(
@@ -129,7 +129,7 @@ def test_fanout_falls_back_to_seed_when_all_retries_fail():
 
 
 def test_fanout_end_to_end_lock_and_preserve():
-    def llm(sys_p, user_msg):
+    def llm(sys_p, user_msg, response_format=None):
         # Mimic an LLM that drops the locked seed word "Smaug"
         return json.dumps({
             "image": "a winged lizard on gold",

@@ -1,24 +1,58 @@
 import os
 import json
-import uuid
 import time
-from typing import Optional, List
+import asyncio
+from typing import Optional
 
 from fastapi import APIRouter, Body, Form
 from fastapi.responses import JSONResponse
 
 from slopfinity.paths import EXP_DIR
+from slopfinity.stats import get_outputs_disk
 import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 from slopfinity.stats import check_disk_guard
 
 
+def _truthy(v) -> bool:
+    """Parse a form/string boolean flag. 'false'/'0'/'no'/'off'/'' → False.
+    (Plain bool(str) treats every non-empty string as True, so 'false'/'0'
+    silently enabled flags — and terminate='false' would cancel the queue.)"""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "on", "y", "t")
+
+
 router = APIRouter()
+
+def _check_disk_guard():
+    """Return (ok, reason) — False when the outputs partition is below
+    the user-configured low-water marks. Two thresholds; either trips
+    the guard. Setting either to 0 disables that check."""
+    config = cfg.load_config()
+    min_pct = float(config.get("disk_min_pct") or 0)
+    min_gb = float(config.get("disk_min_gb") or 0)
+    if min_pct <= 0 and min_gb <= 0:
+        return True, ""
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = 100 - (d.get("pct") or 0)
+    except Exception:
+        return True, ""  # fail open if we can't read disk stats
+    if min_pct > 0 and free_pct <= min_pct:
+        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
+    if min_gb > 0 and free_gb <= min_gb:
+        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
+    return True, ""
 
 @router.post("/inject")
 async def inject(
     prompt: str = Form(...),
     priority: str = Form(...),
+    title: Optional[str] = Form(default=None),
     stage_prompts: str = Form(default=""),
     terminate: str = Form(default=""),
     concurrent: str = Form(default=""),
@@ -29,12 +63,18 @@ async def inject(
     fast_track: str = Form(default=""),
     seed_images: str = Form(default=""),
     seeds_mode: str = Form(default=""),
+    # Shared UUID that links all beats of one story injection together.
+    # Client generates one UUID per multi-beat inject() call and stamps it
+    # on every POST so the queue UI can group them. None for standalone jobs.
+    story_id: Optional[str] = Form(default=None),
+    story_title: Optional[str] = Form(default=None),
 ):
     # Disk-low guard — bail early when the outputs partition is below the
     # configured threshold so the queue doesn't pile up against a wall.
     # User can lift the guard in Settings → General if they really want
     # to push past it. terminate=1 still works (it cancels rather than
     # creates work).
+    terminate = _truthy(terminate)
     if not terminate:
         ok, reason = check_disk_guard()
         if not ok:
@@ -43,38 +83,28 @@ async def inject(
                  "hint": "raise the threshold in Settings → General → Disk guard"},
                 status_code=409,
             )
-    q = cfg.get_queue()
-    if terminate:
-        # Mark every pending and in-flight item cancelled (so the user
-        # can see what got killed) and write a flag the fleet runner
-        # watches for. The `working` sentinel is included so the active
-        # item's infinity loop also gets cleared.
-        now_ts = time.time()
-        for item in q:
-            if item.get("status") in (None, "pending", "working"):
-                item["status"] = "cancelled"
-                item["cancelled_ts"] = now_ts
-                item["infinity"] = False
-        try:
-            with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
-                f.write(str(now_ts))
-        except Exception:
-            pass
     task = {
         "prompt": prompt,
         "priority": priority,
         "status": "pending",
         "ts": time.time(),
-        "concurrent": bool(concurrent),
-        "infinity": bool(infinity),
-        "when_idle": bool(when_idle),
-        "chaos": bool(chaos),
-        "image_only": bool(image_only),
+        "concurrent": _truthy(concurrent),
+        "infinity": _truthy(infinity),
+        "when_idle": _truthy(when_idle),
+        "chaos": _truthy(chaos),
+        "image_only": _truthy(image_only),
         # Fast Track — orchestrator overrides chains/frames/tier and
         # skips audio/tts for THIS iter only when set. Use the dashboard's
         # 🏃 button (Subjects card) to flip this on per-injection.
-        "fast_track": bool(fast_track),
+        "fast_track": _truthy(fast_track),
     }
+    if title:
+        task["title"] = title
+    # Story grouping — stamp both the shared UUID and the story label so the
+    # queue UI can collapse beats into a collapsible group header.
+    if story_id:
+        task["story_id"] = story_id
+        task["story_title"] = story_title or "Story"
     if stage_prompts:
         try:
             task["stage_prompts"] = json.loads(stage_prompts)
@@ -108,6 +138,11 @@ async def inject(
     mode = (seeds_mode or "").strip().lower()
     if mode not in ("per-task", "per-chain"):
         mode = "per-task"
+    # per-chain spans seed[i]→seed[i+1], so it needs ≥2 seeds; with a single
+    # seed there's nothing to span and run_fleet would ignore it. Demote to
+    # per-task so the one seed is still used as the chain-0 base image.
+    if mode == "per-chain" and len(seeds) < 2:
+        mode = "per-task"
 
     tasks_to_queue: list = []
     if seeds and mode == "per-task":
@@ -127,25 +162,52 @@ async def inject(
     else:
         tasks_to_queue.append(task)
 
-    pending = [x for x in q if x.get("status") in (None, "pending")]
-    working = [x for x in q if x.get("status") == "working"]
-    done = [x for x in q if x.get("status") == "done"]
-    cancelled = [x for x in q if x.get("status") == "cancelled"]
-    # `now` and `next` both front-insert so the task runs immediately after
-    # the currently-active job. Terminate is a separate flag (handled above)
-    # which cancels the active job; pairing terminate + next/now means
-    # "kill what's running and start this in its place".
-    if priority in ("now", "next"):
-        # Reverse so first-fanned task ends up at the front.
-        for t in reversed(tasks_to_queue):
-            pending.insert(0, t)
-    else:
-        for t in tasks_to_queue:
-            pending.append(t)
-    # Order on disk: working (active job sentinel) → pending (queued work) →
-    # done (history) → cancelled. Newly-injected work always sits BEFORE
-    # done records so the fleet's pop-from-front consumes pending items first.
-    cfg.save_queue(working + pending + done + cancelled)
+    # Commit under the cross-process queue lock so a concurrent run_fleet
+    # claim/requeue (or another dashboard write) can't be lost to the blind
+    # delete-all+reinsert in save_queue. The terminate cancellation is folded
+    # into the same locked mutation so it's atomic with the insert.
+    _cancel_ts: list = []
+
+    def _do_inject(q):
+        if terminate:
+            # Mark every pending and in-flight item cancelled (so the user can
+            # see what got killed). The `working` sentinel is included so the
+            # active item's infinity loop also gets cleared. cancel.flag is
+            # written after the commit, below.
+            now_ts = time.time()
+            for item in q:
+                if item.get("status") in (None, "pending", "working"):
+                    item["status"] = "cancelled"
+                    item["cancelled_ts"] = now_ts
+                    item["infinity"] = False
+            _cancel_ts.append(now_ts)
+        pending = [x for x in q if x.get("status") in (None, "pending")]
+        working = [x for x in q if x.get("status") == "working"]
+        done = [x for x in q if x.get("status") == "done"]
+        cancelled = [x for x in q if x.get("status") == "cancelled"]
+        # `now`/`next` both front-insert so the task runs immediately after the
+        # currently-active job. Terminate is a separate flag (handled above)
+        # which cancels the active job; pairing terminate + next/now means
+        # "kill what's running and start this in its place".
+        if priority in ("now", "next"):
+            # Reverse so the first-fanned task ends up at the front.
+            for t in reversed(tasks_to_queue):
+                pending.insert(0, t)
+        else:
+            for t in tasks_to_queue:
+                pending.append(t)
+        # Order on disk: working (active sentinel) → pending → done → cancelled.
+        # Newly-injected work sits BEFORE done so the fleet's pop-from-front
+        # consumes pending items first.
+        return working + pending + done + cancelled
+
+    await asyncio.to_thread(cfg.mutate_queue, _do_inject)
+    if _cancel_ts:
+        try:
+            with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
+                f.write(str(_cancel_ts[0]))
+        except Exception:
+            pass
     return {"status": "ok"}
 
 @router.post("/queue/pause")
@@ -187,57 +249,66 @@ async def cancel_all():
     Cancelling the in-flight (`working`) sentinel also disables its
     requeue — the runner re-reads the working record at requeue time.
     """
-    q = cfg.get_queue()
     now_ts = time.time()
-    n = 0
-    for item in q:
-        if item.get("status") in (None, "pending", "working"):
-            item["status"] = "cancelled"
-            item["cancelled_ts"] = now_ts
-            item["infinity"] = False
-            n += 1
+    counted: list = []
+
+    def _cancel_all(q):
+        for item in q:
+            if item.get("status") in (None, "pending", "working"):
+                item["status"] = "cancelled"
+                item["cancelled_ts"] = now_ts
+                item["infinity"] = False
+                counted.append(1)
+        return q
+
+    await asyncio.to_thread(cfg.mutate_queue, _cancel_all)
     try:
         with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
             f.write(str(now_ts))
     except Exception:
         pass
-    cfg.save_queue(q)
-    return {"status": "ok", "cancelled": n}
+    return {"status": "ok", "cancelled": len(counted)}
 
 @router.post("/queue/cancel")
 async def queue_cancel(data: dict = Body(...)):
-    """Cancel a single queue item by ts. If it's the active job (matched by
-    `current` flag in the future, or just the first pending item today), also
-    write a cancel.flag so the fleet runner aborts gracefully."""
+    """Cancel a single queue item by ts. Only when the *actively running*
+    (`working`) item is cancelled do we write a cancel.flag so the fleet runner
+    aborts the in-flight iter. Cancelling a merely-pending item must NOT abort
+    whatever is currently running."""
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
-    q = cfg.get_queue()
-    found = False
-    is_first_pending = True
-    for item in q:
-        # Match pending OR the in-flight `working` sentinel — cancelling
-        # a working item flips its requeue off via the same
-        # status=cancelled marker the fleet runner checks at requeue time.
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
-            was_working = item.get("status") == "working"
-            item["status"] = "cancelled"
-            item["cancelled_ts"] = time.time()
-            # Strip infinity so it doesn't re-loop after cancellation.
-            item["infinity"] = False
-            if is_first_pending or was_working:
-                try:
-                    with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
-                        f.write(str(time.time()))
-                except Exception:
-                    pass
-            found = True
-            break
-        if item.get("status") in (None, "pending"):
-            is_first_pending = False
+    found: list = []
+    was_working: list = []
+
+    def _cancel_one(q):
+        for item in q:
+            # Match pending OR the in-flight `working` sentinel — cancelling a
+            # working item flips its requeue off via the same status=cancelled
+            # marker the fleet runner checks at requeue time.
+            if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
+                if item.get("status") == "working":
+                    was_working.append(1)
+                item["status"] = "cancelled"
+                item["cancelled_ts"] = time.time()
+                # Strip infinity so it doesn't re-loop after cancellation.
+                item["infinity"] = False
+                found.append(1)
+                break
+        return q
+
+    await asyncio.to_thread(cfg.mutate_queue, _cancel_one)
     if not found:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    cfg.save_queue(q)
+    # Abort the in-flight iter ONLY when the running item is the one being
+    # cancelled — not for any pending item earlier in the queue. Written after
+    # the commit so the fleet never sees the flag before the queue update.
+    if was_working:
+        try:
+            with open(os.path.join(EXP_DIR, "cancel.flag"), "w") as f:
+                f.write(str(time.time()))
+        except Exception:
+            pass
     return {"ok": True}
 
 @router.post("/queue/edit")
@@ -254,17 +325,32 @@ async def queue_edit(data: dict = Body(...)):
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
     if not new_prompt:
         return JSONResponse({"ok": False, "error": "empty prompt"}, status_code=400)
-    q = cfg.get_queue()
-    found = False
-    for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
-            item["prompt"] = new_prompt
-            item["seed_prompt"] = new_prompt
-            found = True
-            break
+    found: list = []
+    terminal_status: list = []
+
+    def _edit(q):
+        for item in q:
+            if item.get("ts") == target_ts:
+                # Reject edits to a terminal (done/cancelled) item — editing a
+                # completed item is a silent no-op footgun; surface it as a 400.
+                if item.get("status") in ("done", "cancelled"):
+                    terminal_status.append(item.get("status"))
+                    break
+                if item.get("status") in (None, "pending", "working"):
+                    item["prompt"] = new_prompt
+                    item["seed_prompt"] = new_prompt
+                    found.append(1)
+                break
+        return q
+
+    await asyncio.to_thread(cfg.mutate_queue, _edit)
+    if terminal_status:
+        return JSONResponse(
+            {"ok": False, "error": f"cannot edit item in terminal status '{terminal_status[0]}'"},
+            status_code=400,
+        )
     if not found:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    cfg.save_queue(q)
     return {"ok": True}
 
 @router.post("/queue/toggle-infinity")
@@ -280,17 +366,20 @@ async def queue_toggle_infinity(data: dict = Body(...)):
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
-    q = cfg.get_queue()
-    new_val = None
-    for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
-            item["infinity"] = not item.get("infinity", False)
-            new_val = item["infinity"]
-            break
-    if new_val is None:
+    new_val: list = []
+
+    def _toggle_inf(q):
+        for item in q:
+            if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
+                item["infinity"] = not item.get("infinity", False)
+                new_val.append(item["infinity"])
+                break
+        return q
+
+    await asyncio.to_thread(cfg.mutate_queue, _toggle_inf)
+    if not new_val:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    cfg.save_queue(q)
-    return {"ok": True, "infinity": new_val}
+    return {"ok": True, "infinity": new_val[0]}
 
 @router.post("/queue/toggle-polymorphic")
 async def queue_toggle_polymorphic(data: dict = Body(...)):
@@ -303,18 +392,21 @@ async def queue_toggle_polymorphic(data: dict = Body(...)):
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
-    q = cfg.get_queue()
-    new_val = None
-    for item in q:
-        if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
-            item["chaos"] = not item.get("chaos", False)
-            item["polymorphic"] = item["chaos"]
-            new_val = item["chaos"]
-            break
-    if new_val is None:
+    new_val: list = []
+
+    def _toggle_poly(q):
+        for item in q:
+            if item.get("ts") == target_ts and item.get("status") in (None, "pending", "working"):
+                item["chaos"] = not item.get("chaos", False)
+                item["polymorphic"] = item["chaos"]
+                new_val.append(item["chaos"])
+                break
+        return q
+
+    await asyncio.to_thread(cfg.mutate_queue, _toggle_poly)
+    if not new_val:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
-    cfg.save_queue(q)
-    return {"ok": True, "chaos": new_val}
+    return {"ok": True, "chaos": new_val[0]}
 
 @router.get("/queue/paginated")
 async def queue_paginated(offset: int = 0, limit: int = 25, filter: str = "all"):
@@ -366,40 +458,45 @@ async def queue_requeue(data: dict = Body(...)):
     target_ts = data.get("ts")
     if target_ts is None:
         return JSONResponse({"ok": False, "error": "missing ts"}, status_code=400)
-    q = cfg.get_queue()
-    new_q = []
-    requeued = False
     base_ts = time.time()
-    for item in q:
-        if item.get("ts") == target_ts:
-            if item.get("status") == "cancelled":
-                item["status"] = "pending"
-                item.pop("cancelled_ts", None)
-                new_q.append(item)
-                requeued = True
-                continue
-            if item.get("status") == "done" and item.get("succeeded") is False:
-                # Drop the failed record; append a fresh pending entry.
-                fresh = item.copy()
-                fresh.update({
-                    "status": "pending",
-                    "ts": base_ts,
-                    "requeued_from_ts": item.get("ts"),
-                })
-                # Remove fields that represent the RESULT of the failed run.
-                # We keep 'times' as requested ("carry over times").
-                fresh.pop("completed_ts", None)
-                fresh.pop("succeeded", None)
-                fresh.pop("error", None)
-                fresh.pop("asset_paths", None)
-                fresh.pop("logs", None)
-                new_q.append(fresh)
-                requeued = True
-                continue
-        new_q.append(item)
+    requeued: list = []
+
+    def _requeue(q):
+        new_q = []
+        for item in q:
+            if item.get("ts") == target_ts:
+                if item.get("status") == "cancelled":
+                    item["status"] = "pending"
+                    item.pop("cancelled_ts", None)
+                    new_q.append(item)
+                    requeued.append(1)
+                    continue
+                if item.get("status") == "done" and item.get("succeeded") is False:
+                    # Drop the failed record; append a fresh pending entry.
+                    fresh = item.copy()
+                    fresh.update({
+                        "status": "pending",
+                        "ts": base_ts,
+                        "requeued_from_ts": item.get("ts"),
+                    })
+                    # Remove fields that represent the RESULT of the failed run.
+                    # We keep 'times' as requested ("carry over times").
+                    fresh.pop("completed_ts", None)
+                    fresh.pop("succeeded", None)
+                    fresh.pop("error", None)
+                    fresh.pop("asset_paths", None)
+                    fresh.pop("logs", None)
+                    # Drop the failed run's stage states so a re-pend starts clean.
+                    fresh.pop("stages", None)
+                    new_q.append(fresh)
+                    requeued.append(1)
+                    continue
+            new_q.append(item)
+        return new_q
+
+    await asyncio.to_thread(cfg.mutate_queue, _requeue)
     if not requeued:
         return JSONResponse({"ok": False, "error": "not requeueable (must be cancelled or done-failed)"}, status_code=404)
-    cfg.save_queue(new_q)
     return {"ok": True}
 
 @router.post("/queue/clear-failed")
@@ -408,16 +505,18 @@ async def queue_clear_failed():
 
     Keeps pending, running, succeeded-done, and cancelled items intact.
     """
-    q = cfg.get_queue()
-    before = len(q)
-    kept = [
-        item for item in q
-        if not (item.get("status") == "done" and item.get("succeeded") is False)
-    ]
-    removed = before - len(kept)
-    if removed:
-        cfg.save_queue(kept)
-    return {"ok": True, "removed": removed}
+    removed: list = []
+
+    def _clear_failed(q):
+        kept = [
+            item for item in q
+            if not (item.get("status") == "done" and item.get("succeeded") is False)
+        ]
+        removed.append(len(q) - len(kept))
+        return kept
+
+    await asyncio.to_thread(cfg.mutate_queue, _clear_failed)
+    return {"ok": True, "removed": removed[0] if removed else 0}
 
 @router.post("/queue/clear-completed")
 async def queue_clear_completed():
@@ -426,16 +525,18 @@ async def queue_clear_completed():
     Mirror of /queue/clear-failed. Keeps pending, running, failed, and
     cancelled items intact — only succeeded-done entries are pruned.
     """
-    q = cfg.get_queue()
-    before = len(q)
-    kept = [
-        item for item in q
-        if not (item.get("status") == "done" and item.get("succeeded") is not False)
-    ]
-    removed = before - len(kept)
-    if removed:
-        cfg.save_queue(kept)
-    return {"ok": True, "removed": removed}
+    removed: list = []
+
+    def _clear_completed(q):
+        kept = [
+            item for item in q
+            if not (item.get("status") == "done" and item.get("succeeded") is not False)
+        ]
+        removed.append(len(q) - len(kept))
+        return kept
+
+    await asyncio.to_thread(cfg.mutate_queue, _clear_completed)
+    return {"ok": True, "removed": removed[0] if removed else 0}
 
 @router.post("/queue/requeue-failed")
 async def queue_requeue_failed():
@@ -445,30 +546,34 @@ async def queue_requeue_failed():
     The fresh entry preserves prompt + the per-item toggles + config_snapshot,
     and resets status/ts so the scheduler picks it up on the next sweep.
     """
-    q = cfg.get_queue()
-    requeued = 0
-    new_q = []
     base_ts = time.time()
-    for item in q:
-        if item.get("status") == "done" and item.get("succeeded") is False:
-            fresh = item.copy()
-            fresh.update({
-                "status": "pending",
-                # Disambiguate ts within the same second so multiple
-                # requeued items don't collide on the (ts) primary key.
-                "ts": base_ts + (requeued * 1e-6),
-                "requeued_from_ts": item.get("ts"),
-            })
-            fresh.pop("completed_ts", None)
-            fresh.pop("succeeded", None)
-            fresh.pop("error", None)
-            fresh.pop("asset_paths", None)
-            fresh.pop("logs", None)
-            new_q.append(fresh)
-            requeued += 1
-            # original failed entry is dropped (not appended to new_q)
-        else:
-            new_q.append(item)
-    if requeued:
-        cfg.save_queue(new_q)
-    return {"ok": True, "requeued": requeued}
+    requeued: list = []
+
+    def _requeue_failed(q):
+        new_q = []
+        for item in q:
+            if item.get("status") == "done" and item.get("succeeded") is False:
+                fresh = item.copy()
+                fresh.update({
+                    "status": "pending",
+                    # Disambiguate ts within the same second so multiple
+                    # requeued items don't collide on the (ts) primary key.
+                    "ts": base_ts + (len(requeued) * 1e-6),
+                    "requeued_from_ts": item.get("ts"),
+                })
+                fresh.pop("completed_ts", None)
+                fresh.pop("succeeded", None)
+                fresh.pop("error", None)
+                fresh.pop("asset_paths", None)
+                fresh.pop("logs", None)
+                # Drop the failed run's stage states so a re-pend starts clean.
+                fresh.pop("stages", None)
+                new_q.append(fresh)
+                requeued.append(1)
+                # original failed entry is dropped (not appended to new_q)
+            else:
+                new_q.append(item)
+        return new_q
+
+    await asyncio.to_thread(cfg.mutate_queue, _requeue_failed)
+    return {"ok": True, "requeued": len(requeued)}

@@ -12,9 +12,12 @@ from .probe import discover, ping
 
 
 DEFAULT_LLM_CONFIG = {
-    "provider": "lmstudio",
-    "base_url": "http://localhost:1234/v1",
-    "model_id": "",
+    # Default to the local ollama gemma4:26b — the same model the host's
+    # hermes agent uses, so the whole box shares one warm model rather than
+    # cold-loading a second 26B. Override per-install via Settings → LLM.
+    "provider": "ollama",
+    "base_url": "http://127.0.0.1:11434/v1",
+    "model_id": "gemma4:26b",
     "api_key": "",
     "temperature": 0.7,
     "max_retries": 2,
@@ -33,6 +36,49 @@ def _load_llm_cfg() -> dict:
     llm = dict(DEFAULT_LLM_CONFIG)
     llm.update(c.get("llm") or {})
     return llm
+
+
+def _llm_cpu_mode() -> str:
+    """LLM CPU-offload mode, read from config['scheduler']['llm_cpu_mode'] —
+    the bucket the settings endpoint actually persists it under. The previous
+    read used the llm sub-config's 'scheduler' key, which never exists, so the
+    user's choice silently fell back to 'smart' every time."""
+    from .. import config as cfg
+    c = cfg.load_config()
+    return (c.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
+
+
+def _opportunistic_enabled() -> bool:
+    """Whether to prefer ollama's *currently-loaded* model over the configured
+    one. Default ON: slopfinity is a good GPU citizen — it rides whatever model
+    another app already has resident instead of forcing its own load (which, on
+    a single GPU shared with e.g. the host's hermes agent, would thrash
+    unload/reload). Disable via config scheduler.llm_opportunistic = false."""
+    from .. import config as cfg
+    c = cfg.load_config()
+    v = (c.get("scheduler") or {}).get("llm_opportunistic")
+    return True if v is None else bool(v)
+
+
+def _ollama_loaded_model(base_url: str, timeout: float = 2.0):
+    """Return the model ollama currently has resident (native /api/ps), or None
+    if ollama is unreachable / nothing loaded. base_url may be the /v1 compat
+    URL — /api/ps is native, so strip a trailing /v1."""
+    import urllib.request
+    import json as _json
+    native = base_url.rstrip("/")
+    if native.endswith("/v1"):
+        native = native[:-3]
+    try:
+        with urllib.request.urlopen(native + "/api/ps", timeout=timeout) as r:
+            data = _json.loads(r.read())
+        for m in (data.get("models") or []):
+            name = m.get("name") or m.get("model")
+            if name:
+                return name
+    except Exception:
+        pass
+    return None
 
 
 def _auto_pick_model(provider, base_url, api_key, timeout) -> str | None:
@@ -63,10 +109,11 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
     timeout = int(llm.get("timeout_s") or 60)
     temperature = float(llm.get("temperature") or 0.7)
     extra_headers = llm.get("extra_headers") or None
-
-    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
-    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
-
+    
+    cpu_mode = _llm_cpu_mode()
+    gpu = scheduler.get_gpu()
+    is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
+    
     pool_cfg = get_env_pool_config()
     prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
 
@@ -85,9 +132,17 @@ def lmstudio_call(sys_p: str, user_p: str, response_format: dict | None = None) 
     for ep in unique_endpoints:
         base_url = ep["url"].rstrip("/")
         model_id = ep["model"]
-
-        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        
+        provider_name = ep.get("provider") or ("ollama" if "11434" in base_url else "lmstudio")
         provider = get_provider(provider_name)
+
+        # Opportunistic: ride whatever model ollama already has loaded so we
+        # share the warm model with the user's other app instead of forcing our
+        # own (no unload/reload thrash on a single GPU that only holds one well).
+        if provider_name == "ollama" and _opportunistic_enabled():
+            _loaded = _ollama_loaded_model(base_url)
+            if _loaded:
+                model_id = _loaded
 
         if not model_id:
             model_id = _auto_pick_model(provider, base_url, None, timeout=5) or ""
@@ -138,10 +193,11 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
     timeout = int(timeout_override or llm.get("timeout_s") or 120)
     temp = float(temperature if temperature is not None else (llm.get("temperature") or 0.7))
     extra_headers = llm.get("extra_headers") or None
-
-    cpu_mode = (llm.get("scheduler") or {}).get("llm_cpu_mode") or "smart"
-    is_gpu_busy = scheduler.GPU.resident_gb > 0 or bool(scheduler.GPU.in_flight)
-
+    
+    cpu_mode = _llm_cpu_mode()
+    gpu = scheduler.get_gpu()
+    is_gpu_busy = gpu.resident_gb > 0 or bool(gpu.in_flight)
+    
     pool_cfg = get_env_pool_config()
     prefer_cpu = (cpu_mode == "smart" and is_gpu_busy) or cpu_mode == "cpu"
 
@@ -161,9 +217,17 @@ def lmstudio_chat_raw(messages: list, tools: list | None = None,
         base_url = ep["url"].rstrip("/")
         model_id = ep["model"]
         
-        provider_name = "ollama" if "11434" in base_url else "lmstudio"
+        provider_name = ep.get("provider") or ("ollama" if "11434" in base_url else "lmstudio")
         provider = get_provider(provider_name)
-        
+
+        # Opportunistic: ride whatever model ollama already has loaded so we
+        # share the warm model with the user's other app instead of forcing our
+        # own (no unload/reload thrash on a single GPU that only holds one well).
+        if provider_name == "ollama" and _opportunistic_enabled():
+            _loaded = _ollama_loaded_model(base_url)
+            if _loaded:
+                model_id = _loaded
+
         if not model_id:
             model_id = _auto_pick_model(provider, base_url, None, timeout=5) or ""
             if not model_id:

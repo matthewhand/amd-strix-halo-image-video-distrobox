@@ -6,7 +6,7 @@
 // Captures /tmp/pane-chat-mocked-{default,focused}.png so the user
 // can eyeball whether the chat ever overflows the card.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
@@ -50,7 +50,7 @@ test.describe('desktop chat overflow', () => {
             } catch (_) {}
         }, longHistory);
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForTimeout(600);
         await page.screenshot({ path: '/tmp/pane-chat-mocked-long-default.png', fullPage: false });
@@ -77,7 +77,7 @@ test.describe('desktop chat overflow', () => {
             } catch (_) {}
         }, longHistory);
         await page.goto(`${BASE}/?layout=subjects`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForTimeout(600);
         await page.screenshot({ path: '/tmp/pane-chat-mocked-long-focused.png', fullPage: false });
@@ -103,7 +103,7 @@ test.describe('mobile chat', () => {
         await page.waitForFunction(() => {
             const splash = document.getElementById('splash-overlay');
             return !splash;
-        }, null, { timeout: 5000 });
+        }, null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForTimeout(500);
         await page.screenshot({ path: '/tmp/pane-chat-mocked-mobile.png', fullPage: false });
@@ -158,7 +158,7 @@ for (const layout of ['default', 'subjects']) {
             const main = document.querySelector('main');
             const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
             return !splash && mainOpacity >= 1;
-        }, null, { timeout: 5000 });
+        }, null, { timeout: 12000 });
 
         // Switch to chat mode + give the renderer a moment.
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);

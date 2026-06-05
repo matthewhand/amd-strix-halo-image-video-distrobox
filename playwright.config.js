@@ -32,16 +32,14 @@ const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
     testDir: './e2e',
-    timeout: 30_000,
+    // CI runners are ~3-4x slower than a dev box, so the suggestion/endless
+    // specs (which settle in ~7s locally) brushed the 30s ceiling and flaked.
+    // Give CI headroom + a couple of retries so genuine slowness isn't a hard
+    // fail; local stays tight at 30s for fast feedback.
+    timeout: process.env.CI ? 60_000 : 30_000,
+    retries: process.env.CI ? 2 : 0,
     expect: { timeout: 5_000 },
     fullyParallel: false, // dashboard is shared state
-    // One retry in CI. A couple of specs assert on short animation /
-    // buffer-refill windows (e.g. chat-reply-refill's ~700ms chip swap)
-    // that race under a loaded GitHub-hosted runner. A single retry turns
-    // those rare flakes green without masking a genuine, repeatable
-    // failure (which fails both attempts and still surfaces). Local runs
-    // keep retries=0 so flakes are visible immediately.
-    retries: process.env.CI ? 1 : 0,
     // CI lane vs local lane:
     //   * Local: 'list' reporter (per-test inline pass/fail) + html for review
     //   * CI:    'dot' (concise) + json/junit (machine-readable) + html

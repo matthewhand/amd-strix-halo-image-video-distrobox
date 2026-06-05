@@ -2,17 +2,45 @@ import os
 import json
 import time
 import asyncio
-from fastapi import APIRouter, UploadFile, File, Body
-from fastapi.responses import JSONResponse
-from slopfinity.paths import EXP_DIR
-import slopfinity.config as cfg
-from slopfinity.stats import get_outputs_disk, get_ram_estimate, check_disk_guard
-TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
-from slopfinity.workers import ffmpeg_mux as _ffmpeg_mux
+import subprocess
+from fastapi import UploadFile, File
+from slopfinity.stats import check_disk_guard
 import urllib.request
 import urllib.error
-import slopfinity.scheduler as sched
 
+from fastapi import APIRouter, Body
+from fastapi.responses import JSONResponse
+from fastapi.templating import Jinja2Templates
+
+from slopfinity.paths import EXP_DIR, TEMPLATES_DIR
+import slopfinity.config as cfg
+from slopfinity.stats import get_outputs_disk, get_ram_estimate
+import slopfinity.scheduler as sched
+from slopfinity.workers import ffmpeg_mux as _ffmpeg_mux
+
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
+
+
+def _confine_to_exp(p: str):
+    """Resolve a user-supplied path (absolute, as /music returns, or relative to
+    EXP_DIR) and return it only if it stays inside EXP_DIR. Returns None on a
+    `../` / absolute-escape attempt. Lexical (no symlink follow) so in-gallery
+    evidence symlinks still resolve. Guards /mux + /music path traversal."""
+    if not p:
+        return None
+    base = os.path.abspath(EXP_DIR)
+    cand = os.path.abspath(p if os.path.isabs(p) else os.path.join(base, p.lstrip("/")))
+    if cand == base or cand.startswith(base + os.sep):
+        return cand
+    return None
+
+_SLOPPED_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp"),
+    "audio": (".wav", ".mp3", ".flac", ".ogg"),
+    "tts": (".wav", ".mp3", ".flac", ".ogg"),
+}
 
 # ---------------------------------------------------------------------------
 # File-extension allowlists + seed-upload cap. Restored from server.py (the
@@ -30,18 +58,81 @@ _SEED_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 _SEED_MAX_BYTES = 25 * 1024 * 1024  # 25MB per file — generous for camera RAW-ish PNGs
 
 
-def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
-    """POST to the Qwen3-TTS worker at TTS_WORKER_URL. Raises on transport error.
+router = APIRouter()
 
-    Relocated here from server.py: server.py imports this router at module
-    load, so importing _call_tts_worker back FROM server.py would hit a
-    partially-initialised module (circular import). Keeping the helper local
-    avoids the cycle — all its deps (json, urllib, TTS_WORKER_URL) live here.
-    Isolated for test mocking.
-    """
-    payload = json.dumps({"text": text, "voice": voice}).encode("utf-8")
+def _check_disk_guard():
+    """Return (ok, reason) — False when the outputs partition is below
+    the user-configured low-water marks."""
+    config = cfg.load_config()
+    min_pct = float(config.get("disk_min_pct") or 0)
+    min_gb = float(config.get("disk_min_gb") or 0)
+    if min_pct <= 0 and min_gb <= 0:
+        return True, ""
+    try:
+        d = get_outputs_disk(EXP_DIR)
+        free_gb = d.get("free_gb")
+        if free_gb is None:
+            free_gb = (d.get("total_gb") or 0) - (d.get("used_gb") or 0)
+        free_pct = 100 - (d.get("pct") or 0)
+    except Exception:
+        return True, ""
+    if min_pct > 0 and free_pct <= min_pct:
+        return False, f"only {free_pct:.1f}% free (threshold ≤ {min_pct}%)"
+    if min_gb > 0 and free_gb <= min_gb:
+        return False, f"only {free_gb:.1f} GB free (threshold ≤ {min_gb} GB)"
+    return True, ""
+
+def _find_pids_by_cmdline(needle: str) -> list[int]:
+    """Scan /proc for processes whose argv contains a leaf matching `needle`."""
+    pids: list[int] = []
+    if os.path.isdir("/proc"):
+        try:
+            for entry in os.scandir("/proc"):
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{entry.name}/cmdline", "rb") as f:
+                        raw = f.read()
+                    if not raw:
+                        continue
+                    args = [
+                        a.decode("utf-8", errors="replace")
+                        for a in raw.split(b"\x00")
+                        if a
+                    ]
+                    if any(os.path.basename(a) == needle for a in args):
+                        pids.append(int(entry.name))
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    continue
+            return pids
+        except Exception:
+            pass
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", needle], capture_output=True, text=True, timeout=5
+        ).stdout
+        return [int(p) for p in out.split() if p.isdigit()]
+    except Exception:
+        return []
+
+def _resolve_tts_worker_url() -> str:
+    """Pick the TTS worker URL: settings config > env > hardcoded default."""
+    cfg_url = (cfg.load_config().get("tts_worker_url") or "").strip()
+    if cfg_url:
+        return cfg_url
+    return TTS_WORKER_URL
+
+def _call_tts_worker(text: str, voice: str, timeout: float = 600.0,
+                     engine: str | None = None, lang: str | None = None,
+                     speed: float | None = None) -> dict:
+    """POST to the TTS worker (kokoro / qwen multi-engine since v337)."""
+    body = {"text": text, "voice": voice}
+    if engine: body["engine"] = engine
+    if lang: body["lang"] = lang
+    if speed is not None: body["speed"] = speed
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
-        TTS_WORKER_URL,
+        _resolve_tts_worker_url(),
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -50,17 +141,8 @@ def _call_tts_worker(text: str, voice: str, timeout: float = 600.0) -> dict:
         body = resp.read().decode("utf-8")
     return json.loads(body)
 
-
-router = APIRouter()
-
 @router.get("/pipeline/slopped")
 async def pipeline_slopped(role: str):
-    """List existing assets in EXP_DIR matching the given role's extensions.
-
-    Used by the pipeline popup to populate the small `<select>` shown beneath
-    a model dropdown when the user picks `Slopped`. Returns up to 200 entries,
-    newest first.
-    """
     exts = _SLOPPED_EXTS.get(role)
     if not exts:
         return {"role": role, "files": []}
@@ -76,8 +158,6 @@ async def pipeline_slopped(role: str):
     except Exception:
         pass
     files.sort(key=lambda x: x[1], reverse=True)
-    # Cap to 60 most-recent: the image role renders these as thumbnails and
-    # we want the modal to stay snappy. Audio/tts also share this cap.
     return {"role": role, "files": [n for n, _ in files[:60]]}
 
 @router.get("/disk/guard")
@@ -125,7 +205,6 @@ async def runner_status():
         try:
             with open(f"/proc/{pid}/stat", "r") as f:
                 stat = f.read().split()
-            # field 22 = starttime in clock ticks since boot
             starttime_ticks = int(stat[21])
             clk_tck = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", 100))
             with open("/proc/uptime", "r") as f:
@@ -134,28 +213,12 @@ async def runner_status():
             with open(f"/proc/{pid}/cmdline", "rb") as f:
                 cmd = f.read().replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
             info.append({"pid": pid, "age_s": round(age_s, 1), "cmdline": cmd[:200]})
-        except (FileNotFoundError, PermissionError, ProcessLookupError):
+        except Exception:
             info.append({"pid": pid, "age_s": None, "cmdline": "(unreadable)"})
     return {"ok": True, "running": len(pids) > 0, "pids": info, "wall_time": now}
 
 @router.post("/runner/terminate")
 async def runner_terminate():
-    """Stop the run_fleet.py orchestrator running on the host.
-
-    TWO-LAYER strategy:
-      1. Write `terminate.flag` to EXP_DIR. run_fleet.py checks this at
-         the top of every iter and exits cleanly. Works regardless of
-         host/container PID namespace + capability boundaries (the
-         dashboard sometimes runs in a container that can't SIGTERM
-         host processes due to default Docker security profiles, even
-         with pid:host).
-      2. Best-effort SIGTERM/SIGKILL. If the dashboard CAN see + signal
-         the runner, we hard-stop it for hung-LLM-HTTP scenarios past
-         any in-loop flag check. PermissionError is swallowed — the
-         flag is the canonical mechanism, the signal is bonus.
-
-    Returns the flag path + the pids touched (signal + escalation).
-    Both succeed independently."""
     import signal
     from slopfinity.server import _find_pids_by_cmdline  # see runner_status
     flag_path = os.path.join(EXP_DIR, "terminate.flag")
@@ -164,8 +227,8 @@ async def runner_terminate():
         with open(flag_path, "w") as f:
             f.write(str(time.time()))
         flag_written = True
-    except Exception as e:
-        flag_err = repr(e)
+    except Exception:
+        pass
     pids = _find_pids_by_cmdline("run_fleet.py")
     killed: list[int] = []
     perm_errs: list[int] = []
@@ -184,9 +247,7 @@ async def runner_terminate():
             os.kill(pid, 0)
             os.kill(pid, signal.SIGKILL)
             escalated.append(pid)
-        except ProcessLookupError:
-            pass
-        except PermissionError:
+        except Exception:
             pass
     return {
         "ok": True,
@@ -196,18 +257,10 @@ async def runner_terminate():
         "killed": killed,
         "escalated_to_sigkill": escalated,
         "permission_denied_pids": perm_errs,
-        "note": "flag is the canonical mechanism; runner exits at next iter top. "
-                "Signals are best-effort — may fail with PermissionError under "
-                "container security profiles but that does not invalidate the flag.",
     }
 
 @router.post("/runner/terminate-clear")
 async def runner_terminate_clear():
-    """Remove terminate.flag so a fresh run_fleet.py launch can proceed.
-
-    Without this, any newly-launched runner reads the stale flag and
-    exits immediately. Called automatically by start-runner workflows
-    (and manually if the user wants to clear without restarting)."""
     flag_path = os.path.join(EXP_DIR, "terminate.flag")
     existed = os.path.exists(flag_path)
     try:
@@ -215,6 +268,56 @@ async def runner_terminate_clear():
     except FileNotFoundError:
         pass
     return {"ok": True, "existed": existed, "flag_path": flag_path}
+
+@router.get("/tts/voices")
+async def tts_voices():
+    """List voices the configured TTS worker exposes."""
+    fallback = {
+        "ok": True,
+        "engines": {
+            "kokoro": {
+                "default_voice": "af_heart",
+                "voices": [
+                    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
+                    "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+                    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
+                    "am_michael", "am_onyx", "am_puck", "am_santa",
+                    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+                    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+                    "ef_dora", "em_alex", "em_santa",
+                    "ff_siwis",
+                    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+                    "if_sara", "im_nicola",
+                    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+                    "pf_dora", "pm_alex", "pm_santa",
+                    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+                    "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+                ],
+            },
+            "qwen": {
+                "default_voice": "ryan",
+                "voices": [
+                    "aiden", "dylan", "eric", "ono_anna", "ryan",
+                    "serena", "sohee", "uncle_fu", "vivian",
+                ],
+            },
+        },
+        "source": "fallback (worker unreachable)",
+    }
+    base_url = _resolve_tts_worker_url()
+    voices_url = base_url.rstrip("/")
+    if voices_url.endswith("/tts"):
+        voices_url = voices_url[:-4]
+    voices_url = voices_url.rstrip("/") + "/voices"
+    try:
+        req = urllib.request.Request(voices_url, method="GET",
+                                     headers={"accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            body = json.loads(r.read().decode("utf-8"))
+            body.setdefault("source", "worker")
+            return body
+    except Exception:
+        return fallback
 
 @router.get("/seeds/list")
 async def seeds_list():
@@ -319,34 +422,51 @@ async def vae_grid_check(file: str):
 
 @router.post("/tts")
 async def tts(data: dict = Body(...)):
-    """Proxy to the Qwen3-TTS worker on :8010.
-
-    Preserves the JS contract: response contains {ok, status, url, audio_path,
-    voice}. On worker-unreachable, returns a clear error — NEVER falls back
-    to a sine-wave stub.
-    """
+    """Proxy to the TTS worker."""
     text = (data.get("text") or "").strip()
-    voice = data.get("voice") or "ryan"
+    engine = data.get("engine")
+    # Engine-appropriate default voice — 'af_heart' is a Kokoro voice; forwarding
+    # it to qwen (voices ryan/serena/…) makes the worker reject the request.
+    _DEFAULT_VOICE = {"kokoro": "af_heart", "qwen": "ryan"}
+    voice = data.get("voice") or _DEFAULT_VOICE.get(
+        (engine or "").strip().lower(), "af_heart"
+    )
+    lang = data.get("lang")
+    speed_raw = data.get("speed")
+    try:
+        speed = float(speed_raw) if speed_raw is not None else None
+    except (TypeError, ValueError):
+        speed = None
+    # Clamp to the supported TTS range instead of forwarding e.g. speed=999 to
+    # the worker (the chat tool already validates 0.5–2.0; match it here).
+    if speed is not None and not (0.5 <= speed <= 2.0):
+        return JSONResponse(
+            {"ok": False, "error": "speed must be between 0.5 and 2.0"},
+            status_code=400,
+        )
+
     if not text:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
-    # Manual TTS preview — route through acquire_gpu with a TTS-shaped budget
-    # so a mid-fleet click queues correctly and LM Studio gets suspended
-    # (Qwen-TTS shares the GPU). safety_gb=4: the worker already lives in
-    # its own process holding ~10 GB, this lock just gates concurrent demand.
-    # _call_tts_worker is defined module-level in this file (relocated from
-    # server.py to avoid the import cycle) — no lazy import needed.
+    MAX_TEXT_CHARS = 5000
+    if len(text) > MAX_TEXT_CHARS:
+        return JSONResponse({"ok": False, "error": f"text too long"}, status_code=413)
+    
+    # Budget the actual engine. The stage key MUST be lowercase "tts" to hit
+    # scheduler.STAGE_BUDGETS (it was "TTS", which missed the table and always
+    # charged only OVERHEAD), and the model must reflect the resolved engine
+    # rather than a hardcoded qwen-tts. Default kokoro (the no-engine default).
+    _TTS_BUDGET_MODEL = {"qwen": "qwen-tts", "kokoro": "kokoro", "dramabox": "dramabox"}
+    _budget_model = _TTS_BUDGET_MODEL.get((engine or "").strip().lower(), "kokoro")
     try:
-        async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
-            result = await asyncio.to_thread(_call_tts_worker, text, voice)
+        async with sched.acquire_gpu("tts", _budget_model, safety_gb=4):
+            result = await asyncio.to_thread(
+                _call_tts_worker, text, voice,
+                engine=engine, lang=lang, speed=speed,
+            )
     except urllib.error.URLError as e:
         return JSONResponse(
-            {
-                "ok": False,
-                "status": "worker-unreachable",
-                "error": "qwen-tts-service not running — enable profile qwen-tts "
-                         f"(docker compose --profile qwen-tts up -d qwen-tts-service): {e}",
-                "voice": voice,
-            },
+            {"ok": False, "status": "worker-unreachable",
+             "error": f"qwen-tts-service unreachable: {e}", "voice": voice},
             status_code=503,
         )
     except Exception as e:
@@ -354,52 +474,89 @@ async def tts(data: dict = Body(...)):
             {"ok": False, "status": "worker-error", "error": str(e), "voice": voice},
             status_code=502,
         )
-    # Back-compat shape for slopfinity/static/app.js generateTts().
     url = result.get("url") or result.get("audio_path")
     return {
         "ok": bool(result.get("ok")),
         "status": result.get("status", "ok" if result.get("ok") else "error"),
         "url": url,
         "audio_path": url,
+        "engine": result.get("engine") or engine,
         "voice": result.get("voice", voice),
         "error": result.get("error"),
     }
 
+@router.post("/music")
+async def music(data: dict = Body(...)):
+    """Generate standalone music via Heartmula."""
+    prompt = (data.get("prompt") or "").strip()
+    duration = float(data.get("duration") or 30.0)
+    out_name = data.get("out_name") or f"music_{int(time.time() * 1000)}.wav"
+    
+    if not prompt:
+        return JSONResponse({"ok": False, "error": "prompt required"}, status_code=400)
+
+    out_path = _confine_to_exp(out_name)
+    if out_path is None:
+        return JSONResponse({"ok": False, "error": "out_name must stay within the outputs dir"}, status_code=400)
+    
+    async with sched.acquire_gpu("audio", "heartmula"):
+        cmd = [
+            "docker", "run", "--rm",
+            "--cpus", "28.0",
+            "--memory", "110g",
+            "-v", f"{os.getcwd()}:/workspace",
+            "-v", f"{os.path.expanduser('~/.cache/huggingface')}:/root/.cache/huggingface",
+            "-v", "/mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro",
+            "-w", "/workspace",
+            "--device", "/dev/kfd",
+            "--device", "/dev/dri",
+            "amd-strix-halo-image-video-toolbox:latest",
+            "nice", "-n", "19",
+            "python3", "/workspace/scripts/heartmula_launcher.py",
+            "--prompt", prompt,
+            "--duration", str(duration),
+            "--out", out_path,
+            "--real",
+        ]
+        
+        def _do() -> int:
+            # Hard timeout so a wedged docker/GPU can't pin the GPU lock (held
+            # by the enclosing acquire_gpu) forever and starve every other
+            # serialized pipeline. Mirrors run_fleet's run_with_timeout(600);
+            # 20 min gives heartmula generous headroom. TimeoutExpired is an
+            # Exception → caught below, and the lock releases on `async with` exit.
+            return subprocess.run(cmd, check=False, timeout=1200).returncode
+            
+        try:
+            rc = await asyncio.to_thread(_do)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+            
+        if rc != 0:
+            return JSONResponse({"ok": False, "error": f"heartmula exited with code {rc}"}, status_code=500)
+            
+    return {"ok": True, "url": f"/files/{out_name}", "audio_path": out_path}
+
 @router.post("/mux")
 async def mux(data: dict = Body(...)):
-    """Mux audio onto video using ffmpeg_mux.
-
-    Body: {video_path, audio_path, out_name, [loop_audio], [pad_to_video]}
-    Paths are treated as relative to /workspace (EXP_DIR) if not absolute.
-    """
     vrel = data.get("video_path") or ""
     arel = data.get("audio_path") or ""
     out_name = data.get("out_name") or f"muxed_{int(time.time() * 1000)}.mp4"
     if not vrel or not arel:
-        return JSONResponse(
-            {"ok": False, "error": "video_path and audio_path required"},
-            status_code=400,
-        )
+        return JSONResponse({"ok": False, "error": "video_path and audio_path required"}, status_code=400)
 
-    def _resolve(p: str) -> str:
-        if os.path.isabs(p):
-            return p
-        return os.path.join(EXP_DIR, p.lstrip("/"))
-
-    video = _resolve(vrel)
-    audio = _resolve(arel)
-    out_path = os.path.join(EXP_DIR, out_name)
+    video = _confine_to_exp(vrel)
+    audio = _confine_to_exp(arel)
+    out_path = _confine_to_exp(out_name)
+    if video is None or audio is None or out_path is None:
+        return JSONResponse({"ok": False, "error": "paths must stay within the outputs dir"}, status_code=400)
 
     try:
         ok = _ffmpeg_mux.mux(
-            video,
-            audio,
-            out_path,
+            video, audio, out_path,
             loop_audio=bool(data.get("loop_audio")),
             pad_to_video=bool(data.get("pad_to_video", True)),
         )
-    except FileNotFoundError as e:
-        return JSONResponse({"ok": False, "error": f"missing input: {e}"}, status_code=404)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     if not ok:
@@ -408,29 +565,13 @@ async def mux(data: dict = Body(...)):
 
 @router.get("/ram_estimate")
 async def ram_estimate(base: str = "", video: str = "", audio: str = "", upscale: str = "", tts: str = ""):
-    return get_ram_estimate(
-        base or None,
-        video or None,
-        audio or None,
-        upscale or None,
-        tts or None,
-    )
+    return get_ram_estimate(base or None, video or None, audio or None, upscale or None, tts or None)
 
 @router.get("/system/ram")
 async def system_ram():
-    """Live MemAvailable (GB) plus the scheduler's safety threshold.
-
-    Used by the client-side RAM-tight warning modal to gate manual AI buttons
-    (🎲 Suggest, /enhance, /enhance/distribute, /tts). When `tight=True` the
-    UI prompts the user before firing the request; the user can still proceed.
-    """
     available = sched._mem_available_gb()
     safety = float(sched.SAFETY_GB)
-    return {
-        "available_gb": available,
-        "safety_gb": safety,
-        "tight": available < safety,
-    }
+    return {"available_gb": available, "safety_gb": safety, "tight": available < safety}
 
 @router.get("/pipeline/plan")
 async def pipeline_plan(lookahead: int = 2):
@@ -453,12 +594,9 @@ async def pipeline_plan(lookahead: int = 2):
         naive_load_count,
         planned_load_count,
     )
-
     config = cfg.load_config()
     queue = cfg.get_queue() or []
 
-    # Active job uses the current config selections; queued items may override
-    # base/video/audio/tts/upscale per item, falling back to config defaults.
     def _job_models(job: dict | None) -> tuple:
         j = job or {}
         return (
@@ -471,7 +609,6 @@ async def pipeline_plan(lookahead: int = 2):
 
     pending = [j for j in queue if (j.get("status") in (None, "pending"))]
     jobs_to_plan = [None] + pending[: max(0, int(lookahead))]
-
     sequence = []
     flat_for_planner = []
     for ji, job in enumerate(jobs_to_plan):
@@ -479,61 +616,23 @@ async def pipeline_plan(lookahead: int = 2):
         steps = build_sequence_for_job(base, video, audio, tts_, upscale)
         for s in steps:
             flat_for_planner.append(s)
-            sequence.append({
-                "stage":     s.stage,
-                "role":      s.role,
-                "model":     s.model,
-                "gb":        s.gb,
-                "job_index": ji,
-            })
+            sequence.append({"stage": s.stage, "role": s.role, "model": s.model, "gb": s.gb, "job_index": ji})
 
-    # Budget: MEM_AVAILABLE - SAFETY - OVERHEAD. Floor at 1 GB so a totally
-    # starved host still produces a (degraded) plan rather than crashing.
     mem_avail = sched._mem_available_gb()
     budget = max(1.0, mem_avail - sched.SAFETY_GB - sched.OVERHEAD_GB)
-
     decisions_raw = plan_resident_set(flat_for_planner, budget_gb=budget)
-    decisions = [
-        {
-            "step":           {"stage": d.step.stage, "role": d.step.role,
-                               "model": d.step.model, "gb": d.step.gb},
-            "load":           d.load,
-            "keep":           d.keep,
-            "evict":          d.evict,
-            "resident_after": d.resident_after,
-        }
-        for d in decisions_raw
-    ]
+    decisions = [{"step": {"stage": d.step.stage, "role": d.step.role, "model": d.step.model, "gb": d.step.gb},
+                  "load": d.load, "keep": d.keep, "evict": d.evict, "resident_after": d.resident_after}
+                 for d in decisions_raw]
 
     naive = naive_load_count(flat_for_planner)
     planned = planned_load_count(decisions_raw)
-    # Rough cost per cold-load: ~90 s aiter JIT + ~90 s checkpoint load ≈ 180 s
-    # for a freshly-loaded model. Used purely to translate "loads saved" into
-    # a human-readable wall-clock figure for the UI.
     est_saved_seconds = max(0, (naive - planned)) * 180
-
-    return {
-        "budget_gb":         round(budget, 1),
-        "mem_available_gb":  mem_avail,
-        "lookahead":         int(lookahead),
-        "queued_jobs_planned": len(jobs_to_plan) - 1,
-        "sequence":          sequence,
-        "decisions":         decisions,
-        "savings": {
-            "naive_loads":       naive,
-            "planned_loads":     planned,
-            "saved_loads":       max(0, naive - planned),
-            "est_saved_seconds": est_saved_seconds,
-        },
-    }
+    return {"budget_gb": round(budget, 1), "mem_available_gb": mem_avail, "sequence": sequence, "decisions": decisions,
+            "savings": {"naive_loads": naive, "planned_loads": planned, "saved_loads": max(0, naive - planned), "est_saved_seconds": est_saved_seconds}}
 
 @router.delete("/asset/{filename}")
 async def asset_delete(filename: str):
-    """Delete an asset file (and its sidecar JSON if present) from EXP_DIR.
-
-    Filename safety mirrors /asset/ GET — leaf name only. Returns 404 if the
-    file is gone (idempotent in spirit but explicit to surface UI bugs).
-    """
     if "/" in filename or ".." in filename or filename.startswith("."):
         return JSONResponse({"ok": False, "error": "invalid filename"}, status_code=400)
     path = os.path.join(EXP_DIR, filename)
@@ -542,11 +641,7 @@ async def asset_delete(filename: str):
     try:
         os.remove(path)
         sidecar = os.path.join(EXP_DIR, filename + ".json")
-        if os.path.isfile(sidecar):
-            try:
-                os.remove(sidecar)
-            except Exception:
-                pass
+        if os.path.isfile(sidecar): os.remove(sidecar)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     return {"ok": True, "filename": filename}

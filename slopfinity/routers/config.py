@@ -1,9 +1,8 @@
-import os
-import json
 import random
-from fastapi import APIRouter, Request, Body
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi import APIRouter, Body
+from fastapi.responses import JSONResponse
 import slopfinity.config as cfg
+import slopfinity.compat as compat
 from slopfinity.llm.probe import discover as llm_discover, ping as llm_ping
 from slopfinity.llm import DEFAULT_LLM_CONFIG, list_providers
 from fastapi.templating import Jinja2Templates
@@ -17,7 +16,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 _RANDOM_CANDIDATES = {
     "base_model": ["qwen", "ernie"],
     "audio_model": ["heartmula"],
-    "tts_model": ["qwen-tts", "kokoro"],
+    "tts_model": ["qwen-tts", "kokoro", "dramabox"],
 }
 
 
@@ -61,7 +60,11 @@ async def update_config(data: dict = Body(...)):
             data[role] = random.choice(pool) if pool else "none"
     config.update(data)
     cfg.save_config(config)
-    return {"status": "ok"}
+    # Surface any known-broken hardware states (e.g. ERNIE@>512² GPU-hang) so
+    # the dashboard can warn at the moment of selection. The pipeline guards
+    # the same states in run_fleet.py / worker_sh, so a warning with auto-fix
+    # means "we capped it", not "this will break".
+    return {"status": "ok", "warnings": compat.check_config(config)}
 
 
 @router.get("/settings")
@@ -176,6 +179,8 @@ async def settings_get():
                 or (c.get("scheduler") or {}).get("tts_cpu_only")
             ),
         },
+        "tts_worker_url": c.get("tts_worker_url") or "http://localhost:8010/tts",
+        "comfy_url": c.get("comfy_url") or "http://localhost:8188",
     }
 
 
@@ -188,6 +193,32 @@ async def settings_post(data: dict = Body(...)):
     - Any explicit non-empty value is persisted.
     """
     c = cfg.load_config()
+
+    # Endpoints tab — direct top-level keys. The server fetches these URLs, so
+    # run them through the same SSRF guard as the LLM base_url (blocks the
+    # cloud-metadata IP, multicast/reserved ranges, non-http schemes).
+    import slopfinity.net_guard as _net_guard
+    for _uk in ("tts_worker_url", "comfy_url"):
+        if _uk in data:
+            _u = str(data[_uk]).strip()
+            if _u:
+                try:
+                    _net_guard.validate_llm_base_url(_u)
+                except Exception as _e:
+                    return JSONResponse(
+                        {"ok": False, "error": f"{_uk}: {_e}"}, status_code=400
+                    )
+            c[_uk] = _u
+
+    # Disk-guard thresholds (General tab) — settings_get surfaces these, so the
+    # POST must persist them too (they were silently dropped before).
+    for _dk in ("disk_min_pct", "disk_min_gb"):
+        if _dk in data:
+            try:
+                c[_dk] = max(0.0, float(data.get(_dk) or 0))
+            except (TypeError, ValueError):
+                pass
+
     llm_in = data.get("llm") or {}
     if isinstance(llm_in, dict):
         current_llm = dict(DEFAULT_LLM_CONFIG)
@@ -318,16 +349,27 @@ async def settings_models(
 
     if not base_url:
         return JSONResponse({"ok": False, "error": "missing base_url"}, status_code=400)
-    # If the api_key arrives as the mask, resolve it from stored config.
+    # SSRF guard: this GET is reachable cross-origin (CSRF middleware only guards
+    # mutating methods) and fetches base_url server-side — block metadata/file:// etc.
+    import slopfinity.net_guard as _net_guard
+    try:
+        _net_guard.validate_llm_base_url(base_url)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e), "models": []}, status_code=400)
+    # Resolve the masked api_key ONLY for the configured endpoint — never send the
+    # stored secret to an arbitrary base_url (key-exfiltration guard).
     if api_key in ("***",):
-        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
+        _llm = cfg.load_config().get("llm") or {}
+        api_key = _llm.get("api_key", "") if base_url == _llm.get("base_url") else ""
     p = get_provider(provider)
     try:
         models = p.list_models(base_url, api_key=api_key or None, timeout=5)
         return {"ok": True, "models": [m["id"] for m in models]}
     except Exception as e:
+        # Upstream provider unreachable/erroring → 502 Bad Gateway, not a
+        # misleading 200. (The client reads ok:false either way.)
         return JSONResponse(
-            {"ok": False, "error": str(e), "models": []}, status_code=200
+            {"ok": False, "error": str(e), "models": []}, status_code=502
         )
 
 
@@ -337,10 +379,16 @@ async def settings_test(data: dict = Body(...)):
     provider = (data.get("provider") or "lmstudio").strip()
     model_id = (data.get("model_id") or "").strip()
     api_key = data.get("api_key") or ""
-    if api_key in ("***",):
-        api_key = (cfg.load_config().get("llm") or {}).get("api_key") or ""
     if not base_url or not model_id:
         return {"ok": False, "error": "base_url and model_id required", "latency_ms": 0}
+    import slopfinity.net_guard as _net_guard
+    try:
+        _net_guard.validate_llm_base_url(base_url)
+    except ValueError as e:
+        return {"ok": False, "error": str(e), "latency_ms": 0}
+    if api_key in ("***",):
+        _llm = cfg.load_config().get("llm") or {}
+        api_key = _llm.get("api_key", "") if base_url == _llm.get("base_url") else ""
     # Also count models to enrich the ✓ badge
     from slopfinity.llm.providers import get_provider
 

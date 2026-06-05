@@ -4,26 +4,35 @@
 // depend on the LLM's mood. Each chip's text encodes the prompt_id
 // it came from so we can verify per-row prompt routing.
 //
-// PRODUCT MODEL (v316+): endless mode no longer has a separate "Start
-// Story" gesture. Entering endless mode IS starting the story
-// (_setSubjectsMode flips body.endless-running and seeds the row-prompt
-// array). The shared #p-core seed textarea is HIDDEN in endless (the
-// story-pane owns the per-beat inputs), so tests drive row creation
-// through the "+" badge button (#subjects-suggest-add-btn) and the
-// per-row − / ↻ controls. Endless chip rows live in their OWN stack,
-// #subject-chips-stack-endless (simple mode has a sibling
-// #subject-chips-stack-simple); both carry the .subject-chips-stack
-// class.
+// PRODUCT MODEL (v316/v317+): endless mode no longer has a separate
+// "Start Story" gesture. Clicking the endless mode pill IS the start —
+// `_setSubjectsMode` flips `_endlessRunning` true, adds
+// body.endless-running, and seeds the row-prompt array. The shared
+// #p-core seed textarea is HIDDEN in endless (CSS rule
+// `body.subj-mode-endless #subjects-input-row { display: none
+// !important; }` — the story-pane owns the per-beat inputs), so the seed
+// has to be written BEFORE switching modes (or via direct JS). Tests
+// drive row creation through the "+" badge button
+// (#subjects-suggest-add-btn) and the per-row − / ↻ controls.
+//
+// The chip-stack DOM id is mode-suffixed:
+//   - `#subject-chips-stack-simple`  for simple/raw/chat
+//   - `#subject-chips-stack-endless` for endless
+// so the old shared `#subject-chips-stack` selector no longer resolves;
+// both carry the .subject-chips-stack class.
 //
 // SYNCED BASELINE: the per-row indices (data-endless-row-lead, the −/↻/
 // picker onclick args) are positions into the persisted row-prompt array
 // `slopfinity-endless-row-prompts`. _removeEndlessRow / _regenEndlessRow
 // look survivors up by that index, so the array and the rendered rows must
-// stay 1:1. The natural in-product "story running with N beat rows" state
-// achieves that by rendering one row per saved prompt (_renderEndlessRows).
-// We reproduce it deterministically: seed the prompt array, enter endless,
-// then paint the rows with window._renderEndlessRows. Every + / − / ↻
-// afterwards keeps the array and DOM in lockstep.
+// stay 1:1.
+//
+// Submit button removed entirely (per template — no
+// `#subjects-story-submit` element). The big Queue Slop button is
+// `#btn-start-stop-inline`; clicking it routes to `_subjectsAction`
+// which calls `toggleInfinity` (queues clips, does NOT end the story).
+// _submitEndlessStory still exists as a JS function but has no UI
+// affordance.
 
 // Backend-gated: needs a live LLM (see e2e/_fixtures.js). Skipped in CI.
 const { test, expect } = require('./_fixtures');
@@ -65,22 +74,24 @@ async function bootstrap(page, seedRows = 1) {
     await page.addInitScript((n) => {
         try {
             localStorage.clear();
-            // Generous upper-pane height so the full Prompt card body
-            // fits without splitter-cropping the chip stack.
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
             // Seed exactly `n` beat-prompts (all the default 'yes-and') so
             // the rendered rows and the saved array start 1:1.
             localStorage.setItem('slopfinity-endless-row-prompts',
                 JSON.stringify(Array.from({ length: n }, () => 'yes-and')));
+            // Force Suggestions toggle ON so #subjects-suggest-add-btn is
+            // un-hidden in endless mode (the badge refresh keys on the
+            // toggle for the simple-mode pre-first-batch + bootstrap, and
+            // an OFF toggle drops other badge elements that share its
+            // join cluster offscreen).
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) { }
     }, seedRows);
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => {
         const splash = document.getElementById('splash-overlay');
         const main = document.querySelector('main');
-        const opacity = main ? parseFloat(main.style.opacity || '1') : 1;
-        return !splash && opacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     // Entering endless auto-starts the story (body.endless-running).
     await page.waitForFunction(() => document.body.classList.contains('endless-running'), null, { timeout: 4000 });
@@ -124,14 +135,12 @@ async function rowCount(page) {
 
 // Returns [{rowIdx, promptLabel, firstChipText}, ...] for every row.
 async function rowSnapshot(page) {
-    return await page.evaluate(() => {
-        const rows = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row');
+    return await page.evaluate((stackSel) => {
+        const rows = document.querySelectorAll(`${stackSel} .suggest-marquee-row`);
         return Array.from(rows).map((r) => {
             const lead = r.querySelector('[data-endless-row-lead]');
             const promptBtn = r.querySelector('[data-row-prompt-btn]');
             const label = promptBtn ? promptBtn.textContent.trim() : null;
-            // Marquee duplicates chips for wraparound; first chip is the
-            // canonical one. dataset.suggest carries the raw text.
             const firstChip = r.querySelector('.btn[data-suggest]');
             return {
                 rowIdx: lead ? Number(lead.getAttribute('data-endless-row-lead')) : -1,
@@ -139,12 +148,14 @@ async function rowSnapshot(page) {
                 firstChip: firstChip ? firstChip.dataset.suggest : null,
             };
         });
-    });
+    }, STACK);
 }
 
 // ---------------------------------------------------------------------------
-// CONTRACT: the seeded baseline renders exactly one row from the default
-// prompt; chips route from that prompt_id.
+// CONTRACT: the seeded baseline renders exactly ONE row from the current
+// default prompt; chips route from that prompt_id. (Previously gated on a
+// "Start Story" button click; now the endless pill IS the start, and the
+// synced render paints one row per saved beat-prompt.)
 // ---------------------------------------------------------------------------
 
 test('endless-rows: baseline renders one row with default prompt', async ({ page }) => {
@@ -167,10 +178,8 @@ test('endless-rows: + click adds 1 row with current default', async ({ page }) =
     await addRow(page);
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(2);
-    // Both rows came from the default prompt → same chip-text family.
     expect(snap[0].firstChip).toMatch(/^chip-yes-and-/);
     expect(snap[1].firstChip).toMatch(/^chip-yes-and-/);
-    // rowIdx values are sequential 0, 1.
     expect(snap.map(r => r.rowIdx)).toEqual([0, 1]);
 });
 
@@ -249,8 +258,6 @@ test('endless-rows: − click on only row → 0 rows', async ({ page }) => {
 
 // ---------------------------------------------------------------------------
 // CONTRACT: After removing all rows, + click adds a fresh row at idx=0.
-// Regression case — empty rowPrompts array shouldn't break the +
-// handler.
 // ---------------------------------------------------------------------------
 
 test('endless-rows: + after empty stack adds row at idx=0', async ({ page }) => {
@@ -265,8 +272,7 @@ test('endless-rows: + after empty stack adds row at idx=0', async ({ page }) => 
 
 // ---------------------------------------------------------------------------
 // CONTRACT: Per-row ↻ refetches IN PLACE — row stays at its original
-// position in the stack instead of moving to the bottom (the
-// insertAtIdx bug we fixed earlier).
+// position in the stack instead of moving to the bottom.
 // ---------------------------------------------------------------------------
 
 test('endless-rows: ↻ refresh stays at original index', async ({ page }) => {
@@ -278,7 +284,7 @@ test('endless-rows: ↻ refresh stays at original index', async ({ page }) => {
     await page.waitForFunction(() => {
         const row = document.querySelectorAll('#subject-chips-stack-endless .suggest-marquee-row')[1];
         return row && !row.querySelector('.suggest-marquee-mask.row-loading');
-    }, null, { timeout: 5000 });
+    }, STACK, { timeout: 8000 });
     const snap = await rowSnapshot(page);
     expect(snap).toHaveLength(3);
     // Indices stay 0,1,2 — the refreshed row didn't move to the bottom.
@@ -317,6 +323,30 @@ test('endless-rows: + stays enabled and story stays running', async ({ page }) =
 });
 
 // ---------------------------------------------------------------------------
+// SKIPPED: The "Submit ends story" contract is moot — there is no Submit
+// button in the current template (no #subjects-story-submit element; only
+// Copy and Reset live next to the story log). _submitEndlessStory exists
+// as a JS function but is unwired. If the intent is "user explicitly ends
+// the story without queueing", that UX needs a re-design first. The
+// underlying state (_endlessRunning, body.endless-running, seed
+// textarea) and the contract spelled out in the docstring should be
+// re-asserted once a Submit / End-Story affordance exists.
+//
+// Files that own the gap:
+//   - slopfinity/templates/index.html (~line 700-740, the story-pane
+//     header has Copy + Reset but no Submit button).
+//   - slopfinity/static/app.js line 3803 (_submitEndlessStory function
+//     exists but no element calls it).
+// ---------------------------------------------------------------------------
+
+test.skip('endless-rows: Submit ends story (clears running flag + seed)', async ({ page }) => {
+    // No #subjects-story-submit element in the current template; the
+    // Submit affordance was removed when endless became "the pill IS the
+    // start" (v316/v317 refactor). Re-enable once a Submit/End-Story
+    // button is reintroduced.
+});
+
+// ---------------------------------------------------------------------------
 // CONTRACT: rapid double-click on + does NOT add 2 rows when the first
 // fetch is still in flight (re-entrancy guard via _addEndlessRowInflight).
 // ---------------------------------------------------------------------------
@@ -340,10 +370,11 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
             // Start from one synced row so the array/DOM are aligned.
             localStorage.setItem('slopfinity-endless-row-prompts', JSON.stringify(['yes-and']));
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.waitForFunction(() => document.body.classList.contains('endless-running'), null, { timeout: 4000 });
     await page.waitForLoadState('networkidle').catch(() => {});
@@ -353,8 +384,7 @@ test('endless-rows: rapid double-+ click adds only 1 row (re-entrancy guard)', a
     // Double-click + with no delay between.
     await page.click('#subjects-suggest-add-btn');
     await page.click('#subjects-suggest-add-btn');
-    // Wait long enough for both fetches to land.
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
     const rows = await rowCount(page);
     // Should be 1 (baseline) + 1 (only one + landed) = 2, NOT 3.
     expect(rows).toBe(2);

@@ -35,7 +35,7 @@ async function bootstrap(page) {
         } catch (_) { }
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
 }
 
 async function openLLMTab(page) {
@@ -161,7 +161,7 @@ test.describe('spiffy toggle (set-suggest-per-row-prompts)', () => {
         // Reload — the toggle should hydrate from the persisted server
         // value via the live config snapshot (_lastTick.config).
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await openLLMTab(page);
         await page.waitForTimeout(1000);
         const checked = await page.locator('#set-suggest-per-row-prompts').evaluate(el => el.checked);

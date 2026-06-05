@@ -10,7 +10,7 @@
 // Markup: slopfinity/templates/index.html:2142
 // Wiring: slopfinity/static/app.js:7199
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

@@ -4,6 +4,7 @@
 !README.slopfinity.md
 !COMFYUI_SETUP_GUIDE.md
 !CONTRIBUTING.md
+!COMPATIBILITY_MATRIX.md
 !docs/*.md
 # AGENTS.md is a local agent playbook, intentionally not committed —
 # contents drift per-machine and per-session.
@@ -95,3 +96,11 @@ dist/
 # Local devs running `npx playwright test` won't generate these unless
 # they set CI=1, but the dir is conventional — gitignore it.
 artifacts/
+
+# Asset evidence: keep the canonical media on disk (regenerable via
+# scripts/build_evidence_tts.py); track only structure + manifest.
+evidence/**/*.wav
+evidence/**/*.png
+evidence/**/*.mp4
+!evidence/**/manifest.json
+slop_test/

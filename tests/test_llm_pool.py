@@ -57,8 +57,8 @@ def test_pool_config_reads_primary_and_cpu(monkeypatch):
     monkeypatch.setenv("SLOPFINITY_LLM_CPU_URL", "http://cpu:11434/v1")
     monkeypatch.setenv("SLOPFINITY_LLM_CPU_MODEL", "tiny")
     cfg = POOL.get_env_pool_config()
-    assert cfg["primary"] == {"url": "http://gpu:1234/v1", "model": "qwen-big"}
-    assert cfg["cpu"] == {"url": "http://cpu:11434/v1", "model": "tiny"}
+    assert cfg["primary"] == {"url": "http://gpu:1234/v1", "model": "qwen-big", "provider": "lmstudio"}
+    assert cfg["cpu"] == {"url": "http://cpu:11434/v1", "model": "tiny", "provider": "ollama"}
 
 
 def test_pool_config_failovers_zipped(monkeypatch):
@@ -66,8 +66,8 @@ def test_pool_config_failovers_zipped(monkeypatch):
     monkeypatch.setenv("SLOPFINITY_LLM_FAILOVER_MODELS", "ma, mb")
     cfg = POOL.get_env_pool_config()
     assert cfg["failovers"] == [
-        {"url": "http://a/v1", "model": "ma"},
-        {"url": "http://b/v1", "model": "mb"},
+        {"url": "http://a/v1", "model": "ma", "provider": "ollama"},
+        {"url": "http://b/v1", "model": "mb", "provider": "ollama"},
     ]
 
 
@@ -89,7 +89,7 @@ def test_pool_config_strips_blank_failover_urls(monkeypatch):
 def test_pool_config_no_models_env_means_empty_models(monkeypatch):
     monkeypatch.setenv("SLOPFINITY_LLM_FAILOVER_URLS", "http://a/v1")
     cfg = POOL.get_env_pool_config()
-    assert cfg["failovers"] == [{"url": "http://a/v1", "model": ""}]
+    assert cfg["failovers"] == [{"url": "http://a/v1", "model": "", "provider": "ollama"}]
 
 
 # ---------------------------------------------------------------------------

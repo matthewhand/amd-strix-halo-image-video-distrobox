@@ -8,7 +8,7 @@
 // Run: npx playwright test e2e/smoke.spec.js
 //   (assumes slopfinity is reachable at http://localhost:9099)
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
@@ -24,9 +24,32 @@ test.describe('slopfinity dashboard smoke', () => {
             if (msg.type() === 'error') consoleErrors.push(msg.text());
         });
 
+        // Seed Suggestions as VISIBLE before the page loads. New browsers
+        // default to slopfinity_suggestions_hidden=null which the app
+        // treats as hidden (intentional UX — new users don't see the
+        // suggestion badges until they opt in). The mode-update logic
+        // toggles the .hidden class on #subjects-suggest-add-btn but
+        // does NOT clear the inline style.display='none' that
+        // _applySuggestionsHiddenState sets, so on a cold browser the
+        // + button is "shown by class, invisible by inline style". We
+        // want the assertion below to exercise the visible-badge path,
+        // so opt in via localStorage before the page boots.
+        await page.addInitScript(() => {
+            try { localStorage.setItem('slopfinity_suggestions_hidden', '0'); } catch (_) { }
+        });
+
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-        // Give the WS handshake + initial render a moment.
-        await page.waitForTimeout(800);
+        // Wait for the splash overlay to detach (controller hides at
+        // load+2500ms then removes the element after 600ms). 800ms here
+        // caught the splash mid-fade in every smoke.png artefact.
+        await page.waitForFunction(() => {
+            const splash = document.getElementById('splash-overlay');
+            const main = document.querySelector('main');
+            // Use COMPUTED opacity — the fade-in is a CSS animation so
+            // inline style.opacity reads empty mid-fade.
+            const mainOpacity = main ? parseFloat(getComputedStyle(main).opacity) : 1;
+            return !splash && mainOpacity >= 0.99;
+        }, null, { timeout: 12000 });
 
         // Capture a screenshot regardless so the artefact is on disk
         // for review when something fails further down.

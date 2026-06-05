@@ -3,8 +3,10 @@ import re
 import json
 import random
 import asyncio
-from fastapi import APIRouter, Form, Body
-from fastapi.responses import JSONResponse
+import re
+import random
+import os
+from fastapi import APIRouter, Body
 import slopfinity.config as cfg
 import slopfinity.scheduler as sched
 from slopfinity.llm import _LLM_LOCK
@@ -13,7 +15,6 @@ import slopfinity.fanout as _fanout
 
 
 router = APIRouter()
-
 
 def _default_suggest_system_prompt(n: int) -> str:
     # Default prompt is intentionally GENERIC — no editorial tone — so a
@@ -27,7 +28,6 @@ def _default_suggest_system_prompt(n: int) -> str:
         "no quotes, no JSON, no markdown — just the phrase. "
         "Variety across themes; visually rich."
     )
-
 
 @router.post("/enhance")
 async def enhance(data: dict = Body(...)):
@@ -185,6 +185,26 @@ async def enhance_distribute(data: dict = Body(...)):
     # Fan-out makes multiple LLM calls. Hold acquire_gpu across the whole
     # batch so we suspend/resume LM Studio just once, not per call.
     # safety_gb=4 since this is just LLM rewrites, not a 60 GB diffusion stage.
+    # Constrain the fan-out LLM to strict JSON over the 4 stages so distribute
+    # output can't leak prose/scaffolding (the retry+seed fallback still applies).
+    fanout_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "stage_fanout",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "image": {"type": "string", "minLength": 1, "maxLength": 600},
+                    "video": {"type": "string", "minLength": 1, "maxLength": 600},
+                    "music": {"type": "string", "maxLength": 300},
+                    "tts": {"type": "string", "maxLength": 400},
+                },
+                "required": ["image", "video", "music", "tts"],
+                "additionalProperties": False,
+            },
+        },
+    }
     async with sched.acquire_gpu("Concept", "lmstudio", safety_gb=4), _LLM_LOCK:
         result = await asyncio.to_thread(
             _fanout.fanout,
@@ -193,6 +213,7 @@ async def enhance_distribute(data: dict = Body(...)):
             locked,
             preserve_tokens,
             lmstudio_call,
+            response_format=fanout_schema,
         )
     persisted = False
     if persist:
@@ -243,11 +264,10 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     same cache_key as row 1 and all show identical chips).
     """
     import time
-    # The default suggestion system prompt lives in server.py. Imported
-    # lazily to avoid a circular import at module load (server.py includes
-    # this router). Without it line ~264 raised NameError and 500'd
-    # /subjects/suggest whenever no named/custom prompt was configured.
-    from slopfinity.server import _default_suggest_system_prompt
+    # _default_suggest_system_prompt is defined module-level in THIS file
+    # (relocated out of server.py, which includes this router — importing it
+    # back would be a circular import). Used below when no named/custom prompt
+    # is configured.
     config = cfg.load_config()
     use_subjects = bool(config.get("suggest_use_subjects", cfg.DEFAULT_SUGGEST_USE_SUBJECTS))
     # Env override wins over Settings → Prompts. Lets a user pin their
@@ -297,17 +317,18 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
             "an evocative opening scene that could anchor a longer story."
         )
         user_msg = "Give me one story-opening scene."
-    # We're now fetching THREE modes simultaneously in one payload to save LLM roundtrips.
-    user_msg_base = ""
-    if subjects_in:
-        user_msg_base = f"Current context / story beats: {subjects_in}\n\n"
-        
-    user_msg = user_msg_base + (
-        f"Generate {n} suggestions for THREE distinct contexts:\n"
-        f"1. 'story': short next-scene continuations building chronologically on the context above. Do NOT repeat beats.\n"
-        f"2. 'simple': tangential visual subjects matching the tone/theme of the context.\n"
-        f"3. 'chat': longer conversational replies or starters relating to the ongoing process."
-    )
+    else:
+        # We're now fetching THREE modes simultaneously in one payload to save LLM roundtrips.
+        user_msg_base = ""
+        if subjects_in:
+            user_msg_base = f"Current context / story beats: {subjects_in}\n\n"
+
+        user_msg = user_msg_base + (
+            f"Generate {n} suggestions for THREE distinct contexts:\n"
+            f"1. 'story': short next-scene continuations building chronologically on the context above. Do NOT repeat beats.\n"
+            f"2. 'simple': tangential visual subjects matching the tone/theme of the context.\n"
+            f"3. 'chat': longer conversational replies or starters relating to the ongoing process."
+        )
 
     # When fresh=1 we want EACH call to give different ideas (the marquee
     # drip-feed asks for rows 2..N and they'd otherwise be identical to

@@ -700,24 +700,21 @@ function _focusFabNav(delta) {
     const idx = _mobileNavCurrentIdx();
     const target = _MOBILE_NAV_ORDER[idx + delta];
     if (!target) return;
-    const main = document.querySelector('main');
-    if (!main) {
+    const slider = document.getElementById('layout-slider-wrap');
+    if (!slider) {
         _mobileNavGo(idx + delta);
         return;
     }
     const cls = delta < 0 ? 'layout-sliding-right' : 'layout-sliding-left';
-    main.classList.add(cls);
+    slider.classList.add(cls);
     // Wait for the slide-out to land, then swap layout + clear class.
-    // The new layout's <main> starts off-screen (the same translateX
-    // the dying view ended at) and transitions back to identity for
-    // a directional 'slide-in' feel.
+    // The new layout's content starts off-screen and transitions back.
     setTimeout(() => {
         if (typeof selectLayoutView === 'function') selectLayoutView(target.layout);
         else _applyLayoutView(target.layout);
-        // Wipe class on next frame so the new layout's main slides
-        // back in from the same direction.
+        // Wipe class on next frame so the new layout slides back in.
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => main.classList.remove(cls));
+            requestAnimationFrame(() => slider.classList.remove(cls));
         });
         _mobileNavRefresh();
     }, 220);
@@ -1252,46 +1249,97 @@ window._ramGuardCheck = _ramGuardCheck;
 // State persists in localStorage across reloads.
 // ---------------------------------------------------------------------------
 const _SUGGEST_HIDDEN_KEY = 'slopfinity_suggestions_hidden';
+const _INPUT_AUTOSAVE_KEY = 'slopfinity-input-autosave';
+
+function _savePromptInputs() {
+    const ids = ['p-core', 'p-image', 'p-video', 'p-music', 'p-tts', 'p-raw-title'];
+    const data = {
+        ts: Date.now(),
+        values: {}
+    };
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) data.values[id] = el.value;
+    });
+    try { localStorage.setItem(_INPUT_AUTOSAVE_KEY, JSON.stringify(data)); } catch (_) { }
+}
+
+function _loadPromptInputs() {
+    try {
+        const raw = localStorage.getItem(_INPUT_AUTOSAVE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!data || !data.values || !data.ts) return;
+        
+        // 1 week timeout (7 days)
+        if (Date.now() - data.ts > 7 * 24 * 60 * 60 * 1000) {
+            localStorage.removeItem(_INPUT_AUTOSAVE_KEY);
+            return;
+        }
+        
+        Object.entries(data.values).forEach(([id, val]) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = val;
+                // Trigger input event to update pipeline/state
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+    } catch (_) { }
+}
 
 function _isSuggestionsHidden() {
-    try { return localStorage.getItem(_SUGGEST_HIDDEN_KEY) === '1'; }
-    catch (_) { return false; }
+    try {
+        const v = localStorage.getItem(_SUGGEST_HIDDEN_KEY);
+        // Default true (hidden) for new users (v === null)
+        return v === null ? true : v === '1';
+    }
+    catch (_) { return true; }
 }
 
 function toggleSuggestionsHidden(hide) {
     try { localStorage.setItem(_SUGGEST_HIDDEN_KEY, hide ? '1' : '0'); }
     catch (_) { }
     _applySuggestionsHiddenState();
+    if (!hide) {
+        // Automatically start generating if toggled ON
+        if (typeof regenSuggestions === 'function') regenSuggestions();
+    }
 }
 window.toggleSuggestionsHidden = toggleSuggestionsHidden;
 
 function _applySuggestionsHiddenState() {
     const hidden = _isSuggestionsHidden();
     const area = document.getElementById('subjects-suggestions-area');
-    const closeBtn = document.getElementById('subjects-suggestions-close');
     const suggestBtn = document.getElementById('subjects-suggest-btn');
-    const promptBtn = document.getElementById('subjects-suggestion-prompt-link');
+    const addBtn = document.getElementById('subjects-suggest-add-btn');
+    const promptBtn = document.getElementById('subjects-suggest-prompt-name');
     const toggleBtn = document.getElementById('subjects-suggestions-toggle');
     const toggleInput = document.getElementById('subjects-suggestions-toggle-input');
-    const endlessBtn = document.getElementById('subjects-endless-story');
+    const stepper = document.getElementById('subjects-suggest-simple-stepper');
+    const cluster = document.getElementById('subjects-suggest-cluster');
+
     if (area) area.style.display = hidden ? 'none' : '';
-    if (closeBtn) closeBtn.style.display = hidden ? 'none' : '';
     // Body hook for the "Suggestions ON" CSS treatment: on desktop the
     // secondary controls (prompt picker / regen / add) dim and recede
     // (restored on hover); on mobile (≤767px) the cluster collapses to
     // just the toggle so the prompt textarea reclaims the space.
     document.body.classList.toggle('suggestions-on', !hidden);
+    // Use CSS class for animated reveal of the cluster.
+    if (cluster) cluster.classList.toggle('suggest-expanded', !hidden);
     // Regenerate + Suggest-Prompt buttons follow visibility of the suggestion
-    // controls. Endless toggle now stays VISIBLE alongside Suggestions but
-    // becomes disabled when Suggestions is off (handled by _updateEndlessEnabled).
+    // controls.
     if (suggestBtn) suggestBtn.style.display = hidden ? 'none' : '';
+    if (addBtn) addBtn.style.display = hidden ? 'none' : '';
     if (promptBtn) promptBtn.style.display = hidden ? 'none' : '';
-    if (endlessBtn) endlessBtn.style.display = '';
+    if (stepper) stepper.style.display = hidden ? 'none' : '';
+    
     // Mirror state on the new switch input + the host's aria-pressed.
     if (toggleInput) toggleInput.checked = !hidden;
     if (toggleBtn) toggleBtn.setAttribute('aria-pressed', String(!hidden));
     if (typeof _updateEndlessEnabled === 'function') _updateEndlessEnabled();
 }
+window._applySuggestionsHiddenState = _applySuggestionsHiddenState;
 document.addEventListener('DOMContentLoaded', _applySuggestionsHiddenState);
 
 // Endless is a sub-toggle of Suggestions — meaningless when Suggestions
@@ -1708,6 +1756,59 @@ document.addEventListener('DOMContentLoaded', () => {
 // confirms scheduler.paused === true, or by the 5s poll.
 let _pausePending = false;
 
+// ---------------------------------------------------------------------------
+// Auto-Stitch preference — concatenates FINAL_*.mp4 clips automatically.
+// ---------------------------------------------------------------------------
+const _AUTO_STITCH_KEY = 'slopfinity-auto-stitch';
+function _updateAutoStitch(enabled) {
+    try { localStorage.setItem(_AUTO_STITCH_KEY, enabled ? '1' : '0'); } catch (_) { }
+}
+window._updateAutoStitch = _updateAutoStitch;
+
+// Initial state for auto-stitch checkbox.
+document.addEventListener('DOMContentLoaded', () => {
+    // Load autosaved prompt inputs
+    _loadPromptInputs();
+
+    // Wire up autosave for prompt inputs
+    ['p-core', 'p-image', 'p-video', 'p-music', 'p-tts', 'p-raw-title'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', _savePromptInputs);
+    });
+
+    // -----------------------------------------------------------------------
+    // Demo mode: lock all inputs and warn if typed into.
+    if (window.__IS_DEMO__) {
+        const _warnDemo = (e) => {
+            const el = e.target;
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                if (el.type === 'checkbox' || el.type === 'radio') return;
+                e.preventDefault();
+                if (typeof _toast === 'function') {
+                    _toast('Demo Mode: editing is disabled. Use the suggestion chips/pills to explore.', 'warning');
+                }
+            }
+        };
+        document.addEventListener('keydown', _warnDemo, true);
+        document.addEventListener('paste', _warnDemo, true);
+        // Also grey them out slightly via a global style
+        const style = document.createElement('style');
+        style.textContent = 'input:not([type=checkbox]):not([type=radio]), textarea { cursor: not-allowed !important; opacity: 0.8 !important; }';
+        document.head.appendChild(style);
+    }
+
+    try {
+        let val = localStorage.getItem(_AUTO_STITCH_KEY);
+        if (val === null) {
+            val = '1'; // Default ON for new users
+            localStorage.setItem(_AUTO_STITCH_KEY, '1');
+        }
+        const enabled = val === '1';
+        const chk = document.getElementById('subjects-story-auto-stitch');
+        if (chk) chk.checked = enabled;
+    } catch (_) { }
+});
+
 function _applyPauseButtonState(paused) {
     const btn = document.getElementById('btn-queue-pause');
     if (!btn) return;
@@ -2067,7 +2168,8 @@ function _renderDoneItem(q) {
     const cls = failed ? 'badge-error' : 'badge-success';
     const sym = failed ? '✗' : '✓';
     const verdict = failed ? 'failed' : 'done';
-    const promptEsc = _htmlEscape(q.prompt || '');
+    const displayTitle = q.title || q.prompt || '';
+    const promptEsc = _htmlEscape(displayTitle);
     // Backwards-compat: pre-asset-tracking done records only have v_idx /
     // image_only. Synthesize a best-guess single-asset list from that so old
     // history items still render a thumbnail.
@@ -2120,13 +2222,20 @@ function _renderDoneItem(q) {
     // (must NOT rely on the previous DOM since it's already gone).
     const qid = String(q.ts || q.completed_ts || 0);
     const openAttr = (qid !== '0' && qid === _openDoneItem) ? ' open' : '';
-    return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done">
+    // Story badge — shown when this item belongs to a multi-beat story batch.
+    const storyBadge = q.story_id
+        ? `<span class="badge badge-xs badge-info gap-1 flex-none" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>`
+        : '';
+    return `<li class="bg-base-200/40 rounded-md opacity-80 hover:opacity-100" data-q-status="done" data-story-id="${q.story_id || ''}">
         <details data-q-id="${qid}"${openAttr}>
-            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
-                <span class="badge badge-xs ${cls}">${sym} ${verdict}</span>
-                <span class="font-semibold truncate flex-1" title="${promptEsc}">${promptEsc}</span>
-                ${assetCountBadge}
-                ${metaGroup}
+            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
+                <span class="badge badge-xs ${cls} flex-none">${sym} ${verdict}</span>
+                ${storyBadge}
+                <span class="font-semibold truncate flex-1 min-w-0" title="${promptEsc}">${promptEsc}</span>
+                <span class="flex items-center gap-2 flex-none ml-auto">
+                    ${assetCountBadge}
+                    ${metaGroup}
+                </span>
             </summary>
             <div class="px-2 pb-2 pt-0 border-t border-base-300/50">
                 ${previewList}
@@ -2619,10 +2728,12 @@ function _updateQueueStatusChip(d) {
     const depthEls = [
         document.getElementById('btn-queue-info-depth'),
         document.getElementById('btn-queue-info-depth-raw'),
+        document.getElementById('btn-queue-info-depth-story'),
     ].filter(Boolean);
     const statusEls = [
         document.getElementById('btn-queue-info-status'),
         document.getElementById('btn-queue-info-status-raw'),
+        document.getElementById('btn-queue-info-status-story'),
     ].filter(Boolean);
     if (!depthEls.length || !statusEls.length) return;
     const depthEl = depthEls[0];   // for class toggle below; both same content
@@ -2659,7 +2770,18 @@ function _updateQueueStatusChip(d) {
     const prevTotal = (typeof _updateQueueStatusChip._prevTotal === 'number')
         ? _updateQueueStatusChip._prevTotal : total;
     const grew = total > prevTotal;
+    const shrank = total < prevTotal;
     _updateQueueStatusChip._prevTotal = total;
+
+    // Auto-Stitch logic: if count decreases and auto-stitch is ON, fire a stitch.
+    if (shrank && localStorage.getItem('slopfinity-auto-stitch') === '1') {
+        const startTs = window._endlessStoryStartTs || 0;
+        if (startTs > 0 && typeof _runStitchNow === 'function') {
+            // Wait 2s for file to flush to disk
+            setTimeout(() => _runStitchNow(startTs, { confirmFirst: false }), 2000);
+        }
+    }
+
     depthEls.forEach(el => {
         // innerHTML — `depthText` may include the ∞-marker span when
         // any queued item is infinity-flagged. Other contributors are
@@ -2676,9 +2798,8 @@ function _updateQueueStatusChip(d) {
         }
     });
     // Simplified status: just Idle / Generating / Paused. Earlier the
-    // chip leaked the internal stage name ('base image' / 'video chains')
-    // which read like jargon. Three-state is enough for "is the box
-    // doing work" at a glance — Queue card has the per-stage detail.
+    // Three-state + Pausing/Paused is enough for "is the box doing work"
+    // at a glance — Queue card has the per-stage detail.
     const state = (d && d.state) || {};
     let status = 'Idle';
     // "Generating" only when the fleet is genuinely doing work. A bare step
@@ -2692,17 +2813,21 @@ function _updateQueueStatusChip(d) {
     if ((state.mode && state.mode !== 'Idle') || !_idleStep) {
         status = 'Generating';
     }
-    if (d && d.paused) status = 'Paused';
+    const isPaused = d.scheduler && d.scheduler.paused;
+    if (_pausePending && !isPaused) {
+        status = 'Pausing';
+    } else if (isPaused) {
+        status = 'Paused';
+    }
     statusEls.forEach(el => {
         el.textContent = status;
         // Theme-coloured status: Generating reads as the active app accent
-        // (text-primary) rather than text-success — the rest of the dashboard
-        // already uses primary as the "this is the live signal" colour
-        // (ticker bars, mode-pill active fill, etc.) so success-green stood
-        // out as a one-off semantic. Paused stays text-warning because that
-        // genuinely IS a caution state, not a theme accent.
-        el.classList.toggle('text-warning', status === 'Paused');
-        el.classList.toggle('text-primary', status === 'Generating');
+        // (text-primary). Pausing/Paused stay text-warning because they
+        // are caution/stop states.
+        el.classList.remove('text-warning', 'text-primary', 'animate-pulse');
+        if (status === 'Paused') el.classList.add('text-warning');
+        else if (status === 'Pausing') el.classList.add('text-warning', 'animate-pulse');
+        else if (status === 'Generating') el.classList.add('text-primary');
     });
     // Focus-mode FAB badges: paint the queue tally on whichever flanking
     // FAB points TOWARD queue from the user's current focused layout.
@@ -2761,20 +2886,170 @@ window._updateQueueStatusChip = _updateQueueStatusChip;
 // message list including tool-call chips.
 // ---------------------------------------------------------------------------
 const _CHAT_HISTORY_KEY = 'slopfinity-chat-history-v1';
-const _CHAT_HISTORY_MAX = 50;
+const _CHAT_HISTORY_MAX = 100;
 
 function _getChatHistory() {
     try {
         const raw = localStorage.getItem(_CHAT_HISTORY_KEY);
         const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
+        const result = Array.isArray(arr) ? arr : [];
+        
+        // Initial fetch from server if local is empty
+        if (!result.length && !window._chatSyncedFromServer) {
+            window._chatSyncedFromServer = true;
+            fetch('/chat/history')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.ok && data.messages && data.messages.length) {
+                        localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(data.messages));
+                        _renderChatLog();
+                    }
+                })
+                .catch(e => console.error('Chat history fetch failed:', e));
+        }
+        return result;
     } catch (_) { return []; }
 }
+const _CHAT_ARCHIVE_KEY = 'slopfinity-chat-archive-v1';
+
+async function _updateChatContextStats() {
+    const history = await _getChatHistory();
+    const pill = document.getElementById('chat-context-pill');
+    const tally = document.getElementById('chat-context-tally');
+    if (!pill || !tally) return;
+
+    try {
+        const res = await fetch('/chat/tokens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: history })
+        });
+        const data = await res.json();
+        const tokens = data.tokens || 0;
+        const max = 8000;
+        const pct = Math.min(100, (tokens / max) * 100);
+        
+        tally.textContent = `${tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'k' : tokens} / 8k`;
+        
+        // Grow pill size: from scale 1.0 to 1.15 based on usage
+        const scale = 1 + (pct / 100) * 0.15;
+        pill.style.transform = `scale(${scale})`;
+        
+        // Theme based on usage
+        pill.classList.remove('context-warning', 'context-danger');
+        if (tokens > max * 1.2) pill.classList.add('context-danger');
+        else if (tokens > max * 0.8) pill.classList.add('context-warning');
+    } catch (_) {
+        // Fallback to rough estimation if server is unreachable
+        let charCount = 0;
+        history.forEach(m => {
+            charCount += (m.content || '').length;
+            if (m.tool_calls) charCount += JSON.stringify(m.tool_calls).length;
+        });
+        const tokens = Math.ceil(charCount / 4) + 1500;
+        tally.textContent = `~${tokens >= 1000 ? (tokens / 1000).toFixed(1) + 'k' : tokens} / 8k`;
+    }
+}
+
+function _archiveChatHistory(history) {
+    if (!history || !history.length) return;
+    try {
+        const raw = localStorage.getItem(_CHAT_ARCHIVE_KEY);
+        let archive = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(archive)) archive = [];
+        
+        archive.push({
+            ts: Date.now(),
+            history: history
+        });
+        
+        // Keep only last week (7 days)
+        const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        archive = archive.filter(entry => entry.ts > oneWeekAgo);
+        
+        localStorage.setItem(_CHAT_ARCHIVE_KEY, JSON.stringify(archive));
+    } catch (_) { }
+}
+
+async function _compactChat() {
+    const history = _getChatHistory();
+    if (history.length < 4) {
+        if (typeof _toast === 'function') _toast('Chat history is too short to compact.', 'warning');
+        return;
+    }
+    
+    if (!confirm('Compact history? This will ask the LLM to summarize the current conversation and start fresh with that summary.')) return;
+    
+    const btn = document.getElementById('subjects-chat-compact');
+    const originalText = btn ? btn.textContent : 'Compact';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '...';
+    }
+    
+    try {
+        // System prompt for summarization
+        const sys = "Summarize the key context, decisions, and outcomes of this conversation so far. Be concise but preserve all technical requirements and current goals. Output ONLY the summary.";
+        
+        const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [...history, { role: 'user', content: sys }],
+                // No tools during summarization to keep it pure text
+                stream: false
+            })
+        });
+        
+        const data = await res.json();
+        const summary = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        
+        if (!summary) throw new Error('No summary returned');
+        
+        _archiveChatHistory(history); // Local backup
+        
+        // Backend archive
+        const arcRes = await fetch('/chat/history', { method: 'DELETE' });
+        const arcData = await arcRes.json();
+        if (!arcData || !arcData.ok) throw new Error('Failed to archive history on server');
+
+        const newHistory = [
+            { 
+                role: 'system', 
+                content: `COMPACTED HISTORY SUMMARY:\n\n${summary.trim()}\n\n(Conversation continues from here)` 
+            }
+        ];
+        
+        // _setChatHistory will sync this new single message to the fresh session
+        _setChatHistory(newHistory);
+        _renderChatLog();
+        if (typeof _toast === 'function') _toast('History compacted.', 'success');
+    } catch (e) {
+        console.error('Compaction failed:', e);
+        if (typeof _toast === 'function') _toast(`Compaction failed: ${e.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+window._compactChat = _compactChat;
+
 function _setChatHistory(arr) {
     const trimmed = (Array.isArray(arr) ? arr : []).slice(-_CHAT_HISTORY_MAX);
     try { localStorage.setItem(_CHAT_HISTORY_KEY, JSON.stringify(trimmed)); } catch (_) { }
+    
+    // Sync to server in background
+    fetch('/chat/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: trimmed })
+    }).catch(e => console.error('Chat history sync failed:', e));
+
     // Mirror to the tree as the active chain — see _chatTree* below.
     _chatSyncTreeFromHistory(trimmed);
+    _updateChatContextStats();
 }
 
 // ── Chat message tree (forking + branch nav) ───────────────────────────────
@@ -2953,21 +3228,45 @@ window._chatToggleFork = function (targetNodeId) {
 };
 
 function _resetChat() {
-    if (!confirm('Clear chat history? This wipes the current conversation.')) return;
-    _setChatHistory([]);
-    _renderChatLog();
-    // History wiped → don't auto-fetch starter chips. Reply suggestions
-    // are reserved for "after the assistant responds" (per the chat
-    // suggestion-cache scoping rule). User can manually regen via the
-    // refresh button if they want chips before sending.
-    const host = document.getElementById('subjects-chat-replies');
-    if (host) host.innerHTML = '';
+    const history = _getChatHistory();
+    if (!history.length) return;
+    if (!confirm('Clear chat history? This will save the current thread to your browser history and start fresh.')) return;
+    
+    _archiveChatHistory(history); // Local backup
+    
+    // Backend archive
+    fetch('/chat/history', { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.ok) {
+                localStorage.removeItem(_CHAT_HISTORY_KEY);
+                _renderChatLog();
+                
+                // Add a notice divider to the log
+                const log = document.getElementById('subjects-chat-log');
+                if (log) {
+                    const notice = document.createElement('div');
+                    notice.className = 'chat-notice-reset';
+                    notice.textContent = `Browser history reset · ${new Date().toLocaleTimeString()}`;
+                    log.prepend(notice);
+                }
+                
+                const host = document.getElementById('subjects-chat-replies');
+                if (host) host.innerHTML = '';
+            }
+        })
+        .catch(e => console.error('Chat history archive failed:', e));
 }
 window._resetChat = _resetChat;
+
+document.addEventListener('DOMContentLoaded', () => {
+    _updateChatContextStats();
+});
 
 function _renderChatLog() {
     const log = document.getElementById('subjects-chat-log');
     if (!log) return;
+    _updateChatContextStats();
     const history = _getChatHistory();
     if (!history.length) {
         log.innerHTML = '<div class="text-[10px] opacity-50 italic">no messages yet — try "queue 3 short clips of dragons" or "what\'s running?"</div>';
@@ -2992,7 +3291,16 @@ function _renderChatLog() {
     // history minus the last assistant turn). Wrapped in
     // `.chat-bubble-actions` so CSS handles opacity transitions.
     const _bubbleActions = (text, withRefresh, msgIdx) => {
-        const escText = (text || '').replace(/"/g, '&quot;').replace(/\n/g, '&#10;');
+        // Escape both quote flavors + newlines. The outer attribute is
+        // wrapped in single quotes (onclick='...') so an un-escaped "'"
+        // in the user's text closes the attribute early and the inline
+        // JS `_copyBubbleText(this, "foo' bar")` becomes a SyntaxError
+        // the browser raises on every read of `.onclick`.
+        const escText = (text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/\n/g, '&#10;');
         return `<div class="chat-bubble-actions">
             <button type="button" class="chat-bubble-action" title="Copy"
                 onclick='_copyBubbleText(this, "${escText}")'>
@@ -3978,6 +4286,24 @@ function _loadEndlessLogLines() {
     let raw;
     try { raw = localStorage.getItem(_ENDLESS_STORY_LOG_KEY); }
     catch (_) { return []; }
+    
+    // Initial fetch from server if local is empty
+    if (!raw && !window._storySyncedFromServer) {
+        window._storySyncedFromServer = true;
+        fetch('/story/log')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.ok && data.lines && data.lines.length) {
+                    localStorage.setItem(_ENDLESS_STORY_LOG_KEY, JSON.stringify(data.lines));
+                    if (data.active_idx !== undefined) {
+                        localStorage.setItem('slopfinity-endless-active-beat-idx', data.active_idx);
+                    }
+                    _renderEndlessLog();
+                }
+            })
+            .catch(e => console.error('Story log fetch failed:', e));
+    }
+
     if (!raw) return [];
     // New shape: JSON array
     if (raw.length && raw.charCodeAt(0) === 91 /* '[' */) {
@@ -3996,6 +4322,14 @@ function _loadEndlessLogLines() {
 function _persistEndlessLogLines(lines) {
     try { localStorage.setItem(_ENDLESS_STORY_LOG_KEY, _serializeEndlessLog(lines)); }
     catch (_) { }
+    
+    const activeIdx = _getEndlessActiveBeatIdx();
+    // Sync to server in background
+    fetch('/story/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: lines, active_idx: activeIdx })
+    }).catch(e => console.error('Story log sync failed:', e));
 }
 
 // Back-compat shim — older callers passed a single string. Now they
@@ -4077,11 +4411,13 @@ function _renderEndlessLog() {
         _setEndlessActiveBeatIdx(activeIdx);
     }
     const rows = lines.map((line, idx) => {
-        // <input value> uses the attribute escape, but the HTML-string
-        // assemble here means we still want HTML-safe escaping for "&,
-        // <, >, ', ". _htmlEscape handles all five.
         const safe = _htmlEscape(line || '');
         const activeCls = idx === activeIdx ? ' beat-active' : '';
+        const isLast = idx === lines.length - 1;
+        // Only the last row gets an active "+" button.
+        const addDisabled = isLast ? '' : ' disabled';
+        const addOpacity = isLast ? 'opacity-50 group-hover:opacity-100' : 'opacity-20 cursor-not-allowed';
+
         return `<div class="endless-row beat-row group flex items-center gap-1 px-1 py-0.5 rounded hover:bg-base-300/40${activeCls}"
                      data-row-idx="${idx}" draggable="true">
             <span class="beat-drag-handle flex-none self-stretch flex items-center text-base-content/60 hover:text-base-content/90 select-none cursor-grab"
@@ -4098,12 +4434,14 @@ function _renderEndlessLog() {
                   data-row-idx="${idx}"
                   placeholder="Type a beat — Enter for next row"
                   value="${safe}" />
-            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary opacity-75 group-hover:opacity-100 flex-none"
+            <button type="button" class="endless-row-rewrite btn btn-ghost btn-xs btn-square text-accent/70 hover:text-accent opacity-50 group-hover:opacity-100 flex-none"
+                    data-row-idx="${idx}" title="Magic Rewrite (AI)" aria-label="Magic Rewrite">✨</button>
+            <button type="button" class="endless-row-add btn btn-ghost btn-xs btn-square text-primary/70 hover:text-primary ${addOpacity} flex-none"
+                    ${addDisabled}
                     data-row-idx="${idx}" title="Add a new beat below this one" aria-label="Add beat below">+</button>
             <button type="button" class="endless-row-del btn btn-ghost btn-xs btn-square text-error/70 hover:text-error opacity-75 group-hover:opacity-100 flex-none"
                     data-row-idx="${idx}" title="Delete this beat" aria-label="Delete beat">×</button>
-        </div>`;
-    });
+        </div>`;    });
     log.innerHTML = rows.join('');
     log.scrollTop = log.scrollHeight;
 }
@@ -5163,6 +5501,17 @@ async function openAssetInfo(filename) {
     try {
         const r = await fetch('/asset/' + encodeURIComponent(filename));
         const m = await r.json();
+        // Server returns file/size_bytes/mtime(epoch); derive the display fields
+        // the template uses, which were rendering as literal "undefined".
+        m.filename = m.file || filename;
+        m.size_human = (() => {
+            let b = m.size_bytes; if (b == null) return '—';
+            const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+            while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+            return `${b.toFixed(i ? 1 : 0)} ${u[i]}`;
+        })();
+        m.age_seconds = m.mtime ? Math.max(0, Math.round(Date.now() / 1000 - m.mtime)) : '?';
+        m.mtime_human = m.mtime ? new Date(m.mtime * 1000).toLocaleString() : '—';
         if (!m.ok) {
             // Surface the filename so the user can confirm what was
             // requested. "not found" with no filename is undebuggable.
@@ -5185,18 +5534,22 @@ async function openAssetInfo(filename) {
         // fetch below. We render the row first with a placeholder and
         // hydrate it after the MD fetch resolves.
         const mdHref = '/files/' + encodeURIComponent(filename) + '.md';
+        // Escape server/sidecar-supplied strings before innerHTML — the prompt
+        // (and filename/model) are attacker-influencable and were injected raw.
+        const _esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         body.innerHTML = `
             <div id="asset-info-md-row" class="hidden mb-2">
                 <a href="${mdHref}" target="_blank" rel="noopener" class="link link-primary text-xs uppercase tracking-widest">Prompt notes</a>
                 <pre id="asset-info-md-preview" class="text-xs whitespace-pre-wrap leading-snug bg-base-200/40 rounded p-2 max-h-48 overflow-y-auto mt-1"></pre>
             </div>
             <div class="grid grid-cols-[min-content_1fr] gap-x-3 gap-y-1 text-xs font-mono">
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${m.filename}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">File</div><div class="truncate">${_esc(m.filename)}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Kind</div><div><span class="badge badge-xs ${badgeColor}">${m.kind}</span></div>
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Model</div><div>${m.model || '—'}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Model</div><div>${_esc(m.model) || '—'}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Size</div><div>${m.size_human}</div>
                 <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Created</div><div>${m.mtime_human} <span class="text-base-content/50">(${m.age_seconds}s ago)</span></div>
-                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt || '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
+                <div class="text-base-content/50 uppercase tracking-widest text-[10px]">Prompt</div><div class="whitespace-pre-wrap italic ${m.prompt ? '' : 'text-base-content/40'}">${m.prompt ? _esc(m.prompt) : '(no sidecar captured yet — fleet writes prompts to state.json only while active)'}</div>
             </div>
         `;
         // For FINAL_*.mp4, append a Components section listing the source
@@ -5450,7 +5803,7 @@ function _slopBadgeMeta(file) {
     }
     let model = '';
     let part = '';
-    const knownModels = new Set(['qwen', 'ernie', 'ltx-2.3', 'ltx-bridge', 'wan2.2', 'wan2.5', 'heartmula', 'qwen-tts', 'kokoro']);
+    const knownModels = new Set(['qwen', 'ernie', 'ltx-2.3', 'ltx-bridge', 'wan2.2', 'wan2.5', 'heartmula', 'qwen-tts', 'kokoro', 'dramabox']);
     const testMatch = file.match(/^test_([a-z0-9.-]+)_/i);
     if (testMatch && knownModels.has(testMatch[1].toLowerCase())) {
         model = testMatch[1].toLowerCase();
@@ -5473,6 +5826,19 @@ function _slopBadgeMeta(file) {
         // Generic mp4 fallback — assume LTX-2.3 since that's the only video model wired in.
         model = 'ltx-2.3';
     }
+    
+    if (!model) {
+        const lower = file.toLowerCase();
+        for (const m of knownModels) {
+            // Check if model name appears as a standalone word (e.g., _ernie_, -ernie-)
+            // to avoid false positives on words like "journey" if we had a "urn" model
+            if (lower.includes(m)) {
+                model = m;
+                break;
+            }
+        }
+    }
+    
     const map = {
         'qwen': { label: 'Qwen Image', color: 'badge-info' },
         'ernie': { label: 'Ernie Image', color: 'badge-error' },
@@ -5483,6 +5849,7 @@ function _slopBadgeMeta(file) {
         'heartmula': { label: 'Heartmula Music', color: 'badge-secondary' },
         'qwen-tts': { label: 'Qwen TTS', color: 'badge-warning' },
         'kokoro': { label: 'Kokoro TTS', color: 'badge-warning' },
+        'dramabox': { label: 'DramaBox TTS', color: 'badge-warning' },
     };
     const borderByKind = { 'video': 'border-primary', 'image': 'border-secondary', 'audio': 'border-warning' };
     if (model && map[model]) {
@@ -5767,8 +6134,13 @@ function _applyRenderHeartbeat() {
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;
     const txtEl = headerAct.querySelector('[data-queue-header-activity-text]');
+    // If the fleet is confirmed idle via the WS state tick, immediately
+    // expire any stale heartbeat so the animation doesn't linger.
+    if (!_isRendering) _renderHeartbeat = null;
     const live = !!(_renderHeartbeat && Date.now() < _renderHeartbeat.expiresAt);
-    headerAct.style.display = live ? 'inline-flex' : 'none';
+    const isPaused = !!(_lastTick && _lastTick.scheduler && _lastTick.scheduler.paused);
+    
+    headerAct.style.display = (live || isPaused) ? 'inline-flex' : 'none';
     if (live && txtEl && _renderHeartbeat.text) {
         // Repaint per-char spans only when the underlying text actually
         // changes (cheap idempotent guard inside _paintRenderText), then
@@ -5783,12 +6155,20 @@ function _applyRenderHeartbeat() {
         if (!_renderWasLive) {
             _fireRenderIgnite(txtEl);
         }
+    } else if (isPaused && txtEl) {
+        // When paused, display "paused" text instead
+        _paintRenderText(txtEl, 'paused');
+        _updateRenderTextProgress(txtEl);
+        // Use the pausing animation style while paused
+        if (!txtEl.dataset.animStyle) {
+            txtEl.dataset.animStyle = window._pausingAnimStyle || 'pulse';
+        }
     }
     if (!live && _renderHeartbeat) _renderHeartbeat = null;
     _renderWasLive = live;
 }
 // Cycle animation styles every 5 s while a heartbeat is live.
-setInterval(() => {
+let _renderAnimInterval = setInterval(() => {
     if (!_renderHeartbeat || Date.now() > _renderHeartbeat.expiresAt) return;
     const headerAct = document.getElementById('queue-header-activity');
     if (!headerAct) return;
@@ -5889,6 +6269,7 @@ function _modelDisplayName(id, role) {
         'heartmula': 'Heartmula Music',
         'qwen-tts': 'Qwen TTS',
         'kokoro': 'Kokoro TTS',
+        'dramabox': 'DramaBox TTS',
     };
     return map[id] || id;
 }
@@ -6651,6 +7032,14 @@ function connect() {
             _applyRenderHeartbeat();
             return;
         }
+        if (d.type === 'render_heartbeat_clear') {
+            // Broadcaster detected fleet process died with stale non-Idle state.
+            // Kill the animation immediately without waiting for TTL or state tick.
+            _renderHeartbeat = null;
+            _isRendering = false;
+            if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
+            return;
+        }
         if (d.type === 'chat_thinking') {
             // Backend chat-endpoint lifecycle: received / calling / done.
             // 8 s dead-man timeout in case heartbeats stop arriving — see
@@ -6856,6 +7245,12 @@ function connect() {
 
             const isRunning = d.state && d.state.mode && d.state.mode !== 'Idle';
             _isRendering = isRunning;
+            // Immediately kill the heartbeat on idle so the queue-header-activity
+            // animation does not linger for its full TTL (up to 15 s) after stopping.
+            if (!isRunning && _renderHeartbeat) {
+                _renderHeartbeat = null;
+                if (typeof _applyRenderHeartbeat === 'function') _applyRenderHeartbeat();
+            }
             _updateStartBtn();
             // Pass mode AND step so the action verb mapping ("Imaging" / "Videoing" /
             // …) doesn't depend on _lastTick which is set later in this handler.
@@ -7352,7 +7747,8 @@ function connect() {
                 const activeRole = (opts && opts.running && opts.step) ? _STAGE_ROLE[opts.step] : null;
                 const badges = _configModelBadges(snap, llmModelId, activeRole, q.ts || 0);
                 const meta = `<span class="opacity-50">size</span> ${_htmlEscape(snap.size || '1:1')} <span class="opacity-30">·</span> ${snap.frames || 17} <span class="opacity-50">frames</span>`;
-                const promptEsc = _htmlEscape(q.prompt || '');
+                const displayTitle = q.title || q.prompt || '';
+    const promptEsc = _htmlEscape(displayTitle);
                 const isActive = !!(opts && opts.running);
                 const isCancelled = q.status === 'cancelled';
                 const showDateTime = (cfg && cfg.show_date_time) || (snap && snap.show_date_time);
@@ -7462,14 +7858,12 @@ function connect() {
                 const chevronHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="q-row-chevron w-3 h-3 flex-none text-base-content/60" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
                 return `<li class="${cls}" data-q-ts="${q.ts || 0}" data-q-status="${isCancelled ? 'cancelled' : (isActive ? 'active' : 'pending')}">
                     <details ${_openPendingItems.has(q.ts || 0) ? 'open' : ''}>
-                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-wrap">
+                        <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
                             ${chevronHTML}
                             <span class="flex items-center gap-1 flex-none">
-                                ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}
+                                ${tsHtml}${statusChip}${infBadge}${polyBadge}${fastBadge}${randomBadge}${sloppedBadge}${q.story_id ? `<span class="badge badge-xs badge-info" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>` : ""}
                             </span>
-                            <span class="flex-1 min-w-0">
-                                <span class="font-semibold truncate${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
-                            </span>
+                            <span class="font-semibold truncate flex-1 min-w-0${isCancelled ? ' line-through' : ''}" title="${promptEsc}">${promptEsc}</span>
                             <span class="flex items-center gap-2 flex-none ml-auto">
                                 ${(() => {
                         const _fpp = snap.frames || 17;
@@ -7592,15 +7986,58 @@ function connect() {
                         inlineCap = Math.max(6, Math.min(30, Math.floor(avail / 70)));
                     }
                     const pendingOnly = visibleQueue.filter(q => q.status !== 'done');
-                    items.push(...pendingOnly.slice(0, inlineCap).map(q => renderItem(q, {})));
-                    // Done items (newest first) — full audit log of completed
-                    // iters. Same dynamic cap so done rows can also fill
-                    // available height in the focused layout.
+                    // Group pending items by story_id — beats sharing a UUID
+                    // get wrapped in a compact collapsible story header.
+                    const pendingSlice = pendingOnly.slice(0, inlineCap);
+                    const pendingGrouped = _groupItemsByStory(pendingSlice);
+                    for (const g of pendingGrouped) {
+                        if (g.type === 'item') {
+                            items.push(renderItem(g.q, {}));
+                        } else {
+                            const beatsHtml = g.beats.map(q => renderItem(q, {})).join('');
+                            const count = g.beats.length;
+                            items.push(`<li class="bg-primary/5 rounded border border-primary/20 mb-0.5">
+                                <details open>
+                                    <summary class="cursor-pointer px-2 py-1 flex items-center gap-2 text-xs font-semibold">
+                                        <span class="text-primary">📖</span>
+                                        <span class="flex-1 truncate text-primary/80" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                                        <span class="badge badge-xs badge-ghost">${count} beat${count === 1 ? '' : 's'}</span>
+                                    </summary>
+                                    <ul class="m-0 p-0 pl-2 list-none flex flex-col gap-0.5">${beatsHtml}</ul>
+                                </details>
+                            </li>`);
+                        }
+                    }
+                    // Done items (newest first) — group by story_id then render.
                     const doneOnly = visibleQueue.filter(q => q.status === 'done')
                         .slice().sort((a, b) => (b.completed_ts || 0) - (a.completed_ts || 0));
-                    doneOnly.slice(0, inlineCap).forEach(q => {
-                        items.push(_renderDoneItem(q));
-                    });
+                    const doneSlice = doneOnly.slice(0, inlineCap);
+                    const doneGrouped = _groupItemsByStory(doneSlice);
+                    for (const g of doneGrouped) {
+                        if (g.type === 'item') {
+                            items.push(_renderDoneItem(g.q));
+                        } else {
+                            const count = g.beats.length;
+                            const anyFailed = g.beats.some(i => i.succeeded === false);
+                            const allSucceeded = g.beats.every(i => i.succeeded !== false);
+                            const groupCls = anyFailed ? 'badge-error' : 'badge-success';
+                            const groupSym = anyFailed ? '✗' : '✓';
+                            const beatsHtml = `<ul class="m-0 p-0 list-none">${g.beats.map(q => _renderDoneItem(q)).join('')}</ul>`;
+                            const qid = `story-${g.sid}`;
+                            const openAttr = _openDoneItem === qid ? ' open' : '';
+                            items.push(`<li class="bg-base-200/30 rounded-md opacity-80 hover:opacity-100" data-q-status="done" data-story-id="${g.sid}">
+                                <details data-q-id="${qid}"${openAttr}>
+                                    <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs flex-nowrap overflow-hidden">
+                                        <span class="badge badge-xs ${groupCls} flex-none">${groupSym}</span>
+                                        <span class="text-primary flex-none">📖</span>
+                                        <span class="font-semibold truncate flex-1 min-w-0 text-primary/90" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                                        <span class="badge badge-xs badge-ghost flex-none">${count} beat${count === 1 ? '' : 's'}</span>
+                                    </summary>
+                                    <div class="px-1 pb-1 pt-0">${beatsHtml}</div>
+                                </details>
+                            </li>`);
+                        }
+                    }
                     qList.innerHTML = items.join('');
                     qList.querySelectorAll('li[data-q-ts]').forEach(li => PriorityLoader.register(li));
                 }
@@ -7868,7 +8305,8 @@ async function enhanceStage(stage) {
     const ta = document.getElementById(fieldId);
     if (!ta) return;
     const core = ($('p-core') && $('p-core').value) || '';
-    const seed = (ta.value || '').trim() || core.trim();
+    const title = ($('p-raw-title') && $('p-raw-title').value) || '';
+    const seed = (ta.value || '').trim() || core.trim() || title.trim();
     if (!seed) return;
     if (!(await _ramGuardCheck())) return;
     const sys = {
@@ -8026,10 +8464,27 @@ async function inject(prio, terminate, concurrent, opts) {
         console.warn('inject: no prompt available — Prompt textarea empty and no stage overrides set');
         return;
     }
+
+    const rawTitle = ($('p-raw-title') && $('p-raw-title').value || '').trim();
+
     // Send one /inject per prompt. Multiple subjects (newline-separated)
     // become multiple queue items in order.
+    // When there are multiple prompts, generate ONE shared story_id so the
+    // queue UI can group them under a collapsible story header.
+    const storyId = prompts.length > 1 ? crypto.randomUUID() : null;
+    // Derive a story title from the first prompt (first 50 chars).
+    const storyTitle = storyId
+        ? (prompts[0] || '').slice(0, 50).replace(/\s+/g, ' ').trim() + (prompts[0].length > 50 ? '…' : '')
+        : null;
     for (const promptText of prompts) {
         const f = new FormData();
+        // If Raw mode and a title is provided, override the display title.
+        // Otherwise use the prompt text.
+        if (stageConcat && rawTitle) {
+            f.append('title', rawTitle);
+        } else if (stageConcat) {
+            f.append('title', 'User provided SUBJECT/S');
+        }
         f.append('prompt', promptText);
         f.append('priority', prio);
         if (terminate) f.append('terminate', '1');
@@ -8038,20 +8493,33 @@ async function inject(prio, terminate, concurrent, opts) {
         if (opts && opts.whenIdle) f.append('when_idle', '1');
         if (opts && opts.chaos) f.append('chaos', '1');
         if (opts && opts.fastTrack) f.append('fast_track', '1');
-        // Seeds — staged via the Subjects-card picker. Forward the list +
-        // mode so the server can fan out (per-task) or carry through to the
-        // chain loop (per-chain, FLF2V). Empty list = no-op on backend.
+        // Seeds — staged via the Subjects-card picker.
         const _stagedSeeds = (typeof _getStagedSeeds === 'function') ? _getStagedSeeds() : [];
         if (_stagedSeeds.length) {
             f.append('seed_images', JSON.stringify(_stagedSeeds));
             f.append('seeds_mode', (typeof _getSeedsMode === 'function') ? _getSeedsMode() : 'per-task');
         }
         if (stageConcat) f.append('stage_prompts', JSON.stringify(stages));
-        await fetch('/inject', { method: 'POST', body: f });
+        // Story grouping — share the same story_id across all beats.
+        if (storyId) {
+            f.append('story_id', storyId);
+            f.append('story_title', storyTitle);
+        }
+        const _injResp = await fetch('/inject', { method: 'POST', body: f });
+        if (!_injResp.ok && window._toast) {
+            // Surface disk-guard (409) / server errors instead of silently
+            // pretending the beat was queued.
+            let _msg = `Queue failed (HTTP ${_injResp.status})`;
+            try {
+                const _d = await _injResp.json();
+                if (_d && (_d.reason || _d.error)) _msg = `Queue failed: ${_d.reason || _d.error}`;
+            } catch (e) { /* non-JSON body */ }
+            window._toast(_msg, _injResp.status === 409 ? 'warning' : 'error');
+        }
     }
     // Only blank the per-stage overrides — leave the Subjects textarea alone
     // so the user can re-queue the same set quickly if they want to.
-    ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in'].forEach(id => { if ($(id)) $(id).value = ''; });
+    ['p-image', 'p-video', 'p-music', 'p-tts', 'p-in', 'p-raw-title'].forEach(id => { if ($(id)) $(id).value = ''; });
     // Toast confirmation so the user knows the submit landed even when
     // the Queue card isn't on screen (focused layouts, mobile, etc).
     if (typeof _toast === 'function') {
@@ -8108,11 +8576,21 @@ async function updatePipeline() {
     if ($('chaos-on')) body.chaos_mode = $('chaos-on').checked;
     if ($('when-idle-on')) body.when_idle = $('when-idle-on').checked;
     if ($('date-time-on')) body.show_date_time = $('date-time-on').checked;
-    await fetch('/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+    try {
+        const _cfgRes = await fetch('/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        // Known-broken hardware states (ERNIE@>512² GPU-hang, WAN flake, …) come
+        // back as { warnings: [{severity, message}] }. Toast each so the user
+        // sees the caveat the moment they pick the model. danger→error, else warning.
+        const _cfgData = await _cfgRes.json().catch(() => null);
+        if (_cfgData && Array.isArray(_cfgData.warnings) && window._toast) {
+            _cfgData.warnings.forEach(w =>
+                window._toast(w.message, w.severity === 'danger' ? 'error' : 'warning'));
+        }
+    } catch (e) { /* save is best-effort; RAM tick will reconcile */ }
     // Snappy feedback: recompute RAM estimate immediately without waiting for WS tick.
     try {
         const qs = new URLSearchParams({
@@ -8137,16 +8615,69 @@ let _queueDrawerTotal = 0;
 
 function _renderQueueDrawerItem(q) {
     if (q && q.status === 'done') {
-        // Reuse the canonical done-item renderer so the drawer matches
-        // the inline strip's markup (thumbnails, asset rows, etc.).
         return `<ul class="m-0 p-0 list-none">${_renderDoneItem(q)}</ul>`;
     }
-    const cls = q && q.status === 'cancelled' ? 'border-warning/40' :
-        q && q.status === 'pending' ? 'border-base-200' : 'border-base-200';
-    const badge = q && q.status === 'cancelled' ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>' :
-        q && q.status === 'pending' ? '<span class="badge badge-xs badge-info mr-1">pending</span>' : '';
+    const cls = q && q.status === 'cancelled' ? 'border-warning/40' : 'border-base-200';
+    const badge = q && q.status === 'cancelled'
+        ? '<span class="badge badge-xs badge-warning mr-1">cancelled</span>'
+        : '<span class="badge badge-xs badge-info mr-1">pending</span>';
+    const storyBadge = q && q.story_id
+        ? `<span class="badge badge-xs badge-info ml-1" title="Story: ${_htmlEscape(q.story_title || 'Story')}">📖</span>`
+        : '';
     const prompt = _htmlEscape(((q && q.prompt) || '').substring(0, 200));
-    return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${prompt}</div>`;
+    return `<div class="bg-base-300 p-3 rounded text-xs border ${cls}">${badge}${storyBadge}${prompt}</div>`;
+}
+
+/** Helper to group queue items by story_id. Returns an array of { type: 'story', sid, beats, story_title } or { type: 'item', q/item }. */
+function _groupItemsByStory(items) {
+    const groups = [];
+    const storyGroups = new Map();
+    for (const q of items) {
+        const sid = q && q.story_id;
+        if (sid) {
+            if (!storyGroups.has(sid)) {
+                storyGroups.set(sid, []);
+                // Keep 'items' and 'beats' aliases for compatibility
+                groups.push({ type: 'story', sid, beats: storyGroups.get(sid), items: storyGroups.get(sid), story_title: q.story_title || 'Story' });
+            }
+            storyGroups.get(sid).push(q);
+        } else {
+            groups.push({ type: 'item', q, item: q });
+        }
+    }
+    return groups;
+}
+
+/** Group a flat list of drawer items by story_id, rendering story groups as
+ *  collapsible <details> blocks and standalone items normally. */
+function _renderQueueDrawerGrouped(items) {
+    const groups = _groupItemsByStory(items);
+    return groups.map(g => {
+        if (g.type === 'item') return _renderQueueDrawerItem(g.item);
+        // Story group
+        const count = g.beats.length;
+        const statuses = g.beats.map(i => i.status || 'pending');
+        const allDone = statuses.every(s => s === 'done');
+        const anyFailed = g.beats.some(i => i.status === 'done' && i.succeeded === false);
+        const anyRunning = statuses.some(s => s === 'working');
+        const groupBadge = anyFailed
+            ? '<span class="badge badge-xs badge-error">✗ failed</span>'
+            : allDone
+                ? '<span class="badge badge-xs badge-success">✓ done</span>'
+                : anyRunning
+                    ? '<span class="badge badge-xs badge-warning">running</span>'
+                    : '<span class="badge badge-xs badge-info">pending</span>';
+        const beatsHtml = g.beats.map(_renderQueueDrawerItem).join('');
+        return `<details class="bg-base-300/60 rounded border border-primary/20 mb-1" open>
+            <summary class="cursor-pointer p-2 flex items-center gap-2 text-xs font-semibold">
+                <span class="text-primary">📖</span>
+                <span class="flex-1 truncate" title="${_htmlEscape(g.story_title)}">${_htmlEscape(g.story_title)}</span>
+                ${groupBadge}
+                <span class="badge badge-xs badge-ghost">${count} beat${count === 1 ? '' : 's'}</span>
+            </summary>
+            <div class="pl-3 pb-2 flex flex-col gap-1">${beatsHtml}</div>
+        </details>`;
+    }).join('');
 }
 
 async function _loadQueueDrawerPage() {
@@ -8169,7 +8700,7 @@ async function _loadQueueDrawerPage() {
         if (_queueDrawerTotal === 0) {
             body.innerHTML = '<div class="text-xs text-base-content/50 italic text-center p-4">No queued items yet.</div>';
         } else {
-            body.innerHTML = items.map(_renderQueueDrawerItem).join('');
+            body.innerHTML = _renderQueueDrawerGrouped(items);
         }
         const totalPages = Math.max(1, Math.ceil(_queueDrawerTotal / _queueDrawerLimit));
         const currentPage = Math.floor(_queueDrawerOffset / _queueDrawerLimit) + 1;
@@ -8439,9 +8970,13 @@ async function reloadModels() {
         const models = (d && d.models) || [];
         sel.innerHTML = '';
         if (!models.length) {
+            // Surface the server's error (e.g. SSRF-blocked base_url, unreachable
+            // endpoint) instead of a bare "(none found)".
+            const _err = (!r.ok || (d && d.ok === false)) ? (d && d.error) : '';
             const opt = document.createElement('option');
-            opt.value = ''; opt.innerText = '(none found)';
+            opt.value = ''; opt.innerText = _err ? `(error: ${String(_err).slice(0, 80)})` : '(none found)';
             sel.appendChild(opt);
+            if (_err && window._toast) window._toast(`Model list failed: ${_err}`, 'error');
         }
         models.forEach(m => {
             const opt = document.createElement('option');
@@ -8604,19 +9139,42 @@ function _refreshSettingsTabsArrows() {
     wrap.classList.toggle('at-start', atStart);
     wrap.classList.toggle('at-end', atEnd);
 }
+// Scroll the active tab pill into view when the user picks a tab via
+// click or programmatic radio change. Without this, picking a tab past
+// the visible strip (Endpoints / Diagnostics / Layout at narrow widths)
+// leaves no visible active-tab indicator — users can't tell which tab
+// they're on.
+function _scrollActiveTabIntoView() {
+    const strip = document.getElementById('settings-tab-strip');
+    if (!strip) return;
+    const active = strip.querySelector('input[name="settings_tabs"]:checked');
+    const label = active && active.nextElementSibling;
+    if (!label) return;
+    const target = label.getBoundingClientRect();
+    const stripBox = strip.getBoundingClientRect();
+    if (target.left < stripBox.left || target.right > stripBox.right) {
+        label.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+}
+window._scrollActiveTabIntoView = _scrollActiveTabIntoView;
+
 document.addEventListener('DOMContentLoaded', () => {
     const strip = document.getElementById('settings-tab-strip');
     if (!strip) return;
     strip.addEventListener('scroll', _refreshSettingsTabsArrows, { passive: true });
     // Radio 'change' bubbles to the strip → scroll the newly-active tab into
     // view so its indicator is always visible, even for off-screen tabs.
-    strip.addEventListener('change', _scrollActiveSettingsTabIntoView);
+    strip.addEventListener('change', (ev) => {
+        if (ev.target && ev.target.matches('input[name="settings_tabs"]')) {
+            _scrollActiveTabIntoView();
+        }
+    });
     // Also recompute when the drawer opens (strip dims may have been 0
     // before the drawer-content hydrated).
     const tog = document.getElementById('settings-drawer-toggle');
     if (tog) tog.addEventListener('change', () => setTimeout(() => {
         _refreshSettingsTabsArrows();
-        _scrollActiveSettingsTabIntoView();
+        _scrollActiveTabIntoView();
     }, 60));
     _refreshSettingsTabsArrows();
 });
@@ -8688,6 +9246,15 @@ async function openSettings() {
         const allowCloud = $('set-allow-cloud-endpoints');
         if (allowCloud) allowCloud.checked = !!sr.allow_cloud_endpoints;
         filterProviderDropdown(!!sr.allow_cloud_endpoints);
+        // Standalone-mode endpoint URLs (Settings → Endpoints tab).
+        // Defaults match the toolbox compose stack's loopback ports;
+        // power users running outside that stack point at their own
+        // services. Mirror the server response so a fresh open never
+        // shows blanks. Server validates SSRF on save.
+        const ttsUrl = $('set-tts-url');
+        if (ttsUrl) ttsUrl.value = sr.tts_worker_url || 'http://localhost:8010/tts';
+        const comfyUrl = $('set-comfy-url');
+        if (comfyUrl) comfyUrl.value = sr.comfy_url || 'http://localhost:8188';
         const fleetPrompt = $('set-fleet-prompt');
         if (fleetPrompt) fleetPrompt.value = sr.philosophical_prompt || '';
         const sugUseSub = $('set-suggest-use-subjects');
@@ -9002,6 +9569,8 @@ async function saveSettings() {
         allow_cloud_endpoints: $('set-allow-cloud-endpoints')
             ? !!$('set-allow-cloud-endpoints').checked
             : false,
+        tts_worker_url: $('set-tts-url') ? $('set-tts-url').value.trim() : '',
+        comfy_url: $('set-comfy-url') ? $('set-comfy-url').value.trim() : '',
         philosophical_prompt: $('set-fleet-prompt') ? $('set-fleet-prompt').value.trim() : null,
         suggest_use_subjects: $('set-suggest-use-subjects') ? $('set-suggest-use-subjects').checked : true,
         suggest_custom_prompt: $('set-suggest-custom-prompt') ? $('set-suggest-custom-prompt').value.trim() : '',

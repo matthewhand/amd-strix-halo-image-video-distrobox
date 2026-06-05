@@ -7,7 +7,7 @@
 // /tmp/deep-ui-chrome-nav.json and a handful of screenshots to
 // /tmp/deep-ui-*.png so the parent agent can score per-element.
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 const fs = require('fs');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
@@ -251,21 +251,30 @@ for (const vp of VPS) {
         });
 
         test(`layouts + slide animation @ ${vp.name}`, async ({ page }) => {
+            // 30s default budget * 7 layouts was tight when each iteration did
+            // a full page.goto() through the splash overlay. The rewrite below
+            // navigates ONCE and flips layout in-page via window._applyLayoutView
+            // — no reload, no splash re-show. Keep a generous timeout anyway
+            // so a slow live server (docker, cold cache) doesn't tip the test.
+            test.setTimeout(60000);
             await clearStorage(page);
             await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
             await waitReady(page);
 
             const layoutResults = {};
             for (const layout of LAYOUTS) {
+                // Switch layout in-page using the exported app helper. This is
+                // ~100x faster than reloading and avoids re-hitting the splash
+                // overlay for every iteration (which previously timed the test
+                // out at 7 × waitReady(3000ms) ≈ 21s + nav overhead > 30s).
                 await page.evaluate((l) => {
                     try {
-                        document.body.dataset.layout = l;
-                        if (window.setLayout) window.setLayout(l);
+                        if (window._applyLayoutView) window._applyLayoutView(l);
+                        else document.body.dataset.layout = l;
                     } catch (_) {}
                 }, layout);
-                // Try the URL form too (more reliable than poking dataset)
-                await page.goto(`${BASE}/?layout=${layout}`, { waitUntil: 'domcontentloaded' }).catch(() => {});
-                await waitReady(page, 3000);
+                // Let any CSS transition / mobile-nav refresh settle.
+                await page.waitForTimeout(120);
                 const body = await page.evaluate(() => ({
                     layout: document.body.dataset.layout || '',
                     transition: getComputedStyle(document.body).transition,

@@ -14,13 +14,18 @@ import json
 import subprocess
 import time
 import os
-import sys
 import random
-import argparse
 import re
 import glob
 import math
 import fleet_config as cfg
+
+# Known-broken-state guards (single source of truth: slopfinity/compat.py).
+# Imported defensively so a path/packaging hiccup never blocks the runner.
+try:
+    from slopfinity.compat import ERNIE_MAX_DIM as _ERNIE_MAX_DIM
+except Exception:  # pragma: no cover — fallback keeps the ceiling explicit
+    _ERNIE_MAX_DIM = 512
 
 # Default Configuration
 OUTPUT_DIR = "comfy-outputs/experiments"
@@ -32,6 +37,100 @@ os.makedirs("comfy-input", exist_ok=True)
 # {text, voice, lang, speed} → {ok, url, voice}. Overridable via env so the
 # CI mock TTS server (tests/mock_tts_server.py) can be substituted.
 TTS_WORKER_URL = os.environ.get("TTS_WORKER_URL", "http://localhost:8010/tts")
+
+# ComfyUI base URL — env-overridable (default the local single-box install) so a
+# non-standard topology (remote/alt-port ComfyUI) doesn't require code edits.
+COMFY_URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+
+
+class _IterCancelled(Exception):
+    """Raised to unwind the current iter when the user cancels the running item
+    mid-flight (dashboard writes cancel.flag). Handled distinctly from real
+    errors so a cancel isn't logged/recorded as a failure."""
+
+
+def _resolve_stage_prompt(stage_prompts, stage, fallback):
+    """Per-stage prompt override: use stage_prompts[stage] when the inject form
+    supplied a non-blank one, else the main prompt. Pure → unit-testable."""
+    return ((stage_prompts or {}).get(stage) or "").strip() or fallback
+
+
+def _cancel_requested(flag_path, iter_started_ts):
+    """True when a cancel.flag exists and was (re)written at or after this iter
+    started — mtime-gated so a stale flag from a prior iter can't abort a fresh
+    one. Pure (filesystem) → unit-testable."""
+    try:
+        return os.path.exists(flag_path) and os.path.getmtime(flag_path) >= iter_started_ts
+    except OSError:
+        return False
+
+
+# Per-model memory budgets for the optional pre-stage memory gate. Reuse the
+# canonical map from slopfinity.stats; fall back to {} (gate then uses defaults).
+try:
+    from slopfinity.stats import _MODEL_GB as _STAGE_MODEL_GB
+except Exception:
+    _STAGE_MODEL_GB = {}
+
+
+def _available_gb():
+    """Unified-memory available (GB) from /proc/meminfo MemAvailable — the right
+    'will this model fit' metric on the Strix Halo unified APU, where GPU (GTT)
+    allocations count as used system RAM."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / (1024 * 1024)  # kB -> GiB
+    except Exception:
+        pass
+    return 0.0
+
+
+def _model_gb(model, default=20):
+    return float(_STAGE_MODEL_GB.get(model, default) or default)
+
+
+def _mem_gate_satisfied(avail_gb, need_gb, safety_gb):
+    """Pure: is there room for a stage needing need_gb plus headroom?"""
+    return avail_gb >= float(need_gb) + float(safety_gb)
+
+
+def _wait_for_free_memory(need_gb, label, poll_s=5, safety_gb=8):
+    """Optional pre-stage memory gate (config scheduler.wait_for_free_memory).
+    When ON, block before a heavy stage until at least need_gb + headroom of
+    unified memory is free, so the stage doesn't start (and OOM/thrash) while the
+    box is full from other AI work on the machine. Bounded by
+    scheduler.wait_for_free_memory_timeout_s (default 600s); proceeds anyway on
+    timeout so the pipeline can't wedge forever. No-op when the toggle is off."""
+    try:
+        sched = (cfg.load_config().get("scheduler") or {})
+    except Exception:
+        sched = {}
+    if not sched.get("wait_for_free_memory"):
+        return
+    timeout_s = float(sched.get("wait_for_free_memory_timeout_s", 600) or 600)
+    need_total = float(need_gb) + float(safety_gb)
+    deadline = time.time() + timeout_s
+    waited = False
+    while time.time() < deadline:
+        avail = _available_gb()
+        if _mem_gate_satisfied(avail, need_gb, safety_gb):
+            if waited:
+                print(f"[FLEET] ✅ memory free ({avail:.0f}GB) — proceeding with {label}", flush=True)
+            return
+        waited = True
+        print(f"[FLEET] ⏳ waiting for memory before {label}: need ~{need_total:.0f}GB, "
+              f"{avail:.0f}GB free", flush=True)
+        try:
+            update_state(mode="Waiting", step=f"Free memory {avail:.0f}/{need_total:.0f}GB",
+                         video=0, total=0)
+        except Exception:
+            pass
+        time.sleep(poll_s)
+    print(f"[FLEET] ⚠️ memory wait timed out for {label} — proceeding "
+          f"({_available_gb():.0f}GB free)", flush=True)
+
 
 # ---- Tiered quality ramp ---------------------------------------------------
 # Incrementally ramp up framerate + resolution across videos so we validate
@@ -248,11 +347,15 @@ def get_lmstudio_model():
     if cfg_model:
         print(f"🔍 LLM: using configured {cfg_model}", flush=True)
         return cfg_model
-    print("🔍 No configured LLM — polling :11434 for ≤30s...", flush=True)
+
+    base_url = (cfg.load_config().get("llm_provider_base_url") or "http://127.0.0.1:11434/v1").rstrip("/")
+    models_url = f"{base_url}/models"
+    
+    print(f"🔍 No configured LLM — polling {models_url} for ≤30s...", flush=True)
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
-            req = urllib.request.Request("http://127.0.0.1:11434/v1/models")
+            req = urllib.request.Request(models_url)
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.loads(r.read())
                 models = [
@@ -269,28 +372,32 @@ def get_lmstudio_model():
 
 
 def generate_prompt(model_id, v_idx):
-    q = cfg.get_queue()
     config_now = cfg.load_config()
     default_base = config_now.get("base_model", "qwen")
-    # Pop the FIRST pending item (skipping any done/cancelled at the front).
-    # done/cancelled records stay in queue.json for the audit log.
-    pending_idx = next(
-        (i for i, x in enumerate(q) if x.get("status") in (None, "pending")), -1
-    )
-    if pending_idx >= 0:
-        task = q.pop(pending_idx)
-        # Stamp a sentinel "working" record back onto the queue so:
-        #   1. The dashboard can show that this item is mid-flight.
-        #   2. The /queue/toggle-infinity and /queue/toggle-polymorphic
-        #      endpoints can edit the in-flight flags (honoured at
-        #      requeue time).
-        #   3. The requeue path re-reads this record to pick up any
-        #      mid-flight toggles before deciding whether to re-append.
-        working = dict(task)
-        working["status"] = "working"
-        working["started_ts"] = time.time()
-        q.append(working)
-        cfg.save_queue(q)
+    # Claim the FIRST pending item (skipping done/cancelled at the front) under
+    # the queue lock so a concurrent dashboard inject/cancel can't be clobbered
+    # by save_queue's blind delete-all+reinsert. Stamp a `working` sentinel back
+    # so: (1) the dashboard shows mid-flight; (2) toggle-infinity/polymorphic can
+    # edit the in-flight flags; (3) the requeue path reads mid-flight toggles.
+    # done/cancelled rows stay in queue.json for the audit log.
+    _claimed = []
+
+    def _claim(q):
+        pending_idx = next(
+            (i for i, x in enumerate(q) if x.get("status") in (None, "pending")), -1
+        )
+        if pending_idx >= 0:
+            t = q.pop(pending_idx)
+            working = dict(t)
+            working["status"] = "working"
+            working["started_ts"] = time.time()
+            q.append(working)
+            _claimed.append(t)
+        return q
+
+    cfg.mutate_queue(_claim)
+    if _claimed:
+        task = _claimed[0]
         opts = {
             "image_only": bool(task.get("image_only")),
             "skip_video": bool(task.get("skip_video")),
@@ -313,6 +420,10 @@ def generate_prompt(model_id, v_idx):
             "seed_image": task.get("seed_image") or "",
             "seed_images": list(task.get("seed_images") or []),
             "seeds_mode": (task.get("seeds_mode") or "").strip().lower(),
+            # Per-stage prompt overrides {image,video,music,tts} from the
+            # multi-beat / Raw-mode inject form. Empty/missing => the stage uses
+            # the main prompt. (Were persisted but never consumed before.)
+            "stage_prompts": dict(task.get("stage_prompts") or {}),
             # `polymorphic` (UI toggle, also persisted as `chaos` on
             # injected tasks for backwards compat):
             # True  → LLM rewrites the seed afresh on EVERY cycle
@@ -382,11 +493,24 @@ def generate_prompt(model_id, v_idx):
 
     config = cfg.load_config()
     if config.get("infinity_mode"):
-        themes = config["infinity_themes"]
-        idx = config.get("infinity_index", 0) % len(themes)
-        theme = themes[idx]
-        config["infinity_index"] = idx + 1
-        cfg.save_config(config)
+        # Pick the current theme and advance the index atomically under the
+        # config lock so the broadcaster's chaos_rotator (which rewrites
+        # infinity_themes + resets the index) can't be reverted by our save,
+        # and vice-versa. `config` is refreshed from the locked read.
+        _picked = {}
+
+        def _advance(c):
+            th = c.get("infinity_themes") or []
+            if not th:
+                return c
+            i = c.get("infinity_index", 0) % len(th)
+            _picked["theme"] = th[i]
+            c["infinity_index"] = i + 1
+            return c
+
+        config = cfg.mutate_config(_advance)
+        themes = config.get("infinity_themes") or []
+        theme = _picked.get("theme", themes[0] if themes else "")
 
         # Honour Settings → Prompts overrides for the infinity-mode call.
         # System prompt = philosophical_prompt; user template uses {theme}.
@@ -585,6 +709,10 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "docker",
             "run",
             "--rm",
+            "--cpus",
+            "28.0",
+            "--memory",
+            "110g",
             "-e",
             "PYTHONPATH=/opt/qwen-image-studio/src",
             "-v",
@@ -600,6 +728,9 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "--device",
             "/dev/dri",
             "amd-strix-halo-image-video-toolbox:latest",
+            "nice",
+            "-n",
+            "19",
             "python3",
             "/opt/qwen_launcher.py",
             "generate",
@@ -627,6 +758,10 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "docker",
             "run",
             "--rm",
+            "--cpus",
+            "28.0",
+            "--memory",
+            "110g",
             "-v",
             f"{os.getcwd()}:/workspace",
             "-v",
@@ -638,6 +773,9 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "--device",
             "/dev/dri",
             "amd-strix-halo-image-video-toolbox:latest",
+            "nice",
+            "-n",
+            "19",
             "python3",
             "/opt/ernie_launcher.py",
             "--prompt",
@@ -646,9 +784,16 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
             "baidu/ERNIE-Image-Turbo",
             "--steps",
             "8",
+            # GUARD: ERNIE VAE decode GPU-hangs above 512² on gfx1151. Cap it so
+            # the runner can't wedge the GPU (and ComfyUI with it). See compat.py.
+            "--width",
+            str(_ERNIE_MAX_DIM),
+            "--height",
+            str(_ERNIE_MAX_DIM),
             "--out",
             out_path,
         ]
+        print(f"   🛡️  ernie capped to {_ERNIE_MAX_DIM}² (gfx1151 VAE-decode GPU-hang guard)")
         run_with_timeout(cmd, ito, label="ernie_launcher")
         return True
     else:
@@ -731,24 +876,17 @@ def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
         }
         try:
             req = urllib.request.Request(
-                "http://127.0.0.1:8188/prompt",
+                f"{COMFY_URL}/prompt",
                 data=json.dumps({"prompt": workflow}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=30) as r:
                 p_id = json.loads(r.read())["prompt_id"]
-            while True:
-                time.sleep(5)
-                with urllib.request.urlopen(
-                    f"http://127.0.0.1:8188/history/{p_id}"
-                ) as r:
-                    h = json.loads(r.read())
-                    if p_id in h:
-                        fn = h[p_id]["outputs"]["12"]["images"][0]["filename"]
-                        subprocess.run(
-                            ["cp", f"comfy-outputs/{fn}", out_path], check=True
-                        )
-                        return True
+            imgs = _poll_comfy_history(p_id, "12", poll_s=5, label="image")
+            subprocess.run(
+                ["cp", f"comfy-outputs/{imgs[0]}", out_path], check=True
+            )
+            return True
         except Exception as e:
             if hasattr(e, "read"):
                 print(f"❌ ComfyUI Error Body: {e.read().decode('utf-8')}")
@@ -768,6 +906,10 @@ def heartmula_wav(prompt, out_wav_host, duration_s, timeout_s=600):
         "docker",
         "run",
         "--rm",
+        "--cpus",
+        "28.0",
+        "--memory",
+        "110g",
         "-v",
         f"{os.getcwd()}:/workspace",
         "-v",
@@ -783,6 +925,9 @@ def heartmula_wav(prompt, out_wav_host, duration_s, timeout_s=600):
         "-e",
         "HSA_OVERRIDE_GFX_VERSION=11.5.1",
         "amd-strix-halo-image-video-toolbox:latest",
+        "nice",
+        "-n",
+        "19",
         "python3",
         "/workspace/scripts/heartmula_launcher.py",
         "--prompt",
@@ -931,64 +1076,111 @@ def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600)
     return os.path.exists(out_wav_host) and os.path.getsize(out_wav_host) > 0
 
 
+def _poll_comfy_history(p_id, out_node_id, timeout_s=600, poll_s=10,
+                        settle_s=0, label="job"):
+    """Poll ComfyUI /history/<p_id> until the job completes, then return the
+    list of output filenames for ``out_node_id``.
+
+    Hardened against a hung / restarted / GPU-stalled ComfyUI (a real gfx1151
+    failure mode): a hard ``timeout_s`` deadline, a per-request socket timeout,
+    and a consecutive-error cap. Without these the caller's `while True:` poll
+    would spin — or block on a dead socket — forever, freezing the whole serial
+    orchestrator. Raises RuntimeError on timeout / prolonged unreachability /
+    ComfyUI execution_error.
+    """
+    if settle_s:
+        time.sleep(settle_s)
+    deadline = time.time() + timeout_s
+    consecutive_errors = 0
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"{COMFY_URL}/history/{p_id}", timeout=15
+            ) as r:
+                h = json.loads(r.read())
+            consecutive_errors = 0
+        except (urllib.error.URLError, OSError) as poll_err:
+            consecutive_errors += 1
+            print(f"   ⚠️  History poll error ({consecutive_errors}) [{label}]: {poll_err}")
+            if consecutive_errors > 18:
+                raise RuntimeError(
+                    f"ComfyUI unreachable for >3 min during {label} poll"
+                ) from poll_err
+            time.sleep(poll_s)
+            continue
+        if p_id not in h:
+            time.sleep(poll_s)
+            continue
+        status = h[p_id].get("status", {})
+        # Some workflows don't populate status.completed; fall back to the
+        # presence of the output node's images below. Only an explicit
+        # completed==False means "still running".
+        if status.get("completed") is False:
+            time.sleep(poll_s)
+            continue
+        errors = [m for m in status.get("messages", []) if m and m[0] == "execution_error"]
+        if errors:
+            raise RuntimeError(f"ComfyUI execution error during {label}: {errors[0]}")
+        node_out = (h[p_id].get("outputs") or {}).get(str(out_node_id))
+        # Also guard an empty images list — returning [] would IndexError in
+        # _encode_frames_to_mp4 (imgs[0]); keep waiting until frames appear.
+        if not node_out or not node_out.get("images"):
+            time.sleep(poll_s)
+            continue
+        return [f["filename"] for f in node_out["images"]]
+    raise RuntimeError(
+        f"ComfyUI {label} timed out after {int(timeout_s // 60)} min (prompt_id={p_id[:8]})"
+    )
+
+
+def _encode_frames_to_mp4(imgs, out_path):
+    """Encode ComfyUI output PNG frames (in comfy-outputs/) to an MP4 at
+    out_path, then delete the source frames. Shared by every LTX video poller
+    so the frame→MP4 logic can't drift between them."""
+    first = imgs[0]
+    match = re.search(r"(\d+)(?=_\.png)", first)
+    num = match.group(1) if match else "00001"
+    parts = first.rsplit(num, 1)
+    patt = f"%0{len(num)}d".join(parts)
+    print(f"   🎞️  Encoding {len(imgs)} frames → MP4…")
+    repo_root = os.path.abspath(os.path.dirname(__file__))
+    args = [
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-framerate", "24",
+        "-start_number", str(int(num)),
+        "-i", f"comfy-outputs/{patt}",
+        "-c:v", _ffmpeg_h264_encoder(),
+        "-pix_fmt", "yuv420p",
+        "-b:v", "8M",
+        out_path,
+    ]
+    _ffmpeg_run(args, check=True)
+    for f in imgs:
+        try:
+            os.remove(os.path.join(repo_root, "comfy-outputs", f))
+        except OSError:
+            pass
+
+
 def run_comfy_job(workflow, out_node_id, target_file):
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:8188/prompt",
+            f"{COMFY_URL}/prompt",
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(5)
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:8188/history/{p_id}"
-            ) as h_res:
-                h = json.loads(h_res.read())
-                if p_id in h:
-                    out = h[p_id]["outputs"][str(out_node_id)]
-                    if "images" in out:
-                        imgs = sorted([i["filename"] for i in out["images"]])
-                        if len(imgs) == 1:
-                            subprocess.run(
-                                ["cp", f"comfy-outputs/{imgs[0]}", target_file],
-                                check=True,
-                            )
-                            return True
-                        else:
-                            first = imgs[0]
-                            match = re.search(r"(\d+)(?=_\.png)", first)
-                            num = match.group(1) if match else "00001"
-                            patt = (
-                                first.rsplit(num, 1)[0]
-                                + f"%0{len(num)}d"
-                                + first.rsplit(num, 1)[1]
-                            )
-                            print(f"   🎞️  Encoding {len(imgs)} frames...")
-                            args = [
-                                "-y",
-                                "-framerate",
-                                "24",
-                                "-start_number",
-                                str(int(num)),
-                                "-i",
-                                f"comfy-outputs/{patt}",
-                                "-c:v",
-                                _ffmpeg_h264_encoder(),
-                                "-pix_fmt",
-                                "yuv420p",
-                                "-b:v",
-                                "8M",
-                                target_file,
-                            ]
-                            _ffmpeg_run(args, check=True)
-                            for f in imgs:
-                                try:
-                                    os.remove(f"comfy-outputs/{f}")
-                                except:
-                                    pass
-                            return True
+        # Base-image jobs are quick — poll a little faster than the video path.
+        imgs = _poll_comfy_history(p_id, out_node_id, poll_s=5, label="image")
+        if len(imgs) == 1:
+            subprocess.run(
+                ["cp", f"comfy-outputs/{imgs[0]}", target_file],
+                check=True,
+            )
+            return True
+        _encode_frames_to_mp4(sorted(imgs), target_file)
+        return True
     except Exception as e:
         if hasattr(e, "read"):
             print(f"❌ ComfyUI Error Body: {e.read().decode('utf-8')}")
@@ -1125,7 +1317,7 @@ def generate_base_image_ltx23(prompt, output_path, size_str):
 def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
     size_str = _resolve_size(size_str)
     w, h = map(int, size_str.split("*"))
-    print(f"🎬 Video Gen [LTX-2.3]...")
+    print(f"🎬 Video Gen [LTX-2.3 22B distilled] {w}×{h} {frames}f…")
     seed = random.randint(1, 1000000)
     prefix = f"vid_{int(time.time())}"
     workflow = {
@@ -1204,60 +1396,17 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
     }
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:8188/prompt",
+            f"{COMFY_URL}/prompt",
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
-            p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
-                if p_id in h:
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding...")
-                    # ffmpeg lives inside the strix-halo-comfyui container (host
-                    # has none installed). The container's /opt/ComfyUI/output
-                    # mounts ./comfy-outputs/ on host, so paths translate cleanly.
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    out_rel = os.path.relpath(
-                        out_path, os.path.join(repo_root, "comfy-outputs")
-                    )
-                    # Frame-seq → MP4. The ffmpeg backend resolver picks the
-                    # H.264 encoder available in the active backend (libx264 on
-                    # host, libopenh264 in the strix-halo-comfyui container).
-                    args = [
-                        "-y",
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-framerate",
-                        "24",
-                        "-start_number",
-                        str(int(num)),
-                        "-i",
-                        f"comfy-outputs/{patt}",
-                        "-c:v",
-                        _ffmpeg_h264_encoder(),
-                        "-pix_fmt",
-                        "yuv420p",
-                        "-b:v",
-                        "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except:
-                            pass
-                    return
+            resp = json.loads(r.read())
+            p_id = resp["prompt_id"]
+        print(f"   ⏳ Submitted {p_id[:8]}… polling for completion (max 10 min)…")
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, settle_s=60, label="video")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1381,51 +1530,15 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
     }
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:8188/prompt",
+            f"{COMFY_URL}/prompt",
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
-                if p_id in h:
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding...")
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    args = [
-                        "-y",
-                        "-hide_banner",
-                        "-loglevel",
-                        "error",
-                        "-framerate",
-                        "24",
-                        "-start_number",
-                        str(int(num)),
-                        "-i",
-                        f"comfy-outputs/{patt}",
-                        "-c:v",
-                        _ffmpeg_h264_encoder(),
-                        "-pix_fmt",
-                        "yuv420p",
-                        "-b:v",
-                        "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except OSError:
-                            pass
-                    return
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, label="flf2v")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1558,42 +1671,15 @@ def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_st
     }
     try:
         req = urllib.request.Request(
-            "http://127.0.0.1:8188/prompt",
+            f"{COMFY_URL}/prompt",
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
-        while True:
-            time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
-                h = json.loads(r.read())
-                if p_id in h:
-                    imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
-                    first = imgs[0]
-                    match = re.search(r"(\d+)(?=_\.png)", first)
-                    num = match.group(1) if match else "00001"
-                    parts = first.rsplit(num, 1)
-                    patt = f"%0{len(num)}d".join(parts)
-                    print(f"   🎞️  Encoding…")
-                    repo_root = os.path.abspath(os.path.dirname(__file__))
-                    args = [
-                        "-y", "-hide_banner", "-loglevel", "error",
-                        "-framerate", "24",
-                        "-start_number", str(int(num)),
-                        "-i", f"comfy-outputs/{patt}",
-                        "-c:v", _ffmpeg_h264_encoder(),
-                        "-pix_fmt", "yuv420p",
-                        "-b:v", "8M",
-                        out_path,
-                    ]
-                    _ffmpeg_run(args, check=True)
-                    for f in imgs:
-                        try:
-                            os.remove(os.path.join(repo_root, "comfy-outputs", f))
-                        except OSError:
-                            pass
-                    return
+        imgs = _poll_comfy_history(p_id, "14", poll_s=10, label="continuation")
+        _encode_frames_to_mp4(imgs, out_path)
+        return
     except urllib.error.HTTPError as e:
         print(f"❌ ComfyUI HTTP Error: {e.code} {e.reason}")
         print(f"   Body: {e.read().decode('utf-8')}")
@@ -1640,21 +1726,34 @@ def main():
     # promote them to `cancelled` so the dashboard reflects "the prior
     # run died" rather than showing a phantom in-flight item.
     try:
-        q0 = cfg.get_queue()
-        cleaned = False
-        for it in q0:
-            if it.get("status") == "working":
-                it["status"] = "cancelled"
-                it["cancelled_ts"] = time.time()
-                it["infinity"] = False
-                cleaned = True
-        if cleaned:
-            cfg.save_queue(q0)
+        _cleaned = []
+
+        def _sweep(q0):
+            for it in q0:
+                if it.get("status") == "working":
+                    it["status"] = "cancelled"
+                    it["cancelled_ts"] = time.time()
+                    it["infinity"] = False
+                    _cleaned.append(1)
+            return q0
+
+        cfg.mutate_queue(_sweep)
+        if _cleaned:
             print(
                 "[FLEET] swept stale `working` sentinels from previous run", flush=True
             )
     except Exception as e:
         print(f"[FLEET] startup working-sweep failed: {e!r}", flush=True)
+    # Clear a stale terminate.flag from a previous run. It's checked at the top
+    # of the loop below, so leaving it would make a freshly-started fleet exit
+    # immediately — un-restartable until someone manually removes the flag.
+    try:
+        _stale_term = os.path.join(OUTPUT_DIR, "terminate.flag")
+        if os.path.exists(_stale_term):
+            os.remove(_stale_term)
+            print("[FLEET] cleared stale terminate.flag from a previous run", flush=True)
+    except OSError:
+        pass
     while True:
         # Terminate gate — dashboard's POST /runner/terminate writes
         # terminate.flag in OUTPUT_DIR. We exit cleanly at the top of
@@ -1704,6 +1803,15 @@ def main():
                 f"[MATRIX] v{v_idx}: {b_mod} → {v_mod_forced} + audio={a_mod_forced}",
                 flush=True,
             )
+            # Actually APPLY the forced combo (previously only printed): write
+            # the models into this iter's effective snapshot so audio selection
+            # (which gates heartmula on audio_model) and the sidecar honor it.
+            # Built from config so frames/chains/tier/size aren't dropped.
+            _m_snap = dict(_task_opts.get("_config_snapshot") or config or {})
+            _m_snap["base_model"] = b_mod
+            _m_snap["video_model"] = v_mod_forced
+            _m_snap["audio_model"] = a_mod_forced
+            _task_opts["_config_snapshot"] = _m_snap
         # Snapshot per-iter config for the markdown sidecar writer. Prefer
         # the queue item's `config_snapshot` (it captures what the user had
         # selected when they injected the prompt) and fall back to the
@@ -1720,18 +1828,24 @@ def main():
             # downstream snapshot reads (chains/frames/tier/audio/tts) pick
             # up the lower-quality budget. Global config.json untouched.
             # Targets ~3 min/clip on Strix Halo for "does the model work?"
-            # smoke runs.
-            if _task_opts.get("fast_track"):
+            _is_fast = _task_opts.get("fast_track") or (_task_opts.get("_config_snapshot") or {}).get("fast_track") or (_task_opts.get("config_snapshot") or {}).get("fast_track")
+            if _is_fast:
                 _ft_snap = dict((_task_opts.get("_config_snapshot") or config) or {})
-                _ft_snap["chains"] = 2
-                _ft_snap["frames"] = 17
+                _ft_snap["chains"] = 1
+                _ft_snap["frames"] = 9
                 _ft_snap["tier"] = "low"
                 _ft_snap["audio_model"] = "none"
                 _ft_snap["tts_model"] = "none"
                 _ft_snap["upscale_model"] = "none"
                 _task_opts["_config_snapshot"] = _ft_snap
+                # Re-point the sidecar/state snapshot at the Fast Track values —
+                # it was bound to the pre-override snapshot above, so without
+                # this the sidecar would report the full-quality chains/frames.
+                _ft_snap.setdefault("base_model", b_mod)
+                _ft_snap["_v_idx"] = v_idx
+                _CURRENT_ITER_CONFIG = _ft_snap
                 print(
-                    f"[FLEET] 🏃 Fast Track v{v_idx}: chains=2 frames=17 "
+                    f"[FLEET] 🏃 Fast Track v{v_idx}: chains=1 frames=9 "
                     f"tier=low audio/tts/upscale skipped",
                     flush=True,
                 )
@@ -1742,6 +1856,15 @@ def main():
             # the dashboard's "Slop" branding while still carrying the
             # iteration index for chronological grouping + uniqueness.
             _stem = f"slop_{v_idx}_{_slug}"
+
+            # Per-stage prompt overrides {image,video,music} from the inject
+            # form — each stage uses its override text when supplied, else the
+            # main prompt `p`. (The slug/filename + sidecar keep `p` for a
+            # stable identity.) These were persisted but never applied before.
+            _stage_prompts = _task_opts.get("stage_prompts") or {}
+            _img_prompt = _resolve_stage_prompt(_stage_prompts, "image", p)
+            _vid_prompt = _resolve_stage_prompt(_stage_prompts, "video", p)
+            _music_prompt = _resolve_stage_prompt(_stage_prompts, "music", p)
 
             # ─── Audio (Heartmula) — runs BEFORE Base Image ──────────────
             # Honors config.audio_model (no longer matrix-mode-gated). When
@@ -1770,7 +1893,7 @@ def main():
                 if _audio_model == "heartmula":
                     audio_wav = f"{OUTPUT_DIR}/{_stem}_music.wav"
                     try:
-                        ok = heartmula_wav(p, audio_wav, duration_s=target_dur)
+                        ok = heartmula_wav(_music_prompt, audio_wav, duration_s=target_dur)
                         if ok and os.path.exists(audio_wav):
                             audio_duration_s = target_dur
                             _write_sidecar(
@@ -1847,7 +1970,17 @@ def main():
             update_state(
                 mode="Rendering", step="Base Image", video=v_idx, total=1000, prompt=p
             )
-            tier = "low" if _task_opts.get("fast_track") else pick_tier(v_idx)
+            # Honor a user-selected tier from the per-task snapshot; fall back
+            # to the rotating pick_tier only when none was specified. Fast Track
+            # always forces low. Previously the snapshot tier was ignored.
+            _snap_tier = (_task_opts.get("_config_snapshot") or {}).get("tier")
+            tier = "low" if _task_opts.get("fast_track") else (
+                _snap_tier if _snap_tier in ("low", "med", "high") else pick_tier(v_idx)
+            )
+            # Reflect the tier actually used back into the iter snapshot so the
+            # sidecar metadata writer (_write_md_sidecar reads _CURRENT_ITER_CONFIG)
+            # reports the real tier instead of the stale snapshot/config value.
+            _CURRENT_ITER_CONFIG["tier"] = tier
             # Seed-image short-circuit: when the task carries a user-supplied
             # seed (per-task) OR per-chain mode (where chain 0 starts from
             # seed_images[0]), copy the seed to in_img and skip generate_base_*.
@@ -1869,8 +2002,10 @@ def main():
                     flush=True,
                 )
             elif b_mod in ["qwen", "ernie"]:
-                run_image_gen(b_mod, p, in_img, tier=tier, size_str=config.get("size"))
+                _wait_for_free_memory(_model_gb(b_mod), f"base-image:{b_mod}")
+                run_image_gen(b_mod, _img_prompt, in_img, tier=tier, size_str=config.get("size"))
             else:
+                _wait_for_free_memory(_model_gb("ltx-2.3", 38), "base-image:ltx-2.3")
                 generate_base_image_ltx23(p, in_img, config["size"])
 
             _out_base = f"{OUTPUT_DIR}/{_stem}_base.png"
@@ -1902,6 +2037,16 @@ def main():
             # duration. Otherwise honor config.chains (legacy default 10).
             _frames_per_chain = int(
                 (_task_opts.get("_config_snapshot") or config or {}).get("frames", 49)
+            )
+            # Clamp to a sane minimum — a malformed snapshot with frames<=0 would
+            # produce an invalid LTX latent and a divide-by-zero in chain math.
+            _frames_per_chain = max(1, _frames_per_chain)
+            # Honor the per-task snapshot's size + frames for the ACTUAL clips,
+            # not just the chain-count math — otherwise a user who injected
+            # frames=17/size=… silently gets the global config's values rendered.
+            _eff_size = (
+                (_task_opts.get("_config_snapshot") or config or {}).get("size")
+                or config.get("size")
             )
             _audio_driven = bool(
                 (_task_opts.get("_config_snapshot") or config or {}).get(
@@ -1942,6 +2087,13 @@ def main():
 
             chain_vids = []
             _flf2v_active = len(_per_chain_seeds) >= 2
+            if _flf2v_active:
+                # FLF2V puts its end keyframe at frame index max(8, …); a latent
+                # shorter than 9 frames places that guide out of [0, frames-1]
+                # and yields a malformed graph / wrong output. Enforce the LTX
+                # 9-frame minimum (only reachable via a hand-set frames<9 + per-
+                # chain seeds; default/Fast-Track frame counts are already ≥9).
+                _frames_per_chain = max(9, _frames_per_chain)
             # Multi-frame chain handoff — anchor the next chain's first K
             # frames to the previous chain's last K frames via stacked
                 # LTXVAddGuide nodes. K=1 reverts to legacy last-frame chaining.
@@ -1952,7 +2104,23 @@ def main():
             )
             _handoff_k = max(1, min(_handoff_k, 8))
             _handoff_frames: list = []  # populated after chain c, used by chain c+1
+            _iter_cancelled = False
+            # Memory gate before the (heavy) video model loads for the chain run.
+            _wait_for_free_memory(
+                _model_gb(config.get("video_model") or "ltx-2.3", 38), "video")
             for c_idx in range(1, _n_chains + 1):
+                # Honour a mid-flight cancel of the running item: the dashboard
+                # writes cancel.flag when the active (`working`) item is
+                # cancelled. Check at each chain boundary so a long multi-chain
+                # render stops promptly instead of finishing. mtime-gated against
+                # this iter's start so a stale flag from a prior iter is ignored.
+                if _cancel_requested(os.path.join(OUTPUT_DIR, "cancel.flag"), _iter_started_ts):
+                    print(
+                        f"[FLEET] cancel.flag — aborting iter v{v_idx} at chain {c_idx}/{_n_chains}",
+                        flush=True,
+                    )
+                    _iter_cancelled = True
+                    break
                 update_state(
                     mode="Rendering",
                     step="Video Chains",
@@ -1982,8 +2150,8 @@ def main():
                          f"comfy-input/{_end_fn}"], check=True,
                     )
                     generate_video_ltx_flf2v(
-                        _start_fn, _end_fn, p, seg,
-                        config["size"], config["frames"],
+                        _start_fn, _end_fn, _vid_prompt, seg,
+                        _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
                         seg,
@@ -1999,8 +2167,8 @@ def main():
                     # Multi-frame continuation: c_idx > 1 with handoff_k > 1.
                     # _handoff_frames was populated after chain c-1 below.
                     generate_video_ltx_continuation(
-                        _handoff_frames, p, seg,
-                        config["size"], config["frames"],
+                        _handoff_frames, _vid_prompt, seg,
+                        _eff_size, _frames_per_chain,
                     )
                     _write_sidecar(
                         seg,
@@ -2015,7 +2183,7 @@ def main():
                     # First chain (any mode), or chains where K=1 (legacy
                     # single-frame handoff) — original I2V workflow.
                     generate_video_ltx(
-                        os.path.basename(in_img), p, seg, config["size"], config["frames"]
+                        os.path.basename(in_img), _vid_prompt, seg, _eff_size, _frames_per_chain
                     )
                     _write_sidecar(
                         seg,
@@ -2073,6 +2241,27 @@ def main():
                             ["cp", next_in, f"{OUTPUT_DIR}/{_stem}_f{c_idx}.png"],
                             check=True,
                         )
+
+            # Clean up this iter's chain-handoff frames from comfy-input/. They
+            # are transient inputs for the continuation workflow (and the ffmpeg
+            # extraction writes a few margin frames beyond the K we keep); none
+            # are needed once the chain loop is done, and they'd otherwise grow
+            # comfy-input/ without bound across thousands of iters.
+            try:
+                for _hf in os.listdir("comfy-input"):
+                    if _hf.startswith(f"{_stem}_h") or _hf.startswith(f"{_stem}_f"):
+                        try:
+                            os.remove(os.path.join("comfy-input", _hf))
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+
+            if _iter_cancelled and not chain_vids:
+                # Cancelled before any chain finished — nothing to finalize.
+                # (If ≥1 chain rendered we still mux a partial clip below so the
+                # user keeps what was produced before the cancel.)
+                raise _IterCancelled(f"iter v{v_idx} cancelled (no chains rendered)")
 
             update_state(
                 mode="Finalizing", step="Final Merge", video=v_idx, total=1000, prompt=p
@@ -2174,12 +2363,31 @@ def main():
                 except Exception as e:
                     print(f"[FLEET] ⚠️  ffmpeg mux failed: {e!r}", flush=True)
         except Exception as e:
-            iter_failed = True
-            import traceback
+            if isinstance(e, _IterCancelled) or _iter_cancelled:
+                # User-initiated cancel of the running item — not a failure.
+                # The queue already marks it cancelled (so the archive path
+                # below won't requeue it); just update state and move on.
+                print(f"[FLEET] ⏹ {e}", flush=True)
+                try:
+                    update_state(mode="Cancelled", step="User cancelled",
+                                 video=v_idx, total=1000, prompt=p)
+                except Exception:
+                    pass
+            else:
+                iter_failed = True
+                import traceback
 
-            print(f"[FLEET] ❌ Error Video {v_idx}: {e!r}", flush=True)
-            traceback.print_exc()
-            time.sleep(10)
+                print(f"[FLEET] ❌ Error Video {v_idx}: {e!r}", flush=True)
+                traceback.print_exc()
+                # Reflect the failure in dashboard state immediately — otherwise
+                # the UI keeps showing the last successful step until the next
+                # iter starts, which can be never if this was the last item.
+                try:
+                    update_state(mode="Completed", step="Failed (see log)",
+                                 video=v_idx, total=1000, prompt=p)
+                except Exception:
+                    pass
+                time.sleep(10)
         # ALWAYS advance v_idx — even on failure — so every iter gets a unique
         # filename. Otherwise repeated chain failures keep clobbering v1_base.png.
         v_idx += 1
@@ -2199,139 +2407,140 @@ def main():
         # row.
         try:
             if _task_opts.get("_seed_prompt"):
-                q_now = cfg.get_queue()
-                # Pull (and remove) the in-flight row matching this iter
-                # so we can read the user's most recent toggle / cancel
-                # state. The row may be `status=working` (untouched) OR
-                # `status=cancelled` (user clicked cancel mid-flight) —
-                # both share the same ts as the originally-popped item.
-                orig_ts = _task_opts.get("_orig_task_ts")
-                live_record = None
-                kept = []
-                for it in q_now:
-                    if (
-                        it.get("ts") == orig_ts
-                        and it.get("status") in ("working", "cancelled")
-                        and live_record is None
-                    ):
-                        live_record = it
-                        continue  # drop the in-flight sentinel
-                    kept.append(it)
-                q_now = kept
+                with cfg.queue_lock():
+                    q_now = cfg.get_queue()
+                    # Pull (and remove) the in-flight row matching this iter
+                    # so we can read the user's most recent toggle / cancel
+                    # state. The row may be `status=working` (untouched) OR
+                    # `status=cancelled` (user clicked cancel mid-flight) —
+                    # both share the same ts as the originally-popped item.
+                    orig_ts = _task_opts.get("_orig_task_ts")
+                    live_record = None
+                    kept = []
+                    for it in q_now:
+                        if (
+                            it.get("ts") == orig_ts
+                            and it.get("status") in ("working", "cancelled")
+                            and live_record is None
+                        ):
+                            live_record = it
+                            continue  # drop the in-flight sentinel
+                        kept.append(it)
+                    q_now = kept
 
-                # Effective flags: the live record's flags win over the
-                # snapshot in `_task_opts` so the user's mid-flight
-                # toggles take effect. Cancellation also sticks: a user
-                # who clicked "cancel" on the active item set the live
-                # record's status to "cancelled" — that disables requeue.
-                live = live_record or {}
-                eff_infinity = bool(live.get("infinity", _task_opts.get("infinity")))
-                eff_polymorphic = bool(
-                    live.get(
-                        "polymorphic",
-                        live.get("chaos", _task_opts.get("polymorphic", True)),
-                    )
-                )
-                eff_chaos = bool(
-                    live.get(
-                        "chaos", live.get("polymorphic", _task_opts.get("chaos", True))
-                    )
-                )
-                eff_image_only = bool(
-                    live.get("image_only", _task_opts.get("image_only"))
-                )
-                eff_skip_video = bool(
-                    live.get("skip_video", _task_opts.get("skip_video"))
-                )
-                eff_when_idle = bool(
-                    live.get("when_idle", _task_opts.get("_when_idle", False))
-                )
-                eff_priority = live.get("priority", _task_opts.get("_priority", "next"))
-                eff_config_snapshot = live.get("config_snapshot") or _task_opts.get(
-                    "_config_snapshot"
-                )
-                cancelled_mid_flight = live.get("status") == "cancelled"
-
-                # 1) Done archive — audit log entry.
-                q_now.append(
-                    {
-                        "prompt": _task_opts["_seed_prompt"],
-                        "status": "done",
-                        "succeeded": not iter_failed,
-                        "ts": orig_ts or _iter_started_ts,
-                        "started_ts": _iter_started_ts,
-                        "completed_ts": time.time(),
-                        "duration_s": time.time() - _iter_started_ts,
-                        "v_idx": v_idx - 1,
-                        "image_only": eff_image_only,
-                        "infinity": eff_infinity,
-                        "chaos": eff_chaos,
-                        "config_snapshot": eff_config_snapshot,
-                        # Asset basenames produced this iter, in the order they
-                        # were written (base image → final mp4 → muxed audio mp4).
-                        "assets": list(_iter_assets),
-                    }
-                )
-
-                # 2) Requeue — only if the user still wants infinity AND
-                # they didn't cancel mid-flight.
-                if eff_infinity and not cancelled_mid_flight:
-                    if eff_polymorphic:
-                        # Re-append the SEED so the next pop runs the LLM
-                        # rewriter again — every cycle gets fresh prose.
-                        new_task = {
-                            "prompt": _task_opts["_seed_prompt"],
-                            "polymorphic": True,
-                            "chaos": True,
-                        }
-                    else:
-                        # Cache the rewrite on the task so future cycles
-                        # skip the LLM round-trip entirely.
-                        rewritten = (
-                            _task_opts.get("_rewritten_prompt")
-                            or _task_opts["_seed_prompt"]
+                    # Effective flags: the live record's flags win over the
+                    # snapshot in `_task_opts` so the user's mid-flight
+                    # toggles take effect. Cancellation also sticks: a user
+                    # who clicked "cancel" on the active item set the live
+                    # record's status to "cancelled" — that disables requeue.
+                    live = live_record or {}
+                    eff_infinity = bool(live.get("infinity", _task_opts.get("infinity")))
+                    eff_polymorphic = bool(
+                        live.get(
+                            "polymorphic",
+                            live.get("chaos", _task_opts.get("polymorphic", True)),
                         )
-                        new_task = {
-                            "prompt": rewritten,
-                            "polymorphic": False,
-                            "chaos": False,
-                            "pre_rewritten": True,
-                            "seed_prompt": _task_opts["_seed_prompt"],
+                    )
+                    eff_chaos = bool(
+                        live.get(
+                            "chaos", live.get("polymorphic", _task_opts.get("chaos", True))
+                        )
+                    )
+                    eff_image_only = bool(
+                        live.get("image_only", _task_opts.get("image_only"))
+                    )
+                    eff_skip_video = bool(
+                        live.get("skip_video", _task_opts.get("skip_video"))
+                    )
+                    eff_when_idle = bool(
+                        live.get("when_idle", _task_opts.get("_when_idle", False))
+                    )
+                    eff_priority = live.get("priority", _task_opts.get("_priority", "next"))
+                    eff_config_snapshot = live.get("config_snapshot") or _task_opts.get(
+                        "_config_snapshot"
+                    )
+                    cancelled_mid_flight = live.get("status") == "cancelled"
+
+                    # 1) Done archive — audit log entry.
+                    q_now.append(
+                        {
+                            "prompt": _task_opts["_seed_prompt"],
+                            "status": "done",
+                            "succeeded": not iter_failed,
+                            "ts": orig_ts or _iter_started_ts,
+                            "started_ts": _iter_started_ts,
+                            "completed_ts": time.time(),
+                            "duration_s": time.time() - _iter_started_ts,
+                            "v_idx": v_idx - 1,
+                            "image_only": eff_image_only,
+                            "infinity": eff_infinity,
+                            "chaos": eff_chaos,
+                            "config_snapshot": eff_config_snapshot,
+                            # Asset basenames produced this iter, in the order they
+                            # were written (base image → final mp4 → muxed audio mp4).
+                            "assets": list(_iter_assets),
                         }
-                    requeued = {
-                        **new_task,
-                        "priority": eff_priority,
-                        "status": "pending",
-                        # +1µs offset so the new pending row can never
-                        # share a ts with the done archive we just wrote
-                        # (the queue keys are de facto (ts) primaries).
-                        "ts": time.time() + 1e-6,
-                        "infinity": True,
-                        "when_idle": eff_when_idle,
-                        "image_only": eff_image_only,
-                        "skip_video": eff_skip_video,
-                        "config_snapshot": eff_config_snapshot,
-                        "requeued_from_ts": orig_ts,
-                    }
-                    q_now.append(requeued)
-                    tag = "polymorphic" if eff_polymorphic else "fixed-prompt"
-                    print(
-                        f"[FLEET] ♾  re-queued infinity prompt ({tag}) to back of queue",
-                        flush=True,
-                    )
-                elif _task_opts.get("infinity") and cancelled_mid_flight:
-                    print(
-                        f"[FLEET] ♾  infinity item cancelled mid-flight — NOT re-queueing",
-                        flush=True,
-                    )
-                elif _task_opts.get("infinity") and not eff_infinity:
-                    print(
-                        f"[FLEET] ♾  user toggled infinity OFF mid-flight — NOT re-queueing",
-                        flush=True,
                     )
 
-                # Single commit of done + (maybe) requeued + working-row drop.
-                cfg.save_queue(q_now)
+                    # 2) Requeue — only if the user still wants infinity AND
+                    # they didn't cancel mid-flight.
+                    if eff_infinity and not cancelled_mid_flight:
+                        if eff_polymorphic:
+                            # Re-append the SEED so the next pop runs the LLM
+                            # rewriter again — every cycle gets fresh prose.
+                            new_task = {
+                                "prompt": _task_opts["_seed_prompt"],
+                                "polymorphic": True,
+                                "chaos": True,
+                            }
+                        else:
+                            # Cache the rewrite on the task so future cycles
+                            # skip the LLM round-trip entirely.
+                            rewritten = (
+                                _task_opts.get("_rewritten_prompt")
+                                or _task_opts["_seed_prompt"]
+                            )
+                            new_task = {
+                                "prompt": rewritten,
+                                "polymorphic": False,
+                                "chaos": False,
+                                "pre_rewritten": True,
+                                "seed_prompt": _task_opts["_seed_prompt"],
+                            }
+                        requeued = {
+                            **new_task,
+                            "priority": eff_priority,
+                            "status": "pending",
+                            # +1µs offset so the new pending row can never
+                            # share a ts with the done archive we just wrote
+                            # (the queue keys are de facto (ts) primaries).
+                            "ts": time.time() + 1e-6,
+                            "infinity": True,
+                            "when_idle": eff_when_idle,
+                            "image_only": eff_image_only,
+                            "skip_video": eff_skip_video,
+                            "config_snapshot": eff_config_snapshot,
+                            "requeued_from_ts": orig_ts,
+                        }
+                        q_now.append(requeued)
+                        tag = "polymorphic" if eff_polymorphic else "fixed-prompt"
+                        print(
+                            f"[FLEET] ♾  re-queued infinity prompt ({tag}) to back of queue",
+                            flush=True,
+                        )
+                    elif _task_opts.get("infinity") and cancelled_mid_flight:
+                        print(
+                            f"[FLEET] ♾  infinity item cancelled mid-flight — NOT re-queueing",
+                            flush=True,
+                        )
+                    elif _task_opts.get("infinity") and not eff_infinity:
+                        print(
+                            f"[FLEET] ♾  user toggled infinity OFF mid-flight — NOT re-queueing",
+                            flush=True,
+                        )
+
+                    # Single commit of done + (maybe) requeued + working-row drop.
+                    cfg.save_queue(q_now)
         except Exception as e:
             print(f"[FLEET] archive/requeue failed: {e!r}", flush=True)
     update_state(mode="Completed")

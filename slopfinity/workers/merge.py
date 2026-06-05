@@ -11,7 +11,6 @@ import asyncio
 import os
 import shutil
 import subprocess
-import tempfile
 from typing import Any, Dict, List, Optional
 
 from ._compat import StageWorker, config_snapshot_get, item_v_idx, stage_get

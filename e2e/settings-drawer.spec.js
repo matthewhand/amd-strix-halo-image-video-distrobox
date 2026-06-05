@@ -10,7 +10,7 @@
 // Drawer markup lives at slopfinity/templates/index.html:2111
 // openSettings() / _setSettingsOpen() wiring lives at slopfinity/static/app.js:7186
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 

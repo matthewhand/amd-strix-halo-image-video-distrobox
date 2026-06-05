@@ -1,13 +1,12 @@
-// Endless story log — editable rows in #subjects-story-log instead of
-// the legacy <pre> blob. Each beat row is an `<input.endless-row-text>`
-// (the v324+ beat-row shape; earlier iterations used a contenteditable
-// span) + an .endless-row-del × button. Edits and deletes both persist
-// into localStorage `slopfinity-endless-story-log` as a JSON array.
-// Legacy `\n`-joined string storage migrates to the array shape on first
-// read.
+// the legacy <pre> blob. Each beat row is an `<input type="text">`
+// .endless-row-text (the v324+ beat-row shape; earlier iterations used a
+// contenteditable span) + an .endless-row-del × button. Edits and deletes
+// both persist into localStorage `slopfinity-endless-story-log` as a JSON
+// array. Legacy `\n`-joined string storage migrates to the array shape on
+// first read.
 //
 // Verifies:
-//   1. story pane in endless mode renders editable beat inputs, not <pre>
+//   1. story pane in endless mode renders editable <input> beat rows, not <pre>
 //   2. each row has a × delete button
 //   3. editing row text persists into localStorage as a JSON array
 //   4. legacy `\n`-joined string in storage migrates to array on first read
@@ -46,7 +45,7 @@ async function bootEndless(page, opts) {
         } catch (_) { }
     }, { storySeed, legacyString });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
     await page.waitForTimeout(250);
 }
@@ -65,7 +64,8 @@ test.describe('endless story log — editable rows', () => {
         const preCount = await page.locator('#subjects-story-log pre').count();
         expect(preCount).toBe(0);
 
-        // Each row's text surface is an editable <input.endless-row-text>.
+        // Each row's text surface is an editable <input.endless-row-text>
+        // (intrinsically editable) rather than a contenteditable span.
         const editableCount = await page.locator('#subjects-story-log input.endless-row-text').count();
         expect(editableCount).toBeGreaterThanOrEqual(3);
 
@@ -78,10 +78,10 @@ test.describe('endless story log — editable rows', () => {
         await bootEndless(page, { storySeed: ['alpha', 'bravo'] });
         await page.waitForSelector('#subjects-story-log input.endless-row-text', { timeout: 4000, state: 'attached' });
 
-        // Edit the first row via direct DOM mutation + dispatching input.
-        // The beat surface is a text <input>, so we set .value (not
-        // textContent) and dispatch the input event the row handler listens
-        // for.
+        // Edit the first row via direct DOM mutation + dispatching input
+        // (simpler than typing into the input). The beat surface is a text
+        // <input>, so we set .value (not textContent) and dispatch the input
+        // event the row handler listens for.
         await page.evaluate(() => {
             const inp = document.querySelector('#subjects-story-log input.endless-row-text[data-row-idx="0"]');
             if (inp) {
@@ -114,10 +114,11 @@ test.describe('endless story log — editable rows', () => {
 
         const rows = await page.locator('#subjects-story-log input.endless-row-text').count();
         expect(rows).toBe(3);
-        // Beat surfaces are <input> — read .value, not .textContent.
+        // Beat surfaces are <input> — read .value, not .textContent. Fall
+        // back to textContent defensively in case an older span shape lingers.
         const texts = await page.evaluate(() => Array.from(
-            document.querySelectorAll('#subjects-story-log input.endless-row-text')
-        ).map(s => s.value));
+            document.querySelectorAll('#subjects-story-log .endless-row-text')
+        ).map(s => s.value !== undefined ? s.value : s.textContent));
         expect(texts).toEqual(['one', 'two', 'three']);
     });
 

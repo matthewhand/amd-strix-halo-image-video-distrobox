@@ -32,12 +32,15 @@ def _base_docker_cmd(extra_env: Optional[List[str]] = None) -> List[str]:
     for e in extra_env or []:
         cmd += ["-e", e]
     cmd += [
+        "--cpus", "28.0",
+        "--memory", "110g",
         "-v", f"{_workspace()}:/workspace",
         "-v", f"{_hf_cache()}:/root/.cache/huggingface",
         "-w", "/workspace",
         "--device", "/dev/kfd",
         "--device", "/dev/dri",
         IMAGE,
+        "nice", "-n", "19",
     ]
     return cmd
 
@@ -58,12 +61,18 @@ async def run_image_qwen(prompt: str, out: str) -> int:
 
 
 async def run_image_ernie(prompt: str, out: str, steps: int = 8) -> int:
+    # GUARD: ERNIE VAE decode GPU-hangs above 512² on gfx1151 — cap dimensions
+    # so this path can't wedge the GPU. Single source of truth: compat.py.
+    from .compat import clamp_ernie_dims
+    w, h = clamp_ernie_dims()
     async with acquire_gpu("image", "ernie"):
         cmd = _base_docker_cmd() + [
             "python3", "/opt/ernie_launcher.py",
             "--prompt", prompt,
             "--model", "baidu/ERNIE-Image-Turbo",
             "--steps", str(steps),
+            "--width", str(w),
+            "--height", str(h),
             "--out", out,
         ]
         return await _run(cmd)
@@ -103,11 +112,13 @@ async def run_video_wan(prompt: str, in_img: str, out: str, model: str = "wan2.2
         return await _run(cmd)
 
 
-async def run_audio_heartmula(prompt: str, out: str) -> int:
+async def run_audio_heartmula(prompt: str, out: str, duration_s: float = 30.0) -> int:
     async with acquire_gpu("audio", "heartmula"):
         cmd = _base_docker_cmd() + [
-            "python3", "/opt/heartmula_launcher.py",
-            "--prompt", prompt, "--out", out,
+            "python3", "/workspace/scripts/heartmula_launcher.py",
+            "--prompt", prompt,
+            "--duration", str(duration_s),
+            "--out", out,
             "--real",
         ]
         return await _run(cmd)

@@ -7,7 +7,7 @@
 //
 // Run: npx playwright test e2e/deep-ui-queue-slop.spec.js
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 const fs = require('fs');
 const path = require('path');
 
@@ -204,8 +204,19 @@ for (const vp of VIEWPORTS) {
             // Seed before navigation so SSR picks rows up.
             await seedQueue(page);
             await page.goto(`${BASE}/?layout=${layout}`, { waitUntil: 'domcontentloaded' });
-            // Splash fade
-            await page.waitForTimeout(1200);
+            // Splash controller hides at load+2500ms then removes the element
+            // after 600ms. waitForTimeout(1200) used to capture the splash
+            // overlay in every screenshot — wait for the element to actually
+            // detach instead (12s ceiling matches the project convention).
+            await page.waitForFunction(() => {
+              const splash = document.getElementById('splash-overlay');
+              const main = document.querySelector('main');
+              // Use COMPUTED opacity not inline style — the splash fade-in
+              // is a CSS animation so inline style.opacity is empty even
+              // mid-animation; computed reads the actual current value.
+              const mainOpacity = main ? parseFloat(getComputedStyle(main).opacity) : 1;
+              return !splash && mainOpacity >= 0.99;
+            }, null, { timeout: 12000 });
             const findings = await probe(page);
             allFindings[`${vp.name}_${layout}`] = findings;
 

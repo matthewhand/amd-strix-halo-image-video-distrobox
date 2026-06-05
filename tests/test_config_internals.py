@@ -52,6 +52,20 @@ def tmp_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "QUEUE_FILE", str(queue_file))
     monkeypatch.setattr(cfg, "STATE_FILE", str(state_file))
     monkeypatch.setattr(cfg, "_QUEUE_LOCK_FILE", str(lock_file))
+    # Config + queue now live in SQLite (not just the JSON files), and the
+    # engine is built at import from SLOPFINITY_STATE_DIR. Point a FRESH engine
+    # at this test's tmp dir — otherwise the import-time DB leaks state across
+    # tests (a non-empty Configuration table makes load_config skip the
+    # config.json migration, and stale QueueItem rows break get_queue==[]).
+    from sqlmodel import create_engine, SQLModel
+    from slopfinity import db as _db
+    test_engine = create_engine(
+        f"sqlite:///{tmp_path / 'slopfinity.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    monkeypatch.setattr(_db, "engine", test_engine)
+    monkeypatch.setattr(cfg, "engine", test_engine)
+    SQLModel.metadata.create_all(test_engine)
     return tmp_path
 
 

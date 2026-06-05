@@ -10,7 +10,19 @@ from __future__ import annotations
 import json
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 from typing import Protocol, Optional
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Don't follow redirects — a validated host must not be able to bounce a
+    server-side request to a blocked internal/metadata address (SSRF defense)."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 DEFAULT_TIMEOUT = 60
@@ -24,8 +36,10 @@ def _http_json(method: str, url: str, *, body=None, headers=None, timeout: int =
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("url scheme must be http or https")
     req = urllib.request.Request(url, data=data, headers=h, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _OPENER.open(req, timeout=timeout) as r:
         raw = r.read()
         if not raw:
             return {}

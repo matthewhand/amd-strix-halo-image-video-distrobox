@@ -125,7 +125,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(`console: ${m.text()}`); });
 
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         // Wait for replies host to be populated by _renderChatReplies.
         // Default display count is 3 (slopfinity-chat-suggest-count) — was 4
@@ -194,7 +194,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         await mockChatRoutes(page, chatRequests);
         await page.addInitScript(() => { try { localStorage.clear(); } catch (_) {} });
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForSelector('#subjects-chat-input');
         await page.fill('#subjects-chat-input', 'hello world from typing');
@@ -231,7 +231,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
             } catch (_) {}
         }, HISTORY);
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForTimeout(500);
         await page.screenshot({ path: '/tmp/pane-chat-thought-bubbles.png', fullPage: false });
@@ -297,11 +297,12 @@ test.describe('chat-mode suggestion chips + direct send', () => {
             };
         });
         console.log('[chat-thought stats]', JSON.stringify(stats, null, 2));
-        // The renderer groups a single assistant-tool_calls + tool-result
-        // run into ONE .chat-thought bubble (see app.js _renderChatLog ~line
-        // 3163 — one bubble per thinking run, not per message). The seeded
-        // history above is a single run, so we expect exactly one bubble.
-        expect(stats.thoughtCount, 'expected at least one .chat-thought (assistant tool_calls + tool result)').toBeGreaterThanOrEqual(1);
+        // Renderer fuses consecutive thinking messages (assistant tool_calls
+        // + tool result) into ONE .chat-thought bubble — see app.js
+        // _renderChatLog "Fuse the run" branch (one bubble per thinking run,
+        // not per message). The seeded history above is a single run, so a
+        // single tool-call + result pair collapses to ONE bubble (not two).
+        expect(stats.thoughtCount, 'expected at least one .chat-thought (fused tool_calls + tool result run)').toBeGreaterThanOrEqual(1);
         // KNOWN BUG: app.css uses `hsl(var(--bc) / 0.35)` but daisyUI 4.10
         // ships OKLCH-formatted theme vars (e.g. dracula --bc:
         // "97.7477% 0.007913 106.545"). hsl() can't parse OKLCH triples,
@@ -324,7 +325,7 @@ test.describe('chat-mode suggestion chips + direct send', () => {
         await mockChatRoutes(page, []);
         await page.addInitScript(() => { try { localStorage.clear(); } catch (_) {} });
         await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 5000 });
+        await page.waitForFunction(() => !document.getElementById('splash-overlay'), null, { timeout: 12000 });
         await page.click(`.subjects-mode-pill button[data-subj-mode="chat"]`);
         await page.waitForSelector('#subjects-chat-input');
         await page.fill('#subjects-chat-input', 'queue 3 dragons');

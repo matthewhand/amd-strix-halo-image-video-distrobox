@@ -150,10 +150,11 @@ def fanout(
     stages: dict,
     locked: list[str],
     preserve_tokens: list[str] | None,
-    llm_call: Callable[[str, str], str],
+    llm_call: Callable[[str, str, dict | None], str],
     max_retries: int = 2,
+    response_format: dict | None = None,
 ) -> dict:
-    """Run the fan-out. `llm_call(sys_prompt, user_msg) -> raw_text`.
+    """Run the fan-out. `llm_call(sys_prompt, user_msg, response_format) -> raw_text`.
 
     Returns: {"ok": bool, "stages": {...}, "preserved_ok": bool,
               "preserved_dropped": [...], "raw": "..."}.
@@ -172,7 +173,7 @@ def fanout(
     raw = ""
     nudge = ""
     for attempt in range(max_retries + 1):
-        raw = llm_call(sys_p + nudge, user_msg) or ""
+        raw = llm_call(sys_p + nudge, user_msg, response_format) or ""
         parsed = _try_parse_json(raw)
         if isinstance(parsed, dict):
             break

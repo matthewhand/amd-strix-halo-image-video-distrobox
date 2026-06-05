@@ -15,7 +15,7 @@
 // Driven by the URL ?layout=<mode> param so each test gets a fresh page
 // (avoids cross-contamination from localStorage).
 
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./_fixtures');
 
 const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 
@@ -52,7 +52,7 @@ const waitForSplashGone = async (page) => {
         const main = document.querySelector('main');
         const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && mainOpacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 };
 
 const assertVisible = async (page, selector, label) => {

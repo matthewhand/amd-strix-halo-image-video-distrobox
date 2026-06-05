@@ -24,7 +24,8 @@ const BASE = process.env.SLOPFINITY_URL || 'http://localhost:9099';
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test('endless auto-starts on mode switch — running flag, + enabled, pane visible', async ({ page }) => {
-    // Stub /subjects/suggest so any row render is deterministic + fast.
+    // Stub /subjects/suggest so any row render is deterministic + fast
+    // (no live-LLM wait, ~minutes per call).
     await page.route('**/subjects/suggest**', (route) => {
         const arr = ['beat-1', 'beat-2', 'beat-3', 'beat-4', 'beat-5', 'beat-6'];
         return route.fulfill({
@@ -38,6 +39,11 @@ test('endless auto-starts on mode switch — running flag, + enabled, pane visib
             // Generous upper-pane height so the full Prompt card body
             // fits — without this, the story-pane gets cropped.
             localStorage.setItem('slopfinity_ui_split_upper_px', '700');
+            // Seed Suggestions visible — _applySuggestionsHiddenState
+            // inline-style-hides the +/regen badges on a cold browser
+            // (default state is "hidden") which would defeat the +
+            // enabled-state assertion. Same fix as smoke spec c159d69.
+            localStorage.setItem('slopfinity_suggestions_hidden', '0');
         } catch (_) {}
     });
     await page.goto(`${BASE}/?layout=default`, { waitUntil: 'domcontentloaded' });
@@ -46,9 +52,14 @@ test('endless auto-starts on mode switch — running flag, + enabled, pane visib
         const main = document.querySelector('main');
         const mainOpacity = main ? parseFloat(main.style.opacity || '1') : 1;
         return !splash && mainOpacity >= 1;
-    }, null, { timeout: 5000 });
+    }, null, { timeout: 12000 });
 
-    // Switch to endless mode — this IS starting the story now.
+    // Switch to endless mode. Note: as of the Story-mode redesign,
+    // entering endless mode IS starting the story — there is no
+    // separate "Start Story" button anymore. _setSubjectsMode flips
+    // `_endlessRunning=true` and adds `body.endless-running`
+    // synchronously (see app.js ~line 2596). The big inline button
+    // is now the standard "Queue Slop" — it does NOT start endless.
     await page.click('.subjects-mode-pill button[data-subj-mode="endless"]');
 
     // body.endless-running flips on immediately (no Start Story click).
@@ -56,7 +67,9 @@ test('endless auto-starts on mode switch — running flag, + enabled, pane visib
     const isRunning = await page.evaluate(() => document.body.classList.contains('endless-running'));
     expect(isRunning).toBe(true);
 
-    // + button is enabled (the user asked for it to never look greyed out).
+    // + button should be enabled in endless mode (always — see
+    // _refreshSuggestBadge "isEndless: allow=true" branch; the user
+    // asked for it to never look greyed out).
     const addBtn = page.locator('#subjects-suggest-add-btn');
     const addDisabled = await addBtn.evaluate(el => el.disabled);
     expect(addDisabled).toBe(false);
@@ -81,8 +94,10 @@ test('endless auto-starts on mode switch — running flag, + enabled, pane visib
 
     await page.screenshot({ path: '/tmp/endless-running.png', fullPage: false });
 
-    // A "+" click renders an endless suggestion row with a lead cluster
-    // (dropdown + refresh + minus chip group).
+    // Bonus: a "+" click renders an endless suggestion row with a lead
+    // cluster (the [data-endless-row-lead] container — that's the dropdown
+    // + refresh + minus chip group). The Start-Story-triggered fetch is
+    // gone, so the + click is what kicks the row render now.
     await page.click('#subjects-suggest-add-btn');
     await page.waitForFunction(() => {
         return !!document.querySelector('#subject-chips-stack-endless .suggest-marquee-row [data-endless-row-lead]');

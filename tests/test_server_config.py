@@ -76,3 +76,28 @@ class TestSettingsPost:
              mock.patch("slopfinity.server.cfg.save_config"):
             resp = await client.post("/settings", json={})
         assert resp.status_code in (200, 400, 422)
+
+
+class TestSettingsPostRoundTrip:
+    """Round-5 fixes: disk-guard thresholds must persist via POST, and the
+    SSRF guard must apply to the server-fetched URL settings."""
+
+    async def test_disk_thresholds_persist(self, client, default_config):
+        saved = {}
+        cfg_copy = dict(default_config)
+        with mock.patch("slopfinity.server.cfg.load_config", return_value=cfg_copy), \
+             mock.patch("slopfinity.server.cfg.save_config", side_effect=lambda c: saved.update(c)):
+            resp = await client.post("/settings", json={"disk_min_pct": 7, "disk_min_gb": 12})
+        assert resp.status_code == 200
+        assert saved.get("disk_min_pct") == 7.0
+        assert saved.get("disk_min_gb") == 12.0
+
+    async def test_ssrf_metadata_url_rejected(self, client, default_config):
+        cfg_copy = dict(default_config)
+        with mock.patch("slopfinity.server.cfg.load_config", return_value=cfg_copy), \
+             mock.patch("slopfinity.server.cfg.save_config"):
+            resp = await client.post(
+                "/settings",
+                json={"tts_worker_url": "http://169.254.169.254/latest/meta-data/"},
+            )
+        assert resp.status_code == 400
