@@ -17,8 +17,19 @@ if ROOT not in sys.path:
 from slopfinity import scheduler as sched  # noqa: E402
 
 @pytest.fixture(autouse=True)
-def setup_scheduler():
+def setup_scheduler(monkeypatch):
     """Reset scheduler state before each test."""
+    # acquire_gpu short-circuits (yields immediately, skipping the idle gate)
+    # when has_gpu() is False. CI runners have no /dev/kfd, so pin it True to
+    # exercise the real GPU path regardless of host — mirrors
+    # tests/test_scheduler.py::_force_gpu_present. Without this the idle-wait
+    # test passes only on a GPU box and fails on CI.
+    monkeypatch.setattr(sched, "has_gpu", lambda: True)
+    # Clear the module GPU-handle bookkeeping so get_gpu() cleanly adopts the
+    # fresh reservation this test records samples into (no stale carryover from
+    # a prior test's singleton, which made sample injection order-dependent).
+    sched._GPU = None
+    sched._GPU_SYNCED = None
     sched.GPU = sched.GPUReservation()
     sched.gpu_lock = sched.GPU.cond
     sched.paused = asyncio.Event()
