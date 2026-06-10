@@ -1,0 +1,38 @@
+[
+  {
+    "tone": "absurd",
+    "label": "brain_rocket_launch",
+    "qwen": "photograph of a single glistening pink human brain hovering vertically inside a sleek transparent rocket capsule on a NASA launchpad at dawn, electrodes trailing like umbilical cords into the rocket walls, brain visibly pulsing, mission control buildings in the foreground, vast cloudless sky above with the rocket pointing toward space",
+    "video": "the brain capsule lifts off in slow motion with massive engines roaring blue flame, the brain pulses faster as it accelerates upward through wispy clouds, audio is a full NASA mission control countdown then liftoff: we have main engine start, three two one, all engines running, liftoff, then triumphant orchestral score swells with rocket thunder"
+  },
+  {
+    "tone": "absurd",
+    "label": "brain_ritual_circle",
+    "qwen": "wide photograph of seven glistening pink human brains floating in perfect ring formation around a glowing pentagram drawn in chalk on the polished floor of a candlelit gothic cathedral interior, stained-glass windows casting colored beams, gargoyle silhouettes, the central brain larger and pulsing with golden light",
+    "video": "the brains rotate slowly around the pentagram as the central one pulses brighter with each beat, candles flicker in unison, audio is deep latin chanting choir with low pipe organ drone, a single brain hum like a Tibetan bowl rises through it, footsteps echo as if a robed figure approaches"
+  },
+  {
+    "tone": "absurd",
+    "label": "brain_symphony_conductor",
+    "qwen": "photograph of an enormous glistening pink brain hovering at the conductor's podium of a grand concert hall, holding a tiny baton telekinetically suspended in the air below it, an entire orchestra of smaller brains floating where each musician would sit, music stands and instruments arranged perfectly, ornate balcony seats filled with even more floating brain audience members",
+    "video": "the conductor brain dramatically swings the floating baton in a sweeping downbeat and the orchestra brains pulse and quiver in synchronized response producing visible sound waves, audio is a full Beethoven 5th symphony opening with ta-ta-ta-DAH performed at concert quality with violin sections, kettle drum, brass crescendo, polite cough from the audience between movements"
+  },
+  {
+    "tone": "comedic",
+    "label": "brain_basketball_dunk",
+    "qwen": "photograph of a glistening pink brain wearing tiny mirrored athletic sunglasses and a sweatband floating mid-air at peak height during a slam dunk attempt above a basketball hoop in a packed indoor stadium, fingertip cellular extensions reaching for the ball, jumbotron behind shows the score 88-87, crowd in motion-blurred frenzy",
+    "video": "the brain brings the basketball down through the hoop in dramatic slow-motion as the rim flexes and the net snaps back, the brain pulses triumphantly mid-air, audio is full sports arena: roaring crowd explosion, sneaker squeaks, basketball commentator screaming HE GOT IT, buzzer, hip-hop bass drop, an air horn"
+  },
+  {
+    "tone": "ironic",
+    "label": "brain_meditation_explosion",
+    "qwen": "photograph of a single serene pink brain floating in a perfect lotus position equivalent above a folded yoga mat in a sun-dappled wooden meditation studio, soft morning light through paper screens, candles burning, a small singing bowl beside it, deep cosmic stillness, eyes-closed equivalent calm",
+    "video": "the brain remains absolutely motionless in deep meditation as the entire studio explodes outward in slow motion around it, fragments of wood and shattered candles and torn rice paper drifting in zero gravity, the brain unmoved at the center, audio is gentle wind chimes and a single tibetan singing bowl tone over a massive distant explosion echo, then perfect silence except for the brain's contented inner hum"
+  },
+  {
+    "tone": "sardonic",
+    "label": "brain_corporate_keynote",
+    "qwen": "photograph of a glistening pink brain hovering behind a glass podium on a corporate convention center stage under a single dramatic spotlight, a clip-on lavalier microphone clipped to one of its electrodes, a massive screen behind reads UNLOCKING SYNERGISTIC IDEATION in chunky tech-conference branding, an audience of executive brains in folding chairs visible in the dark space",
+    "video": "the brain pulses slowly with confident keynote rhythm as if delivering a TED talk, occasional gestures with a trailing electrode, audio is a hyper-confident male executive narrator: today we are talking about disrupting the traditional thought-leadership pipeline at the cellular level, our blockchain-enabled cognition platform is going to ten-x your synapses, polite applause swells from the audience"
+  }
+]

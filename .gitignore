@@ -1,0 +1,106 @@
+# Ignore all markdown files except essential docs
+*.md
+!README.md
+!README.slopfinity.md
+!COMFYUI_SETUP_GUIDE.md
+!CONTRIBUTING.md
+!COMPATIBILITY_MATRIX.md
+!docs/*.md
+# AGENTS.md is a local agent playbook, intentionally not committed —
+# contents drift per-machine and per-session.
+
+__pycache__/
+*.log
+*.safetensors
+
+# Environment files — ignore ALL .env variants except the committed
+# template (.env.example). Covers .env, .env.local, .env.production,
+# .env.<user>, .env.<host>, .env.private, etc.
+.env
+.env.*
+!.env.example
+
+# Per-user / per-host local override files
+*.local
+*.private
+secrets/
+concat.txt
+
+# Private prompt overrides (sensitive moderation-category templates that
+# shouldn't be in public commits). Loaded at runtime via env var
+# MODERATION_TEMPLATES_FILE / SENSITIVE_PROMPTS_DIR. The committed
+# tests/example_prompts/ contains only safe_baseline narratives.
+tests/private_prompts/
+
+# Data directories (created by docker-compose or at runtime)
+huggingface-cache/
+qwen-outputs/
+wan-models/
+comfy-models/
+comfy-models
+comfy-outputs/
+comfy-input/
+outputs/
+ComfyUI_output/
+workspace/
+docker/
+docker-compose.override.yaml
+logs/
+
+# External model repos and datasets (too big for git)
+LTX-2/
+ComfyUI-LTXVideo/
+
+# IDE / editor / local AI assistant state
+.claude/
+.vscode/
+.idea/
+
+# Integration work products (not shipped)
+ui-rebuild/
+.heartlib/
+concat.txt
+
+# Branding profiles — users copy <name>.json.example to <name>.json
+# (per-install, not shared via the repo)
+branding/*.json
+!branding/*.json.example
+
+# Experimental / stray scripts not promoted to the pipelines/ package
+debug_comfy.py
+test_enhancer.py
+test_llm_enhancer.py
+test_ltx23.py
+test_ltx23_video.py
+run_philosophical_experiments.py
+workflow_api.json
+
+# Tailwind build artifacts (see Makefile / README "Tailwind bundle").
+# Only the downloaded CLI binary and the generated CSS bundle are
+# ignored — bin/slopfinity (launcher shim) is intentionally tracked.
+bin/tailwindcss
+slopfinity/static/tailwind.css
+
+# stylelint deps — installed by `make lint` / CI on demand. The
+# lockfile (package-lock.json) IS committed so CI installs are
+# reproducible; only the resolved tree is gitignored.
+node_modules/
+
+# Playwright e2e — generated artifacts only, the spec stays committed.
+test-results/
+playwright-report/
+e2e/artifacts/
+dist/
+# CI artifact lane (results.json/xml, failure-packet.md, failed-tests.json
+# from .github/workflows/playwright.yml + scripts/extract-failures.mjs).
+# Local devs running `npx playwright test` won't generate these unless
+# they set CI=1, but the dir is conventional — gitignore it.
+artifacts/
+
+# Asset evidence: keep the canonical media on disk (regenerable via
+# scripts/build_evidence_tts.py); track only structure + manifest.
+evidence/**/*.wav
+evidence/**/*.png
+evidence/**/*.mp4
+!evidence/**/manifest.json
+slop_test/

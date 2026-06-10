@@ -1,0 +1,119 @@
+# Docker build context exclusions.
+#
+# The Dockerfile only COPYs `scripts/*` and `.heartlib/`. Everything else
+# in this directory is either runtime state (mounts), unrelated tooling,
+# or huge model/output artifacts that would balloon the build context to
+# hundreds of GB.
+#
+# Symptoms this fixes:
+#   - `docker compose build slopfinity` failing with
+#     "no permission to read from comfy-outputs/experiments/config.json"
+#     (root-owned because written from inside a previous container run).
+#   - Build context transfer taking minutes/hours and using GB of RAM.
+
+# Model / output / cache trees (the worst offenders).
+# comfy-models is a symlink to /mnt/downloads — never include.
+comfy-models
+comfy-models/**
+comfy-outputs
+comfy-outputs/**
+comfy-input
+comfy-input/**
+huggingface-cache
+huggingface-cache/**
+ComfyUI_output
+ComfyUI_output/**
+ComfyUI-LTXVideo
+ComfyUI-LTXVideo/**
+LTX-2
+LTX-2/**
+outputs
+outputs/**
+qwen-outputs
+qwen-outputs/**
+
+# JS / Python build artifacts.
+node_modules
+node_modules/**
+__pycache__
+__pycache__/**
+.pytest_cache
+.pytest_cache/**
+.venv
+.venv/**
+venv
+venv/**
+*.pyc
+
+# Test / dev artifacts.
+test-results
+test-results/**
+playwright-report
+playwright-report/**
+e2e/artifacts
+e2e/artifacts/**
+js-tests
+js-tests/**
+logs
+logs/**
+demo
+demo/**
+ui-rebuild
+ui-rebuild/**
+
+# Git internals and editor metadata.
+.git
+.git/**
+.github
+.github/**
+.gitignore
+.gitattributes
+.claude
+.claude/**
+.gemini
+.gemini/**
+.letta
+.letta/**
+.kilo
+.kilo/**
+.pytest_cache
+
+# Top-level scratch files the build doesn't need.
+generated_music.wav
+generate_music.py
+debug_uvicorn.py
+test_video.py
+concat.txt
+-.o
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Slopfinity application code — mounted as a volume at runtime, not
+# baked into the image. Keep it out of context.
+slopfinity
+slopfinity/**
+
+# Pipelines / docs / branding — also volume-mounted or not used at build.
+pipelines
+pipelines/**
+docs
+docs/**
+branding
+branding/**
+
+# Bin (precompiled artifacts, not needed for build).
+bin
+bin/**
+
+# Dotfiles that occasionally contain secrets.
+.env
+.env.*
+*.env
+
+# Editor swap files.
+*.swp
+*.swo
+.DS_Store

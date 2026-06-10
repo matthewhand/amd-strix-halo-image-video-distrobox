@@ -1,0 +1,24 @@
+# Docker Compose Override Example
+# Copy to docker-compose.override.yaml (gitignored) for local customization.
+#
+# Note: the Slopfinity dashboard no longer runs in docker — it runs natively
+# on the host. Start it with `make up` (or `bin/slopfinity up`). See
+# README.slopfinity.md for the host-native launcher.
+#
+# This override file is for per-environment tweaks to the *backend* services
+# (strix-halo-toolbox, qwen-image-service, qwen-tts-service, comfyui-service).
+#
+# Usage:
+#   cp docker-compose.override.yaml.example docker-compose.override.yaml
+#   docker compose --profile slop up -d      # backend services
+#   make up                                  # dashboard on host
+
+services: {}
+
+  # Example toolbox overrides (uncomment + edit as needed)
+  # strix-halo-toolbox:
+  #   image: amd-strix-halo-image-video-toolbox:dev
+  #   environment:
+  #     - QWEN_PORT=8001
+  #   volumes:
+  #     - ./my-models:/opt/custom-models

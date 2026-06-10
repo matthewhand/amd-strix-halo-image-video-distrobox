@@ -1,0 +1,37 @@
+[
+  {
+    "label": "conductor_final_service",
+    "qwen": "A dimly lit, old-fashioned train station at dusk. A lone conductor in worn uniform stands on the platform, checking tickets for a few late passengers. Fog rolls in from the river, casting an eerie mist over the scene. The sky behind them is a deep orange-red hue, with hints of purple and pink. No moon, but the stars are beginning to twinkle.",
+    "video": "The conductor walks towards a train with headlights on, passing by a few scattered passengers carrying luggage. As they enter the cab, the camera pans up to reveal a control panel with an eclipse timer. The sound of ticking clocks and distant thunder grow louder.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "conductor_boarding_passengers",
+    "qwen": null,
+    "video": "Passengers start boarding the train from all sides. The conductor greets them warmly, handing out tickets and offering snacks from a small cart. As the train gains speed, the mist outside grows thicker, obscuring the station's details. A few passengers stumble or lose their balance as the carriage moves.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "conductor_maintenance_check",
+    "qwen": null,
+    "video": "The conductor enters a maintenance car to perform last-minute checks on the tracks and signals. A flashlight casts eerie shadows on the walls as they examine broken cables and rusty parts. The sound of creaking metal and distant rumbling grows louder, accompanied by an ominous crackling noise.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "conductor_last_call",
+    "qwen": null,
+    "video": "The conductor stands at the front of the train, waving goodbye to the receding station. As they do, the camera pans up to show a full moon appearing in the sky behind them, blocking out all light except for an intense, golden glow. The sound of rushing wind and distant thunder reaches a crescendo.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  },
+  {
+    "label": "conductor_final_arrival",
+    "qwen": null,
+    "video": "The train arrives at its final destination, a desolate landscape shrouded in perpetual twilight. The conductor steps out, looking around uncertainly. A faint hum fills the air as the eclipse takes hold, casting an otherworldly shadow over the world. The sound of silence is oppressive and foreboding.",
+    "audio_kind": "general_speech",
+    "moderation_category": "safe_baseline"
+  }
+]

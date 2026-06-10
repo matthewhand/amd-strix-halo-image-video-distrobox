@@ -1,0 +1,27 @@
+[
+  {
+    "label": "1_platform_boarding",
+    "qwen": "atmospheric photograph of a lone passenger in a long charcoal overcoat and small leather suitcase boarding a brass-fitted vintage steam train at a deserted gaslit countryside platform at midnight, steam billowing from the locomotive, the conductor in a long blue coat checking a pocket watch, full moon overhead, no other travelers visible",
+    "video": "the passenger steps up into the train car as the conductor tips his cap and signals with a lantern, audio is hissing steam, the deep mechanical chuff of the locomotive starting, the conductor's whistle blowing twice clearly, the iron wheels beginning to slowly turn with a heavy metallic groan, distant hoot of an owl"
+  },
+  {
+    "label": "2_window_landscape",
+    "qwen": null,
+    "video": "the passenger sits in a plush red velvet train compartment alone gazing out the rain-streaked window as moonlit pastoral countryside flows past at speed, gas lamps flickering on the walls, the rhythmic motion of the train rocking the camera gently, audio is the steady clack-clack-clack of wheels on rails, rain on glass, faint distant howl of a wolf, a soft melancholy violin melody fading in"
+  },
+  {
+    "label": "3_mysterious_passenger",
+    "qwen": null,
+    "video": "the compartment door slides open and a tall stranger in an immaculate top hat and silver-tipped cane silently enters, sitting opposite the original passenger without speaking, the stranger slowly removes white gloves revealing strange tattooed runes on the back of one hand, the gas lamp flickers oddly between them, audio is the door sliding with a soft thud, the rhythmic train motion continues, the stranger's voice asking in a velvet baritone: do you know where this train is going"
+  },
+  {
+    "label": "4_impossible_landscape",
+    "qwen": null,
+    "video": "the passenger looks out the window with widening eyes as the landscape outside has transformed: instead of countryside the train now travels through a starfield, vast cosmic clouds and floating jellyfish-like nebulae visible past the glass, the train still rocking on invisible rails, audio is the wheels still clacking but now echoing through space, distant chiming bells, the stranger humming an unidentifiable wordless tune, a deep cosmic drone underneath everything"
+  },
+  {
+    "label": "5_terminal_arrival",
+    "qwen": null,
+    "video": "the train slowly pulls into a cathedral-sized terminal station made entirely of polished obsidian and glowing crystal, hundreds of figures in long pale robes waiting motionlessly on the platform, brass clocks above showing impossible times, the camera pulls back as the passenger steps down clutching the suitcase, audio is the train brakes hissing to a stop with a long whoosh of steam, an enormous bell tolling once, the gathered figures inhaling in unison, then absolute silence broken only by the passenger's single footstep on the obsidian platform"
+  }
+]

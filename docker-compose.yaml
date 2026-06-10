@@ -1,0 +1,221 @@
+# Docker Compose v2 for AMD Strix Halo Image & Video Toolbox
+#
+# Profiles:
+#   qwen-image   → Qwen Image Studio server on :8000
+#   qwen-tts     → Qwen3-TTS server on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)
+#   comfyui      → ComfyUI server on :8188
+#   slopfinity   → Slopfinity dashboard on :9099 (see override)
+#   slop         → umbrella for the full stack (all of the above)
+#
+# Full stack:      docker compose --profile slop up -d
+# Image-only:      docker compose --profile qwen-image up -d
+# ComfyUI-only:    docker compose --profile comfyui up -d
+#
+# Override ports and paths via .env (see .env.example).
+
+services:
+  strix-halo-toolbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amd-strix-halo-image-video-toolbox:latest
+    container_name: strix-halo-toolbox
+    restart: unless-stopped
+
+    # Toolbox is a pure shell / build anchor. No profile means it starts under
+    # `docker compose up`. The real servers live in the dedicated service
+    # profiles below — use `docker exec -it strix-halo-toolbox bash` for a
+    # ROCm REPL.
+
+    # Run as host user so mounted files have correct ownership
+    user: "${UID:-1000}:${GID:-1000}"
+
+    # GPU and system access
+    network_mode: host
+    privileged: true
+    environment:
+      # Set HOME for non-root user (mount targets use this path)
+      - HOME=/home/user
+
+      # ROCm / Triton / Flash-Attention environment (CRITICAL for gfx1151)
+      # 11.5.1 is required for Strix Halo GPU operations.
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+      - FLASH_ATTENTION_TRITON_AMD_ENABLE=false
+      - QWEN_FA_SHIM=1
+      - WAN_ATTENTION_BACKEND=sdpa
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.8
+      - HIP_VISIBLE_DEVICES=0
+      - ROC_ENABLE_PRE_VEGA=1
+
+      # torchaudio linker fix
+      - LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/torch/lib:${LD_LIBRARY_PATH:-}
+
+      # Explicitly point to CLI wrapper
+      - QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps.py
+
+      # Fast model downloads
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+
+      # Service Configuration (set to 0 to disable in start_docker.sh)
+      # - QWEN_PORT=8000
+      # - COMFYUI_PORT=8188
+
+    volumes:
+      # GPU device access
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+
+      # Persist models and outputs (override paths in .env)
+      - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
+      - ${QWEN_OUTPUTS:-./qwen-outputs}:/home/user/.qwen-image-studio
+      - ${WAN_MODELS:-./wan-models}:/home/user/wan-models
+      - ${COMFY_MODELS:-./comfy-models}:/opt/ComfyUI/models
+      - ${COMFY_INPUT:-./comfy-input}:/opt/ComfyUI/input
+      - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
+      - ./scripts/start_docker.sh:/opt/start_docker.sh:ro
+
+    security_opt:
+      - seccomp:unconfined
+
+    working_dir: /workspace
+
+    # Toolbox is now a pure shell. Real servers live in qwen-image-service
+    # and comfyui-service (see below). Keeping /opt/start_docker.sh mounted
+    # for manual invocation if someone needs the legacy all-in-one behavior.
+    command: ["tail", "-f", "/dev/null"]
+
+  # Qwen-Image-only service profile. Separate from qwen-tts (P4, port 8010)
+  # so the profile name reflects modality. Mutually exclusive with a toolbox
+  # running start_docker.sh on :8000 — pre-flight guard below exits cleanly
+  # if the port is already bound.
+  qwen-image-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-qwen-image
+    profiles:
+      - qwen-image
+      - slop
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/8000) 2>/dev/null ; then
+          echo 'ERROR: Port 8000 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+          echo '       Stop the other Qwen server first, or change QWEN_PORT.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        echo '🎨 Starting Qwen Image Studio...'
+        if [ -f /opt/qwen_launcher.py ] && [ -f /opt/qwen-image-studio/qwen-image-studio/server.py ]; then
+          cp /opt/qwen_launcher.py /opt/qwen-image-studio/qwen-image-mps.py
+        fi
+        cd /opt/qwen-image-studio/qwen-image-studio
+        exec uvicorn server:app --host 0.0.0.0 --port 8000
+      "
+
+  # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so
+  # you can run TTS independently. Enforces HSA_OVERRIDE_GFX_VERSION=11.0.0
+  # (NOT the 11.5.1 used by the rest of the stack — the TTS model's kernels
+  # regress under 11.5.1 on gfx1151).
+  qwen-tts-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-qwen-tts
+    profiles:
+      - qwen-tts
+      - slop
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      # Redirect HuggingFace cache to a writable bind-mounted path. The default
+      # /home/user/.cache/huggingface is read-only for the container UID once
+      # the model tries to materialize the CustomVoice subdir, causing every
+      # /tts call to crash with PermissionError. /workspace is the slopfinity
+      # bind mount of ./comfy-outputs/experiments on the host.
+      - HF_HOME=/workspace/.hf-tts-cache
+      # USER + LOGNAME — Qwen3-TTS's CustomVoice loader calls
+      # `getpass.getuser()` to derive a sanitized voice-bank dirname.
+      # In containers without /etc/passwd entries for the runtime UID
+      # (or with USER/LOGNAME unset), getpass raises
+      # `OSError: No username set in the environment`, returning HTTP
+      # 500 on every /tts request. Setting either env var resolves
+      # without needing to rebuild the image. "slopfinity" is just a
+      # stable identifier — the dirname becomes
+      # /workspace/.hf-tts-cache/.../slopfinity_<voice>/.
+      - USER=slopfinity
+      - LOGNAME=slopfinity
+    volumes:
+      - ./comfy-outputs/experiments:/workspace
+      - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
+      - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
+      - ./scripts/kokoro_tts_launcher.py:/opt/kokoro_tts_launcher.py:ro
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/8010) 2>/dev/null ; then
+          echo 'ERROR: Port 8010 is already bound.' 1>&2
+          echo '       Stop the other TTS worker first, or change TTS_PORT.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        # /workspace/tts is the bind-mount that the slopfinity dashboard
+        # serves at /files/tts/<name>. The compose `mkdir -p` is
+        # idempotent; the chown attempt is best-effort (it works for
+        # the first container ever to run with this UID, but if the
+        # host dir is already owned by a different UID, the in-
+        # container chown can't escalate).
+        #
+        # Operator one-time setup (only if /tts files end up at
+        # /tmp/slopfinity-tts/ instead of /workspace/tts/):
+        #   sudo chown -R $(id -u):$(id -g) ./comfy-outputs/experiments/tts
+        # The dashboard's /files/tts/<name> route reads from EXP_DIR
+        # on the host; if the chown isn't done, _first_writable in
+        # qwen_tts_serve.py falls back to /tmp/slopfinity-tts inside
+        # the container — files are generated but the dashboard can't
+        # serve them.
+        mkdir -p /workspace/tts && chown -R $(id -u):$(id -g) /workspace/tts 2>/dev/null || true
+        # Multi-engine TTS: kokoro-onnx is the default (CPU, no ROCm
+        # kernel issues on gfx1151) and is pip-installed on every
+        # container start since the toolbox image doesn't bake it in.
+        # Persists as long as the container's overlay fs lives; recreate
+        # = reinstall (~10s, cheap).
+        echo '📦 Installing kokoro-onnx (default engine)...'
+        pip install --quiet kokoro-onnx || echo 'WARN: kokoro install failed; only qwen path will work'
+        # Force the worker to use /workspace/tts so files are served by
+        # the dashboard at /files/tts/<name>. Avoids the /tmp fallback.
+        export TTS_OUT_DIR=/workspace/tts
+        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro, out=/workspace/tts)...'
+        exec python3 /opt/qwen_tts_serve.py
+      "
+
+  # ComfyUI-only service profile. Mutually exclusive with a toolbox running
+  # start_docker.sh on :8188.
+  comfyui-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-comfyui
+    profiles:
+      - comfyui
+      - slop
+    # ROOT user is required for torch+ROCm to enumerate the GPU. Even with
+    # /dev/kfd mode 666 + privileged + render-group membership, AMDGPU's
+    # init blocks non-root processes (`torch.cuda.is_available() → False` as
+    # uid 1000, True as uid 0). The toolbox container can run unprivileged
+    # because qwen-image-mps does its own GPU init dance, but ComfyUI hits
+    # the device-enumeration path at module-import time.
+    user: "0:0"
+    # `USER` must be set so torch._dynamo's cache_dir() can call getpass.getuser()
+    # without raising — was crash-looping on `OSError: No username set`.
+    environment:
+      - USER=root
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/8188) 2>/dev/null ; then
+          echo 'ERROR: Port 8188 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+          echo '       Stop the other ComfyUI server first.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        echo '🖼️  Starting ComfyUI (FP16 weights, FP32 VAE)...'
+        cd /opt/ComfyUI
+        # --fp32-vae: forces every VAE decode to fp32 regardless of the
+        #   model's native dtype. On Strix Halo (gfx1151) bf16/fp16 VAE
+        #   decodes produce a faint 8/16-px block-grid pattern in some
+        #   models (LTX-Video-2.3 especially); fp32 eliminates it. Costs
+        #   ~2× VAE-decode VRAM, fine on UMA. See README §14 + the
+        #   slop-card "⚠ vae grid" chip's tooltip for context.
+        exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16 --fp32-vae
+      "
