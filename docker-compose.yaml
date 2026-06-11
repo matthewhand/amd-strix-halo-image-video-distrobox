@@ -182,6 +182,38 @@ services:
         exec python3 /opt/qwen_tts_serve.py
       "
 
+  # HeartMuLa music worker on :8011 (scripts/heartmula_serve.py). Opt-in
+  # profile (NOT in `slop`): the worker subprocesses the launcher per request
+  # — same cost as the legacy `docker run --rm` path run_fleet uses when
+  # HEARTMULA_URL is unset, so only run it if you've pointed run_fleet at it
+  # (HEARTMULA_URL=http://localhost:8011/music).
+  heartmula-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-heartmula
+    profiles:
+      - heartmula
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+      - HEARTMULA_OUT_DIR=/workspace/music
+    volumes:
+      - ./comfy-outputs/experiments:/workspace
+      - ./scripts/heartmula_launcher.py:/opt/heartmula_launcher.py:ro
+      - ./scripts/heartmula_serve.py:/opt/heartmula_serve.py:ro
+      - /mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/8011) 2>/dev/null ; then
+          echo 'ERROR: Port 8011 is already bound.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        # /workspace/music is served by the dashboard at /files/music/<name>;
+        # run_fleet resolves the worker's returned URL back to this dir.
+        mkdir -p /workspace/music && chown -R $(id -u):$(id -g) /workspace/music 2>/dev/null || true
+        echo '🎼 Starting HeartMuLa music worker on :8011 (out=/workspace/music)...'
+        exec python3 /opt/heartmula_serve.py
+      "
+
   # ComfyUI-only service profile. Mutually exclusive with a toolbox running
   # start_docker.sh on :8188.
   comfyui-service:
