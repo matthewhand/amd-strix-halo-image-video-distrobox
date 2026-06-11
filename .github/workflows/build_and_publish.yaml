@@ -9,7 +9,7 @@ on:
         default: "latest"
 
 env:
-  IMAGE_REPO: kyuz0/amd-strix-halo-image-video
+  IMAGE_REPO: matthewhand/amd-strix-halo-image-video
   DOCKER_BUILDKIT: "1"
 
 jobs:
