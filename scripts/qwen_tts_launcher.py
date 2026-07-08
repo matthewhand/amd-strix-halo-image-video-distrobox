@@ -5,9 +5,11 @@ Usage:
     python3 qwen_tts_launcher.py --text "hello world" --voice ryan --out /path/out.wav \
         [--model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice]
 
-Forces HSA_OVERRIDE_GFX_VERSION=11.0.0 (required for this model on gfx1151 —
-NOT 11.5.1 like the rest of the stack) and attn_implementation="sdpa"
-(flash-attn-2 does not build on gfx1151 for Qwen3-TTS).
+Forces HSA_OVERRIDE_GFX_VERSION=11.5.1 (native gfx1151 — the old 11.0.0/gfx1100
+value loads kernels for the wrong arch and throws hipErrorInvalidImage on first
+generate) and attn_implementation="eager" (flash-attn-2 / the precompiled SDPA
+path do not work on gfx1151 for Qwen3-TTS). After moving the model to GPU we
+re-sync the wrapper's cached `.device` so input_ids land on cuda, not cpu.
 
 Weights are resumably downloaded via huggingface_hub.snapshot_download to
 ${HF_HOME:-~/.cache/huggingface}. A disk-space pre-flight guard aborts with
@@ -24,8 +26,12 @@ import shutil
 import sys
 import traceback
 
-# Force gfx1151-compatible ROCm env BEFORE torch imports.
-os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+# Force gfx1151-compatible ROCm env BEFORE torch imports. gfx1151 (Strix Halo)
+# is RDNA 3.5 → 11.5.1; the old 11.0.0 (gfx1100) value loads kernels for the
+# wrong arch and the first generate() throws hipErrorInvalidImage. 11.5.1 is the
+# value the working heartmula launcher uses. Force it (the TTS server inherits a
+# stale 11.0.0 in its env, so this must overwrite, not setdefault).
+os.environ["HSA_OVERRIDE_GFX_VERSION"] = os.environ.get("QWEN_TTS_GFX_OVERRIDE", "11.5.1")
 
 MIN_FREE_GB = 15
 DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
@@ -67,32 +73,59 @@ def synthesize(text: str, voice: str, out_path: str, model_id: str) -> None:
     local_dir = _snapshot(model_id, cache_dir)
     print(f"[qwen-tts] weights at {local_dir}", file=sys.stderr)
 
-    # Deferred imports so --help works without torch present.
+    # Qwen3-TTS is loaded via the official `qwen-tts` package (NOT
+    # transformers.AutoModel) — `qwen3_tts` model_type isn't registered
+    # in transformers' CONFIG_MAPPING upstream as of 5.8.0.dev0, and
+    # the snapshot ships no remote modeling*.py for trust_remote_code
+    # to use. The qwen_tts package provides Qwen3TTSModel.from_pretrained
+    # which registers the model class internally before delegating
+    # to AutoModel under the hood. See:
+    # https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+    # ("During model loading in the qwen-tts package or vLLM, model
+    # weights will be automatically downloaded...")
     import torch  # type: ignore
-    from transformers import AutoModel, AutoProcessor  # type: ignore
+    from qwen_tts import Qwen3TTSModel  # type: ignore
 
     dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    processor = AutoProcessor.from_pretrained(local_dir, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
+    # `eager` routes around an SDPA kernel-image mismatch on Strix Halo
+    # gfx1151 even with HSA_OVERRIDE_GFX_VERSION=11.0.0 set: the
+    # qwen-tts package's precompiled SDPA path raises
+    # `hipErrorInvalidImage` on first generation. eager attention
+    # uses the manual PyTorch path that compiles per-arch on first
+    # forward — slower but functional.
+    attn = os.environ.get("QWEN_TTS_ATTN", "eager")
+    model = Qwen3TTSModel.from_pretrained(
         local_dir,
         torch_dtype=dtype,
-        trust_remote_code=True,
-        attn_implementation="sdpa",
-    ).to(device).eval()
+        attn_implementation=attn,
+    )
+    if hasattr(model, "model"):
+        model.model = model.model.to(device).eval()
+    # The wrapper caches `self.device` at from_pretrained time (cpu, since HF
+    # loads to cpu first). We just moved the weights to `device`, so re-sync the
+    # cached device — otherwise _tokenize_texts() puts input_ids on the stale
+    # cpu device while the embedding weights are on cuda → device-mismatch.
+    try:
+        model.device = torch.device(device)
+        proc = getattr(model, "processor", None)
+        if proc is not None and hasattr(proc, "device"):
+            proc.device = torch.device(device)
+    except Exception:
+        pass
 
-    inputs = processor(text=text, voice=voice, return_tensors="pt").to(device)
-    with torch.inference_mode():
-        audio = model.generate(**inputs)
-
-    # audio is typically a tensor on device; move to CPU float32 for wav writing.
-    if hasattr(audio, "cpu"):
-        wav = audio.cpu().float().numpy().squeeze()
-    else:
-        wav = audio
-
-    sr = getattr(model.config, "sampling_rate", None) or getattr(processor, "sampling_rate", 24000)
+    # CustomVoice models accept `speaker` (one of 9 premium timbres) +
+    # optional `language` hint. The legacy `voice` arg in this launcher's
+    # CLI maps to `speaker`. generate_custom_voice returns
+    # (List[np.ndarray], sample_rate).
+    wavs, sr = model.generate_custom_voice(
+        text=text,
+        speaker=voice,
+    )
+    if not wavs:
+        raise RuntimeError("qwen_tts returned empty wav list")
+    wav = wavs[0]
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     import wave

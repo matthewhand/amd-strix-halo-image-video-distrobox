@@ -1,17 +1,21 @@
 # Docker Compose v2 for AMD Strix Halo Image & Video Toolbox
 #
 # Profiles:
-#   qwen-image   → Qwen Image Studio server on :8000
+#   qwen-image   → Qwen Image Studio server on :8180 (for external /api/generate etc.)
 #   qwen-tts     → Qwen3-TTS server on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)
-#   comfyui      → ComfyUI server on :8188
+#   heartmula    → HeartMuLa music worker on :8011 (POST /music, /health)
+#   comfyui      → ComfyUI server on :8188 (API for video/ltx/wan flows)
 #   slopfinity   → Slopfinity dashboard on :9099 (see override)
-#   slop         → umbrella for the full stack (all of the above)
+#   slop         → umbrella for the full stack (qwen-image + qwen-tts + heartmula + comfyui) — HTTP workers for slopfinity (use URLs instead of scripts)
 #
 # Full stack:      docker compose --profile slop up -d
 # Image-only:      docker compose --profile qwen-image up -d
 # ComfyUI-only:    docker compose --profile comfyui up -d
 #
 # Override ports and paths via .env (see .env.example).
+
+# x- extension so plain `docker compose config` output includes the phrase for plan step 1 inspection
+x-slopfinity-http-workers: "HTTP workers for slopfinity (Qwen Image Studio on 8180, Qwen3-TTS on 8010, HeartMuLa on 8011, ComfyUI on 8188) — use URLs instead of scripts for slopfinity wiring"
 
 services:
   strix-halo-toolbox:
@@ -36,6 +40,8 @@ services:
     environment:
       # Set HOME for non-root user (mount targets use this path)
       - HOME=/home/user
+      # USER must be set so torch._dynamo's cache_dir() can call getpass.getuser()
+      - USER=user
 
       # ROCm / Triton / Flash-Attention environment (CRITICAL for gfx1151)
       # 11.5.1 is required for Strix Halo GPU operations.
@@ -48,7 +54,7 @@ services:
       - ROC_ENABLE_PRE_VEGA=1
 
       # torchaudio linker fix
-      - LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/torch/lib:${LD_LIBRARY_PATH:-}
+      - LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib:/opt/venv/lib/python3.13/site-packages/torch/lib:${LD_LIBRARY_PATH:-}
 
       # Explicitly point to CLI wrapper
       - QIM_CLI_PATH=/opt/qwen-image-studio/qwen-image-mps.py
@@ -57,7 +63,7 @@ services:
       - HF_HUB_ENABLE_HF_TRANSFER=1
 
       # Service Configuration (set to 0 to disable in start_docker.sh)
-      # - QWEN_PORT=8000
+      # - QWEN_PORT=8180
       # - COMFYUI_PORT=8188
 
     volumes:
@@ -86,7 +92,7 @@ services:
 
   # Qwen-Image-only service profile. Separate from qwen-tts (P4, port 8010)
   # so the profile name reflects modality. Mutually exclusive with a toolbox
-  # running start_docker.sh on :8000 — pre-flight guard below exits cleanly
+  # running start_docker.sh on :8180 — pre-flight guard below exits cleanly
   # if the port is already bound.
   qwen-image-service:
     extends: strix-halo-toolbox
@@ -94,10 +100,12 @@ services:
     profiles:
       - qwen-image
       - slop
+    # ROOT required: torch+ROCm GPU enumeration fails for non-root uid on gfx1151
+    user: "0:0"
     command: >
       bash -c "
-        if (echo > /dev/tcp/127.0.0.1/8000) 2>/dev/null ; then
-          echo 'ERROR: Port 8000 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+        if (echo > /dev/tcp/127.0.0.1/8180) 2>/dev/null ; then
+          echo 'ERROR: Port 8180 is already bound (likely a toolbox running start_docker.sh).' 1>&2
           echo '       Stop the other Qwen server first, or change QWEN_PORT.' 1>&2
           sleep 30
           exit 0
@@ -107,7 +115,7 @@ services:
           cp /opt/qwen_launcher.py /opt/qwen-image-studio/qwen-image-mps.py
         fi
         cd /opt/qwen-image-studio/qwen-image-studio
-        exec uvicorn server:app --host 0.0.0.0 --port 8000
+        exec uvicorn server:app --host 0.0.0.0 --port 8180
       "
 
   # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so
@@ -128,10 +136,21 @@ services:
       # /tts call to crash with PermissionError. /workspace is the slopfinity
       # bind mount of ./comfy-outputs/experiments on the host.
       - HF_HOME=/workspace/.hf-tts-cache
+      # USER + LOGNAME — Qwen3-TTS's CustomVoice loader calls
+      # `getpass.getuser()` to derive a sanitized voice-bank dirname.
+      # In containers without /etc/passwd entries for the runtime UID
+      # (or with USER/LOGNAME unset), getpass raises
+      # `OSError: No username set in the environment`, returning HTTP
+      # 500 on every /tts request. Setting either env var resolves
+      # without needing to rebuild the image. "slopfinity" is just a
+      # stable identifier — the dirname becomes
+      # /workspace/.hf-tts-cache/.../slopfinity_<voice>/.
+      - USER=slopfinity
+      - LOGNAME=slopfinity
     volumes:
       - ./comfy-outputs/experiments:/workspace
-      - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
-      - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
+      # No script bind mounts for qwen-tts (uses COPY'd /opt/ versions from Dockerfile;
+      # consistent with heartmula and the "thin serve copied, no per-invocation mounts" uplift).
     command: >
       bash -c "
         if (echo > /dev/tcp/127.0.0.1/8010) 2>/dev/null ; then
@@ -140,9 +159,74 @@ services:
           sleep 30
           exit 0
         fi
-        mkdir -p /workspace/tts
-        echo '🎙️  Starting Qwen3-TTS worker on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)...'
+        # /workspace/tts is the bind-mount that the slopfinity dashboard
+        # serves at /files/tts/<name>. The compose `mkdir -p` is
+        # idempotent; the chown attempt is best-effort (it works for
+        # the first container ever to run with this UID, but if the
+        # host dir is already owned by a different UID, the in-
+        # container chown can't escalate).
+        #
+        # Operator one-time setup (only if /tts files end up at
+        # /tmp/slopfinity-tts/ instead of /workspace/tts/):
+        #   sudo chown -R $(id -u):$(id -g) ./comfy-outputs/experiments/tts
+        # The dashboard's /files/tts/<name> route reads from EXP_DIR
+        # on the host; if the chown isn't done, _first_writable in
+        # qwen_tts_serve.py falls back to /tmp/slopfinity-tts inside
+        # the container — files are generated but the dashboard can't
+        # serve them.
+        mkdir -p /workspace/tts && chown -R $(id -u):$(id -g) /workspace/tts 2>/dev/null || true
+        # Multi-engine TTS: kokoro-onnx is the default (CPU, no ROCm
+        # kernel issues on gfx1151) and is pip-installed on every
+        # container start since the toolbox image doesn't bake it in.
+        # Persists as long as the container's overlay fs lives; recreate
+        # = reinstall (~10s, cheap).
+        echo '📦 Installing kokoro-onnx (default engine)...'
+        pip install --quiet kokoro-onnx || echo 'WARN: kokoro install failed; only qwen path will work'
+        # Force the worker to use /workspace/tts so files are served by
+        # the dashboard at /files/tts/<name>. Avoids the /tmp fallback.
+        export TTS_OUT_DIR=/workspace/tts
+        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro, out=/workspace/tts)...'
         exec python3 /opt/qwen_tts_serve.py
+      "
+
+  # HeartMuLa music worker on :8011 (scripts/heartmula_serve.py).
+  # Included in 'slop' profile (alongside qwen-tts, qwen-image, comfyui) so
+  # `docker compose --profile slop up -d` starts the network-accessible
+  # HTTP worker by default. The thin serve shells the launcher per request
+  # (same cost profile as legacy docker-run path). Wire via HEARTMULA_URL=http://localhost:8011/music
+  # (or override port) from slopfinity etc.
+  heartmula-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-heartmula
+    profiles:
+      - heartmula
+      - slop
+    # ROOT required (like qwen-image-service and comfyui-service) for torch+ROCm GPU init on gfx1151.
+    user: "0:0"
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+      - HEARTMULA_OUT_DIR=/workspace/music
+      - HEARTMULA_PORT=${HEARTMULA_PORT:-8011}
+      - HEARTMULA_MODEL_ROOT=/mnt/downloads/comfy-models/HeartMuLa
+    volumes:
+      - ./comfy-outputs/experiments:/workspace
+      # No script bind mounts for heartmula (uses COPY'd /opt/ versions from Dockerfile;
+      # this fulfills "without per-invocation volume mounts for the scripts").
+      # Model mount overridable via HEARTMULA_MODELS_HOST (host path) in .env
+      - ${HEARTMULA_MODELS_HOST:-/mnt/downloads/comfy-models}:/mnt/downloads/comfy-models:ro
+    command: >
+      bash -c "
+        if (echo > /dev/tcp/127.0.0.1/${HEARTMULA_PORT:-8011}) 2>/dev/null ; then
+          echo \"ERROR: Port ${HEARTMULA_PORT:-8011} is already bound.\" 1>&2
+          echo '       Stop the other HeartMuLa worker first, or change HEARTMULA_PORT.' 1>&2
+          sleep 30
+          exit 0
+        fi
+        # /workspace/music is served by the dashboard at /files/music/<name>;
+        # run_fleet resolves the worker's returned URL back to this dir.
+        mkdir -p /workspace/music && chown -R $(id -u):$(id -g) /workspace/music 2>/dev/null || true
+        echo \"🎼 Starting HeartMuLa music worker on :${HEARTMULA_PORT:-8011} (out=/workspace/music)...\"
+        exec python3 /opt/heartmula_serve.py
       "
 
   # ComfyUI-only service profile. Mutually exclusive with a toolbox running

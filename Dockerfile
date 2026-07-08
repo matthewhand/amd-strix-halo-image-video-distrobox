@@ -31,7 +31,12 @@ COPY scripts/apply_qwen_patches.py /opt/
 COPY scripts/start_docker.sh /opt/
 COPY scripts/qwen_launcher.py /opt/
 COPY scripts/qwen_tts_launcher.py /opt/
+COPY scripts/kokoro_tts_launcher.py /opt/
 COPY scripts/qwen_tts_serve.py /opt/
+COPY scripts/heartmula_launcher.py /opt/
+COPY scripts/heartmula_serve.py /opt/
+COPY scripts/http_worker_app.py /opt/
+COPY scripts/slopfinity_http.py /opt/
 COPY scripts/wan_launcher.py /opt/
 COPY scripts/test_wan_permutations.py /opt/
 COPY scripts/download_wan_cli.sh /opt/
@@ -91,7 +96,15 @@ RUN python -m pip install --no-deps -e /opt/heartlib && \
     pip install --no-deps torchtune==0.4.0 torchao==0.9.0 vector_quantize_pytorch omegaconf 'antlr4-python3-runtime==4.9.*' && \
     pip install pyarrow dill multiprocess xxhash tiktoken sentencepiece blobfile einx && \
     pip install --no-deps 'datasets>=2.16.0' fsspec aiohttp 'huggingface-hub>=0.20.0' filelock packaging requests tqdm pyyaml typing-extensions && \
+    pip install sqlmodel && \
     python -c "from heartlib import HeartMuLaGenPipeline" || echo "WARN: heartlib import failed"
+
+# Qwen3-TTS engine. --no-deps so its pinned transformers==4.57.3 / accelerate /
+# torch don't clobber the ROCm torch + image-model stack (already satisfied).
+# gradio/sox extras are demo-only and not needed for Qwen3TTSModel inference.
+# Runs on gfx1151 via HSA_OVERRIDE_GFX_VERSION=11.5.1 (set in qwen_tts_launcher.py).
+RUN pip install --no-deps qwen-tts && \
+    python -c "from qwen_tts import Qwen3TTSModel" 2>/dev/null || echo "WARN: qwen-tts import failed"
 
 # Permissions & trims (keep compilers/headers)
 RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
