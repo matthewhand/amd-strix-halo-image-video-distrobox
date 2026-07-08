@@ -15,8 +15,11 @@ Output asset path is written to `item.stages.image.asset`.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
+import urllib.error
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 from ._compat import StageWorker, config_snapshot_get, item_v_idx, stage_get
@@ -104,6 +107,71 @@ class ImageWorker(StageWorker):
         if not prompt:
             return {"ok": False, "output": None, "asset": None,
                     "error": "image worker: empty prompt (concept stage missing?)"}
+
+        mode = (os.environ.get("SLOPFINITY_IMAGE_MODE") or "http").lower()
+        if mode != "docker":
+            try:
+                from .. import service_registry as _svc
+                ens = await asyncio.to_thread(_svc.ensure_for_stage, "image", self.model or "qwen")
+                if not ens.get("ok") and not ens.get("skipped"):
+                    return {"ok": False, "output": None, "asset": None,
+                            "error": f"image ensure failed: {ens}", "steps": steps, "model": self.model}
+
+                base = _svc.base_url_for("qwen-image") or os.environ.get(
+                    "IMAGE_API_URL", "http://127.0.0.1:8180"
+                )
+                base = base.rstrip("/")
+                # Qwen Image Studio style: POST /api/generate (best-effort contract)
+                url = base if base.endswith("/api/generate") else f"{base}/api/generate"
+                payload = json.dumps({
+                    "prompt": prompt,
+                    "steps": steps,
+                    "num_images": 1,
+                }).encode("utf-8")
+
+                def _post():
+                    req = urllib.request.Request(
+                        url, data=payload,
+                        headers={"Content-Type": "application/json"}, method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=600) as r:
+                        return r.read(), getattr(r, "status", 200)
+
+                if acquire_gpu is None:
+                    raw, status = await asyncio.to_thread(_post)
+                else:
+                    async with acquire_gpu("Base Image", self.model):
+                        raw, status = await asyncio.to_thread(_post)
+
+                # If API returns JSON job envelope, surface it; if raw image, write out_path.
+                try:
+                    data = json.loads(raw.decode("utf-8"))
+                    return {
+                        "ok": True,
+                        "output": data.get("path") or data.get("url") or out_path,
+                        "asset": data.get("path") or out_path,
+                        "http": True,
+                        "job": data,
+                        "steps": steps,
+                        "model": self.model,
+                    }
+                except Exception:
+                    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+                    with open(out_path, "wb") as f:
+                        f.write(raw)
+                    ok = os.path.getsize(out_path) > 0
+                    return {
+                        "ok": ok,
+                        "output": out_path if ok else None,
+                        "asset": out_path if ok else None,
+                        "http": True,
+                        "steps": steps,
+                        "model": self.model,
+                    }
+            except Exception as exc:
+                if mode == "http":
+                    return {"ok": False, "output": None, "asset": None,
+                            "error": f"image http error: {exc}", "steps": steps, "model": self.model}
 
         cmd = _docker_cmd(prompt, steps, out_path)
 

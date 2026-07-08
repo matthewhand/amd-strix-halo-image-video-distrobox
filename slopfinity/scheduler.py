@@ -471,6 +471,32 @@ async def acquire_gpu(
     except Exception:
         sus_results = []
 
+    # Ensure the pipeline network worker for this stage is up (lifecycle only;
+    # generation still goes over HTTP). See docs/network-service-lifecycle-design.md.
+    try:
+        from . import service_registry as _svc
+        ens = await asyncio.to_thread(_svc.ensure_for_stage, stage, model or "")
+        if ens and not ens.get("skipped"):
+            await _emit(
+                {
+                    "type": "service_ensure",
+                    "stage": stage,
+                    "model": model,
+                    "result": ens,
+                    "ts": _now(),
+                }
+            )
+    except Exception as _ens_ex:
+        await _emit(
+            {
+                "type": "service_ensure",
+                "stage": stage,
+                "model": model,
+                "error": str(_ens_ex),
+                "ts": _now(),
+            }
+        )
+
     peak_before = _mem_available_gb()
     start = _now()
     try:

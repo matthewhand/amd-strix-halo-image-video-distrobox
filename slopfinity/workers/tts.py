@@ -72,6 +72,17 @@ class TTSWorker(StageWorker):
             return {"ok": False, "output": None, "asset": None,
                     "error": "tts worker: empty text"}
 
+        # Lifecycle: start TTS container if health probe fails.
+        try:
+            from .. import service_registry as _svc
+            ens = await asyncio.to_thread(_svc.ensure_for_stage, "tts", "kokoro")
+            if not ens.get("ok") and not ens.get("skipped"):
+                return {"ok": False, "output": None, "asset": None,
+                        "error": f"tts ensure failed: {ens}"}
+        except Exception as exc:
+            return {"ok": False, "output": None, "asset": None,
+                    "error": f"tts ensure error: {exc}"}
+
         body = await self._post({"text": text, "voice": voice})
         if body is None:
             return {"ok": False, "output": None, "asset": None,

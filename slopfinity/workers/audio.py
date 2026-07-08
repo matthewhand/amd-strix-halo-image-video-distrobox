@@ -53,6 +53,54 @@ class AudioWorker(StageWorker):
         )
         out_path = os.path.join(out_dir, f"v{v_idx}_audio.wav")
 
+        mode = (os.environ.get("SLOPFINITY_AUDIO_MODE") or "http").lower()
+        if mode != "docker":
+            try:
+                from .. import service_registry as _svc
+                import asyncio
+                import json
+                import urllib.request
+
+                ens = await asyncio.to_thread(_svc.ensure_for_stage, "audio", "heartmula")
+                if not ens.get("ok") and not ens.get("skipped"):
+                    return {"ok": False, "error": f"heartmula ensure failed: {ens}"}
+
+                base = _svc.base_url_for("heartmula") or os.environ.get("HEARTMULA_URL", "http://127.0.0.1:8011")
+                base = base.rstrip("/")
+                url = base if base.endswith("/music") else f"{base}/music"
+                payload = json.dumps({"prompt": prompt, "duration": 30}).encode("utf-8")
+                req = urllib.request.Request(
+                    url, data=payload,
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+
+                def _post():
+                    with urllib.request.urlopen(req, timeout=600) as r:
+                        return r.read()
+
+                raw = await asyncio.to_thread(_post)
+                # JSON envelope {ok, url} or raw wav
+                try:
+                    data = json.loads(raw.decode("utf-8"))
+                    if not data.get("ok", True):
+                        return {"ok": False, "error": data.get("error") or str(data)}
+                    # Worker may write under shared workspace; prefer returned path/url.
+                    # If only relative url, leave asset to dashboard files route.
+                    asset = data.get("audio_path") or data.get("path") or out_path
+                    if data.get("url") and not os.path.exists(str(asset)):
+                        return {"ok": True, "asset": out_path, "url": data.get("url"), "http": True}
+                    return {"ok": True, "asset": asset, "http": True}
+                except Exception:
+                    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+                    with open(out_path, "wb") as f:
+                        f.write(raw)
+                    return {"ok": os.path.getsize(out_path) > 0, "asset": out_path, "http": True}
+            except Exception as exc:
+                if mode == "http":
+                    return {"ok": False, "error": f"heartmula http error: {exc}"}
+                # fall through to docker mode on hybrid
+                pass
+
         # Lazy import (only when we actually have a prompt to generate from)
         # avoids a circular import and keeps the skip path above dependency-free.
         from slopfinity.workers import run_audio_heartmula

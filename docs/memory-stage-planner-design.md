@@ -165,3 +165,7 @@ sequence from `cfg.load_config()` + `cfg.get_queue()` and passes
   step; never an OOM
 - never evicts a model that's about to be used in the next step (MIN
   guarantees this, the test asserts it)
+
+## Related: network service lifecycle
+
+When `use_planner` is on, **load** decisions should map to `service_registry.ensure_up` and **evict** to `ensure_down` for network-backed stages (see [network-service-lifecycle-design.md](network-service-lifecycle-design.md)). The pure planner remains I/O-free; the scheduler/registry performs docker lifecycle.

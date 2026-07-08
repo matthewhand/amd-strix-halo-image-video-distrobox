@@ -118,3 +118,7 @@ code along forever.
 - A "test" button per entry. Worth adding later but not needed for v1.
 - Conditional methods (e.g. "only suspend if stage budget > N GB").
   Add if real usage motivates it.
+
+## Related: network service lifecycle
+
+Pipeline workers (Qwen Image / TTS / HeartMuLa / ComfyUI) are **ensured** by [`network-service-lifecycle-design.md`](network-service-lifecycle-design.md) (`service_registry.ensure_up` / `ensure_down`). Auto-suspend continues to park **non-pipeline competitors** (e.g. LM Studio). Do not enable `docker_stop` on the same containers in both systems.

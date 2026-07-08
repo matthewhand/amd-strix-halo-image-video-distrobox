@@ -142,6 +142,20 @@ async def emergency_free_endpoint():
     result = await sched.emergency_free()
     return {"ok": True, **result}
 
+
+
+@router.get("/services")
+async def services_status():
+    """Probe network workers (qwen-image/tts/heartmula/comfy) for dashboard."""
+    try:
+        from .. import service_registry as _svc
+        return {"ok": True, "services": _svc.status_all()}
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "error": str(exc)},
+            status_code=500,
+        )
+
 @router.get("/scheduler/status")
 async def scheduler_status():
     """Snapshot of the scheduler: pause state + queue depth."""

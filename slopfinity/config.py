@@ -191,6 +191,15 @@ DEFAULT_AUTO_SUSPEND = [
      "method": "sigstop", "process_name": "ollama", "command": ""},
 ]
 
+
+# Network HTTP workers (lifecycle ensure/stop). See docs/network-service-lifecycle-design.md
+try:
+    from .service_registry import DEFAULT_NETWORK_SERVICES, merge_network_services
+except Exception:  # pragma: no cover
+    DEFAULT_NETWORK_SERVICES = []
+    def merge_network_services(stored):
+        return list(stored or [])
+
 DEFAULT_CONFIG = {
     "base_model": "ltx-2.3",
     "video_model": "ltx-2.3",
@@ -244,6 +253,7 @@ DEFAULT_CONFIG = {
     "quality_score": 5,
     "concurrency_budget_gb": 0.0,
     "auto_suspend": DEFAULT_AUTO_SUSPEND,
+    "network_services": list(DEFAULT_NETWORK_SERVICES),
     "scheduler": DEFAULT_SCHEDULER,
     # Gate for cloud LLM endpoints in the Settings → LLM provider dropdown.
     # Slopfinity ships local-only by default (False); flipping this on
@@ -348,6 +358,7 @@ def load_config():
                 for k, v in DEFAULT_CONFIG.items():
                     if k not in c: c[k] = v
                 c["auto_suspend"] = _merge_auto_suspend(c.get("auto_suspend"))
+                c["network_services"] = merge_network_services(c.get("network_services"))
                 # Merge scheduler defaults so older configs gain new keys.
                 stored_sched = c.get("scheduler") if isinstance(c.get("scheduler"), dict) else {}
                 c["scheduler"] = {**DEFAULT_SCHEDULER, **stored_sched}
@@ -356,6 +367,7 @@ def load_config():
     return dict(
         DEFAULT_CONFIG,
         auto_suspend=list(DEFAULT_AUTO_SUSPEND),
+        network_services=list(DEFAULT_NETWORK_SERVICES),
         scheduler=dict(DEFAULT_SCHEDULER),
     )
 
