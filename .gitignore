@@ -95,3 +95,17 @@ dist/
 # Local devs running `npx playwright test` won't generate these unless
 # they set CI=1, but the dir is conventional — gitignore it.
 artifacts/
+
+# Local tool / test noise (regenerable)
+.coverage
+.coverage.*
+htmlcov/
+.kilo/
+.gemini/
+.trash/
+
+# One-off PR screenshot dumps (keep intentionally named docs/ assets instead)
+.github/pr-screenshots/
+
+# Large voice samples — point DRAMABOX_VOICES_DIR at a host path instead of committing WAVs
+scripts/dramabox_voices/
