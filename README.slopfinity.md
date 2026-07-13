@@ -2,9 +2,23 @@
 
 > A self-hosted dashboard for orchestrating local generative-AI fleets — image, video, music, voice — into chained "stories" or one-shot drops. Comfy slop, made queueable.
 
-[![Demo bundle](https://img.shields.io/badge/demo-online-ff79c6)](https://matthewhand.github.io/amd-strix-halo-image-video-distrobox/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Demo bundle](https://img.shields.io/badge/demo-source_only-lightgrey)](#demo)
+[![License](https://img.shields.io/badge/license-not_in_tree-lightgrey)](#license)
 [![Status](https://img.shields.io/badge/status-v0.x_preview-orange)](#status)
+
+---
+
+## Documentation map (read this first)
+
+| Doc | Role |
+|-----|------|
+| **This file** (`README.slopfinity.md`) | Operator / product surface for the dashboard |
+| [`README.md` §14](README.md#14-slopfinity-dashboard-ui) | Toolbox monorepo entry + UI layout (current mermaid) |
+| [`docs/slopfinity-toolbox-boundary.md`](docs/slopfinity-toolbox-boundary.md) | What toolbox owns vs dashboard; runtime contract; NOT shipped |
+| [`docs/slopfinity-private-repo.md`](docs/slopfinity-private-repo.md) | Private GitHub mirror / extract / submodule plan |
+| [`docs/slopfinity-docs-index.md`](docs/slopfinity-docs-index.md) | Full index + last-verified method |
+
+**Last verified:** 2026-07-13 — method: `wc -l` on package paths, `test -f` entrypoints, `git remote -v`, `ls` demo/Makefile workflows, greps for overclaims. See `/tmp/goal-achievement-skeptic-report.md` for the adversarial audit of the prior docs pass.
 
 ---
 
@@ -51,22 +65,23 @@ Three external services. Each addressed by a URL configurable in **Settings → 
 
 ## Status
 
-**v0.x preview.** Production-ready for single-user local installs. Multi-user / public-internet exposure is **not** supported yet — see the security section below for why.
+**v0.x preview.** Usable for **single-user loopback** installs on the bundled toolbox stack; not a hardened product release. Multi-user / public-internet exposure is **not** supported — see Security. Several paths remain preview-tier (below).
 
 What's stable:
 - All 4 modes work end-to-end on the bundled backend (Strix Halo + ROCm + ComfyUI + Qwen-Image + LTX + Heartmula + Qwen3-TTS).
 - **TTS is wired into the fleet loop.** When `tts_model` is set (≠ `none`) in the pipeline config, each iteration synthesizes narration through the TTS worker on `:8010` (Qwen3-TTS / Kokoro) and muxes the voice track onto the `FINAL_*.mp4`. If music (HeartMuLa) is also produced, the two tracks are mixed (`amix`) so the narration rides over the music; otherwise the single track is used directly. Driven by `tts_model` / `tts_voice` / `tts_text` config (see `run_fleet.py`).
 - 0-auth single-user-loopback by default. CSRF + Origin checks block drive-by abuse.
 - SSRF guard validates every backend URL written through Settings.
-- Atomic queue writes; multi-worker race-free.
+- Atomic queue writes with flock-backed persistence; residual multi-writer races are called out in `config.py` comments (known correctness gap under heavy concurrency).
 - `/healthz` + `/readyz` probes for monitors / docker healthchecks.
 - Service worker auto-versions cache from shell-asset hash.
 
 What's preview-tier:
 - Single-user only. No auth, no roles, no shared workspaces.
-- Settings UX on phones is functional but cramped — vertical-tabs refactor planned.
-- Demo bundle works but doesn't prove every flow end-to-end (image+video preview yes; chat yes; story stitching yes; music yes).
-- Backend abstraction is leaky (see "Currently bundled with the toolbox image" section below) — most things go through HTTP cleanly, but a few `docker run --rm` codepaths still exist in workers/.
+- Settings UX on phones is functional but cramped — 9 horizontal tabs need vertical-tabs refactor.
+- **Coordinator (Phase 4)** exists as `slopfinity/coordinator.py` with 7 concurrent stage workers, but the legacy `run_fleet.py` linear orchestrator is still the primary runner. The coordinator is opt-in via its CLI or API endpoints.
+- Demo bundle source exists (`demo/`) but the `dist/demo/` build and gh-pages deployment workflow are not yet active.
+- Backend abstraction is leaky: LTX-2 stages prefer ComfyUI HTTP (controlled by `SLOPFINITY_LTX_MODE`), but WAN 2.2 still requires `docker run --rm` paths. Service registry (`service_registry.py`) manages Docker Compose lifecycle for network workers.
 
 ---
 
@@ -91,8 +106,11 @@ That gives you Slopfinity + ComfyUI + Qwen-Image + Qwen3-TTS + Heartmula all wir
 Slopfinity itself is a Python+FastAPI app that talks to three URLs. If you have your own LLM / ComfyUI / TTS already running, you can run Slopfinity standalone:
 
 ```bash
-git clone https://github.com/matthewhand/slopfinity.git    # (post-spinoff)
-cd slopfinity
+# Slopfinity ships in-tree in the toolbox repo today. The private slopfinity
+# standalone repo (https://github.com/matthewhand/slopfinity) is not yet
+# public — see docs/slopfinity-private-repo.md for the extraction plan.
+git clone https://github.com/matthewhand/amd-strix-halo-image-video-distrobox.git
+cd amd-strix-halo-image-video-distrobox
 pip install -r requirements-slopfinity.txt
 SLOPFINITY_BIND_HOST=127.0.0.1 \
   SLOPFINITY_EXP_DIR=$PWD/comfy-outputs/experiments \
@@ -116,7 +134,7 @@ Slopfinity ships in the [amd-strix-halo-image-video-distrobox](https://github.co
 - **Qwen-Image** (image generation backbone)
 - **LTX-Video** (video generation)
 - **Qwen3-TTS** (voice synthesis)
-- **Heartmula** (text→music; CLI launcher today, HTTP wrapper planned)
+- **Heartmula** (text→music; HTTP wrapper shipped — see `scripts/heartmula_serve.py` and `compose` profile `heartmula`)
 
 If you don't have AMD Strix Halo + ROCm hardware, you'll want to point Slopfinity at your own services instead. The dashboard doesn't care what runs the inference as long as the URLs respond to the expected schemas.
 
@@ -126,25 +144,40 @@ If you don't have AMD Strix Halo + ROCm hardware, you'll want to point Slopfinit
 
 Slopfinity itself is small (~280 KB of Python + ~700 KB of hand-written JS, no React/Vue, no build step beyond Tailwind). Most of the code is the queue + worker orchestration; the HTTP integrations are thin wrappers.
 
-| Subsystem | LOC | Purpose |
-|---|---|---|
-| `slopfinity/server.py` | ~3.2k | FastAPI app, all HTTP + WebSocket handlers |
-| `slopfinity/static/app.js` | ~10.6k | Hand-authored vanilla JS, mode switching, queue rendering, chat, story log |
-| `slopfinity/static/app.css` | ~4.3k | Hand + Tailwind CSS (DaisyUI 4.10 from CDN) |
-| `slopfinity/templates/index.html` | ~3.7k | Single-page Jinja template |
-| `slopfinity/workers/` | ~1.2k | Per-stage worker classes (Concept / Image / Video / Audio / TTS / Post / Merge) |
-| `slopfinity/coordinator.py` | ~0.4k | Phase-4 multi-worker dispatcher |
-| `slopfinity/scheduler.py` | ~0.7k | GPU lock + budget gating |
-| `slopfinity/llm/` | ~0.5k | Provider registry (LM Studio / Ollama / vLLM / OpenAI) |
+| Subsystem | LOC (`wc -l`, 2026-07-13) | Purpose |
+|---|---:|---|
+| `slopfinity/server.py` | 1379 | FastAPI app, HTTP + WebSocket handlers |
+| `slopfinity/static/app.js` | 11120 | Hand-authored vanilla JS (modes, queue, chat, story) |
+| `slopfinity/static/app.css` | 4572 | Hand CSS + Tailwind/DaisyUI (CDN) |
+| `slopfinity/templates/index.html` | 3732 | Single-page Jinja template |
+| `slopfinity/workers/` | 1279 | Per-stage worker classes + base framework |
+| `slopfinity/workers.py` | 186 | Thin async wrappers around `docker run --rm` fleet calls |
+| `slopfinity/coordinator.py` | 332 | Phase-4 multi-worker dispatcher (**opt-in**; primary runner remains root `run_fleet.py`) |
+| `slopfinity/scheduler.py` | 658 | GPU budget + auto-suspend + service lifecycle |
+| `slopfinity/stage_gate.py` | 367 | Host-safe memory floor |
+| `slopfinity/memory_planner.py` | 262 | Look-ahead planner for resident model sets |
+| `slopfinity/service_registry.py` | 552 | Compose profile probe / ensure_up / ensure_down |
+| `slopfinity/config.py` | 494 | Config + state + queue persistence (flock; residual races documented in-file) |
+| `slopfinity/auto_suspend.py` | 302 | Suspend/resume co-resident services during GPU stages |
+| `slopfinity/fanout.py` | 193 | Single-idea → multi-stage expansion |
+| `slopfinity/llm/` | 723 | Provider registry + pool failover |
+| `slopfinity/routers/` | 2833 | HTTP API surface by domain |
+| `slopfinity/ltx_comfy.py` | ~0.5k | LTX ComfyUI HTTP adapter (backend-specific) |
+| `slopfinity/wan_cli.py` | ~0.2k | WAN CLI/docker adapter (backend-specific) |
+| `slopfinity/stats.py` | ~0.3k | Host/GPU stats helpers (ROCm-oriented today) |
 
 The full integration tree:
 
 1. **HTTP direct** — LLM, TTS, ComfyUI submit, health probes
 2. **subprocess** — host ffmpeg (mux, concat)
-3. **`docker run --rm`** — image, video, audio, post (currently routes through the bundled toolbox image; abstraction in progress)
-4. **`docker exec`** — fallback ffmpeg into long-running ComfyUI container
+3. **`docker run --rm`** — image, video, audio, post (fallback path when ComfyUI HTTP is unavailable; see `workers.py`)
+4. **ComfyUI HTTP** — LTX-2 image/video/upscale via `/prompt` API (preferred path; controlled by `SLOPFINITY_LTX_MODE` env var, defaults to `http`)
+5. **`docker exec`** — fallback ffmpeg into long-running ComfyUI container
+6. **Service registry lifecycle** — `service_registry.py` manages Docker Compose profiles (qwen-image, qwen-tts, heartmula, comfyui) for network workers via `ensure_up`/`ensure_down`
 
-Items 3 + 4 are the parts that tie Slopfinity to a specific backend image. The plan is to route everything through ComfyUI HTTP workflows and drop the `docker run --rm` paths.
+See also **[`docs/slopfinity-toolbox-boundary.md`](docs/slopfinity-toolbox-boundary.md)** for what the toolbox owns vs what the dashboard owns, and [`docs/slopfinity-private-repo.md`](docs/slopfinity-private-repo.md) for the private-repo extract plan.
+
+Items 3 + 5 are the parts that tie Slopfinity to a specific backend image. The `docker run --rm` paths remain as fallback but the primary path for LTX-2 stages is now ComfyUI HTTP. WAN 2.2 still requires docker run (no persistent HTTP service).
 
 ---
 
@@ -205,11 +238,11 @@ What it doesn't have yet (v0.x preview limitations):
 
 ## Demo
 
-A static interactive demo runs entirely from canned fixtures with no backend — try every UI flow without installing anything.
+A static interactive demo can be built from canned fixtures with no backend — try every UI flow without installing anything.
 
-→ **[matthewhand.github.io/amd-strix-halo-image-video-distrobox/](https://matthewhand.github.io/amd-strix-halo-image-video-distrobox/)** (after gh-pages workflow lands)
+→ **Planned public URL:** `https://matthewhand.github.io/amd-strix-halo-image-video-distrobox/` — **not deployed yet**. Demo source lives in `demo/`; build with `make demo` (serves via `make demo-serve` on port 8765).
 
-The demo bundle is built by `make demo` from the [static-demo-builder](https://github.com/anthropics/claude-code) skill — a self-contained `dist/demo/` you can drop on any static host. Embed via:
+The demo bundle is built by `make demo` using templates under `demo/skill-templates/` (local static-demo builder) — a self-contained `dist/demo/` you can drop on any static host. **`dist/demo/` is not committed; gh-pages is not deployed yet.** Embed via:
 
 ```html
 <iframe src="…demo url…" width="100%" height="900" loading="lazy"
@@ -226,10 +259,10 @@ When this project moves to its own repo, the priorities are:
 
 | Priority | Item | Why |
 |---|---|---|
-| **P0** | Drop `docker run --rm IMAGE=…` paths in workers/; route everything through ComfyUI HTTP | Removes the only non-URL backend coupling |
+| **P0** | Drop `docker run --rm IMAGE=…` paths in workers/; route everything through ComfyUI HTTP | Removes the only non-URL backend coupling. LTX-2 stages already prefer HTTP (via `SLOPFINITY_LTX_MODE`). WAN 2.2 still docker-only. |
 | **P0** | Pluggable stats provider (rocm-smi / nvidia-smi / fallback) | Currently ROCm-specific; non-AMD users see "—" everywhere |
-| **P1** | Heartmula HTTP wrapper (~50 LOC FastAPI) | Music gen becomes URL-configurable like everything else |
-| **P1** | Settings vertical-tabs refactor (DaisyUI menu component) | 10 horizontal tabs cramped on phones |
+| **P1** | ~~Heartmula HTTP wrapper~~ ✅ **DONE** | `scripts/heartmula_serve.py` + compose `heartmula` profile shipped |
+| **P1** | Settings vertical-tabs refactor (DaisyUI menu component) | 9 horizontal tabs cramped on phones |
 | **P2** | Multi-user auth (OIDC or simple session cookies) | Enables small-team / kiosk-with-login deployments |
 | **P2** | Replay attack tests in CI for the CSRF/SSRF middleware | Lock in the security fixes |
 | **P3** | rrweb-recorded interactive walkthrough on the docs page | Better than MP4 for engagement |
@@ -280,7 +313,11 @@ The dashboard is hand-written vanilla JS by deliberate choice. PRs that introduc
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+**No root `LICENSE` file is present in this checkout** (verified 2026-07-13). The previous docs claimed Apache-2.0; that claim is **withdrawn until a root license is added**.
+
+- Vendored/third-party trees carry their own licenses (e.g. `LTX-2/LICENSE`, `ComfyUI-LTXVideo/LICENSE`, `.heartlib/LICENSE`).
+- Do not assume the dashboard package is Apache-2.0-licensed solely from older badges or spin-off drafts.
+- When a root license is chosen, add `LICENSE` at the repo root and restore an accurate badge here.
 
 ---
 

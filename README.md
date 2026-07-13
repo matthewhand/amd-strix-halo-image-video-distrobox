@@ -29,22 +29,29 @@ A **distrobox / Docker** image with a full **ROCm environment** for **image & vi
   - [4.2. Running as a Service (Docker Compose)](#42-running-as-a-service-docker-compose)  
   - [4.3. GUI Support (Distrobox)](#43-gui-support-distrobox)  
 - [5. Unified Memory Setup](#5-unified-memory-setup)  
-- [6. Qwen Image Studio](#6-qwen-image-studio)  
+- [6. Qwen Image Generation](#6-qwen-image-generation)  
   - [6.1. Download Models](#61-download-models)  
-  - [6.2. How to Start](#62-how-to-start)  
-  - [6.3. Paths & Persistence](#63-paths--persistence)  
+  - [6.2. Generate Images (Script)](#62-generate-images-script)  
+  - [6.3. Generate Images (Web UI)](#63-generate-images-web-ui)  
   - [6.4. Attention Backend & Speed (Qwen)](#64-attention-backend--speed-qwen)  
+  - [6.5. Test Scripts](#65-test-scripts)  
 - [7. WAN 2.2](#7-wan-22)  
   - [7.1. Download Models](#71-download-models)  
   - [7.2. Video Generation Examples](#72-video-generation-examples)  
   - [7.3. Notes](#73-notes)  
   - [7.4. Attention Backend & Speed (WAN)](#74-attention-backend--speed-wan)  
-- [8. ComfyUI](#8-comfyui)  
-  - [8.1. Setup (ComfyUI only)](#81-setup-comfyui-only)  
-  - [8.2. Run](#82-run)  
-  - [8.3. Running Image/Video Workflows in ComfyUI](#83-running-imagevideo-workflows-in-comfyui)  
-- [9. Stability & Technical Notes](#9-stability--technical-notes)  
-- [10. Credits & Links](#10-credits--links)  
+- [8. LTX-2 Video Generation](#8-ltx-2-video-generation)  
+  - [8.1. Generate Video (Script)](#81-generate-video-script)  
+  - [8.2. Image to Video (Qwen → LTX-2 Pipeline)](#82-image-to-video-qwen--ltx-2-pipeline)  
+  - [8.3. Convert Frames to MP4](#83-convert-frames-to-mp4)  
+  - [8.4. Required Models](#84-required-models)  
+  - [8.5. Test Scripts](#85-test-scripts)  
+  - [8.6. Performance](#86-performance)  
+- [9. ComfyUI (Web UI)](#9-comfyui-web-ui)  
+- [10. Strix Halo Benchmarks](#10-strix-halo-benchmarks)  
+- [11. Stability & Technical Notes](#11-stability--technical-notes)  
+- [12. Roadmap](#12-roadmap)  
+- [13. Credits & Links](#13-credits--links)  
 - [14. Slopfinity Dashboard UI](#14-slopfinity-dashboard-ui)
 
 ---
@@ -130,9 +137,11 @@ This project is a fork of [kyuz0/amd-strix-halo-image-video-toolboxes](https://g
 | -------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------ |
 | **Qwen Image Studio** ([fork of qwen-image-mps](https://github.com/ivanfioravanti/qwen-image-mps)) | `/opt/qwen-image-studio` | Web UI + job manager with retries, CLI still available |
 | **WAN 2.2** ([Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2))                              | `/opt/wan-video-studio`  | CLI for text-to-video / image-to-video                 |
+| **LTX-2** ([Lightricks/LTX-Video](https://github.com/Lightricks/LTX-Video))                        | Run via ComfyUI API      | Text-to-video and image-to-video (19B, fp8)            |
 | **ComfyUI** ([ComfyUI](https://github.com/comfyanonymous/ComfyUI))                                 | `/opt/ComfyUI`           | Node-based UI, AMD GPU monitor plugin                  |
-
-> **Note:** Scripts in `/opt` (`set_extra_paths.sh`, `get_qwen_image.sh`, `get_wan22.sh`) are **for ComfyUI only**. Skip them unless you use ComfyUI.
+| **Qwen3-TTS** ([Qwen/Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice))     | HTTP on `:8010`          | Text-to-speech worker (also supports Kokoro-82M)       |
+| **HeartMuLa** (text→music)                                                                         | HTTP on `:8011`          | Music generation from text prompts                     |
+| **Slopfinity Dashboard** ([see §14](#14-slopfinity-dashboard-ui))                                  | `slopfinity/` package    | FastAPI dashboard at `:9099` — orchestrates the full pipeline |
 
 ---
 
@@ -562,7 +571,7 @@ docker run -d --name comfyui \
   bash -c 'cd /opt/ComfyUI && python main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --disable-mmap'
 
 # Generate a workflow and submit it
-python scripts/generate_ltx_workflow.py --prompt "your prompt" --output workflow.json
+python generate_ltx_workflow.py --prompt "your prompt" --output workflow.json
 python scripts/comfyui_api.py workflow.json
 ```
 
@@ -675,18 +684,20 @@ For detailed information on the symlink hacks, CPU offloading, and kernel requir
 
 ### Project layout
 
-All helper scripts live under `scripts/`. The Dockerfile copies them into the container at build time. Nothing in the repo root is needed at runtime.
+All helper scripts live in the repo root and under `scripts/`. The Dockerfile copies them into the container at build time.
 
 | Script | Purpose |
 |--------|---------|
-| `apply_qwen_patches.py` | ROCm monkey-patches for Qwen (offload_state_dict, segfault fix) |
-| `qwen_launcher.py` | Qwen CLI wrapper with flash-attention shim |
-| `wan_launcher.py` | WAN CLI wrapper with flash-attention shim |
-| `start_docker.sh` | Docker Compose entrypoint (starts Qwen + ComfyUI) |
+| `scripts/apply_qwen_patches.py` | ROCm monkey-patches for Qwen (offload_state_dict, segfault fix) |
+| `scripts/qwen_launcher.py` | Qwen CLI wrapper with flash-attention shim |
+| `scripts/wan_launcher.py` | WAN CLI wrapper with flash-attention shim |
+| `scripts/ltx_launcher.py` | LTX-2 image/video/upscale launcher |
+| `scripts/start_docker.sh` | Docker Compose entrypoint (starts Qwen + ComfyUI) |
 | `patch_gemma_loader.py` | Force Gemma encoder to CPU (LTX-2 workaround, `--revert` to undo) |
 | `generate_ltx_workflow.py` | Generate ComfyUI API workflow JSON for LTX-2 |
-| `comfy_model_manager.py` | Download/manage ComfyUI models |
-| `diagnose.sh` | Validate ROCm setup and GPU detection |
+| `scripts/comfy_model_manager.py` | Download/manage ComfyUI models |
+| `scripts/diagnose.sh` | Validate ROCm setup and GPU detection |
+| `run_fleet.py` | Fleet orchestrator — end-to-end pipeline runner consuming the queue |
 
 ---
 
@@ -728,132 +739,137 @@ Performance improvements to investigate:
 
 ## 14. Slopfinity Dashboard UI
 
-The Slopfinity FastAPI dashboard at `:9099` orchestrates the toolbox into an end-to-end "subject → image → video → audio → final mp4" pipeline. The diagrams below capture the **intended layout** of its main surfaces — useful when reviewing UI changes or guiding agents to keep the design coherent.
+> **Docs map:** [`README.slopfinity.md`](README.slopfinity.md) (operators) · [`docs/slopfinity-toolbox-boundary.md`](docs/slopfinity-toolbox-boundary.md) (ownership / NOT shipped) · [`docs/slopfinity-private-repo.md`](docs/slopfinity-private-repo.md) (private mirror) · [`docs/slopfinity-docs-index.md`](docs/slopfinity-docs-index.md) (index + honesty checklist).
+>
+> **Last verified:** 2026-07-13 against this tree (`wc -l`, entrypoint `test -f`, workflow `ls`, overclaim greps). Layout below is **current**, not aspirational.
+
+
+The Slopfinity FastAPI dashboard at `:9099` orchestrates the toolbox into an end-to-end "subject → image → video → audio → final mp4" pipeline. The diagrams below capture the **current** layout — verified against the codebase (July 2026).
 
 ### 14.1. Holistic dashboard
 
-Top-down regions of the page:
+Top-down regions of the page. Upper pane (Subjects + Queue) is side-by-side on wide viewports, stacked on narrow. Lower pane is the Slop gallery. All panes support 7 layout variants via Settings → Layout or `?layout=` URL param.
 
 ```mermaid
 flowchart TB
-  topbar["Top bar — logo · view ▼ · theme · GPU/RAM/Load tickers · ⚙ Settings"]
-  pipeline["Pipeline strip (collapsible) — segmented progress + per-char fill heartbeat"]
-  subgraph splits["ui-split (drag-resize)"]
+  topbar["Top bar — brand · View ▼ · Theme · GPU/RAM/Load tickers · ⚙ Settings"]
+  subgraph upper["Upper pane (collapsible details)"]
     direction LR
     subgraph leftPane["Subjects card (#split-left)"]
-      L1["Mode pill — Raw · Endless · ⚙ Slop"]
-      L2["Seed textarea + Queue button"]
-      L3["Suggest controls"]
-      L4["Chip marquee rows"]
+      L1["4-mode pill — Endless · Simple · Raw · Chat"]
+      L2["Subject textarea + Queue Slop button"]
+      L3["Suggestions toggle · prompt picker · ↻ regen · + row"]
+      L4["Chip marquee rows (separate stacks for Simple/Endless)"]
     end
     subgraph rightPane["Queue card (#split-right)"]
-      R1["Header — activity, requeue, clear-failed, clear-completed"]
-      R2["Per-item details rows"]
+      R1["Segmented per-stage progress bar"]
+      R2["Header — activity text · connection pill · View all"]
+      R3["Per-item rows with stage badges + timing"]
+      R4["Footer — Pause/Resume · requeue failed · clear · elapsed/ETA"]
     end
   end
-  subgraph slop["Slop output (#output-section)"]
-    S1["Filter chips · preview-size pill (S/M/L)"]
-    S2["preview-grid (animated mini-thumbnails)"]
+  subgraph slop["Slop gallery (#output-section)"]
+    S1["Filter chips (video/image/music/speech + intermediates) · S/M/L size pill"]
+    S2["Preview grid with lazy-loaded media cards + infinite scroll"]
+    S3["Seed upload button (drag/drop/paste supported)"]
   end
 
-  topbar --> pipeline --> splits --> slop
+  topbar --> upper --> slop
 ```
 
-### 14.2. Subjects card — control layout
+### 14.2. Subjects card — mode pill
 
-The Suggest / Auto / Suggest-Prompt row is the most contested patch of the card; this is the canonical arrangement:
-
-```mermaid
-flowchart TB
-  subgraph card["Subjects card body"]
-    direction TB
-    subgraph header["Header row"]
-      direction LR
-      mode["Mode pill — [Raw][Endless][⚙ Slop]"]
-      pipBtn["Pipeline pill — [♾ Infinity][⚙ Pipeline]"]
-    end
-    subgraph body["Seed row"]
-      direction LR
-      ta["Seed textarea (locks in Endless+running)"]
-      q["Queue button — label varies by mode"]
-    end
-    subgraph sug["Suggest controls row"]
-      direction LR
-      join["Joined segmented control — 🎲 Suggest │ ↻ Auto knob"]
-      spacer[" "]
-      prompt["✎ Suggest Prompt — flush right, min-w to keep label whole"]
-    end
-    marquee["Chip marquee — each row reveals 🗑 on hover at right edge"]
-  end
-
-  header --> body --> sug --> marquee
-  style spacer fill:transparent,stroke:transparent
-```
-
-| Control | Position | Behavior |
-|---|---|---|
-| 🎲 Suggest | Joined left | Manual fire — calls `regenSuggestions()` |
-| ↻ Auto | Joined to Suggest | Knob toggle mirrors `config.suggest_auto_disabled` (knob ON = auto enabled) |
-| ✎ Suggest Prompt | Flush right (separate, has `min-w` so its label never truncates) | Opens Settings → LLM with the suggestion-prompt textarea focused |
-| 🗑 row delete | Hover right edge of any marquee row | Removes that row from DOM, re-measures marquee speed |
-
-### 14.3. Suggest control — state flow
+Four subject modes, each with its own pane. The active mode sets `body[data-subj-mode]` which drives CSS visibility:
 
 ```mermaid
 flowchart LR
-  subgraph ui["UI"]
-    sugBtn["🎲 Suggest"]
-    autoKnob["↻ Auto knob"]
-    promptBtn["✎ Suggest Prompt"]
-    rows["Chip rows"]
+  pill["Mode pill: [Endless][Simple][Raw][Chat]"] --> simple
+  pill --> raw
+  pill --> endless
+  pill --> chat
+  subgraph simple["Simple mode"]
+    S1["Single textarea — LLM rewrites into per-stage prompts at queue time"]
+    S2["Suggestions marquee with per-row prompt-name pills"]
   end
-  subgraph storage["State"]
-    cfg["config.suggest_auto_disabled"]
-    ls["localStorage (slopfinity-*)"]
+  subgraph raw["Raw mode"]
+    R1["Per-stage textareas (image/video/music/tts) — no LLM rewrite"]
+    R2["AI Magic ✨ button per stage for one-shot rewrite"]
+    R3["Own Queue Slop button inline"]
   end
-  subgraph srv["Server"]
-    suggest["GET /subjects/suggest"]
-    settings["POST /settings"]
+  subgraph endless["Endless (Story) mode"]
+    E1["Multi-beat story log with per-beat rows"]
+    E2["Chip clicks queue + append to story log"]
+    E3["Auto-Stitch checkbox concatenates FINAL_*.mp4 clips"]
   end
-
-  sugBtn -.manual fire.-> suggest
-  autoKnob -.toggle.-> settings --> cfg
-  cfg -.gates.-> suggest
-  promptBtn -.opens.-> SettingsLLM["Settings → LLM"]
-  rows -.row 🗑 click.-> RowDelete["DOM row.remove() + re-measure"]
+  subgraph chat["Chat mode"]
+    C1["Conversational LLM with tool-calling (queue_inject, pause, requeue)"]
+    C2["Prompt selection pills for reply tone"]
+    C3["Chat log with tool-call result chips rendered inline"]
+  end
 ```
 
-### 14.4. Subjects modes (Raw vs Endless)
+### 14.3. Suggest controls row
 
-```mermaid
-stateDiagram-v2
-    [*] --> Raw
-    Raw --> Endless: click Endless pill
-    Endless --> Raw: click Raw pill / End story
-    state Raw {
-      [*] --> Idle_R
-      Idle_R --> Queued: Queue Slop
-      Queued --> Idle_R: orchestrator picks up
-    }
-    state Endless {
-      [*] --> Seeded
-      Seeded --> Running: click "Start Story"
-      Empty --> Running: click "I'm Feeling Lucky" (LLM opener)
-      Running --> Seeded: End story (✕)
-      Running --> Running: chip click — queue + append to story log
-    }
-```
+The suggestion system is NOT a joined segmented control. It's a row of independent buttons below the subject textarea:
 
-### 14.5. Slop card — preview-size pill
+| Control | Behavior |
+|---|---|
+| Suggestions toggle (slider) | Shows/hides the entire suggestion marquee area. Auto-disabled state persists in `config.suggest_auto_disabled` |
+| Prompt name pill (e.g. "Yes, and…") | Opens a popover picker with active named suggestion prompts. Each prompt has its own system prompt that changes the LLM's output style |
+| ↻ Regenerate button | Fires `/subjects/suggest` with the current mode context — re-rolls suggestion chips |
+| + Add row button | Adds a new marquee row using the currently-selected prompt |
+| Simple mode tally (+/−) | Per-row count control — only visible in Simple mode |
+| ✎ Manage prompts link | Opens Settings → LLM → suggestion settings |
 
-The S / M / L pill in the slop card header sets `body[data-slop-size]`; CSS rules resize the preview-grid columns and per-card figure height:
+**Mode-specific behavior:**
+- **Simple mode**: suggestions render as horizontal marquee rows with per-row prompt-name pills
+- **Endless mode**: each marquee row uses potentially a DIFFERENT named prompt (per-row prompt selection)
+- **Chat mode**: one batch of reply-suggestion pills (no rows)
+- **Raw mode**: suggestions are entirely hidden — no LLM involvement
 
-```mermaid
-flowchart LR
-  pill["S · M · L pill"] -->|sets body[data-slop-size]| dom
-  dom --> S["S — 3/4/6/8 cols, condensed body"]
-  dom --> M["M — 2/3/_/4 cols (default)"]
-  dom --> L["L — 1/2/_/3 cols, min-height 320px figures"]
-```
+### 14.4. Queue card — segmented progress bar
 
-> These diagrams describe the **intended** state of the dashboard. When a UI commit drifts from them (or the user asks for changes), update this section in the same commit so the doc and the code stay in sync.
+The pipeline progress is rendered as a single segmented bar (`#active-job-progress-bar`) inside the Queue card header. Each pipeline stage (Concept / Base Image / Video Parts / Audio / TTS / Upscale / Final Merge) gets a segment. The current stage has a fill-sweep animation; completed stages show their elapsed time. Overrun stages render in warning color.
+
+Queue items expand to show per-stage pipeline badges with actual timings (from server-side `stage_actuals`), model badges, frames/size, and an actions dropdown (Make Infinite / Make Single / Cancel / Re-queue).
+
+### 14.5. Settings drawer — 9 tabs
+
+1. **General** — density slider, layout lock, card window controls, celebration animation style, disk guard thresholds
+2. **LLM** — distributed pool (primary + CPU + failover URLs), provider connection, API key, temperature/retries/timeout, network workers lifecycle, auto-suspend list, fleet system prompt, suggest settings, branding/theme/badge colors
+3. **Pipeline** — seed images, video tuning (frames, quality, concurrency budget), music gain, mux settings, per-mode descriptions
+4. **Speech** — voice preset (5 voices), TTS preview with audio player
+5. **Prompts** — 6 editable system prompt templates (concept rewriter, fan-out, fleet user, infinity, chaos, void fallback) with reset buttons
+6. **Triggers** — idle throttle %, creativity score, runner terminate
+7. **Scheduler** — pause/resume/free ComfyUI/emergency free, memory safety margin, dynamic load plan, CPU offload modes, per-model loading preferences
+8. **Diagnostics** — live GPU/VRAM/RAM readouts, raw state JSON, UI surface toggles
+9. **Layout** — 7 layout radio options (default 3-pane, 3 single-card focuses, 3 two-card splits)
+
+### 14.6. Slop gallery — preview grid
+
+The grid below the split pane renders media cards with:
+- **Filter chips**: video, image, music, speech (checked by default) + "Intermediates" (assets, frames — hidden by default)
+- **S/M/L size pill**: sets `body[data-slop-size]`; CSS rules resize columns and card heights
+- **Lazy loading**: IntersectionObserver-based PriorityLoader, 3 concurrent max
+- **Infinite scroll**: sentinel element triggers paginated `/assets` fetches
+- **Model badges**: each card shows which models produced it (Qwen Image, Ernie, LTX-2.3, Wan2.2, Heartmula, Qwen-TTS, Kokoro, etc.)
+- **Card border**: primary color for FINAL outputs, accent color for intermediate assets
+- **Lightbox**: click opens a focused modal with media preview + metadata + delete button
+
+### 14.7. Layout system
+
+Seven layout variants, persisted in `localStorage` and overridable via `?layout=` URL param:
+
+| Layout | Visible panes |
+|---|---|
+| Default | Subjects + Queue (top) + Gallery (bottom) |
+| Subjects | Subjects card only |
+| Queue | Queue card only |
+| Gallery | Slop gallery only |
+| Subjects + Slop | Subjects (top) + Gallery (bottom) |
+| Queue + Slop | Queue (top) + Gallery (bottom) |
+| Subjects + Queue | Subjects + Queue side-by-side |
+
+The View dropdown in the navbar exposes "Full dashboard" (default) and "Single dashboard" (last-used single-card view). All 7 layouts are reachable via Settings → Layout or the URL param. Card close buttons (macOS-style traffic lights) switch to the corresponding 2-card layout.
+
+> **Documentation maintenance**: these diagrams are verified against the codebase as of July 2026. When the UI changes, update this section in the same commit.

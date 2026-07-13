@@ -9,7 +9,7 @@
 | Location | State |
 |----------|--------|
 | Parent `slopfinity/` | Still an **in-tree** package (not a git submodule). |
-| Private `main` | Full monorepo-shaped dump (Dockerfile, compose, nested `slopfinity/…`). Last push ~2026-06-13. |
+| Private `main` | Full monorepo-shaped dump (Dockerfile, compose, nested `slopfinity/…`). Last push ~2026-06-13 — stale; the canonical code lives in this toolbox repo's `slopfinity/` in-tree package. |
 | Private `wip/from-toolbox-20260713` | Snapshot of current toolbox WIP (fleet / stage-gate / LTX / WAN / service-registry). **Do not force-push over `main` without review.** |
 
 ## Why not submodule yet
@@ -40,3 +40,23 @@ Push WIP mirror only:
 ```bash
 git push -u slopfinity HEAD:wip/from-toolbox-YYYYMMDD
 ```
+
+## See also
+
+- Runtime / ownership boundary (toolbox vs dashboard): [`slopfinity-toolbox-boundary.md`](slopfinity-toolbox-boundary.md)
+- Operator docs: [`../README.slopfinity.md`](../README.slopfinity.md)
+
+## Public vs private surface
+
+| Surface | Repo / path | Audience |
+|---------|-------------|----------|
+| **Public toolbox** | `matthewhand/amd-strix-halo-image-video-distrobox` — includes in-tree `slopfinity/` | Anyone cloning the toolbox |
+| **Private mirror** | `matthewhand/slopfinity` — extract / history WIP | Maintainers only |
+| **Not public** | Model caches, `dist/demo/`, runtime `config.json`, private tokens | Never publish |
+
+Canonical **code** for the dashboard today: **toolbox in-tree `slopfinity/`**, not private `main`.
+
+## See also (index)
+
+- Full docs map: [`slopfinity-docs-index.md`](slopfinity-docs-index.md)
+
