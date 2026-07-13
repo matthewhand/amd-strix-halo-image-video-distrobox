@@ -69,9 +69,22 @@ async def run_image_ernie(prompt: str, out: str, steps: int = 8) -> int:
         return await _run(cmd)
 
 
+def _ltx_prefer_comfy() -> bool:
+    return (os.environ.get("SLOPFINITY_LTX_MODE") or "http").strip().lower() != "docker"
+
+
 async def run_image_ltx(prompt: str, out: str) -> int:
     async with acquire_gpu("image", "ltx-2.3"):
-        cmd = _base_docker_cmd() + [
+        if _ltx_prefer_comfy():
+            try:
+                from . import ltx_comfy
+                from . import service_registry as _svc
+                await asyncio.to_thread(_svc.ensure_for_stage, "image", "ltx-2.3")
+                return await asyncio.to_thread(ltx_comfy.generate_image, prompt, out)
+            except Exception:
+                pass  # fall through to docker launcher
+        # Host path for --out may be absolute; keep as-is (workspace mount).
+        cmd = _base_docker_cmd(["PYTHONPATH=/workspace"]) + [
             "python3", "/opt/ltx_launcher.py",
             "--mode", "image",
             "--prompt", prompt, "--out", out,
@@ -81,7 +94,17 @@ async def run_image_ltx(prompt: str, out: str) -> int:
 
 async def run_video_ltx(prompt: str, in_img: str, out: str) -> int:
     async with acquire_gpu("video", "ltx-2.3"):
-        cmd = _base_docker_cmd() + [
+        if _ltx_prefer_comfy():
+            try:
+                from . import ltx_comfy
+                from . import service_registry as _svc
+                await asyncio.to_thread(_svc.ensure_for_stage, "video", "ltx-2.3")
+                return await asyncio.to_thread(
+                    ltx_comfy.generate_video, prompt, out, image_path=in_img or "",
+                )
+            except Exception:
+                pass
+        cmd = _base_docker_cmd(["PYTHONPATH=/workspace"]) + [
             "python3", "/opt/ltx_launcher.py",
             "--mode", "video",
             "--prompt", prompt,
@@ -92,14 +115,28 @@ async def run_video_ltx(prompt: str, in_img: str, out: str) -> int:
 
 
 async def run_video_wan(prompt: str, in_img: str, out: str, model: str = "wan2.2") -> int:
+    from .wan_cli import wan_launcher_argv, wan_paths
+
     async with acquire_gpu("video", model):
-        cmd = _base_docker_cmd() + [
-            "python3", "/opt/wan_launcher.py",
-            "--prompt", prompt,
-            "--image", in_img,
-            "--out", out,
-            "--model", model,
+        cfg = wan_paths(model)
+        ckpt = cfg["ckpt"]
+        lora = cfg["lora"]
+        # Free UMA peers before huge WAN load
+        try:
+            from . import service_registry as _svc
+            await asyncio.to_thread(_svc.ensure_for_stage, "video", model)
+        except Exception:
+            pass
+        extra_vols = [
+            "-v", f"{ckpt}:/models/{os.path.basename(ckpt.rstrip('/'))}:ro",
         ]
+        if lora and os.path.isdir(lora):
+            extra_vols += [
+                "-v", f"{lora}:/models/lightning/{os.path.basename(lora.rstrip('/'))}:ro",
+            ]
+        base = _base_docker_cmd(["WAN_ATTENTION_BACKEND=sdpa"])
+        image = base[-1]
+        cmd = base[:-1] + extra_vols + [image] + wan_launcher_argv(prompt, in_img, out, model)
         return await _run(cmd)
 
 
@@ -133,7 +170,15 @@ async def run_tts_kokoro(text: str, out: str, voice: str = "ryan") -> int:
 
 async def run_upscale_ltx(in_path: str, out: str) -> int:
     async with acquire_gpu("upscale", "ltx-spatial"):
-        cmd = _base_docker_cmd() + [
+        if _ltx_prefer_comfy():
+            try:
+                from . import ltx_comfy
+                from . import service_registry as _svc
+                await asyncio.to_thread(_svc.ensure_for_stage, "upscale", "ltx-spatial")
+                return await asyncio.to_thread(ltx_comfy.upscale_video, in_path, out)
+            except Exception:
+                pass
+        cmd = _base_docker_cmd(["PYTHONPATH=/workspace"]) + [
             "python3", "/opt/ltx_launcher.py",
             "--mode", "upscale",
             "--input", in_path, "--out", out,

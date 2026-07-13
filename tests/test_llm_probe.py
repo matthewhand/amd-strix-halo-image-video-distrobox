@@ -138,8 +138,9 @@ def test_probe_one_ollama_native_fallback(monkeypatch):
 
 async def test_discover_filters_to_alive_dicts(monkeypatch):
     def fake_probe_one(port, provider, base_url, timeout=1.0):
-        if port == 1234:
-            return {"port": 1234, "provider": "lmstudio",
+        # Ollama is first in CANDIDATES; return it as the only alive host.
+        if port == 11434:
+            return {"port": 11434, "provider": "ollama",
                     "base_url": base_url, "model_count": 1,
                     "flavor": "openai-compat"}
         return None
@@ -147,7 +148,7 @@ async def test_discover_filters_to_alive_dicts(monkeypatch):
     monkeypatch.setattr(PR, "_probe_one", fake_probe_one)
     found = await PR.discover(timeout=0.01)
     assert len(found) == 1
-    assert found[0]["port"] == 1234
+    assert found[0]["port"] == 11434
 
 
 async def test_discover_empty_when_nothing_alive(monkeypatch):

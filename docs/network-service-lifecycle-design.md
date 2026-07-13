@@ -63,35 +63,51 @@ List of dicts (merged like `auto_suspend` on load):
 | `id` | Stable key (`qwen-image`, `qwen-tts`, `heartmula`, `comfyui`) |
 | `label` | UI label |
 | `enabled` | If false, ensure is no-op (probe still works) |
-| `health_url` | GET probe target (short timeout) |
+| `health_url` | GET probe target (optional if derivable from base) |
+| `health_path` | Path joined to base when deriving health (`/health`, `/docs`, …) |
 | `base_url` | Default base for workers (overridden by env if set) |
 | `base_url_env` | Env var name workers already use (`TTS_WORKER_URL`, …) |
-| `start_cmd` | Shell string or argv list to bring service up |
-| `stop_cmd` | Shell string or argv list to stop service |
+| `container_name` | Fixed compose `container_name` for start/stop |
+| `compose_service` / `compose_profile` | For `lifecycle_mode=compose` |
+| `lifecycle_mode` | `compose` \| `container` \| `cmd` \| `none` |
+| `start_cmd` / `stop_cmd` | Override or compose-mode start; stop usually synthesized |
 | `stage_keys` | List of `"stage:model"` or `"stage:*"` matchers |
 | `budget_gb` | Idle / peak hint for UI (planner still uses `STAGE_BUDGETS`) |
 | `exclusive_group` | Optional string; ensure_up stops other members first |
 | `ensure_timeout_s` | Max wait after start (default 120) |
+| `docker_host` / `docker_context` | Optional per-service Docker targeting |
 
-### Defaults (toolbox compose service names)
+### Defaults (toolbox)
 
-| id | health | start (compose) | stop |
-|----|--------|-----------------|------|
-| `qwen-image` | `http://127.0.0.1:8180/docs` | `docker compose --profile qwen-image up -d qwen-image-service` | `docker stop strix-halo-qwen-image` |
-| `qwen-tts` | `http://127.0.0.1:8010/health` | `… qwen-tts up -d qwen-tts-service` | `docker stop strix-halo-qwen-tts` |
-| `heartmula` | `http://127.0.0.1:8011/health` | `… heartmula up -d heartmula-service` | `docker stop strix-halo-heartmula` |
-| `comfyui` | `http://127.0.0.1:8188/system_stats` | `… comfyui up -d comfyui-service` | `docker stop strix-halo-comfyui` |
+| id | container | stages | exclusive |
+|----|-----------|--------|-----------|
+| `qwen-image` | `strix-halo-qwen-image` | `image:qwen` only | uma-heavy |
+| `qwen-tts` | `strix-halo-qwen-tts` | `tts:*` | — |
+| `heartmula` | `strix-halo-heartmula` | `audio:*` | uma-heavy |
+| `comfyui` | `strix-halo-comfyui` | LTX image/video/upscale | uma-heavy |
+
+Default start remains **compose up**; stop is **docker stop**. Set
+`lifecycle_mode: container` for pure `docker start` after first create.
 
 `slop` profile means **defined for ensure**, not **always running**.
+
+### Control plane env
+
+`DOCKER_HOST` / `SLOPFINITY_DOCKER_HOST`, `DOCKER_CONTEXT` /
+`SLOPFINITY_DOCKER_CONTEXT`, `SLOPFINITY_COMPOSE_DIR`, `SLOPFINITY_DOCKER_BIN`.
+
+Remote: SSH Docker context + LAN HTTP URLs (not multi-host k8s).
 
 ## API
 
 | Function | Behaviour |
 |----------|-----------|
-| `probe(id)` | GET `health_url` → `{ok, status, latency_ms, detail}` |
-| `ensure_up(id)` | probe → start_cmd if down → poll |
-| `ensure_down(id)` | stop_cmd (idempotent) |
-| `ensure_for_stage(stage, model)` | match `stage_keys` → ensure_up (+ exclusive peers down) |
+| `probe(id)` | GET derived/explicit health → `{ok, status, latency_ms, detail}` |
+| `ensure_up(id)` | probe → resolve start → poll |
+| `ensure_down(id)` | stop (idempotent) |
+| `ensure_down_group(group)` | stop all members of exclusive group |
+| `ensure_for_stage(stage, model)` | match service → ensure_up; or clear uma-heavy for one-shots |
+| `normalize_stage(stage)` | map `Base Image` / `TTS` → `image` / `tts` |
 | `status_all()` | probe every enabled service |
 | `service_for_stage(stage, model)` | resolve id or None |
 
@@ -120,7 +136,7 @@ Image/Audio keep a **docker-run fallback** only when
 
 ## Non-goals
 
-- Multi-host / k8s scheduling
+- Multi-cluster k8s scheduling (single Docker context + LAN HTTP is in scope)
 - Replacing Comfy graph unload with stop/start every step
 - Changing toolbox serve contracts (`/health`, `/tts`, `/music`)
 

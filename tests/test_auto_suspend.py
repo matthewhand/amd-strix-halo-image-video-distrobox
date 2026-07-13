@@ -169,7 +169,7 @@ def test_docker_stop_runs_docker_stop_then_start():
     """Suspend should run `docker stop`, resume should run `docker start`."""
     calls = []
 
-    def fake_run(cmd, capture_output=True, text=True, timeout=30):
+    def fake_run(cmd, *args, **kwargs):
         calls.append(list(cmd))
         return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
 
@@ -186,7 +186,7 @@ def test_docker_stop_runs_docker_stop_then_start():
 
 
 def test_docker_stop_nonzero_rc_reports_error():
-    def fake_run(cmd, capture_output=True, text=True, timeout=30):
+    def fake_run(cmd, *args, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No such container")
 
     entry = {"id": "qwen-tts", "enabled": True, "method": "docker_stop",

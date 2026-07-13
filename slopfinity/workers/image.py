@@ -140,7 +140,7 @@ class ImageWorker(StageWorker):
                 if acquire_gpu is None:
                     raw, status = await asyncio.to_thread(_post)
                 else:
-                    async with acquire_gpu("Base Image", self.model):
+                    async with acquire_gpu("image", self.model):
                         raw, status = await asyncio.to_thread(_post)
 
                 # If API returns JSON job envelope, surface it; if raw image, write out_path.
@@ -178,7 +178,7 @@ class ImageWorker(StageWorker):
         if acquire_gpu is None:
             rc = await _run(cmd)
         else:
-            async with acquire_gpu("Base Image", self.model):
+            async with acquire_gpu("image", self.model):
                 rc = await _run(cmd)
 
         ok = rc == 0 and os.path.exists(out_path)

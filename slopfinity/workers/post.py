@@ -1,8 +1,8 @@
-"""PostWorker — ltx-spatial upscaler invoked via docker run on a video MP4.
+"""PostWorker — ltx-spatial upscale via ComfyUI (LTXVLatentUpsampler).
 
-Reads `item.stages.video.asset` as input and writes the upscaled MP4 path
-to `item.stages.post.asset`. Acquires the GPU via `acquire_gpu("upscale",
-"ltx-spatial")` so it serializes against image/video stages.
+Reads `item.stages.video.asset`, ensures comfyui, runs seed-frame + LTX
+spatial upscale graph (slopfinity.ltx_comfy.upscale_video). Docker fallback
+when SLOPFINITY_UPSCALE_MODE=docker.
 """
 from __future__ import annotations
 
@@ -18,6 +18,16 @@ try:
 except Exception:  # pragma: no cover
     acquire_gpu = None  # type: ignore[assignment]
 
+try:
+    from .. import service_registry as _svc
+except Exception:  # pragma: no cover
+    _svc = None  # type: ignore[assignment]
+
+try:
+    from .. import ltx_comfy
+except Exception:  # pragma: no cover
+    ltx_comfy = None  # type: ignore[assignment]
+
 
 IMAGE = "amd-strix-halo-image-video-toolbox:latest"
 
@@ -31,9 +41,15 @@ def _workspace() -> str:
 
 
 def _docker_cmd(in_path: str, out_path: str) -> List[str]:
+    ws = _workspace()
+    c_in, c_out = in_path, out_path
+    if in_path.startswith(ws):
+        c_in = "/workspace" + in_path[len(ws):]
+    if out_path.startswith(ws):
+        c_out = "/workspace" + out_path[len(ws):]
     return [
         "docker", "run", "--rm",
-        "-v", f"{_workspace()}:/workspace",
+        "-v", f"{ws}:/workspace",
         "-v", f"{_hf_cache()}:/root/.cache/huggingface",
         "-w", "/workspace",
         "--device", "/dev/kfd",
@@ -41,8 +57,8 @@ def _docker_cmd(in_path: str, out_path: str) -> List[str]:
         IMAGE,
         "python3", "/opt/ltx_launcher.py",
         "--mode", "upscale",
-        "--input", in_path,
-        "--out", out_path,
+        "--input", c_in,
+        "--out", c_out,
     ]
 
 
@@ -69,27 +85,59 @@ class PostWorker(StageWorker):
         out_dir = config_snapshot_get(item, "out_dir", _workspace()) or _workspace()
         return os.path.join(str(out_dir), f"v{v_idx}_upscaled.mp4")
 
+    def _resolve_prompt(self, item: Any) -> str:
+        p = stage_get(item, "video", "prompt_override") or stage_get(item, "concept", "output")
+        return str(p or "cinematic continuity, high detail, sharp")
+
+    async def _run_comfy(self, in_path: str, out_path: str, prompt: str) -> int:
+        if ltx_comfy is None:
+            return 2
+        if _svc is not None:
+            ens = await asyncio.to_thread(_svc.ensure_for_stage, "upscale", "ltx-spatial")
+            if not ens.get("ok") and not ens.get("skipped"):
+                return 3
+        frames = int(os.environ.get("SLOPFINITY_LTX_UPSCALE_FRAMES", "25"))
+        return await asyncio.to_thread(
+            ltx_comfy.upscale_video,
+            in_path,
+            out_path,
+            prompt=prompt,
+            frames=frames,
+        )
+
     async def run_stage(self, item: Any) -> Dict[str, Any]:
         in_path = self._resolve_input(item)
         out_path = self._resolve_out_path(item)
+        prompt = self._resolve_prompt(item)
 
         if not in_path:
             return {"ok": False, "output": None, "asset": None,
                     "error": "post worker: no input video (stages.video.asset missing)"}
+        if not os.path.isfile(in_path):
+            return {"ok": False, "output": None, "asset": None,
+                    "error": f"post worker: input missing: {in_path}"}
 
-        cmd = _docker_cmd(in_path, out_path)
+        mode = (os.environ.get("SLOPFINITY_UPSCALE_MODE") or "http").strip().lower()
+        use_comfy = mode != "docker" and ltx_comfy is not None
+
+        async def _body() -> int:
+            if use_comfy:
+                return await self._run_comfy(in_path, out_path, prompt)
+            return await _run(_docker_cmd(in_path, out_path))
 
         if acquire_gpu is None:
-            rc = await _run(cmd)
+            rc = await _body()
         else:
             async with acquire_gpu("upscale", self.model):
-                rc = await _run(cmd)
+                rc = await _body()
 
-        ok = rc == 0 and os.path.exists(out_path)
+        ok = rc == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
         return {
             "ok": ok,
             "output": out_path if ok else None,
             "asset": out_path if ok else None,
             "rc": rc,
             "model": self.model,
+            "backend": "comfy" if use_comfy else "docker",
+            "error": None if ok else f"upscale failed rc={rc}",
         }

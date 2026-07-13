@@ -42,6 +42,7 @@ def client():
         "/pipeline/plan",
         "/pipeline/slopped?role=image",
         "/disk/guard",
+        "/services",
     ],
 )
 def test_router_endpoints_non_5xx(client, path):

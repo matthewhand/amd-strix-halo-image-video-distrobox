@@ -134,24 +134,43 @@ async def _rest_unload(entry: dict, *, suspending: bool) -> dict:
 
 
 async def _docker_stop(entry: dict, *, suspending: bool) -> dict:
-    """`docker stop <name>` on suspend; `docker start <name>` on resume."""
+    """`docker stop <name>` on suspend; `docker start <name>` on resume.
+
+    Honors the same DOCKER_HOST / DOCKER_CONTEXT / SLOPFINITY_DOCKER_* env
+    as service_registry (shared control plane). Do not enable docker_stop on
+    pipeline containers owned by service_registry — see auto-suspend design.
+    """
     container = (entry.get("container") or "").strip()
     if not container:
         raise ValueError("docker_stop entry missing 'container'")
-    cmd = ["docker", "stop" if suspending else "start", container]
+    action = "stop" if suspending else "start"
+    cmd = ["docker", action, container]
 
     def _run() -> dict:
-        cp = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return {
-            "rc": cp.returncode,
-            "stdout": (cp.stdout or "").strip()[:200],
-            "stderr": (cp.stderr or "").strip()[:200],
-        }
+        try:
+            from . import service_registry as _svc
+            r = _svc._run_cmd(cmd, timeout=30.0)
+            return {
+                "rc": r.get("rc", 1 if not r.get("ok") else 0),
+                "stdout": (r.get("stdout") or "")[:200],
+                "stderr": (r.get("stderr") or r.get("error") or "")[:200],
+                "cmd": r.get("cmd") or cmd,
+            }
+        except Exception:
+            # Fallback if registry unavailable
+            env = os.environ.copy()
+            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+            return {
+                "rc": cp.returncode,
+                "stdout": (cp.stdout or "").strip()[:200],
+                "stderr": (cp.stderr or "").strip()[:200],
+                "cmd": cmd,
+            }
 
     res = await asyncio.to_thread(_run)
     if res["rc"] != 0:
-        raise RuntimeError(f"{' '.join(cmd)} -> rc={res['rc']} stderr={res['stderr']!r}")
-    return {"container": container, "action": cmd[1], **res}
+        raise RuntimeError(f"{' '.join(res.get('cmd') or cmd)} -> rc={res['rc']} stderr={res['stderr']!r}")
+    return {"container": container, "action": action, **res}
 
 
 async def _script(entry: dict, *, suspending: bool) -> dict:

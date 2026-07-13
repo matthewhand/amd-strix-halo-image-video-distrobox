@@ -60,6 +60,14 @@ async def inject(
                 f.write(str(now_ts))
         except Exception:
             pass
+    # Snapshot live pipeline config at inject time so batch permutation
+    # sweeps (POST /config then /inject × N) keep per-item model choices
+    # (e.g. tts_model=dramabox) instead of all inheriting the last /config.
+    try:
+        _live_cfg = dict(cfg.load_config() or {})
+    except Exception:
+        _live_cfg = {}
+
     task = {
         "prompt": prompt,
         "priority": priority,
@@ -74,6 +82,7 @@ async def inject(
         # skips audio/tts for THIS iter only when set. Use the dashboard's
         # 🏃 button (Subjects card) to flip this on per-injection.
         "fast_track": bool(fast_track),
+        "config_snapshot": _live_cfg,
     }
     if stage_prompts:
         try:

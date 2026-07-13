@@ -40,13 +40,48 @@ def test_video_worker_picks_launcher_per_model():
     assert video_mod._launcher_for("ltx-2.3") == "/opt/ltx_launcher.py"
 
 
-def test_video_worker_run_stage_success(tmp_path, monkeypatch):
-    item = _mk_item(out_dir=str(tmp_path), v_idx=4)
+def test_is_ltx():
+    assert video_mod._is_ltx("ltx-2.3")
+    assert video_mod._is_ltx("LTX-2.3")
+    assert not video_mod._is_ltx("wan2.2")
 
-    async def fake_run(cmd):
-        out_path = cmd[cmd.index("--out") + 1]
+
+def test_video_worker_ltx_comfy_path(tmp_path, monkeypatch):
+    item = _mk_item(out_dir=str(tmp_path), v_idx=4)
+    # Seed image must exist for stage_input only if comfy path copies it —
+    # we mock generate_video entirely.
+    seed = tmp_path / "seed.png"
+    seed.write_bytes(b"png")
+    item["stages"]["image"]["asset"] = str(seed)
+
+    async def fake_comfy(self, prompt, in_img, out_path):
         with open(out_path, "wb") as f:
             f.write(b"MP4")
+        return 0
+
+    monkeypatch.setattr(video_mod, "ltx_comfy", object())  # truthy
+    monkeypatch.setattr(video_mod.VideoWorker, "_run_ltx_comfy", fake_comfy)
+    monkeypatch.setattr(video_mod, "acquire_gpu", None)
+    monkeypatch.setenv("SLOPFINITY_VIDEO_MODE", "http")
+
+    w = video_mod.VideoWorker()
+    result = asyncio.run(w.run_stage(item))
+    assert result["ok"] is True
+    assert result["backend"] == "comfy"
+    assert result["asset"].endswith("v4_video.mp4")
+
+
+def test_video_worker_docker_fallback_for_wan(tmp_path, monkeypatch):
+    item = _mk_item(model="wan2.2", out_dir=str(tmp_path), v_idx=7)
+
+    async def fake_run(cmd):
+        # --out may be absolute host path
+        if "--out" in cmd:
+            out_path = cmd[cmd.index("--out") + 1]
+        else:
+            out_path = str(tmp_path / "v7_video.mp4")
+        with open(out_path, "wb") as f:
+            f.write(b"WAN")
         return 0
 
     monkeypatch.setattr(video_mod, "_run", fake_run)
@@ -55,7 +90,7 @@ def test_video_worker_run_stage_success(tmp_path, monkeypatch):
     w = video_mod.VideoWorker()
     result = asyncio.run(w.run_stage(item))
     assert result["ok"] is True
-    assert result["asset"].endswith("v4_video.mp4")
+    assert result["backend"] == "docker"
 
 
 def test_video_worker_empty_prompt():

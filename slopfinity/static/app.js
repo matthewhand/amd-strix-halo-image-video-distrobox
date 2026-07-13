@@ -8682,6 +8682,8 @@ async function openSettings() {
         if (dpct) dpct.value = String(sr.disk_min_pct ?? 1);
         if (dgb) dgb.value = String(sr.disk_min_gb ?? 5);
         renderAutoSuspendList(sr.auto_suspend);
+        // Network worker docker lifecycle panel (Settings → LLM → Generation)
+        refreshNetworkServices();
         // Cloud-endpoints toggle (Settings → LLM). Server-side default
         // is OFF — show the local-only provider list. When ON, future
         // cloud entries in the registry would surface here too.
@@ -8826,6 +8828,119 @@ async function openSettings() {
         reloadModels();
     } catch (e) {
         console.error('openSettings failed', e);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Network workers (docker lifecycle) — status poll + park/warm via the same
+// service_registry path the pipeline uses (GET /services, POST …/warm|park).
+// ---------------------------------------------------------------------------
+
+let _networkServicesBusy = false;
+
+async function refreshNetworkServices() {
+    const host = $('network-services-list');
+    const msg = $('network-services-status-msg');
+    if (!host) return;
+    if (msg) msg.textContent = 'probing…';
+    try {
+        const r = await fetch('/services');
+        const j = await r.json();
+        if (!j || !j.ok) {
+            if (msg) msg.textContent = (j && j.error) || 'status failed';
+            return;
+        }
+        renderNetworkServicesList(j.services || []);
+        if (msg) {
+            const n = (j.services || []).length;
+            const up = (j.services || []).filter(s => s.up).length;
+            msg.textContent = `${up}/${n} up`;
+        }
+    } catch (e) {
+        if (msg) msg.textContent = String(e.message || e);
+    }
+}
+
+function renderNetworkServicesList(services) {
+    const host = $('network-services-list');
+    if (!host) return;
+    host.innerHTML = '';
+    const list = Array.isArray(services) ? services : [];
+    if (!list.length) {
+        host.innerHTML = '<div class="text-[11px] opacity-50 italic">No network services configured.</div>';
+        return;
+    }
+    list.forEach(s => host.appendChild(renderNetworkServiceRow(s)));
+}
+
+function renderNetworkServiceRow(svc) {
+    const row = document.createElement('div');
+    row.className = 'flex flex-wrap items-center gap-2 p-1.5 rounded border border-base-300/40';
+    row.dataset.svcId = svc.id || '';
+
+    const dot = document.createElement('span');
+    const up = !!svc.up;
+    const enabled = svc.enabled !== false;
+    dot.className = 'inline-block w-2 h-2 rounded-full shrink-0 '
+        + (up ? 'bg-success' : (enabled ? 'bg-warning' : 'bg-base-content/30'));
+    dot.title = up ? 'up' : (enabled ? 'down' : 'disabled');
+    row.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.className = 'text-xs flex-1 min-w-[8rem]';
+    const name = svc.label || svc.id || '?';
+    const mode = svc.lifecycle_mode || 'compose';
+    label.innerHTML = `<span class="font-medium">${_htmlEscape(name)}</span>`
+        + ` <span class="opacity-50 font-mono text-[10px]">${_htmlEscape(svc.id || '')}</span>`
+        + ` <span class="opacity-40 text-[10px]">${up ? 'up' : 'down'}`
+        + (svc.container_name ? ` · ${_htmlEscape(svc.container_name)}` : '')
+        + ` · ${ _htmlEscape(mode)}</span>`;
+    row.appendChild(label);
+
+    const warmBtn = document.createElement('button');
+    warmBtn.type = 'button';
+    warmBtn.className = 'btn btn-xs btn-outline btn-success';
+    warmBtn.textContent = 'Warm';
+    warmBtn.title = 'ensure_up — start container and wait for health';
+    warmBtn.disabled = !enabled || _networkServicesBusy;
+    warmBtn.onclick = () => networkServiceAction(svc.id, 'warm');
+    row.appendChild(warmBtn);
+
+    const parkBtn = document.createElement('button');
+    parkBtn.type = 'button';
+    parkBtn.className = 'btn btn-xs btn-outline btn-warning';
+    parkBtn.textContent = 'Park';
+    parkBtn.title = 'ensure_down — docker stop to free UMA';
+    parkBtn.disabled = !enabled || _networkServicesBusy;
+    parkBtn.onclick = () => networkServiceAction(svc.id, 'park');
+    row.appendChild(parkBtn);
+
+    return row;
+}
+
+async function networkServiceAction(serviceId, action) {
+    if (!serviceId || _networkServicesBusy) return;
+    if (action !== 'warm' && action !== 'park') return;
+    const msg = $('network-services-status-msg');
+    _networkServicesBusy = true;
+    if (msg) msg.textContent = `${action} ${serviceId}…`;
+    try {
+        const r = await fetch(`/services/${encodeURIComponent(serviceId)}/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        let j = {};
+        try { j = await r.json(); } catch (_) { /* empty */ }
+        if (msg) {
+            msg.textContent = j.ok
+                ? `${action} ${serviceId}: ok`
+                : `${action} ${serviceId}: ${(j.error || j.detail || r.statusText || 'failed').toString().slice(0, 80)}`;
+        }
+    } catch (e) {
+        if (msg) msg.textContent = String(e.message || e);
+    } finally {
+        _networkServicesBusy = false;
+        await refreshNetworkServices();
     }
 }
 

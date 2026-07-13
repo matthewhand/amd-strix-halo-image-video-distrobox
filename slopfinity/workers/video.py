@@ -1,11 +1,7 @@
-"""VideoWorker — i2v / t2v video generation (LTX-2.3, Wan2.2, Wan2.5).
+"""VideoWorker — i2v / t2v video generation (LTX-2.3 via ComfyUI, Wan via docker).
 
-Phase 3 placeholder. The existing fleet runner embeds a JSON ComfyUI
-workflow that wires base image + prompt → LTX/Wan; that JSON construction
-will move to the Phase 4 coordinator. For now we shell out to a docker
-launcher, mirroring the existing `slopfinity.workers.run_video_*` shape.
-
-Output MP4 path is written to `item.stages.video.asset`.
+LTX uses slopfinity.ltx_comfy (ComfyUI HTTP). Ensure comfyui via service_registry
+before generate. Wan remains docker run --rm until CLI is fixed.
 """
 from __future__ import annotations
 
@@ -21,6 +17,16 @@ try:
 except Exception:  # pragma: no cover
     acquire_gpu = None  # type: ignore[assignment]
 
+try:
+    from .. import service_registry as _svc
+except Exception:  # pragma: no cover
+    _svc = None  # type: ignore[assignment]
+
+try:
+    from .. import ltx_comfy
+except Exception:  # pragma: no cover
+    ltx_comfy = None  # type: ignore[assignment]
+
 
 IMAGE = "amd-strix-halo-image-video-toolbox:latest"
 
@@ -33,6 +39,11 @@ def _workspace() -> str:
     return os.environ.get("SLOPFINITY_WORKSPACE") or os.getcwd()
 
 
+def _is_ltx(model: str) -> bool:
+    m = (model or "").lower()
+    return m.startswith("ltx") or m in ("ltx-2.3", "ltx2.3", "ltx")
+
+
 def _launcher_for(model: str) -> str:
     if model.startswith("wan"):
         return "/opt/wan_launcher.py"
@@ -40,30 +51,44 @@ def _launcher_for(model: str) -> str:
 
 
 def _docker_cmd(model: str, prompt: str, in_img: str, out_path: str) -> List[str]:
+    """Docker path (wan with correct generate.py flags, or ltx launcher)."""
+    ws = _workspace()
+    c_out = out_path
+    if out_path.startswith(ws):
+        c_out = "/workspace" + out_path[len(ws):]
+    c_in = in_img
+    if in_img and in_img.startswith(ws):
+        c_in = "/workspace" + in_img[len(ws):]
     base = [
         "docker", "run", "--rm",
-        "-v", f"{_workspace()}:/workspace",
+        "-v", f"{ws}:/workspace",
         "-v", f"{_hf_cache()}:/root/.cache/huggingface",
         "-w", "/workspace",
         "--device", "/dev/kfd",
         "--device", "/dev/dri",
-        IMAGE,
-        "python3", _launcher_for(model),
+        "-e", "WAN_ATTENTION_BACKEND=sdpa",
     ]
     if model.startswith("wan"):
+        from ..wan_cli import wan_launcher_argv, wan_paths
+        cfg = wan_paths(model)
+        ckpt, lora = cfg["ckpt"], cfg["lora"]
         base += [
-            "--prompt", prompt,
-            "--image", in_img,
-            "--out", out_path,
-            "--model", model,
+            "-v", f"{ckpt}:/models/{os.path.basename(ckpt.rstrip('/'))}:ro",
         ]
-    else:
-        base += [
-            "--mode", "video",
-            "--prompt", prompt,
-            "--image", in_img,
-            "--out", out_path,
-        ]
+        if lora and os.path.isdir(lora):
+            base += [
+                "-v", f"{lora}:/models/lightning/{os.path.basename(lora.rstrip('/'))}:ro",
+            ]
+        base += [IMAGE] + wan_launcher_argv(prompt, in_img, out_path, model)
+        return base
+    base += [
+        IMAGE,
+        "python3", _launcher_for(model),
+        "--mode", "video",
+        "--prompt", prompt,
+        "--image", c_in,
+        "--out", c_out,
+    ]
     return base
 
 
@@ -74,12 +99,7 @@ async def _run(cmd: List[str]) -> int:
 
 
 class VideoWorker(StageWorker):
-    """Stage worker for the `video` role.
-
-    NOTE: The runner currently embeds a JSON ComfyUI workflow inside the
-    fleet pipeline. Phase 4's coordinator will lift that JSON out and pass
-    it here; for now we use the launcher CLI shape (placeholder).
-    """
+    """Stage worker for the `video` role."""
 
     role = "video"
 
@@ -107,6 +127,22 @@ class VideoWorker(StageWorker):
         out_dir = config_snapshot_get(item, "out_dir", _workspace()) or _workspace()
         return os.path.join(str(out_dir), f"v{v_idx}_video.mp4")
 
+    async def _run_ltx_comfy(self, prompt: str, in_img: str, out_path: str) -> int:
+        if ltx_comfy is None:
+            return 2
+        if _svc is not None:
+            ens = await asyncio.to_thread(_svc.ensure_for_stage, "video", "ltx-2.3")
+            if not ens.get("ok") and not ens.get("skipped"):
+                return 3
+        frames = int(os.environ.get("SLOPFINITY_LTX_FRAMES", "49"))
+        return await asyncio.to_thread(
+            ltx_comfy.generate_video,
+            prompt,
+            out_path,
+            image_path=in_img or "",
+            frames=frames,
+        )
+
     async def run_stage(self, item: Any) -> Dict[str, Any]:
         model = self._resolve_model(item)
         prompt = self._resolve_prompt(item)
@@ -117,19 +153,28 @@ class VideoWorker(StageWorker):
             return {"ok": False, "output": None, "asset": None,
                     "error": "video worker: empty prompt"}
 
-        cmd = _docker_cmd(model, prompt, in_img, out_path)
+        mode = (os.environ.get("SLOPFINITY_VIDEO_MODE") or "http").strip().lower()
+        use_comfy = _is_ltx(model) and mode != "docker" and ltx_comfy is not None
+
+        async def _body() -> int:
+            if use_comfy:
+                return await self._run_ltx_comfy(prompt, in_img, out_path)
+            cmd = _docker_cmd(model, prompt, in_img, out_path)
+            return await _run(cmd)
 
         if acquire_gpu is None:
-            rc = await _run(cmd)
+            rc = await _body()
         else:
             async with acquire_gpu("video", model):
-                rc = await _run(cmd)
+                rc = await _body()
 
-        ok = rc == 0 and os.path.exists(out_path)
+        ok = rc == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
         return {
             "ok": ok,
             "output": out_path if ok else None,
             "asset": out_path if ok else None,
             "rc": rc,
             "model": model,
+            "backend": "comfy" if use_comfy else "docker",
+            "error": None if ok else f"video failed rc={rc}",
         }

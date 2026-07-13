@@ -156,6 +156,50 @@ async def services_status():
             status_code=500,
         )
 
+
+@router.post("/services/{service_id}/warm")
+async def services_warm(service_id: str):
+    """Ensure a pipeline network worker is up (docker compose/start + health poll).
+
+    Same path workers use via service_registry.ensure_up — exclusive peers in
+    the same group are stopped first when configured.
+    """
+    try:
+        from .. import service_registry as _svc
+        if not _svc.get_service(service_id):
+            return JSONResponse(
+                {"ok": False, "error": f"unknown service: {service_id}"},
+                status_code=404,
+            )
+        result = await asyncio.to_thread(_svc.ensure_up, service_id)
+        status = 200 if result.get("ok") else 503
+        return JSONResponse({"ok": bool(result.get("ok")), "action": "warm", **result}, status_code=status)
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "error": str(exc), "action": "warm", "id": service_id},
+            status_code=500,
+        )
+
+
+@router.post("/services/{service_id}/park")
+async def services_park(service_id: str):
+    """Stop a pipeline network worker (docker stop) to free UMA."""
+    try:
+        from .. import service_registry as _svc
+        if not _svc.get_service(service_id):
+            return JSONResponse(
+                {"ok": False, "error": f"unknown service: {service_id}"},
+                status_code=404,
+            )
+        result = await asyncio.to_thread(_svc.ensure_down, service_id)
+        status = 200 if result.get("ok") else 503
+        return JSONResponse({"ok": bool(result.get("ok")), "action": "park", **result}, status_code=status)
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "error": str(exc), "action": "park", "id": service_id},
+            status_code=500,
+        )
+
 @router.get("/scheduler/status")
 async def scheduler_status():
     """Snapshot of the scheduler: pause state + queue depth."""

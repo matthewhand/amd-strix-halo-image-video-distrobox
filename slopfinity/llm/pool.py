@@ -6,15 +6,22 @@ from .providers import get_provider
 
 load_dotenv()
 
+# Operator default: Ollama on a dedicated NVIDIA box for CV/prompt LLM work.
+# LM Studio (:1234) remains optional via env / config.json / failover.
+_DEFAULT_PRIMARY_URL = "http://localhost:11434/v1"
+_DEFAULT_PRIMARY_MODEL = "gemma4:12b"
+_DEFAULT_FAILOVER_URL = "http://localhost:1234/v1"
+
+
 def _config_llm_fallback():
     """Primary (url, model) from config.json's `llm` block.
 
     The env pool (SLOPFINITY_LLM_*) is the deployment override, but when no
     primary URL is set in the environment we honor the operator's saved
-    config.json instead of silently defaulting to localhost:1234. This keeps
-    the documented config.json → LLM contract working (and lets the mock
-    integration tests, which seed config.json with a dynamic port, resolve
-    the right endpoint). Imported lazily to avoid an import cycle.
+    config.json instead of silently defaulting. This keeps the documented
+    config.json → LLM contract working (and lets the mock integration tests,
+    which seed config.json with a dynamic port, resolve the right endpoint).
+    Imported lazily to avoid an import cycle.
     """
     try:
         from .. import config as _cfg
@@ -27,32 +34,50 @@ def _config_llm_fallback():
 def get_env_pool_config():
     """Reads the LLM endpoint pool from the environment (SLOPFINITY_LLM_*).
 
-    The primary endpoint falls back to config.json's `llm` block, then to the
-    legacy localhost:1234 default, when no SLOPFINITY_LLM_PRIMARY_URL is set.
+    Primary defaults to Ollama :11434 / gemma4:12b (dedicated NVIDIA LLM).
+    LM Studio :1234 is the default failover when no FAILOVER_URLS env is set.
     """
     cfg_url, cfg_model = _config_llm_fallback()
-    primary_url = os.environ.get("SLOPFINITY_LLM_PRIMARY_URL") or cfg_url or "http://localhost:1234/v1"
-    primary_model = os.environ.get("SLOPFINITY_LLM_PRIMARY_MODEL") or cfg_model or ""
-    
-    cpu_url = os.environ.get("SLOPFINITY_LLM_CPU_URL", "http://localhost:11434/v1")
+    primary_url = (
+        os.environ.get("SLOPFINITY_LLM_PRIMARY_URL")
+        or cfg_url
+        or _DEFAULT_PRIMARY_URL
+    )
+    primary_model = (
+        os.environ.get("SLOPFINITY_LLM_PRIMARY_MODEL")
+        or cfg_model
+        or _DEFAULT_PRIMARY_MODEL
+    )
+
+    # Secondary slot historically named "cpu" — keep for API shape; default empty
+    # so we don't double-probe the same Ollama host as primary.
+    cpu_url = os.environ.get("SLOPFINITY_LLM_CPU_URL", "")
     cpu_model = os.environ.get("SLOPFINITY_LLM_CPU_MODEL", "")
-    
+
     failover_urls_str = os.environ.get("SLOPFINITY_LLM_FAILOVER_URLS", "")
     failover_models_str = os.environ.get("SLOPFINITY_LLM_FAILOVER_MODELS", "")
-    
-    failover_urls = [u.strip() for u in failover_urls_str.split(",") if u.strip()]
-    failover_models = [m.strip() for m in failover_models_str.split(",")] if failover_models_str else []
-    
-    # Pad models list if shorter than urls
+
+    if failover_urls_str.strip():
+        failover_urls = [u.strip() for u in failover_urls_str.split(",") if u.strip()]
+        failover_models = (
+            [m.strip() for m in failover_models_str.split(",")]
+            if failover_models_str
+            else []
+        )
+    else:
+        # Default failover: LM Studio for heavier / alternate models when set.
+        failover_urls = [_DEFAULT_FAILOVER_URL]
+        failover_models = [""]
+
     while len(failover_models) < len(failover_urls):
         failover_models.append("")
-        
+
     failovers = [{"url": u, "model": m} for u, m in zip(failover_urls, failover_models)]
 
     return {
         "primary": {"url": primary_url, "model": primary_model},
         "cpu": {"url": cpu_url, "model": cpu_model},
-        "failovers": failovers
+        "failovers": failovers,
     }
 
 
@@ -131,8 +156,24 @@ async def get_pool_status():
     """
     cfg = get_env_pool_config()
 
-    primary_task = probe_endpoint(cfg["primary"]["url"], cfg["primary"]["model"])
-    cpu_task = probe_endpoint(cfg["cpu"]["url"], cfg["cpu"]["model"], provider_name="ollama")
+    def _provider_for(url: str, default: str = "ollama") -> str:
+        u = (url or "").lower()
+        if ":1234" in u:
+            return "lmstudio"
+        if ":11434" in u or "ollama" in u:
+            return "ollama"
+        return default
+
+    primary_task = probe_endpoint(
+        cfg["primary"]["url"],
+        cfg["primary"]["model"],
+        provider_name=_provider_for(cfg["primary"]["url"]),
+    )
+    cpu_task = probe_endpoint(
+        cfg["cpu"]["url"],
+        cfg["cpu"]["model"],
+        provider_name=_provider_for(cfg["cpu"]["url"], "ollama"),
+    )
 
     # Dedup failovers against the primary/cpu slots and against each other.
     seen = {

@@ -128,6 +128,10 @@ services:
     profiles:
       - qwen-tts
       - slop
+    # ROOT required: torch+ROCm GPU enumeration fails for non-root uid on
+    # gfx1151 (same as qwen-image / heartmula / comfyui). Without this,
+    # qwen-tts sees `cuda False` / triton "0 active drivers".
+    user: "0:0"
     environment:
       - HSA_OVERRIDE_GFX_VERSION=11.0.0
       # Redirect HuggingFace cache to a writable bind-mounted path. The default
@@ -135,7 +139,18 @@ services:
       # the model tries to materialize the CustomVoice subdir, causing every
       # /tts call to crash with PermissionError. /workspace is the slopfinity
       # bind mount of ./comfy-outputs/experiments on the host.
-      - HF_HOME=/workspace/.hf-tts-cache
+      # Prefer roomy downloads mount for HF cache when available; fall back
+      # to workspace (experiments) so TTS still works offline-disk layouts.
+      - HF_HOME=${QWEN_TTS_HF_HOME:-/mnt/downloads/cache/huggingface-tts}
+      - QWEN_TTS_MIN_FREE_GB=${QWEN_TTS_MIN_FREE_GB:-8}
+      # hf_transfer often missing in toolbox image; classic download is fine.
+      - HF_HUB_ENABLE_HF_TRANSFER=0
+      # DramaBox (ResembleAI) — engine=dramabox on POST /tts
+      - DRAMABOX_ROOT=/opt/DramaBox
+      - DRAMABOX_VOICES=/opt/dramabox_voices
+      - DRAMABOX_HF_HOME=/mnt/downloads/dramabox-hf
+      - DRAMABOX_TIMEOUT_S=${DRAMABOX_TIMEOUT_S:-1800}
+      - DRAMABOX_BNB_4BIT=0
       # USER + LOGNAME — Qwen3-TTS's CustomVoice loader calls
       # `getpass.getuser()` to derive a sanitized voice-bank dirname.
       # In containers without /etc/passwd entries for the runtime UID
@@ -144,50 +159,57 @@ services:
       # 500 on every /tts request. Setting either env var resolves
       # without needing to rebuild the image. "slopfinity" is just a
       # stable identifier — the dirname becomes
-      # /workspace/.hf-tts-cache/.../slopfinity_<voice>/.
+      # .../slopfinity_<voice>/.
       - USER=slopfinity
       - LOGNAME=slopfinity
+      - PYTHONPATH=/opt
+      # Writable home for aiter/triton JIT caches (image /home/user is often RO).
+      - HOME=/workspace
     volumes:
       - ./comfy-outputs/experiments:/workspace
-      # No script bind mounts for qwen-tts (uses COPY'd /opt/ versions from Dockerfile;
-      # consistent with heartmula and the "thin serve copied, no per-invocation mounts" uplift).
-    command: >
-      bash -c "
+      # Roomy HF cache for Qwen3 weights (root is often 97% full).
+      - /mnt/downloads/cache/huggingface-tts:/mnt/downloads/cache/huggingface-tts
+      # Host launchers so disk-guard / gfx fixes apply without image rebuild.
+      - ./scripts/qwen_tts_launcher.py:/opt/qwen_tts_launcher.py:ro
+      - ./scripts/qwen_tts_serve.py:/opt/qwen_tts_serve.py:ro
+      - ./scripts/kokoro_tts_launcher.py:/opt/kokoro_tts_launcher.py:ro
+      - ./scripts/dramabox_launcher.py:/opt/dramabox_launcher.py:ro
+      - ./scripts/dramabox_voices:/opt/dramabox_voices:ro
+      - ./scripts/http_worker_app.py:/opt/http_worker_app.py:ro
+      # DramaBox checkout + HF weights (DiT + audio components + gemma).
+      - /mnt/downloads/dramabox-work/DramaBox:/opt/DramaBox:ro
+      - /mnt/downloads/dramabox-hf:/mnt/downloads/dramabox-hf:ro
+    command:
+      - bash
+      - -lc
+      - |
         if (echo > /dev/tcp/127.0.0.1/8010) 2>/dev/null ; then
           echo 'ERROR: Port 8010 is already bound.' 1>&2
           echo '       Stop the other TTS worker first, or change TTS_PORT.' 1>&2
           sleep 30
           exit 0
         fi
-        # /workspace/tts is the bind-mount that the slopfinity dashboard
-        # serves at /files/tts/<name>. The compose `mkdir -p` is
-        # idempotent; the chown attempt is best-effort (it works for
-        # the first container ever to run with this UID, but if the
-        # host dir is already owned by a different UID, the in-
-        # container chown can't escalate).
-        #
-        # Operator one-time setup (only if /tts files end up at
-        # /tmp/slopfinity-tts/ instead of /workspace/tts/):
-        #   sudo chown -R $(id -u):$(id -g) ./comfy-outputs/experiments/tts
-        # The dashboard's /files/tts/<name> route reads from EXP_DIR
-        # on the host; if the chown isn't done, _first_writable in
-        # qwen_tts_serve.py falls back to /tmp/slopfinity-tts inside
-        # the container — files are generated but the dashboard can't
-        # serve them.
-        mkdir -p /workspace/tts && chown -R $(id -u):$(id -g) /workspace/tts 2>/dev/null || true
-        # Multi-engine TTS: kokoro-onnx is the default (CPU, no ROCm
-        # kernel issues on gfx1151) and is pip-installed on every
-        # container start since the toolbox image doesn't bake it in.
-        # Persists as long as the container's overlay fs lives; recreate
-        # = reinstall (~10s, cheap).
+        # /workspace/tts is served by the dashboard at /files/tts/<name>.
+        mkdir -p /workspace/tts /mnt/downloads/cache/huggingface-tts
+        chown -R "$$(id -u):$$(id -g)" /workspace/tts 2>/dev/null || true
         echo '📦 Installing kokoro-onnx (default engine)...'
         pip install --quiet kokoro-onnx || echo 'WARN: kokoro install failed; only qwen path will work'
-        # Force the worker to use /workspace/tts so files are served by
-        # the dashboard at /files/tts/<name>. Avoids the /tmp fallback.
+        echo '📦 Ensuring qwen-tts engine...'
+        if ! python3 -c 'from qwen_tts import Qwen3TTSModel' 2>/dev/null; then
+          pip install --quiet --no-deps qwen-tts \
+            || echo 'WARN: qwen-tts --no-deps failed'
+          if ! python3 -c 'from qwen_tts import Qwen3TTSModel' 2>/dev/null; then
+            pip install --quiet 'qwen-tts' 'transformers>=4.57,<5' \
+              || echo 'WARN: qwen-tts install failed; only kokoro path will work'
+          fi
+        fi
+        # DramaBox deps (light extras; torch is already ROCm-pinned).
+        echo '📦 Ensuring DramaBox extras (peft/safetensors/einops)...'
+        pip install --quiet 'peft>=0.7' 'safetensors>=0.4' 'einops>=0.7' 'soundfile>=0.12' \
+          || echo 'WARN: dramabox extras install failed'
         export TTS_OUT_DIR=/workspace/tts
-        echo '🎙️  Starting TTS worker on :8010 (default engine: kokoro, out=/workspace/tts)...'
+        echo "🎙️  Starting TTS worker on :8010 (default engine: kokoro, HF_HOME=$$HF_HOME)..."
         exec python3 /opt/qwen_tts_serve.py
-      "
 
   # HeartMuLa music worker on :8011 (scripts/heartmula_serve.py).
   # Included in 'slop' profile (alongside qwen-tts, qwen-image, comfyui) so
@@ -203,15 +225,21 @@ services:
       - slop
     # ROOT required (like qwen-image-service and comfyui-service) for torch+ROCm GPU init on gfx1151.
     user: "0:0"
+    working_dir: /opt
     environment:
       - HSA_OVERRIDE_GFX_VERSION=11.5.1
       - HEARTMULA_OUT_DIR=/workspace/music
       - HEARTMULA_PORT=${HEARTMULA_PORT:-8011}
       - HEARTMULA_MODEL_ROOT=/mnt/downloads/comfy-models/HeartMuLa
+      - PYTHONPATH=/opt
     volumes:
       - ./comfy-outputs/experiments:/workspace
-      # No script bind mounts for heartmula (uses COPY'd /opt/ versions from Dockerfile;
-      # this fulfills "without per-invocation volume mounts for the scripts").
+      # Bind-mount serve scripts so older toolbox images without COPY'd
+      # heartmula_serve / http_worker_app still boot (ModuleNotFoundError).
+      # Image rebuild with Dockerfile COPY remains the long-term source of truth.
+      - ./scripts/heartmula_serve.py:/opt/heartmula_serve.py:ro
+      - ./scripts/heartmula_launcher.py:/opt/heartmula_launcher.py:ro
+      - ./scripts/http_worker_app.py:/opt/http_worker_app.py:ro
       # Model mount overridable via HEARTMULA_MODELS_HOST (host path) in .env
       - ${HEARTMULA_MODELS_HOST:-/mnt/downloads/comfy-models}:/mnt/downloads/comfy-models:ro
     command: >
@@ -248,21 +276,9 @@ services:
     # without raising — was crash-looping on `OSError: No username set`.
     environment:
       - USER=root
-    command: >
-      bash -c "
-        if (echo > /dev/tcp/127.0.0.1/8188) 2>/dev/null ; then
-          echo 'ERROR: Port 8188 is already bound (likely a toolbox running start_docker.sh).' 1>&2
-          echo '       Stop the other ComfyUI server first.' 1>&2
-          sleep 30
-          exit 0
-        fi
-        echo '🖼️  Starting ComfyUI (FP16 weights, FP32 VAE)...'
-        cd /opt/ComfyUI
-        # --fp32-vae: forces every VAE decode to fp32 regardless of the
-        #   model's native dtype. On Strix Halo (gfx1151) bf16/fp16 VAE
-        #   decodes produce a faint 8/16-px block-grid pattern in some
-        #   models (LTX-Video-2.3 especially); fp32 eliminates it. Costs
-        #   ~2× VAE-decode VRAM, fine on UMA. See README §14 + the
-        #   slop-card "⚠ vae grid" chip's tooltip for context.
-        exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16 --fp32-vae
-      "
+      - PYTHONUNBUFFERED=1
+    # Append mounts (compose merges with extends parent volumes).
+    volumes:
+      - ./scripts/patch_ltxvideo_kornia.py:/opt/patch_ltxvideo_kornia.py:ro
+      - ./scripts/start_comfyui_service.sh:/opt/start_comfyui_service.sh:ro
+    command: ["bash", "/opt/start_comfyui_service.sh"]

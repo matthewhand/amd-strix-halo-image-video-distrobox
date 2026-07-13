@@ -55,7 +55,11 @@ KOKORO_LAUNCHER = os.environ.get(
     "KOKORO_TTS_LAUNCHER",
     "/opt/kokoro_tts_launcher.py",
 )
-for _name in ("QWEN_LAUNCHER", "KOKORO_LAUNCHER"):
+DRAMABOX_LAUNCHER = os.environ.get(
+    "DRAMABOX_TTS_LAUNCHER",
+    "/opt/dramabox_launcher.py",
+)
+for _name in ("QWEN_LAUNCHER", "KOKORO_LAUNCHER", "DRAMABOX_LAUNCHER"):
     _path = locals()[_name]
     if not os.path.exists(_path):
         _local = os.path.join(
@@ -75,15 +79,22 @@ QWEN_VOICES = {
     "serena", "sohee", "uncle_fu", "vivian",
 }
 
+DRAMABOX_VOICES = {
+    "none", "narrator-female", "narrator-male", "kid",
+}
+
 DEFAULT_ENGINE = os.environ.get("TTS_ENGINE", "kokoro").lower()
 
 
 def _pick_engine(voice: str, requested: str | None) -> str:
     if requested:
         v = requested.strip().lower()
-        if v in ("qwen", "kokoro"):
+        if v in ("qwen", "kokoro", "dramabox"):
             return v
-    if voice and voice.strip().lower() in QWEN_VOICES:
+    vl = (voice or "").strip().lower()
+    if vl in DRAMABOX_VOICES and vl != "none":
+        return "dramabox"
+    if vl in QWEN_VOICES:
         return "qwen"
     return DEFAULT_ENGINE
 
@@ -124,6 +135,8 @@ def _health_impl() -> dict:
         "default_engine": DEFAULT_ENGINE,
         "qwen_launcher": QWEN_LAUNCHER,
         "kokoro_launcher": KOKORO_LAUNCHER,
+        "dramabox_launcher": DRAMABOX_LAUNCHER,
+        "dramabox_available": os.path.exists(DRAMABOX_LAUNCHER),
         "out": _get_out_dir(),
     }
     if os.environ.get("TTS_WORKER_URL"):
@@ -139,6 +152,11 @@ def _voices_impl() -> dict:
             "qwen": {
                 "default_voice": "ryan",
                 "voices": sorted(QWEN_VOICES),
+            },
+            "dramabox": {
+                "default_voice": "narrator-female",
+                "voices": sorted(DRAMABOX_VOICES),
+                "available": os.path.exists(DRAMABOX_LAUNCHER),
             },
         },
     }
@@ -169,9 +187,12 @@ def _tts_impl(data: dict = None) -> dict:
     if not text:
         return {"ok": False, "error": "empty text"}
 
-    fname = f"tts_{engine}_{voice}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.wav"
+    # sanitize voice for filename
+    voice_tag = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(voice))[:48]
+    fname = f"tts_{engine}_{voice_tag}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.wav"
     out_path = os.path.join(_get_out_dir(), fname)
 
+    env = os.environ.copy()
     if engine == "qwen":
         cmd = [
             sys.executable, QWEN_LAUNCHER,
@@ -180,8 +201,23 @@ def _tts_impl(data: dict = None) -> dict:
             "--out", out_path,
             "--model", DEFAULT_MODEL,
         ]
-        env = os.environ.copy()
         env["HSA_OVERRIDE_GFX_VERSION"] = "11.5.1"
+        timeout_s = 600
+    elif engine == "dramabox":
+        if not os.path.exists(DRAMABOX_LAUNCHER):
+            return {
+                "ok": False,
+                "error": "dramabox launcher missing — mount scripts/dramabox_launcher.py",
+            }
+        cmd = [
+            sys.executable, DRAMABOX_LAUNCHER,
+            "--text", text,
+            "--voice", voice or "narrator-female",
+            "--out", out_path,
+        ]
+        env["HSA_OVERRIDE_GFX_VERSION"] = "11.5.1"
+        # First load of Gemma+DiT is multi-minute on cold cache.
+        timeout_s = int(os.environ.get("DRAMABOX_TIMEOUT_S", "1800"))
     else:
         cmd = [
             sys.executable, KOKORO_LAUNCHER,
@@ -191,10 +227,10 @@ def _tts_impl(data: dict = None) -> dict:
             "--lang", data.get("lang") or "en-us",
             "--speed", str(float(data.get("speed") or 1.0)),
         ]
-        env = os.environ.copy()
+        timeout_s = 600
 
     try:
-        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
+        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "synthesis timeout"}
 
@@ -202,7 +238,7 @@ def _tts_impl(data: dict = None) -> dict:
         return {"ok": False, "error": proc.stderr.strip().splitlines()[-1] if proc.stderr else "disk guard"}
 
     if proc.returncode != 0 or not os.path.exists(out_path):
-        tail = (proc.stderr or "").strip().splitlines()[-5:]
+        tail = (proc.stderr or "").strip().splitlines()[-8:]
         return {"ok": False, "error": "launcher failed", "stderr": "\n".join(tail)}
 
     url = f"/files/tts/{fname}"

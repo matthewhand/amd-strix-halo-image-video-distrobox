@@ -43,6 +43,7 @@ STAGE_BUDGETS = {
     ("audio", "heartmula"): 14,
     ("tts", "qwen-tts"): 10,
     ("tts", "kokoro"): 8,
+    ("tts", "dramabox"): 18,  # Gemma encoder + DiT; missing budget caused silent under-count
     ("upscale", "ltx-spatial"): 30,
 }
 
@@ -409,7 +410,7 @@ async def acquire_gpu(
                 await asyncio.wait_for(GPU.cond.wait(), timeout=1.0)
             except asyncio.TimeoutError:
                 pass
-            if blocks >= 30:  # ~30s — bail out and let caller OOM-retry
+            if blocks >= 30:  # ~30s — hard refuse instead of starting under budget
                 await _emit(
                     {
                         "type": "oom_retry",
@@ -420,7 +421,39 @@ async def acquire_gpu(
                         "ts": _now(),
                     }
                 )
-                break
+                # Belt-and-braces: one last reclaim outside the cond, then refuse.
+                still_short = True
+                GPU.cond.release()
+                try:
+                    await free_between()
+                    try:
+                        from . import stage_gate as _sg
+                        from . import service_registry as _svc
+
+                        await asyncio.to_thread(
+                            _sg.reclaim_all,
+                            f"acquire_gpu timeout {stage}/{model}",
+                            mem_reader=_mem_available_gb,
+                            registry=_svc,
+                        )
+                    except Exception:
+                        pass
+                    available = _mem_available_gb()
+                    still_short = projected_resident > max(
+                        0.0, available - float(safety_gb)
+                    )
+                finally:
+                    await GPU.cond.acquire()
+                if still_short:
+                    from .stage_gate import InsufficientMemoryError
+
+                    raise InsufficientMemoryError(
+                        f"acquire_gpu refused {stage}/{model}: "
+                        f"available={available:.1f}GB need_resident={projected_resident:.1f}GB "
+                        f"safety={safety_gb}GB (would OOM)"
+                    )
+                # Reclaim helped — continue the while loop to re-check ok
+                continue
 
         # Reserve our slice while still holding cond.
         GPU.resident_gb += need

@@ -20,12 +20,93 @@ import argparse
 import re
 import glob
 import math
+import fcntl
+import atexit
 import fleet_config as cfg
 
 # Default Configuration
 OUTPUT_DIR = "comfy-outputs/experiments"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("comfy-input", exist_ok=True)
+
+# Host-safe stage gate (anti-OOM). Optional import so bare CI without
+# slopfinity package still imports this file for unit tests that mock gens.
+try:
+    from slopfinity.stage_gate import (
+        stage_gate as _stage_gate,
+        InsufficientMemoryError as _InsufficientMemoryError,
+        reclaim_all as _reclaim_all,
+    )
+except Exception:  # pragma: no cover
+    _stage_gate = None  # type: ignore
+    _InsufficientMemoryError = RuntimeError  # type: ignore
+    _reclaim_all = None  # type: ignore
+
+_PIPELINE_LOCK_FH = None
+_PIPELINE_LOCK_PATH = os.path.join(OUTPUT_DIR, ".fleet.lock")
+
+
+def _acquire_pipeline_lock(path: str = _PIPELINE_LOCK_PATH) -> None:
+    """Refuse a second concurrent run_fleet (multi-fleet was an OOM vector)."""
+    global _PIPELINE_LOCK_FH
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fh = open(path, "a+")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        print(
+            "[FLEET] ❌ another run_fleet holds the pipeline lock "
+            f"({path}) — refusing to start (anti-OOM)",
+            flush=True,
+        )
+        sys.exit(2)
+    fh.seek(0)
+    fh.truncate()
+    fh.write(f"{os.getpid()}\n")
+    fh.flush()
+    _PIPELINE_LOCK_FH = fh
+
+    def _release():
+        global _PIPELINE_LOCK_FH
+        try:
+            if _PIPELINE_LOCK_FH is not None:
+                fcntl.flock(_PIPELINE_LOCK_FH.fileno(), fcntl.LOCK_UN)
+                _PIPELINE_LOCK_FH.close()
+        except Exception:
+            pass
+        _PIPELINE_LOCK_FH = None
+
+    atexit.register(_release)
+
+
+def _gated(role: str, model: str, fn, *, keep_after: bool = False, ensure_up: bool | None = None):
+    """Run ``fn()`` under stage_gate when available; always reclaim on error.
+
+    ensure_up defaults True only for HTTP workers (tts, comfy/ltx). Docker
+    ``--rm`` one-shots (qwen/ernie/heartmula CLI) still get hard-floor +
+    peer park but do not docker-compose up a long-lived container.
+    """
+    if _stage_gate is None:
+        return fn()
+    if ensure_up is None:
+        r = (role or "").lower()
+        m = (model or "").lower()
+        ensure_up = r in ("tts", "video") or (r == "image" and "ltx" in m)
+    try:
+        with _stage_gate(role, model, keep_after=keep_after, ensure_up=ensure_up):
+            return fn()
+    except _InsufficientMemoryError as e:
+        print(f"[FLEET] ❌ stage_gate refused {role}/{model}: {e}", flush=True)
+        raise
+    except Exception:
+        # Timeout / crash — force reclaim so UMA is not left pinned
+        if _reclaim_all is not None:
+            try:
+                _reclaim_all(f"fleet error after {role}/{model}")
+            except Exception:
+                pass
+        raise
 
 # TTS worker endpoint (Qwen3-TTS / Kokoro). Matches the contract used by
 # slopfinity/workers/tts.py and slopfinity/routers/runner.py: POST JSON
@@ -237,32 +318,71 @@ def update_state(
     cfg.set_state(mode, step, video, total, chain, total_chains, prompt)
 
 
+def _llm_chat_url(config_now=None) -> str:
+    """OpenAI-compat chat completions URL for prompt enhance.
+
+    Defaults to Ollama on :11434 (dedicated NVIDIA gemma4:12b). Override via
+    config.llm.base_url or SLOPFINITY_LLM_PRIMARY_URL.
+    """
+    env = os.environ.get("SLOPFINITY_LLM_PRIMARY_URL")
+    if env:
+        base = env.rstrip("/")
+        return base if base.endswith("/chat/completions") else base + "/chat/completions"
+    conf = config_now if config_now is not None else cfg.load_config()
+    base = ((conf.get("llm") or {}).get("base_url") or "http://127.0.0.1:11434/v1").rstrip(
+        "/"
+    )
+    return base if base.endswith("/chat/completions") else base + "/chat/completions"
+
+
 def get_lmstudio_model():
     """Resolve the prompt-rewriter model id. Order:
     1. Trust config.llm.model_id if set (slopfinity Settings).
-    2. Otherwise poll the OpenAI-compat endpoint at :11434 for ≤30s.
-    3. Give up — return None and let generate_prompt fall back to its
+    2. Prefer Ollama :11434 / gemma4:12b (dedicated NVIDIA CV LLM).
+    3. Fall back to first non-embed model on :11434, then LM Studio :1234.
+    4. Give up — return None and let generate_prompt fall back to its
        VOID-style template instead of the fleet hanging forever.
     """
-    cfg_model = (cfg.load_config().get("llm") or {}).get("model_id")
+    llm_cfg = cfg.load_config().get("llm") or {}
+    cfg_model = llm_cfg.get("model_id")
     if cfg_model:
         print(f"🔍 LLM: using configured {cfg_model}", flush=True)
         return cfg_model
-    print("🔍 No configured LLM — polling :11434 for ≤30s...", flush=True)
+
+    prefer = os.environ.get("SLOPFINITY_LLM_PRIMARY_MODEL") or "gemma4:12b"
+    endpoints = [
+        os.environ.get("SLOPFINITY_LLM_PRIMARY_URL") or "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:1234/v1",  # LM Studio optional failover
+    ]
+    # de-dup
+    seen = set()
+    endpoints = [u for u in endpoints if u and not (u in seen or seen.add(u))]
+
+    print(
+        f"🔍 No configured LLM model_id — preferring {prefer} on Ollama :11434…",
+        flush=True,
+    )
     deadline = time.time() + 30
     while time.time() < deadline:
-        try:
-            req = urllib.request.Request("http://127.0.0.1:11434/v1/models")
-            with urllib.request.urlopen(req, timeout=5) as r:
-                data = json.loads(r.read())
-                models = [
-                    m["id"] for m in data["data"] if "embed" not in m["id"].lower()
-                ]
-                if models:
-                    print(f"🔍 LLM: discovered {models[0]}", flush=True)
+        for base in endpoints:
+            try:
+                req = urllib.request.Request(base.rstrip("/") + "/models")
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    data = json.loads(r.read())
+                    models = [
+                        m["id"]
+                        for m in data.get("data") or []
+                        if "embed" not in (m.get("id") or "").lower()
+                    ]
+                    if not models:
+                        continue
+                    if prefer in models:
+                        print(f"🔍 LLM: {prefer} @ {base}", flush=True)
+                        return prefer
+                    print(f"🔍 LLM: discovered {models[0]} @ {base}", flush=True)
                     return models[0]
-        except Exception:
-            pass
+            except Exception:
+                continue
         time.sleep(5)
     print("⚠️  No LLM reachable — running with VOID-style fallback prompts", flush=True)
     return None
@@ -362,8 +482,9 @@ def generate_prompt(model_id, v_idx):
                     ],
                     "temperature": temp,
                 }
+                chat_url = _llm_chat_url(config_now)
                 req = urllib.request.Request(
-                    "http://127.0.0.1:11434/v1/chat/completions",
+                    chat_url,
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
@@ -405,7 +526,7 @@ def generate_prompt(model_id, v_idx):
                 ],
             }
             req = urllib.request.Request(
-                "http://127.0.0.1:11434/v1/chat/completions",
+                _llm_chat_url(config),
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
@@ -566,6 +687,13 @@ def _write_sidecar(out_path, **fields):
 
 
 def run_image_gen(model, prompt, out_path, tier="high", size_str=None):
+    def _body():
+        return _run_image_gen_ungated(model, prompt, out_path, tier=tier, size_str=size_str)
+
+    return _gated("image", model or "qwen", _body, keep_after=False)
+
+
+def _run_image_gen_ungated(model, prompt, out_path, tier="high", size_str=None):
     qsteps, _qsize_legacy, _frames, _vto, ito = TIER_PROFILES[tier]
     # Derive the launcher's aspect string from the user's config.size so
     # image and video stages render to the same shape. Falls back to the
@@ -760,48 +888,63 @@ def heartmula_wav(prompt, out_wav_host, duration_s, timeout_s=600):
     OUTPUT_DIR). Returns True on success. Pure WAV producer — no muxing.
     Used by the new pre-image audio stage (so we know the final track's
     length before the video chain loop starts) AND by `run_heartmula_gen`
-    when the runner still wants a one-shot generate-then-mux flow."""
-    hf_cache = os.path.expanduser("~/.cache/huggingface")
-    out_wav_ctr = f"/workspace/{out_wav_host}"
-    print(f"🎵 Heartmula music: duration={duration_s:.1f}s prompt={prompt[:60]!r}")
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{os.getcwd()}:/workspace",
-        "-v",
-        f"{hf_cache}:/root/.cache/huggingface",
-        "-v",
-        "/mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro",
-        "-w",
-        "/workspace",
-        "--device",
-        "/dev/kfd",
-        "--device",
-        "/dev/dri",
-        "-e",
-        "HSA_OVERRIDE_GFX_VERSION=11.5.1",
-        "amd-strix-halo-image-video-toolbox:latest",
-        "python3",
-        "/workspace/scripts/heartmula_launcher.py",
-        "--prompt",
-        prompt,
-        "--duration",
-        f"{max(1.0, duration_s):.1f}",
-        "--out",
-        out_wav_ctr,
-        "--real",
-    ]
+    when the runner still wants a one-shot generate-then-mux flow.
+
+    Wrapped in stage_gate so HeartMuLa cannot stay warm under LTX/DramaBox.
+    """
+
+    def _body():
+        hf_cache = os.path.expanduser("~/.cache/huggingface")
+        out_wav_ctr = f"/workspace/{out_wav_host}"
+        print(f"🎵 Heartmula music: duration={duration_s:.1f}s prompt={prompt[:60]!r}")
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{os.getcwd()}:/workspace",
+            "-v",
+            f"{hf_cache}:/root/.cache/huggingface",
+            "-v",
+            "/mnt/downloads/comfy-models:/mnt/downloads/comfy-models:ro",
+            "-w",
+            "/workspace",
+            "--device",
+            "/dev/kfd",
+            "--device",
+            "/dev/dri",
+            "-e",
+            "HSA_OVERRIDE_GFX_VERSION=11.5.1",
+            "amd-strix-halo-image-video-toolbox:latest",
+            "python3",
+            "/workspace/scripts/heartmula_launcher.py",
+            "--prompt",
+            prompt,
+            "--duration",
+            f"{max(1.0, duration_s):.1f}",
+            "--out",
+            out_wav_ctr,
+            "--real",
+        ]
+        try:
+            run_with_timeout(cmd, timeout_s, label="heartmula_launcher")
+        except Exception as e:
+            print(f"   ⚠️  Heartmula generation failed: {e}")
+            if _reclaim_all is not None:
+                try:
+                    _reclaim_all("heartmula timeout/fail")
+                except Exception:
+                    pass
+            return False
+        if not os.path.exists(out_wav_host):
+            print(f"   ⚠️  Heartmula produced no WAV at {out_wav_host}")
+            return False
+        return True
+
     try:
-        run_with_timeout(cmd, timeout_s, label="heartmula_launcher")
-    except Exception as e:
-        print(f"   ⚠️  Heartmula generation failed: {e}")
+        return _gated("audio", "heartmula", _body, keep_after=False)
+    except _InsufficientMemoryError:
         return False
-    if not os.path.exists(out_wav_host):
-        print(f"   ⚠️  Heartmula produced no WAV at {out_wav_host}")
-        return False
-    return True
 
 
 def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=600):
@@ -850,17 +993,59 @@ def run_heartmula_gen(prompt, video_path, final_out_path, duration_s, timeout_s=
     return True
 
 
-def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600):
+def tts_wav(
+    text,
+    out_wav_host,
+    voice="ryan",
+    lang="",
+    speed=0.0,
+    timeout_s=600,
+    engine=None,
+):
     """Synthesize narration to `out_wav_host` (host path under OUTPUT_DIR) via
-    the local TTS worker (Qwen3-TTS / Kokoro on :8010). Returns True on success.
+    the local TTS worker (Qwen3-TTS / Kokoro / DramaBox on :8010). Returns True
+    on success.
 
     Pure WAV producer — no muxing (mirrors `heartmula_wav`). POSTs the worker
-    contract {text, voice, lang, speed} and parses the JSON envelope
+    contract {text, voice, lang, speed, engine} and parses the JSON envelope
     {ok, url, voice}. The worker writes the WAV into the shared `tts/` output
     dir (EXP_DIR/tts == ./tts when cwd is the workspace) and returns a
     `/files/tts/<name>` URL; we resolve that back to a local file and copy it
     to `out_wav_host` so the rest of the pipeline treats it like any other WAV.
+
+    `engine` is optional; when set (kokoro/qwen/dramabox) the multi-engine
+    dispatcher on :8010 honors it. Map fleet tts_model values with
+    `_tts_engine_from_model`. DramaBox cold load can exceed 600s — callers
+    should raise timeout_s for that engine.
+
+    Wrapped in stage_gate so DramaBox/Kokoro cannot stay warm under LTX.
     """
+    eng = (engine or "").strip().lower() or "kokoro"
+    if eng in ("qwen-tts", "qwen3-tts"):
+        eng = "qwen"
+    gate_model = eng if eng in ("qwen", "kokoro", "dramabox") else "kokoro"
+
+    def _body():
+        return _tts_wav_ungated(
+            text, out_wav_host, voice=voice, lang=lang, speed=speed,
+            timeout_s=timeout_s, engine=engine,
+        )
+
+    try:
+        return _gated("tts", gate_model, _body, keep_after=False)
+    except _InsufficientMemoryError:
+        return False
+
+
+def _tts_wav_ungated(
+    text,
+    out_wav_host,
+    voice="ryan",
+    lang="",
+    speed=0.0,
+    timeout_s=600,
+    engine=None,
+):
     text = (text or "").strip()
     if not text:
         print("   ⚠️  TTS: empty text — skipping", flush=True)
@@ -870,11 +1055,20 @@ def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600)
         payload["lang"] = lang
     if speed:
         payload["speed"] = float(speed)
+    eng = (engine or "").strip().lower() or None
+    if eng in ("qwen", "kokoro", "dramabox"):
+        payload["engine"] = eng
+    elif eng in ("qwen-tts", "qwen3-tts"):
+        payload["engine"] = "qwen"
+        eng = "qwen"
     print(
-        f"🎙️  TTS: voice={voice or 'ryan'} lang={lang or 'auto'} "
-        f"text={text[:60]!r}",
+        f"🎙️  TTS: engine={eng or 'auto'} voice={voice or 'ryan'} "
+        f"lang={lang or 'auto'} text={text[:60]!r}",
         flush=True,
     )
+    # DramaBox first-load of Gemma+DiT is multi-minute on cold cache.
+    if eng == "dramabox" and timeout_s < 1800:
+        timeout_s = 1800
     try:
         req = urllib.request.Request(
             TTS_WORKER_URL,
@@ -898,26 +1092,41 @@ def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600)
     # (the CI mock returns a synthetic URL that doesn't match its on-disk
     # filename, so the newest-file fallback keeps that path working too).
     url = envelope.get("url") or envelope.get("audio_path") or ""
-    tts_dir = os.path.join(
-        os.environ.get("EXP_DIR") or os.getcwd(), "tts"
-    )
+    # Worker (compose) writes to EXP_DIR/tts == comfy-outputs/experiments/tts
+    # (bind-mounted at /workspace/tts). Prefer OUTPUT_DIR/tts over bare ./tts.
+    tts_dirs = []
+    for d in (
+        os.path.join(OUTPUT_DIR, "tts"),
+        os.path.join(os.environ.get("EXP_DIR") or "", "tts") if os.environ.get("EXP_DIR") else "",
+        os.path.join(os.getcwd(), "tts"),
+        os.path.join(os.getcwd(), "comfy-outputs", "experiments", "tts"),
+    ):
+        if d and d not in tts_dirs:
+            tts_dirs.append(d)
     src = ""
     if url:
-        cand = os.path.join(tts_dir, os.path.basename(url))
-        if os.path.exists(cand):
-            src = cand
-    if not src and os.path.isdir(tts_dir):
-        wavs = [
-            os.path.join(tts_dir, f)
-            for f in os.listdir(tts_dir)
-            if f.lower().endswith(".wav")
-        ]
-        if wavs:
-            src = max(wavs, key=os.path.getmtime)
+        base = os.path.basename(url)
+        for tts_dir in tts_dirs:
+            cand = os.path.join(tts_dir, base)
+            if os.path.exists(cand):
+                src = cand
+                break
+    if not src:
+        for tts_dir in tts_dirs:
+            if not os.path.isdir(tts_dir):
+                continue
+            wavs = [
+                os.path.join(tts_dir, f)
+                for f in os.listdir(tts_dir)
+                if f.lower().endswith(".wav")
+            ]
+            if wavs:
+                src = max(wavs, key=os.path.getmtime)
+                break
     if not src or not os.path.exists(src):
         print(
             f"   ⚠️  TTS: worker ok but no local WAV found (url={url!r}, "
-            f"dir={tts_dir!r})",
+            f"dirs={tts_dirs!r})",
             flush=True,
         )
         return False
@@ -931,19 +1140,45 @@ def tts_wav(text, out_wav_host, voice="ryan", lang="", speed=0.0, timeout_s=600)
     return os.path.exists(out_wav_host) and os.path.getsize(out_wav_host) > 0
 
 
-def run_comfy_job(workflow, out_node_id, target_file):
+def _urlopen_retry(req_or_url, timeout=30, attempts=6, delay_s=2.0):
+    """urllib.urlopen with backoff for Comfy restarts (Connection refused)."""
+    last = None
+    for i in range(attempts):
+        try:
+            return urllib.request.urlopen(req_or_url, timeout=timeout)
+        except Exception as e:
+            last = e
+            if i + 1 >= attempts:
+                break
+            time.sleep(delay_s * (i + 1))
+    raise last  # type: ignore[misc]
+
+
+def run_comfy_job(workflow, out_node_id, target_file, timeout_s=1200):
+    """Submit a Comfy workflow and wait for history[p_id].
+
+    ``timeout_s`` bounds the poll loop so a ComfyUI restart mid-job
+    (history wiped) cannot hang the fleet forever. Default 20 min covers
+    cold LTX-2.3 loads on Strix Halo.
+    """
     try:
         req = urllib.request.Request(
             "http://127.0.0.1:8188/prompt",
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _urlopen_retry(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
+        t0 = time.time()
         while True:
+            if time.time() - t0 > timeout_s:
+                raise TimeoutError(
+                    f"ComfyUI job {p_id} not in history after {timeout_s}s "
+                    f"(Comfy likely restarted mid-run)"
+                )
             time.sleep(5)
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:8188/history/{p_id}"
+            with _urlopen_retry(
+                f"http://127.0.0.1:8188/history/{p_id}", timeout=30
             ) as h_res:
                 h = json.loads(h_res.read())
                 if p_id in h:
@@ -1041,6 +1276,13 @@ def _extract_aspect(size_str):
 
 
 def generate_base_image_ltx23(prompt, output_path, size_str):
+    def _body():
+        return _generate_base_image_ltx23_ungated(prompt, output_path, size_str)
+
+    return _gated("image", "ltx-2.3", _body, keep_after=False)
+
+
+def _generate_base_image_ltx23_ungated(prompt, output_path, size_str):
     size_str = _resolve_size(size_str)
     w, h = map(int, size_str.split("*"))
     seed = random.randint(1, 1000000000)
@@ -1123,6 +1365,13 @@ def generate_base_image_ltx23(prompt, output_path, size_str):
 
 
 def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
+    def _body():
+        return _generate_video_ltx_ungated(image_fn, prompt, out_path, size_str, frames)
+
+    return _gated("video", "ltx-2.3", _body, keep_after=False)
+
+
+def _generate_video_ltx_ungated(image_fn, prompt, out_path, size_str, frames):
     size_str = _resolve_size(size_str)
     w, h = map(int, size_str.split("*"))
     print(f"🎬 Video Gen [LTX-2.3]...")
@@ -1208,11 +1457,11 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _urlopen_retry(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
         while True:
             time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
+            with _urlopen_retry(f"http://127.0.0.1:8188/history/{p_id}", timeout=30) as r:
                 h = json.loads(r.read())
                 if p_id in h:
                     imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
@@ -1265,6 +1514,17 @@ def generate_video_ltx(image_fn, prompt, out_path, size_str, frames):
 
 
 def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, size_str, frames):
+    def _body():
+        return _generate_video_ltx_flf2v_ungated(
+            start_image_fn, end_image_fn, prompt, out_path, size_str, frames
+        )
+
+    return _gated("video", "ltx-2.3", _body, keep_after=False)
+
+
+def _generate_video_ltx_flf2v_ungated(
+    start_image_fn, end_image_fn, prompt, out_path, size_str, frames
+):
     """LTX 2.3 First-Last-Frame to Video.
 
     Generates a clip whose first frame matches ``start_image_fn`` and
@@ -1385,11 +1645,11 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _urlopen_retry(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
         while True:
             time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
+            with _urlopen_retry(f"http://127.0.0.1:8188/history/{p_id}", timeout=30) as r:
                 h = json.loads(r.read())
                 if p_id in h:
                     imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
@@ -1433,6 +1693,17 @@ def generate_video_ltx_flf2v(start_image_fn, end_image_fn, prompt, out_path, siz
 
 
 def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_str, frames):
+    def _body():
+        return _generate_video_ltx_continuation_ungated(
+            handoff_image_fns, prompt, out_path, size_str, frames
+        )
+
+    return _gated("video", "ltx-2.3", _body, keep_after=False)
+
+
+def _generate_video_ltx_continuation_ungated(
+    handoff_image_fns, prompt, out_path, size_str, frames
+):
     """LTX 2.3 chain continuation with multi-frame handoff.
 
     Instead of seeding the next chain from a single last-frame (which drifts
@@ -1562,11 +1833,11 @@ def generate_video_ltx_continuation(handoff_image_fns, prompt, out_path, size_st
             data=json.dumps({"prompt": workflow}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _urlopen_retry(req, timeout=30) as r:
             p_id = json.loads(r.read())["prompt_id"]
         while True:
             time.sleep(10)
-            with urllib.request.urlopen(f"http://127.0.0.1:8188/history/{p_id}") as r:
+            with _urlopen_retry(f"http://127.0.0.1:8188/history/{p_id}", timeout=30) as r:
                 h = json.loads(r.read())
                 if p_id in h:
                     imgs = [f["filename"] for f in h[p_id]["outputs"]["14"]["images"]]
@@ -1619,6 +1890,9 @@ def pick_matrix_combo(v_idx):
 
 
 def main():
+    # Anti-OOM: single fleet process + stage_gate on every heavy stage.
+    if os.environ.get("FLEET_SKIP_LOCK", "").strip() not in ("1", "true", "yes"):
+        _acquire_pipeline_lock()
     m_id = get_lmstudio_model()
     v_idx = 1
     matrix_mode = os.environ.get("FLEET_MATRIX", "").strip() in (
@@ -1815,6 +2089,16 @@ def main():
                     _task_opts.get("tts_text") or _cfg_snap.get("tts_text") or p
                 )
                 _tts_out = f"{OUTPUT_DIR}/{_stem}_tts.wav"
+                # Map fleet tts_model → :8010 engine (dramabox/qwen/kokoro).
+                _tts_engine = str(_tts_model or "").strip().lower()
+                if _tts_engine in ("qwen-tts", "qwen3-tts"):
+                    _tts_engine = "qwen"
+                elif _tts_engine not in ("qwen", "kokoro", "dramabox"):
+                    _tts_engine = None
+                # Prefer explicit DramaBox voice picker fields when present.
+                _db_voice = _cfg_snap.get("tts_dramabox_voice")
+                if _tts_engine == "dramabox" and _db_voice:
+                    _tts_voice = str(_db_voice)
                 try:
                     ok = tts_wav(
                         _tts_text,
@@ -1822,6 +2106,7 @@ def main():
                         voice=_tts_voice,
                         lang=_tts_lang,
                         speed=_tts_speed,
+                        engine=_tts_engine,
                     )
                     if ok and os.path.exists(_tts_out):
                         tts_voice_wav = _tts_out

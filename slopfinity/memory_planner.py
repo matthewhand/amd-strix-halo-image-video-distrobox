@@ -196,6 +196,7 @@ _STAGE_BUDGETS = {
     ("audio", "heartmula"):   14,
     ("tts",   "qwen-tts"):    10,
     ("tts",   "kokoro"):       8,
+    ("tts",   "dramabox"):    18,  # Gemma+DiT peak — must not be zero
     ("upscale", "ltx-spatial"): 30,
 }
 

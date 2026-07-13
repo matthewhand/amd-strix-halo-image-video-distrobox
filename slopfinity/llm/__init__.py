@@ -12,9 +12,12 @@ from .probe import discover, ping
 
 
 DEFAULT_LLM_CONFIG = {
-    "provider": "lmstudio",
-    "base_url": "http://localhost:1234/v1",
-    "model_id": "",
+    # Default: Ollama on dedicated NVIDIA (computer-vision / prompt LLM).
+    # Override via Settings → LLM or SLOPFINITY_LLM_PRIMARY_* env vars.
+    # LM Studio (:1234) remains available as pool failover / manual config.
+    "provider": "ollama",
+    "base_url": "http://localhost:11434/v1",
+    "model_id": "gemma4:12b",
     "api_key": "",
     "temperature": 0.7,
     "max_retries": 2,

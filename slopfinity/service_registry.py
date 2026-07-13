@@ -1,6 +1,6 @@
 """Network service registry — probe / ensure_up / ensure_down for toolbox workers.
 
-Lifecycle only (compose/scripts). Generation stays on HTTP URLs.
+Lifecycle only (compose/scripts/docker start|stop). Generation stays on HTTP URLs.
 See docs/network-service-lifecycle-design.md.
 """
 from __future__ import annotations
@@ -13,12 +13,40 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-# Repo root for compose commands (override with SLOPFINITY_COMPOSE_DIR).
+Cmd = Union[str, Sequence[str]]
+
+# Display / legacy stage labels → registry stage keys
+_STAGE_ALIASES = {
+    "base image": "image",
+    "base_image": "image",
+    "video chains": "video",
+    "video_chains": "video",
+    "post process": "upscale",
+    "post_process": "upscale",
+    "post": "upscale",
+    "tts": "tts",
+    "image": "image",
+    "video": "video",
+    "audio": "audio",
+    "upscale": "upscale",
+    "merge": "merge",
+    "concept": "concept",
+}
+
+# One-shot GPU jobs with no long-lived HTTP service — free uma-heavy peers first.
+_ONESHOT_UMA_STAGES = frozenset({"image", "video", "upscale"})
+
+
 def _compose_cwd() -> str:
     return os.environ.get("SLOPFINITY_COMPOSE_DIR") or os.getcwd()
 
 
-Cmd = Union[str, Sequence[str]]
+def normalize_stage(stage: str) -> str:
+    """Map UI/legacy labels (e.g. 'Base Image', 'TTS') to registry stage keys."""
+    s = (stage or "").strip()
+    if not s:
+        return s
+    return _STAGE_ALIASES.get(s.lower(), s.lower() if s.lower() in _STAGE_ALIASES.values() else s)
 
 
 DEFAULT_NETWORK_SERVICES: List[Dict[str, Any]] = [
@@ -27,11 +55,17 @@ DEFAULT_NETWORK_SERVICES: List[Dict[str, Any]] = [
         "label": "Qwen Image Studio",
         "enabled": True,
         "health_url": "http://127.0.0.1:8180/docs",
+        "health_path": "/docs",
         "base_url": "http://127.0.0.1:8180",
         "base_url_env": "IMAGE_API_URL",
+        "container_name": "strix-halo-qwen-image",
+        "compose_service": "qwen-image-service",
+        "compose_profile": "qwen-image",
+        "lifecycle_mode": "compose",
         "start_cmd": "docker compose --profile qwen-image up -d qwen-image-service",
         "stop_cmd": "docker stop strix-halo-qwen-image",
-        "stage_keys": ["image:qwen", "image:*"],
+        # Exact only — ernie/ltx must not warm qwen-image via image:*
+        "stage_keys": ["image:qwen"],
         "budget_gb": 28,
         "exclusive_group": "uma-heavy",
         "ensure_timeout_s": 180,
@@ -41,8 +75,13 @@ DEFAULT_NETWORK_SERVICES: List[Dict[str, Any]] = [
         "label": "Qwen/Kokoro TTS",
         "enabled": True,
         "health_url": "http://127.0.0.1:8010/health",
+        "health_path": "/health",
         "base_url": "http://127.0.0.1:8010",
         "base_url_env": "TTS_WORKER_URL",
+        "container_name": "strix-halo-qwen-tts",
+        "compose_service": "qwen-tts-service",
+        "compose_profile": "qwen-tts",
+        "lifecycle_mode": "compose",
         "start_cmd": "docker compose --profile qwen-tts up -d qwen-tts-service",
         "stop_cmd": "docker stop strix-halo-qwen-tts",
         "stage_keys": ["tts:qwen-tts", "tts:kokoro", "tts:*"],
@@ -55,8 +94,13 @@ DEFAULT_NETWORK_SERVICES: List[Dict[str, Any]] = [
         "label": "HeartMuLa music",
         "enabled": True,
         "health_url": "http://127.0.0.1:8011/health",
+        "health_path": "/health",
         "base_url": "http://127.0.0.1:8011",
         "base_url_env": "HEARTMULA_URL",
+        "container_name": "strix-halo-heartmula",
+        "compose_service": "heartmula-service",
+        "compose_profile": "heartmula",
+        "lifecycle_mode": "compose",
         "start_cmd": "docker compose --profile heartmula up -d heartmula-service",
         "stop_cmd": "docker stop strix-halo-heartmula",
         "stage_keys": ["audio:heartmula", "audio:*"],
@@ -69,13 +113,21 @@ DEFAULT_NETWORK_SERVICES: List[Dict[str, Any]] = [
         "label": "ComfyUI",
         "enabled": True,
         "health_url": "http://127.0.0.1:8188/system_stats",
+        "health_path": "/system_stats",
         "base_url": "http://127.0.0.1:8188",
         "base_url_env": "SLOPFINITY_COMFY_URL",
+        "container_name": "strix-halo-comfyui",
+        "compose_service": "comfyui-service",
+        "compose_profile": "comfyui",
+        "lifecycle_mode": "compose",
         "start_cmd": "docker compose --profile comfyui up -d comfyui-service",
         "stop_cmd": "docker stop strix-halo-comfyui",
+        # LTX only — wan stays ephemeral docker run (do not warm Comfy for wan)
         "stage_keys": [
-            "video:ltx-2.3", "video:wan2.2", "video:wan2.5", "video:*",
-            "upscale:ltx-spatial", "upscale:*",
+            "image:ltx-2.3",
+            "video:ltx-2.3",
+            "upscale:ltx-spatial",
+            "upscale:*",
         ],
         "budget_gb": 12,
         "exclusive_group": "uma-heavy",
@@ -129,12 +181,33 @@ def base_url_for(service_id: str) -> str:
     if env_key:
         v = (os.environ.get(env_key) or "").strip()
         if v:
-            # TTS_WORKER_URL often includes /tts — strip known suffixes for base.
             for suf in ("/tts", "/music", "/health"):
                 if v.rstrip("/").endswith(suf):
                     return v.rstrip("/")[: -len(suf)] or v
             return v.rstrip("/")
     return (e.get("base_url") or "").rstrip("/")
+
+
+def health_url_for(service_id: str) -> str:
+    """Probe URL: explicit health_url, else base + health_path (remote-friendly)."""
+    e = get_service(service_id) or {}
+    explicit = (e.get("health_url") or "").strip()
+    # When env overrides base to a non-loopback host, prefer derived health so
+    # operators can set only IMAGE_API_URL / TTS_WORKER_URL / etc.
+    base = base_url_for(service_id)
+    path = (e.get("health_path") or "/health").strip() or "/health"
+    if not path.startswith("/"):
+        path = "/" + path
+    if base:
+        derived = base.rstrip("/") + path
+        if explicit:
+            # Prefer derived when env moved base off loopback but health still 127.0.0.1
+            if "127.0.0.1" in explicit or "localhost" in explicit:
+                if "127.0.0.1" not in base and "localhost" not in base:
+                    return derived
+            return explicit
+        return derived
+    return explicit
 
 
 def _match_stage_key(key: str, stage: str, model: str) -> bool:
@@ -150,6 +223,7 @@ def _match_stage_key(key: str, stage: str, model: str) -> bool:
 
 def service_for_stage(stage: str, model: str = "") -> Optional[str]:
     """Return service id matching stage:model, preferring exact over wildcard."""
+    stage = normalize_stage(stage)
     exact: Optional[str] = None
     wild: Optional[str] = None
     for e in _entries():
@@ -168,12 +242,78 @@ def service_for_stage(stage: str, model: str = "") -> Optional[str]:
     return exact or wild
 
 
+def _docker_env(entry: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Env for lifecycle subprocesses (inherits parent + optional overrides)."""
+    env = os.environ.copy()
+    e = entry or {}
+    host = (e.get("docker_host") or os.environ.get("SLOPFINITY_DOCKER_HOST") or "").strip()
+    ctx = (e.get("docker_context") or os.environ.get("SLOPFINITY_DOCKER_CONTEXT") or "").strip()
+    if host:
+        env["DOCKER_HOST"] = host
+    if ctx:
+        env["DOCKER_CONTEXT"] = ctx
+    return env
+
+
+def _docker_bin() -> str:
+    return (os.environ.get("SLOPFINITY_DOCKER_BIN") or "docker").strip() or "docker"
+
+
+def _prefix_docker_argv(argv: List[str], entry: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Rewrite leading `docker` to use configured bin + optional --context."""
+    if not argv:
+        return argv
+    e = entry or {}
+    ctx = (e.get("docker_context") or os.environ.get("SLOPFINITY_DOCKER_CONTEXT") or "").strip()
+    dbin = _docker_bin()
+    out = list(argv)
+    if out[0] == "docker":
+        out[0] = dbin
+        if ctx:
+            out = [out[0], "--context", ctx] + out[1:]
+    return out
+
+
+def resolve_start_cmd(entry: Dict[str, Any]) -> Optional[Cmd]:
+    """Synthesize start command from lifecycle_mode + structured fields."""
+    mode = (entry.get("lifecycle_mode") or "compose").strip().lower()
+    if mode == "none":
+        return None
+    name = (entry.get("container_name") or "").strip()
+    if mode == "container":
+        if name:
+            return ["docker", "start", name]
+        return entry.get("start_cmd") or None
+    if mode == "cmd":
+        return entry.get("start_cmd") or None
+    # compose (default)
+    if entry.get("start_cmd"):
+        return entry["start_cmd"]
+    profile = (entry.get("compose_profile") or "").strip()
+    svc = (entry.get("compose_service") or "").strip()
+    if profile and svc:
+        return f"docker compose --profile {profile} up -d {svc}"
+    return None
+
+
+def resolve_stop_cmd(entry: Dict[str, Any]) -> Optional[Cmd]:
+    mode = (entry.get("lifecycle_mode") or "compose").strip().lower()
+    if mode == "none":
+        return None
+    name = (entry.get("container_name") or "").strip()
+    if name and mode in ("container", "compose"):
+        return ["docker", "stop", name]
+    if mode == "cmd":
+        return entry.get("stop_cmd") or None
+    return entry.get("stop_cmd") or (["docker", "stop", name] if name else None)
+
+
 def probe(service_id: str, *, timeout: float = 2.0) -> Dict[str, Any]:
-    """GET health_url. ok=True if HTTP status < 500 (or connection succeeds)."""
+    """GET health URL. ok=True if HTTP status < 500 (or connection succeeds)."""
     e = get_service(service_id)
     if not e:
         return {"ok": False, "id": service_id, "error": "unknown service"}
-    url = (e.get("health_url") or "").strip()
+    url = health_url_for(service_id)
     if not url:
         return {"ok": False, "id": service_id, "error": "no health_url"}
     t0 = time.monotonic()
@@ -189,17 +329,18 @@ def probe(service_id: str, *, timeout: float = 2.0) -> Dict[str, Any]:
             "id": service_id,
             "status": int(status),
             "latency_ms": latency,
+            "url": url,
             "detail": body[:80].decode("utf-8", errors="replace") if body else "",
         }
     except urllib.error.HTTPError as ex:
         latency = round((time.monotonic() - t0) * 1000, 1)
-        # 404 on /docs still means the server is up
         ok = ex.code < 500
         return {
             "ok": ok,
             "id": service_id,
             "status": ex.code,
             "latency_ms": latency,
+            "url": url,
             "detail": str(ex.reason or ex),
         }
     except Exception as ex:
@@ -209,19 +350,25 @@ def probe(service_id: str, *, timeout: float = 2.0) -> Dict[str, Any]:
             "id": service_id,
             "status": 0,
             "latency_ms": latency,
+            "url": url,
             "error": str(ex),
         }
 
 
-def _run_cmd(cmd: Cmd, *, timeout: float = 300.0) -> Dict[str, Any]:
+def _run_cmd(
+    cmd: Cmd,
+    *,
+    timeout: float = 300.0,
+    entry: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     if not cmd:
         return {"ok": False, "error": "empty command"}
     if isinstance(cmd, str):
         argv = shlex.split(cmd)
-        shell = False
     else:
         argv = list(cmd)
-        shell = False
+    argv = _prefix_docker_argv(argv, entry)
+    env = _docker_env(entry)
     try:
         proc = subprocess.run(
             argv,
@@ -229,7 +376,8 @@ def _run_cmd(cmd: Cmd, *, timeout: float = 300.0) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=timeout,
-            shell=shell,
+            shell=False,
+            env=env,
         )
         return {
             "ok": proc.returncode == 0,
@@ -239,7 +387,7 @@ def _run_cmd(cmd: Cmd, *, timeout: float = 300.0) -> Dict[str, Any]:
             "cmd": argv,
         }
     except Exception as ex:
-        return {"ok": False, "error": str(ex), "cmd": argv if "argv" in dir() else cmd}
+        return {"ok": False, "error": str(ex), "cmd": argv}
 
 
 def ensure_down(service_id: str) -> Dict[str, Any]:
@@ -249,12 +397,13 @@ def ensure_down(service_id: str) -> Dict[str, Any]:
         return {"ok": False, "id": service_id, "error": "unknown service"}
     if not e.get("enabled", True):
         return {"ok": True, "id": service_id, "skipped": "disabled"}
-    # Already down?
     p = probe(service_id, timeout=1.0)
     if not p.get("ok"):
         return {"ok": True, "id": service_id, "already_down": True, "probe": p}
-    stop = e.get("stop_cmd") or ""
-    result = _run_cmd(stop, timeout=120.0)
+    stop = resolve_stop_cmd(e)
+    if stop is None:
+        return {"ok": True, "id": service_id, "skipped": "lifecycle_mode=none"}
+    result = _run_cmd(stop, timeout=120.0, entry=e)
     return {"ok": bool(result.get("ok")), "id": service_id, "action": "stop", **result}
 
 
@@ -272,6 +421,19 @@ def _exclusive_peers(service_id: str) -> List[str]:
     return peers
 
 
+def ensure_down_group(group: str) -> Dict[str, Any]:
+    """Stop every enabled service in an exclusive_group (e.g. uma-heavy)."""
+    group = (group or "").strip()
+    results = []
+    for o in _entries():
+        if not o.get("enabled", True):
+            continue
+        if (o.get("exclusive_group") or "").strip() != group:
+            continue
+        results.append(ensure_down(o["id"]))
+    return {"ok": all(r.get("ok") for r in results) if results else True, "group": group, "results": results}
+
+
 def ensure_up(
     service_id: str,
     *,
@@ -279,32 +441,51 @@ def ensure_up(
     poll_s: float = 2.0,
     stop_exclusive: bool = True,
 ) -> Dict[str, Any]:
-    """Bring service healthy; start_cmd if needed; wait until probe ok."""
+    """Bring service healthy; start if needed; wait until probe ok.
+
+    When stop_exclusive is True, always park exclusive-group peers first —
+    including when the target is already healthy — so sequenced UMA stages
+    never leave contending workers warm (e.g. heartmula while qwen-image runs).
+    """
     e = get_service(service_id)
     if not e:
         return {"ok": False, "id": service_id, "error": "unknown service"}
     if not e.get("enabled", True):
         return {"ok": False, "id": service_id, "error": "service disabled in config"}
 
-    p0 = probe(service_id, timeout=2.0)
-    if p0.get("ok"):
-        return {"ok": True, "id": service_id, "already_up": True, "probe": p0}
-
     peer_results = []
     if stop_exclusive:
         for peer in _exclusive_peers(service_id):
             peer_results.append(ensure_down(peer))
 
-    start = e.get("start_cmd") or ""
-    start_result = _run_cmd(start, timeout=float(timeout_s or e.get("ensure_timeout_s") or 120) + 30)
-    if not start_result.get("ok"):
+    p0 = probe(service_id, timeout=2.0)
+    if p0.get("ok"):
         return {
-            "ok": False,
+            "ok": True,
             "id": service_id,
-            "error": "start_cmd failed",
-            "start": start_result,
+            "already_up": True,
+            "probe": p0,
             "peers": peer_results,
         }
+
+    start = resolve_start_cmd(e)
+    if start is None:
+        # lifecycle_mode=none — wait only
+        start_result: Dict[str, Any] = {"ok": True, "skipped": "lifecycle_mode=none"}
+    else:
+        start_result = _run_cmd(
+            start,
+            timeout=float(timeout_s or e.get("ensure_timeout_s") or 120) + 30,
+            entry=e,
+        )
+        if not start_result.get("ok"):
+            return {
+                "ok": False,
+                "id": service_id,
+                "error": "start_cmd failed",
+                "start": start_result,
+                "peers": peer_results,
+            }
 
     deadline = time.monotonic() + float(timeout_s or e.get("ensure_timeout_s") or 120)
     last = p0
@@ -332,11 +513,22 @@ def ensure_up(
 
 
 def ensure_for_stage(stage: str, model: str = "", **kwargs: Any) -> Dict[str, Any]:
-    """Resolve stage/model → service and ensure_up."""
-    sid = service_for_stage(stage, model)
-    if not sid:
-        return {"ok": True, "skipped": True, "reason": f"no service for {stage}:{model}"}
-    return ensure_up(sid, **kwargs)
+    """Resolve stage/model → ensure_up service, or free uma-heavy for one-shots."""
+    stage_n = normalize_stage(stage)
+    sid = service_for_stage(stage_n, model)
+    if sid:
+        return ensure_up(sid, **kwargs)
+    # Ephemeral GPU jobs (ernie, wan, …): stop resident uma-heavy workers first.
+    if stage_n in _ONESHOT_UMA_STAGES and (model or ""):
+        cleared = ensure_down_group("uma-heavy")
+        return {
+            "ok": bool(cleared.get("ok")),
+            "skipped": True,
+            "reason": f"no service for {stage_n}:{model}; cleared uma-heavy",
+            "oneshot": True,
+            "clear": cleared,
+        }
+    return {"ok": True, "skipped": True, "reason": f"no service for {stage_n}:{model}"}
 
 
 def status_all() -> List[Dict[str, Any]]:
@@ -350,8 +542,10 @@ def status_all() -> List[Dict[str, Any]]:
             "id": sid,
             "label": e.get("label"),
             "enabled": e.get("enabled", True),
-            "health_url": e.get("health_url"),
+            "health_url": health_url_for(sid),
             "base_url": base_url_for(sid),
+            "container_name": e.get("container_name"),
+            "lifecycle_mode": e.get("lifecycle_mode") or "compose",
             "up": bool(p.get("ok")),
             "probe": p,
         })

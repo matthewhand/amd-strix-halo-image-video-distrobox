@@ -43,7 +43,9 @@ def test_run_image_ltx_exists_and_invokes_ltx_launcher_mode_image():
         async def __aexit__(self, *a):
             return False
 
-    with mock.patch.object(mod, "_run", fake_run), \
+    # Force docker path so we assert launcher argv (default is Comfy HTTP).
+    with mock.patch.dict(os.environ, {"SLOPFINITY_LTX_MODE": "docker"}), \
+         mock.patch.object(mod, "_run", fake_run), \
          mock.patch.object(mod, "acquire_gpu", lambda *a, **k: _NullCM()):
         rc = asyncio.run(mod.run_image_ltx("a prompt", "/workspace/out.png"))
     assert rc == 2
@@ -56,3 +58,28 @@ def test_run_image_ltx_exists_and_invokes_ltx_launcher_mode_image():
     assert "a prompt" in cmd
     assert "--out" in cmd
     assert "/workspace/out.png" in cmd
+
+
+def test_run_image_ltx_http_uses_ltx_comfy():
+    mod = _load_workers_fleet()
+
+    class _NullCM:
+        async def __aenter__(self):
+            return None
+        async def __aexit__(self, *a):
+            return False
+
+    calls = {}
+
+    def fake_gen(prompt, out, **kw):
+        calls["prompt"] = prompt
+        calls["out"] = out
+        return 0
+
+    with mock.patch.dict(os.environ, {"SLOPFINITY_LTX_MODE": "http"}), \
+         mock.patch.object(mod, "acquire_gpu", lambda *a, **k: _NullCM()), \
+         mock.patch("slopfinity.ltx_comfy.generate_image", fake_gen), \
+         mock.patch("slopfinity.service_registry.ensure_for_stage", return_value={"ok": True}):
+        rc = asyncio.run(mod.run_image_ltx("hello", "/tmp/x.png"))
+    assert rc == 0
+    assert calls["prompt"] == "hello"

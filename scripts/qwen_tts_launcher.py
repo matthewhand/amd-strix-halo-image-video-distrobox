@@ -33,7 +33,9 @@ import traceback
 # stale 11.0.0 in its env, so this must overwrite, not setdefault).
 os.environ["HSA_OVERRIDE_GFX_VERSION"] = os.environ.get("QWEN_TTS_GFX_OVERRIDE", "11.5.1")
 
-MIN_FREE_GB = 15
+# Default 8 GB: weights already cached after first pull; 15 GB was too
+# aggressive on a 97%-full root when only inference (not re-download) runs.
+MIN_FREE_GB = float(os.environ.get("QWEN_TTS_MIN_FREE_GB", "8"))
 DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 
 

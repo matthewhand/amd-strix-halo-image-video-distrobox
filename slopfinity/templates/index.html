@@ -2442,11 +2442,32 @@
                                 <div class="form-control md:col-span-2">
                                     <div
                                         class="divider text-[11px] uppercase tracking-widest text-base-content/60 my-1">
+                                        Network workers (docker lifecycle)</div>
+                                    <div class="label-text-alt opacity-60 leading-snug mb-2">
+                                        Pipeline HTTP workers load/unload via docker. Warm starts the
+                                        container (and stops exclusive UMA peers); park stops it to free
+                                        memory. Same path as sequenced stage ensure.
+                                    </div>
+                                    <div id="network-services-list" class="flex flex-col gap-1"></div>
+                                    <div class="flex items-center gap-2 mt-2">
+                                        <button class="btn btn-ghost btn-xs" type="button"
+                                            onclick="refreshNetworkServices()" title="Re-probe workers">
+                                            ↻ Refresh status
+                                        </button>
+                                        <span id="network-services-status-msg"
+                                            class="text-[10px] opacity-50 font-mono"></span>
+                                    </div>
+                                </div>
+
+                                <div class="form-control md:col-span-2">
+                                    <div
+                                        class="divider text-[11px] uppercase tracking-widest text-base-content/60 my-1">
                                         Auto-suspend during GPU inference</div>
                                     <div class="label-text-alt opacity-60 leading-snug mb-2">
                                         Pauses or unloads co-resident services before each heavy GPU
                                         stage and restores them after. See docs/auto-suspend-design.md
-                                        for method semantics.
+                                        for method semantics. Do not docker-stop the same containers
+                                        as Network workers above.
                                     </div>
                                     <div id="auto-suspend-list" class="flex flex-col gap-1"></div>
                                     <button class="btn btn-ghost btn-xs mt-2 self-start" type="button"

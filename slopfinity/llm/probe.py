@@ -9,9 +9,11 @@ import json
 
 
 # (port, default_provider, base_url_template)
+# Ollama (:11434) first — dedicated NVIDIA host for gemma4:12b CV/prompt LLM.
+# LM Studio (:1234) second for optional heavier models (ornith-35b, etc.).
 CANDIDATES = [
-    (1234, "lmstudio", "http://localhost:{port}/v1"),
     (11434, "ollama", "http://localhost:{port}"),
+    (1234, "lmstudio", "http://localhost:{port}/v1"),
     (8080, "llamacpp", "http://localhost:{port}/v1"),
     (8000, "vllm", "http://localhost:{port}/v1"),
 ]

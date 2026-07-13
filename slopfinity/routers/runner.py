@@ -336,7 +336,7 @@ async def tts(data: dict = Body(...)):
     # _call_tts_worker is defined module-level in this file (relocated from
     # server.py to avoid the import cycle) — no lazy import needed.
     try:
-        async with sched.acquire_gpu("TTS", "qwen-tts", safety_gb=4):
+        async with sched.acquire_gpu("tts", "qwen-tts", safety_gb=4):
             result = await asyncio.to_thread(_call_tts_worker, text, voice)
     except urllib.error.URLError as e:
         return JSONResponse(

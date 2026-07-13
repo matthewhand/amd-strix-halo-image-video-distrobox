@@ -42,6 +42,8 @@ COPY scripts/test_wan_permutations.py /opt/
 COPY scripts/download_wan_cli.sh /opt/
 COPY scripts/ernie_launcher.py /opt/
 COPY scripts/get_ernie_image.sh /opt/
+COPY scripts/ltx_launcher.py /opt/
+COPY scripts/generate_ltx23_workflow.py /opt/
 
 # ROCm + PyTorch (TheRock, include torchaudio for resolver; remove later)
 ARG ROCM_INDEX=https://d2awnip2yjpvqn.cloudfront.net/v2/gfx1151/
