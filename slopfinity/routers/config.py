@@ -190,125 +190,129 @@ async def settings_post(data: dict = Body(...)):
     - `api_key == "***"` means the client echoed back the mask — also strip.
     - Any explicit non-empty value is persisted.
     """
-    c = cfg.load_config()
-    llm_in = data.get("llm") or {}
-    if isinstance(llm_in, dict):
-        current_llm = dict(DEFAULT_LLM_CONFIG)
-        current_llm.update(c.get("llm") or {})
-        for k, v in llm_in.items():
-            if k == "api_key":
-                if v in ("", "***", None):
-                    continue
-                current_llm[k] = v
-            else:
-                current_llm[k] = v
-        # Coerce numerics defensively
-        try:
-            current_llm["temperature"] = float(current_llm.get("temperature", 0.7))
-        except Exception:
-            current_llm["temperature"] = 0.7
-        try:
-            current_llm["max_retries"] = max(
-                0, min(5, int(current_llm.get("max_retries", 2)))
-            )
-        except Exception:
-            current_llm["max_retries"] = 2
-        try:
-            current_llm["timeout_s"] = max(1, int(current_llm.get("timeout_s", 60)))
-        except Exception:
-            current_llm["timeout_s"] = 60
-        current_llm["auto_suspend"] = bool(current_llm.get("auto_suspend", False))
-        c["llm"] = current_llm
-    # Allow pass-through updates for a few other top-level buckets (e.g.
-    # scheduler, model_loading). model_loading.{sticky,eager_unload} are
-    # consumed by the memory_planner / scheduler to bias which model
-    # checkpoints are evicted/retained across stages.
-    for bucket in ("scheduler", "model_loading"):
-        if bucket in data and isinstance(data[bucket], dict):
-            existing = c.get(bucket) or {}
-            existing.update(data[bucket])
-            c[bucket] = existing
-    # Fleet system prompt override. Empty string -> None ("use built-in default")
-    # so the runner's loader can fall back without a sentinel check.
-    if "philosophical_prompt" in data:
-        v = data.get("philosophical_prompt")
-        if v is None or (isinstance(v, str) and v.strip() == ""):
-            c["philosophical_prompt"] = None
-        elif isinstance(v, str):
-            c["philosophical_prompt"] = v
-    # Prompts tab — every other surfaced override. Same null-on-blank pattern
-    # as philosophical_prompt: empty string => None => falls back to default.
-    # `enhancer_prompt` is special: concept.py errors on empty, so reset-to-
-    # default writes the canonical default rather than None to keep that
-    # codepath honest.
-    _PROMPT_OVERRIDE_KEYS = (
-        "fanout_system_prompt",
-        "fleet_user_prompt_template",
-        "infinity_user_prompt_template",
-        "chaos_suggest_system_prompt",
-        "void_fallback_template",
-    )
-    for key in _PROMPT_OVERRIDE_KEYS:
-        if key in data:
-            v = data.get(key)
+    # d4bfdee remainder: serialise settings RMW against concurrent writers.
+    def _apply(c):
+        c = dict(c)
+        llm_in = data.get("llm") or {}
+        if isinstance(llm_in, dict):
+            current_llm = dict(DEFAULT_LLM_CONFIG)
+            current_llm.update(c.get("llm") or {})
+            for k, v in llm_in.items():
+                if k == "api_key":
+                    if v in ("", "***", None):
+                        continue
+                    current_llm[k] = v
+                else:
+                    current_llm[k] = v
+            # Coerce numerics defensively
+            try:
+                current_llm["temperature"] = float(current_llm.get("temperature", 0.7))
+            except Exception:
+                current_llm["temperature"] = 0.7
+            try:
+                current_llm["max_retries"] = max(
+                    0, min(5, int(current_llm.get("max_retries", 2)))
+                )
+            except Exception:
+                current_llm["max_retries"] = 2
+            try:
+                current_llm["timeout_s"] = max(1, int(current_llm.get("timeout_s", 60)))
+            except Exception:
+                current_llm["timeout_s"] = 60
+            current_llm["auto_suspend"] = bool(current_llm.get("auto_suspend", False))
+            c["llm"] = current_llm
+        # Allow pass-through updates for a few other top-level buckets (e.g.
+        # scheduler, model_loading). model_loading.{sticky,eager_unload} are
+        # consumed by the memory_planner / scheduler to bias which model
+        # checkpoints are evicted/retained across stages.
+        for bucket in ("scheduler", "model_loading"):
+            if bucket in data and isinstance(data[bucket], dict):
+                existing = c.get(bucket) or {}
+                existing.update(data[bucket])
+                c[bucket] = existing
+        # Fleet system prompt override. Empty string -> None ("use built-in default")
+        # so the runner's loader can fall back without a sentinel check.
+        if "philosophical_prompt" in data:
+            v = data.get("philosophical_prompt")
             if v is None or (isinstance(v, str) and v.strip() == ""):
-                c[key] = None
+                c["philosophical_prompt"] = None
             elif isinstance(v, str):
-                c[key] = v
-    if "enhancer_prompt" in data:
-        v = data.get("enhancer_prompt")
-        if v is None or (isinstance(v, str) and v.strip() == ""):
-            c["enhancer_prompt"] = cfg.DEFAULT_CONFIG["enhancer_prompt"]
-        elif isinstance(v, str):
-            c["enhancer_prompt"] = v
-    # Cloud-endpoints gate (Settings → LLM). When False (default) the
-    # provider dropdown only shows local providers. The registry itself
-    # is still local-only today; this just persists the user's choice
-    # so adding a cloud provider later doesn't require a UI hop.
-    if "allow_cloud_endpoints" in data:
-        c["allow_cloud_endpoints"] = bool(data.get("allow_cloud_endpoints"))
-    # Auto-suggest LLM controls (Settings → LLM → Generation).
-    if "suggest_use_subjects" in data:
-        c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
-    if "suggest_custom_prompt" in data:
-        v = data.get("suggest_custom_prompt")
-        c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
-    if "suggest_auto_disabled" in data:
-        c["suggest_auto_disabled"] = bool(data.get("suggest_auto_disabled"))
-    # Spiffy mode — per-row prompt-pill cluster in simple mode. Default
-    # False. Plumbed in v316 but the settings POST branch was missing
-    # (Agent C's e2e spec flagged this with a .fixme).
-    if "suggest_per_row_prompts" in data:
-        c["suggest_per_row_prompts"] = bool(data.get("suggest_per_row_prompts"))
-    # Auto-suspend list (Settings → LLM → Auto-suspend during GPU inference).
-    # Stored as a top-level list of {id, label, enabled, method, ...} entries.
-    # Each entry's method-specific fields are preserved verbatim.
-    if "auto_suspend" in data:
-        v = data.get("auto_suspend")
-        if isinstance(v, list):
-            cleaned: list[dict] = []
-            for e in v:
-                if not isinstance(e, dict):
-                    continue
-                ce = {
-                    "id": str(e.get("id") or "").strip() or None,
-                    "label": str(e.get("label") or "").strip() or None,
-                    "enabled": bool(e.get("enabled")),
-                    "method": str(e.get("method") or "sigstop"),
-                }
-                # Pass through whitelisted method-specific fields.
-                # `command` is the script-method override (added 2026-04);
-                # empty string is preserved so the UI keeps an empty input.
-                for f in ("process_name", "endpoint", "container", "body", "command"):
-                    if f in e and e[f] is not None:
-                        ce[f] = e[f]
-                if ce["id"]:
-                    # Drop None label so the canonical merge can fill it back in.
-                    if not ce["label"]:
-                        ce.pop("label")
-                    cleaned.append(ce)
-            c["auto_suspend"] = cleaned
-    cfg.save_config(c)
+                c["philosophical_prompt"] = v
+        # Prompts tab — every other surfaced override. Same null-on-blank pattern
+        # as philosophical_prompt: empty string => None => falls back to default.
+        # `enhancer_prompt` is special: concept.py errors on empty, so reset-to-
+        # default writes the canonical default rather than None to keep that
+        # codepath honest.
+        _PROMPT_OVERRIDE_KEYS = (
+            "fanout_system_prompt",
+            "fleet_user_prompt_template",
+            "infinity_user_prompt_template",
+            "chaos_suggest_system_prompt",
+            "void_fallback_template",
+        )
+        for key in _PROMPT_OVERRIDE_KEYS:
+            if key in data:
+                v = data.get(key)
+                if v is None or (isinstance(v, str) and v.strip() == ""):
+                    c[key] = None
+                elif isinstance(v, str):
+                    c[key] = v
+        if "enhancer_prompt" in data:
+            v = data.get("enhancer_prompt")
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                c["enhancer_prompt"] = cfg.DEFAULT_CONFIG["enhancer_prompt"]
+            elif isinstance(v, str):
+                c["enhancer_prompt"] = v
+        # Cloud-endpoints gate (Settings → LLM). When False (default) the
+        # provider dropdown only shows local providers. The registry itself
+        # is still local-only today; this just persists the user's choice
+        # so adding a cloud provider later doesn't require a UI hop.
+        if "allow_cloud_endpoints" in data:
+            c["allow_cloud_endpoints"] = bool(data.get("allow_cloud_endpoints"))
+        # Auto-suggest LLM controls (Settings → LLM → Generation).
+        if "suggest_use_subjects" in data:
+            c["suggest_use_subjects"] = bool(data.get("suggest_use_subjects"))
+        if "suggest_custom_prompt" in data:
+            v = data.get("suggest_custom_prompt")
+            c["suggest_custom_prompt"] = v if isinstance(v, str) else ""
+        if "suggest_auto_disabled" in data:
+            c["suggest_auto_disabled"] = bool(data.get("suggest_auto_disabled"))
+        # Spiffy mode — per-row prompt-pill cluster in simple mode. Default
+        # False. Plumbed in v316 but the settings POST branch was missing
+        # (Agent C's e2e spec flagged this with a .fixme).
+        if "suggest_per_row_prompts" in data:
+            c["suggest_per_row_prompts"] = bool(data.get("suggest_per_row_prompts"))
+        # Auto-suspend list (Settings → LLM → Auto-suspend during GPU inference).
+        # Stored as a top-level list of {id, label, enabled, method, ...} entries.
+        # Each entry's method-specific fields are preserved verbatim.
+        if "auto_suspend" in data:
+            v = data.get("auto_suspend")
+            if isinstance(v, list):
+                cleaned: list[dict] = []
+                for e in v:
+                    if not isinstance(e, dict):
+                        continue
+                    ce = {
+                        "id": str(e.get("id") or "").strip() or None,
+                        "label": str(e.get("label") or "").strip() or None,
+                        "enabled": bool(e.get("enabled")),
+                        "method": str(e.get("method") or "sigstop"),
+                    }
+                    # Pass through whitelisted method-specific fields.
+                    # `command` is the script-method override (added 2026-04);
+                    # empty string is preserved so the UI keeps an empty input.
+                    for f in ("process_name", "endpoint", "container", "body", "command"):
+                        if f in e and e[f] is not None:
+                            ce[f] = e[f]
+                    if ce["id"]:
+                        # Drop None label so the canonical merge can fill it back in.
+                        if not ce["label"]:
+                            ce.pop("label")
+                        cleaned.append(ce)
+                c["auto_suspend"] = cleaned
+        return c
+
+    cfg.mutate_config(_apply)
     return {"ok": True}
 
 

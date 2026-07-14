@@ -102,15 +102,21 @@ def _dedup_endpoints(endpoints):
     Endpoints with a blank URL are skipped.
     """
     seen = set()
+    seen_urls = set()
     deduped = []
     for ep in endpoints:
         url = ep.get("url") if isinstance(ep, dict) else None
         if not url or not url.strip():
             continue
-        key = (_normalize_url(url), (ep.get("model") or "").strip())
+        nurl = _normalize_url(url)
+        model = (ep.get("model") or "").strip()
+        key = (nurl, model)
         if key in seen:
             continue
+        if not model and nurl in seen_urls:
+            continue
         seen.add(key)
+        seen_urls.add(nurl)
         deduped.append(ep)
     return deduped
 
@@ -176,18 +182,30 @@ async def get_pool_status():
     )
 
     # Dedup failovers against the primary/cpu slots and against each other.
+    # Blank-model failover on a URL already used by primary/cpu is redundant
+    # (env often leaves failover models empty while primary gets gemma4:12b).
     seen = {
         (_normalize_url(cfg["primary"]["url"]), (cfg["primary"]["model"] or "").strip()),
         (_normalize_url(cfg["cpu"]["url"]), (cfg["cpu"]["model"] or "").strip()),
+    }
+    seen_urls = {
+        _normalize_url(cfg["primary"]["url"]),
+        _normalize_url(cfg["cpu"]["url"]),
     }
     unique_failovers = []
     for f in cfg["failovers"]:
         if not f.get("url") or not f["url"].strip():
             continue
-        key = (_normalize_url(f["url"]), (f.get("model") or "").strip())
+        nurl = _normalize_url(f["url"])
+        model = (f.get("model") or "").strip()
+        key = (nurl, model)
         if key in seen:
             continue
+        if not model and nurl in seen_urls:
+            continue
         seen.add(key)
+        if not model:
+            seen_urls.add(nurl)
         unique_failovers.append(f)
 
     failover_tasks = [

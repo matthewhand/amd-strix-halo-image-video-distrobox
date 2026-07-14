@@ -28,6 +28,7 @@ import re
 import subprocess
 import time
 import asyncio
+from contextlib import asynccontextmanager
 import urllib.request
 import urllib.error
 from typing import List
@@ -69,7 +70,17 @@ from slopfinity.paths import EXP_DIR, TTS_OUT_DIR, STATIC_DIR, TEMPLATES_DIR
 _LLM_LOCK = asyncio.Lock()
 
 
-app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # d4bfdee land slice: replace deprecated on_event("startup").
+    # Skip background tasks under TEST_MODE (pytest imports app).
+    if not os.environ.get("TEST_MODE"):
+        asyncio.create_task(broadcast())
+        asyncio.create_task(chaos_rotator())
+    yield
+
+
+app = FastAPI(title=_load_branding()["app"]["name"] + " Dashboard", lifespan=lifespan)
 app.include_router(assets_router)
 app.include_router(queue_router)
 app.include_router(chat_router)
@@ -1366,10 +1377,6 @@ async def chaos_rotator():
             await asyncio.sleep(30)
 
 
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(broadcast())
-    asyncio.create_task(chaos_rotator())
 
 
 if __name__ == "__main__":
