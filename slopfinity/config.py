@@ -385,9 +385,18 @@ SENSITIVE_KEYS = {"api_key"}
 
 
 def save_config(config):
+    """Atomic write-rename for config.json (close torn-write window).
+
+    Land-adapted slice of d4bfdee durability: os.replace is POSIX-atomic on the
+    same filesystem. Full lost-update RMW (mutate_config + config_lock) still deferred.
+    """
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
+    tmp = CONFIG_FILE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(config, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, CONFIG_FILE)
     # Config may contain API keys; restrict to owner-only.
     try:
         os.chmod(CONFIG_FILE, 0o600)
