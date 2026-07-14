@@ -404,8 +404,9 @@ _recent_events: List[dict] = []
 _RECENT_EVENTS_MAX = 20
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+def _build_index_context():
+    """Gather blocking I/O for the index page so the async handler can run it
+    via asyncio.to_thread (dir walk + config/queue reads + disk stats)."""
     finals, live, imgs, mixed = _list_outputs()
     vids = finals  # alias preserved for Jinja template back-compat (v-grid)
     state = cfg.get_state()
@@ -420,27 +421,33 @@ async def index(request: Request):
         config.get("upscale_model"),
         config.get("tts_model"),
     )
+    return {
+        "config": config,
+        "state": state,
+        "queue": queue,
+        "vids": vids[:16],  # Completed Gallery (FINAL_*.mp4)
+        "live": live[
+            :64
+        ],  # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
+        "imgs": imgs[:10],  # back-compat (hidden i-grid)
+        "mixed": mixed[
+            :64
+        ],  # Finals interleaved with components by mtime — render path uses this when assets-filter is ON
+        "storage": storage,
+        "outputs_disk": outputs_disk,
+        "ram": ram,
+        "branding": _load_branding(),
+        "branding_profiles": _branding.list_profiles(),
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    ctx = await asyncio.to_thread(_build_index_context)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={
-            "config": config,
-            "state": state,
-            "queue": queue,
-            "vids": vids[:16],  # Completed Gallery (FINAL_*.mp4)
-            "live": live[
-                :64
-            ],  # Live Gallery initial page (chain mp4s + pngs); older via GET /assets
-            "imgs": imgs[:10],  # back-compat (hidden i-grid)
-            "mixed": mixed[
-                :64
-            ],  # Finals interleaved with components by mtime — render path uses this when assets-filter is ON
-            "storage": storage,
-            "outputs_disk": outputs_disk,
-            "ram": ram,
-            "branding": _load_branding(),
-            "branding_profiles": _branding.list_profiles(),
-        },
+        context=ctx,
     )
 
 

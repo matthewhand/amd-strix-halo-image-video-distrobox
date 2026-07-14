@@ -396,15 +396,23 @@ def save_config(config):
 
 
 def redact(config):
-    """Return a deep copy with sensitive fields blanked for broadcast/transit."""
-    import copy
-    c = copy.deepcopy(config) if isinstance(config, dict) else config
-    if isinstance(c, dict):
-        llm = c.get("llm")
-        if isinstance(llm, dict) and llm.get("api_key"):
-            llm["api_key"] = "***"
-        if c.get("api_key"):
-            c["api_key"] = "***"
+    """Return a copy with sensitive fields blanked for broadcast/transit.
+
+    Runs on every broadcast tick, so it avoids copy.deepcopy() of the whole
+    config. Only top-level `api_key` and nested `llm.api_key` are rewritten —
+    shallow-copy top-level dict and, when present, shallow-copy just the `llm`
+    sub-dict. Input dict is never mutated.
+    """
+    if not isinstance(config, dict):
+        return config
+    c = dict(config)
+    llm = c.get("llm")
+    if isinstance(llm, dict) and llm.get("api_key"):
+        llm = dict(llm)
+        llm["api_key"] = "***"
+        c["llm"] = llm
+    if c.get("api_key"):
+        c["api_key"] = "***"
     return c
 
 def get_state():
@@ -471,6 +479,49 @@ def queue_lock():
             fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+
+# Cap on retained terminal-archive rows. Completed/cancelled queue items are
+# kept for the dashboard's history view but otherwise accumulate forever.
+# Keep only the most recent N *done/cancelled* rows; pending/working/error/failed
+# are NEVER pruned.
+_DONE_ARCHIVE_CAP = 200
+# Only these two terminal states are pruned. `error`/`failed` are intentionally
+# retained (they can be requeued, and the user needs to see why a job failed).
+_PRUNABLE_TERMINAL = ("done", "cancelled")
+
+
+def _prune_done_archive(q, cap=_DONE_ARCHIVE_CAP):
+    """Return a list with done/cancelled rows capped to the most recent `cap`,
+    preserving the original ordering of every kept row.
+
+    SAFETY CONTRACT (this guards the live queue, so it is deliberately narrow):
+      * Only rows whose status is exactly "done" or "cancelled" are ever
+        candidates for dropping. pending / working / None / error / failed /
+        blocked / any-other-status row is kept unconditionally.
+      * When the number of done+cancelled rows is <= cap, the input is returned
+        UNCHANGED (same object), so the overwhelmingly common case is a no-op.
+      * Recency is judged by `ts` (item creation time). Missing/non-numeric ts
+        sorts oldest (dropped first).
+      * The returned list keeps items in their original positions — only the
+        oldest surplus terminal rows are removed; nothing is reordered.
+    """
+    if not isinstance(q, list) or cap is None or cap < 0:
+        return q
+    # Indices of prunable terminal rows, in list order.
+    term_idx = [i for i, x in enumerate(q)
+                if isinstance(x, dict) and x.get("status") in _PRUNABLE_TERMINAL]
+    if len(term_idx) <= cap:
+        return q  # nothing to drop — return the input untouched
+    # Rank terminal rows by recency (ts desc); keep the newest `cap`, drop rest.
+    def _ts(i):
+        v = q[i].get("ts")
+        return v if isinstance(v, (int, float)) else float("-inf")
+    keep = set(sorted(term_idx, key=_ts, reverse=True)[:cap])
+    drop = set(term_idx) - keep
+    # Rebuild preserving order: every non-terminal row, plus kept terminal rows.
+    return [x for i, x in enumerate(q) if i not in drop]
+
+
 def get_queue():
     if os.path.exists(QUEUE_FILE):
         try:
@@ -494,7 +545,13 @@ def save_queue(q):
     """Atomic write-rename. Eliminates the torn-write window where a
     crash mid-write leaves the queue file as partial JSON.
     `os.replace` is POSIX atomic on the same filesystem (which is
-    where QUEUE_FILE lives by construction)."""
+    where QUEUE_FILE lives by construction).
+
+    Bounds the done/cancelled archive before persisting so the JSON
+    queue can't grow without limit. pending/working/error/failed are never
+    touched. See _prune_done_archive.
+    """
+    q = _prune_done_archive(q)
     os.makedirs(os.path.dirname(QUEUE_FILE), exist_ok=True)
     tmp = QUEUE_FILE + ".tmp"
     with open(tmp, "w") as f:

@@ -289,6 +289,8 @@ def get_output_counts(base_dir=None):
     Counts files in the fleet's output directory. In-container this is
     /workspace; on host it's ./comfy-outputs/experiments. Returns:
         {finals, chains, base_images, total_mp4, total_png, latest_final}
+
+    Single directory pass instead of multiple globs (broadcast/tick hot path).
     """
     if base_dir is None:
         for cand in ("/workspace", "./comfy-outputs/experiments"):
@@ -298,19 +300,43 @@ def get_output_counts(base_dir=None):
     if not base_dir or not os.path.isdir(base_dir):
         return {"finals": 0, "chains": 0, "base_images": 0,
                 "total_mp4": 0, "total_png": 0, "latest_final": None}
+    import fnmatch
     p = Path(base_dir)
-    finals = sorted(p.glob("FINAL_*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True)
-    # Match both the current "slop_<idx>_" prefix and the legacy "v<idx>_"
-    # form so historic outputs still count after the rename.
-    chains = list(p.glob("slop_*_c*.mp4")) + list(p.glob("v*_c*.mp4"))
-    base_imgs = list(p.glob("slop_*_base.png")) + list(p.glob("v*_base.png"))
+    finals = []
+    chains = 0
+    base_imgs = 0
+    total_mp4 = 0
+    total_png = 0
+    try:
+        entries = list(p.iterdir())
+    except OSError:
+        entries = []
+    for entry in entries:
+        name = entry.name
+        if fnmatch.fnmatchcase(name, "*.mp4"):
+            total_mp4 += 1
+            if fnmatch.fnmatchcase(name, "FINAL_*.mp4"):
+                finals.append(entry)
+            # Match both current "slop_<idx>_" prefix and legacy "v<idx>_" form.
+            elif (fnmatch.fnmatchcase(name, "slop_*_c*.mp4")
+                  or fnmatch.fnmatchcase(name, "v*_c*.mp4")):
+                chains += 1
+        elif fnmatch.fnmatchcase(name, "*.png"):
+            total_png += 1
+            if (fnmatch.fnmatchcase(name, "slop_*_base.png")
+                    or fnmatch.fnmatchcase(name, "v*_base.png")):
+                base_imgs += 1
+    try:
+        finals.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
     latest = finals[0].name if finals else None
     return {
         "finals": len(finals),
-        "chains": len(chains),
-        "base_images": len(base_imgs),
-        "total_mp4": len(list(p.glob("*.mp4"))),
-        "total_png": len(list(p.glob("*.png"))),
+        "chains": chains,
+        "base_images": base_imgs,
+        "total_mp4": total_mp4,
+        "total_png": total_png,
         "latest_final": latest,
     }
 
