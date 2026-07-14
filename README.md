@@ -728,4 +728,8 @@ Performance improvements to investigate:
 
 ## 14. Slopfinity Dashboard UI
 
-The Slopfinity dashboard (web UI, fleet scheduler, and backend) has been split out into its own project and is no longer part of this repository. This repo now focuses purely on the distrobox/Docker ROCm environment for Strix Halo image & video generation.
+The Slopfinity dashboard (web UI, fleet scheduler, and backend) lives in its own private project, `matthewhand/slopfinity`, and is pulled into this repo as a git submodule at [`slopfinity/`](slopfinity). This repo stays focused on the distrobox/Docker ROCm environment for Strix Halo image & video generation; the submodule carries the dashboard code, its docs, branding, and demo assets.
+
+Toolbox-owned launchers that drive the submodule remain in this repo root: `bin/slopfinity`, `dark_server.py`, and `scripts/slopfinity_http.py` (`import slopfinity` resolves via `PYTHONPATH=$REPO`).
+
+> **Docs map (in the submodule):** [`slopfinity/README.slopfinity.md`](slopfinity/README.slopfinity.md) (operators) · [`slopfinity/docs/slopfinity-toolbox-boundary.md`](slopfinity/docs/slopfinity-toolbox-boundary.md) (ownership / NOT shipped) · [`slopfinity/docs/slopfinity-private-repo.md`](slopfinity/docs/slopfinity-private-repo.md) (private mirror) · [`slopfinity/docs/slopfinity-docs-index.md`](slopfinity/docs/slopfinity-docs-index.md) (index + honesty checklist).
