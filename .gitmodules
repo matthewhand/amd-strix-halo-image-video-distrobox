@@ -1,0 +1,4 @@
+[submodule "slopfinity"]
+	path = slopfinity
+	url = https://github.com/matthewhand/slopfinity.git
+	branch = main
