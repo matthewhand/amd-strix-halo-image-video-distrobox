@@ -47,11 +47,44 @@ class InsufficientMemoryError(RuntimeError):
     """Raised when headroom is still too low after reclaim — do not start."""
 
 
+def _stage_budget_overrides() -> Dict[str, float]:
+    """Config abstract: scheduler.stage_budget_overrides → peak GB overrides.
+
+    Keys may be ``role:model`` (preferred) or bare ``model``. Value ``0``
+    means "ignore table budget for this model" (still keep free-after-load
+    safety floor via can_start / has_safety_after_load).
+    """
+    try:
+        from . import config as _cfg
+
+        sch = (_cfg.load_config() or {}).get("scheduler") or {}
+        raw = sch.get("stage_budget_overrides") or {}
+        out: Dict[str, float] = {}
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                try:
+                    out[str(k).strip().lower()] = float(v)
+                except (TypeError, ValueError):
+                    continue
+        return out
+    except Exception:
+        return {}
+
+
 def need_gb(role: str, model: str) -> float:
-    """Peak GB expected for (role, model). Unknown pairs return a safe default."""
+    """Peak GB expected for (role, model). Unknown pairs return a safe default.
+
+    Honors ``config.scheduler.stage_budget_overrides`` (e.g. wan2.5 → 0).
+    """
     if not model or model in ("none", ""):
         return 0.0
-    key = (str(role).lower(), str(model).lower())
+    role_l = str(role).lower()
+    model_l = str(model).lower()
+    overrides = _stage_budget_overrides()
+    for k in (f"{role_l}:{model_l}", model_l, f"video:{model_l}"):
+        if k in overrides:
+            return float(overrides[k])
+    key = (role_l, model_l)
     if key in STAGE_BUDGETS:
         return float(STAGE_BUDGETS[key])
     # alias map

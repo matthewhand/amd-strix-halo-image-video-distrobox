@@ -116,6 +116,49 @@ def test_need_gb_from_budgets_includes_dramabox():
     assert gate.need_gb("tts", "kokoro") == 8
 
 
+def test_wan_budget_overridden_to_zero_by_config(monkeypatch):
+    """WAN peaks are ignored via scheduler.stage_budget_overrides (default 0)."""
+    # Ensure default override path: even without config file, DEFAULT merges
+    import slopfinity.config as cfg
+
+    monkeypatch.setattr(
+        cfg,
+        "load_config",
+        lambda: {
+            "scheduler": {
+                "stage_budget_overrides": {
+                    "video:wan2.2": 0,
+                    "video:wan2.5": 0,
+                    "wan2.2": 0,
+                    "wan2.5": 0,
+                }
+            }
+        },
+    )
+    assert gate.need_gb("video", "wan2.2") == 0
+    assert gate.need_gb("video", "wan2.5") == 0
+    # Still only need safety free (10) to start — not 96GB
+    assert gate.can_start(available_gb=15, need_gb=gate.need_gb("video", "wan2.5"), safety_gb=10)
+    assert not gate.can_start(available_gb=5, need_gb=0, safety_gb=10)
+
+
+def test_stage_budget_gb_wan_zero_no_overhead():
+    from slopfinity import scheduler as sched
+    import slopfinity.config as cfg
+    from unittest import mock
+
+    with mock.patch.object(
+        cfg,
+        "load_config",
+        return_value={
+            "scheduler": {
+                "stage_budget_overrides": {"video:wan2.5": 0, "wan2.5": 0}
+            }
+        },
+    ):
+        assert sched.stage_budget_gb("video", "wan2.5") == 0.0
+
+
 # ---------------------------------------------------------------------------
 # stage_gate context — reclaim + refuse (with fakes)
 # ---------------------------------------------------------------------------

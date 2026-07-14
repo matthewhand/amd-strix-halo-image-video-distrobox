@@ -188,29 +188,47 @@ def get_storage():
     return out
 
 
-# Reference memory values for Strix Halo unified memory (GB)
+# Peak resident GB for Strix Halo UMA — aligned with stage_gate.STAGE_BUDGETS
+# (conservative; prefer over-estimate over OOM). Used for UI WILL-USE and
+# serial headroom math: free_after_load must stay ≥ SAFETY_FREE_GB.
 _MODEL_GB = {
     # base image
-    "qwen": 20,
-    "ernie": 12,
-    # ltx bases / video
-    "ltx-2.3": 28,
+    "qwen": 28,
+    "qwen-image": 28,
+    "ernie": 18,
+    # ltx: default to video peak when role unknown; role-aware overrides below
+    "ltx-2.3": 48,
     # video only
-    "wan2.2": 48,
-    "wan2.5": 56,
+    "wan2.2": 84,
+    "wan2.5": 96,
     # audio (music)
-    "heartmula": 10,
+    "heartmula": 14,
     # voice (TTS)
-    "qwen-tts": 4,
-    "kokoro": 1,
+    "qwen-tts": 10,
+    "kokoro": 8,
+    "dramabox": 18,
     # upscale
-    "ltx-spatial": 18,
+    "ltx-spatial": 30,
     # none / empty
     "none": 0,
     "No Audio": 0,
     "No Upscale": 0,
     "": 0,
 }
+
+# Role-aware peaks when the same model name means different footprints
+_ROLE_MODEL_GB = {
+    ("image", "ltx-2.3"): 38,
+    ("video", "ltx-2.3"): 48,
+    ("image", "qwen"): 28,
+    ("image", "ernie"): 18,
+    ("tts", "dramabox"): 18,
+    ("tts", "kokoro"): 8,
+    ("tts", "qwen-tts"): 10,
+    ("audio", "heartmula"): 14,
+}
+
+SAFETY_FREE_GB = 10  # must remain free after model load (stage_gate floor)
 
 # Pretty labels for the WILL-USE breakdown (mirrors _modelDisplayName in app.js).
 _MODEL_LABEL = {
@@ -223,6 +241,7 @@ _MODEL_LABEL = {
     "heartmula": "Heartmula",
     "qwen-tts": "Qwen-TTS",
     "kokoro": "Kokoro-TTS",
+    "dramabox": "DramaBox",
     "ltx-spatial": "LTX Spatial x2",
 }
 
@@ -237,7 +256,7 @@ def _pretty(model):
 _OVERHEAD_GB = 6
 
 
-def _lookup(model):
+def _lookup(model, role=None):
     if model is None:
         return 0
     # `slopped:<file>` placeholders contribute the same RAM as the role's
@@ -246,6 +265,21 @@ def _lookup(model):
     # honest even when the user picks an existing asset for a role.
     if isinstance(model, str) and model.startswith("slopped:"):
         return 0
+    # Config abstract: scheduler.stage_budget_overrides (wan2.x → 0 by default)
+    try:
+        from .stage_gate import need_gb as _need_gb
+
+        if role:
+            return float(_need_gb(str(role), str(model)))
+        # bare model: try video role first (wan lives there), else table
+        if str(model).lower().startswith("wan"):
+            return float(_need_gb("video", str(model)))
+    except Exception:
+        pass
+    if role:
+        rg = _ROLE_MODEL_GB.get((str(role).lower(), str(model).lower()))
+        if rg is not None:
+            return rg
     return _MODEL_GB.get(model, 0)
 
 
@@ -296,9 +330,10 @@ def get_ram_estimate(base_model, video_model, audio_model, upscale_model, tts_mo
         ("upscale", "Upscale", upscale_model),
     ]
     breakdown = []
-    total = 0
+    naive_total = 0  # all warm at once (legacy sum — OOM risk)
+    serial_peak = 0  # max single-stage peak if stages are gated/serial
     for role, stage, model in stages:
-        gb = _lookup(model)
+        gb = _lookup(model, role=role)
         breakdown.append({
             "role":  role,
             "stage": stage,
@@ -306,7 +341,9 @@ def get_ram_estimate(base_model, video_model, audio_model, upscale_model, tts_mo
             "label": _pretty(model),
             "gb":    gb,
         })
-        total += gb
+        naive_total += gb
+        if gb > serial_peak:
+            serial_peak = gb
     breakdown.append({
         "role":  "overhead",
         "stage": "Overhead",
@@ -314,17 +351,27 @@ def get_ram_estimate(base_model, video_model, audio_model, upscale_model, tts_mo
         "label": "OS + ComfyUI",
         "gb":    _OVERHEAD_GB,
     })
-    total += _OVERHEAD_GB
+    naive_total += _OVERHEAD_GB
+    # Serial path: peak stage + overhead + free floor after load
+    serial_with_floor = serial_peak + _OVERHEAD_GB + SAFETY_FREE_GB
+    # Prefer serial estimate for "will use" when stage_gate is the runtime path
+    total = serial_with_floor
 
-    if total >= 100:
+    # Status reflects serial (gated) need; naive all-warm only raises warn
+    # so the UI still flags stacked-load risk without claiming serial is unsafe.
+    if serial_with_floor >= 100:
         status = "danger"
-    elif total >= 80:
+    elif serial_with_floor >= 80 or naive_total >= 100:
         status = "warn"
     else:
         status = "ok"
 
     return {
         "estimated_gb": round(total, 1),
+        "serial_peak_gb": round(serial_peak, 1),
+        "serial_need_gb": round(serial_with_floor, 1),  # peak + oh + keep 10 free
+        "naive_all_warm_gb": round(naive_total, 1),
+        "safety_free_gb": SAFETY_FREE_GB,
         "budget_gb": 128,
         "breakdown": breakdown,
         "status": status,

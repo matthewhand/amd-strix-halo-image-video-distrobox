@@ -22,6 +22,7 @@ from slopfinity.memory_planner import (
     naive_load_count,
     plan_resident_set,
     planned_load_count,
+    step_gb,
 )
 
 
@@ -117,6 +118,41 @@ def test_build_sequence_skips_none_and_slopped():
     # Footprints come from the budget table.
     assert seq[0].gb == 28
     assert seq[1].gb == 48
+
+
+def test_step_gb_honors_wan_budget_override(monkeypatch):
+    """WAN peaks are ignored via scheduler.stage_budget_overrides (default 0)."""
+    import slopfinity.config as cfg
+
+    monkeypatch.setattr(
+        cfg,
+        "load_config",
+        lambda: {
+            "scheduler": {
+                "stage_budget_overrides": {
+                    "video:wan2.2": 0,
+                    "video:wan2.5": 0,
+                    "wan2.2": 0,
+                    "wan2.5": 0,
+                }
+            }
+        },
+    )
+    assert step_gb("video", "wan2.5") == 0
+    assert step_gb("video", "wan2.2") == 0
+    # Non-overridden model still uses the table peak.
+    assert step_gb("image", "qwen") == 28
+    # build_sequence must also treat wan as zero GB under the override.
+    seq = build_sequence_for_job(
+        base_model="qwen",
+        video_model="wan2.5",
+        audio_model=None,
+        tts_model=None,
+        upscale_model=None,
+    )
+    assert [s.model for s in seq] == ["qwen", "wan2.5"]
+    assert seq[0].gb == 28
+    assert seq[1].gb == 0
 
 
 def test_naive_vs_planned_load_count_savings():

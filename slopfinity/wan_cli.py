@@ -101,6 +101,9 @@ def wan_paths(model: str = "wan2.2") -> Dict[str, str]:
     models_t5_umt5-xxl-enc-bf16.pth (wrong state_dict keys for wan-video-studio).
     """
     resolved = resolve_wan_ckpt()
+    # wan2.5 is a UI/label alias of the same checkpoint resolver as wan2.2 —
+    # there is no separate open-weight Wan 2.5 pack on this host. STAGE_BUDGETS
+    # rows (84/96) are historical peaks only; config stage_budget_overrides → 0.
     defaults = {
         "wan2.2": {
             "task": resolved["task"],

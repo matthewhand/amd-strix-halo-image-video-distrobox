@@ -184,15 +184,19 @@ def plan_resident_set(
 # without importing FastAPI.
 # ---------------------------------------------------------------------------
 
-# Mirrors `scheduler.STAGE_BUDGETS` to keep this module dep-free; importing
-# scheduler would drag in asyncio. Kept in sync via design-doc note.
+# Local mirror of theoretical peaks (documentation + offline fallback).
+# Prefer stage_gate.need_gb (honors config.scheduler.stage_budget_overrides)
+# so Belady advisory plans treat WAN as 0 under default config — same as
+# stage_gate / scheduler / stats. Importing scheduler would drag in asyncio;
+# stage_gate is intentionally lighter. Table rows stay as historical peaks
+# even when overrides zero them out at runtime.
 _STAGE_BUDGETS = {
     ("image", "qwen"):        28,
     ("image", "ernie"):       18,
     ("image", "ltx-2.3"):     38,
     ("video", "ltx-2.3"):     48,
     ("video", "wan2.2"):      84,
-    ("video", "wan2.5"):      96,
+    ("video", "wan2.5"):      96,  # historical peak only; override → 0
     ("audio", "heartmula"):   14,
     ("tts",   "qwen-tts"):    10,
     ("tts",   "kokoro"):       8,
@@ -202,9 +206,20 @@ _STAGE_BUDGETS = {
 
 
 def step_gb(stage: str, model: str) -> float:
-    """Peak GB for (stage, model). Returns 0 for the empty/none sentinels."""
+    """Peak GB for (stage, model). Returns 0 for the empty/none sentinels.
+
+    Honors ``config.scheduler.stage_budget_overrides`` via stage_gate.need_gb
+    when importable (WAN → 0 under default config). Falls back to the local
+    table mirror if stage_gate is unavailable.
+    """
     if not model or model in ("none", ""):
         return 0.0
+    try:
+        from .stage_gate import need_gb as _need_gb
+
+        return float(_need_gb(stage, model))
+    except Exception:
+        pass
     return float(_STAGE_BUDGETS.get((stage, model), 0))
 
 

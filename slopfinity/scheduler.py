@@ -169,8 +169,36 @@ def _mem_available_gb() -> float:
 
 
 def stage_budget_gb(stage: str, model: str) -> float:
-    """Return the estimated peak for (stage, model) incl. overhead."""
-    base = STAGE_BUDGETS.get((stage, model), 0)
+    """Return the estimated peak for (stage, model) incl. overhead.
+
+    Peak comes from stage_gate.need_gb (table + config
+    ``scheduler.stage_budget_overrides``). WAN defaults to 0 via config so
+    acquire_gpu does not demand 84–96 GB before start; safety_gb still applies.
+    """
+    explicit_zero = False
+    try:
+        from .stage_gate import need_gb as _need_gb, _stage_budget_overrides
+
+        ovr = _stage_budget_overrides()
+        keys = {
+            f"{str(stage).lower()}:{str(model).lower()}",
+            str(model).lower(),
+            f"video:{str(model).lower()}",
+        }
+        if keys & set(ovr.keys()):
+            base = float(_need_gb(stage, model))
+            explicit_zero = base <= 0
+        elif (stage, model) in STAGE_BUDGETS:
+            base = float(_need_gb(stage, model))
+        else:
+            base = float(STAGE_BUDGETS.get((stage, model), 0))
+    except Exception:
+        base = float(STAGE_BUDGETS.get((stage, model), 0))
+        explicit_zero = False
+    # Explicit override 0 → ignore peak AND overhead (safety floor only).
+    if explicit_zero:
+        return 0.0
+    # Unknown stage/model: keep legacy overhead pad only.
     return float(base + OVERHEAD_GB)
 
 

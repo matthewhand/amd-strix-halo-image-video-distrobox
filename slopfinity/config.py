@@ -177,6 +177,16 @@ DEFAULT_SCHEDULER = {
     "memory_safety_gb": 10,
     "llm_cpu_mode": "smart",
     "tts_cpu_mode": "smart",
+    # Per-stage budget overrides (GB). Keys: "role:model" or bare "model".
+    # 0 = ignore model peak (still enforce memory_safety_gb free floor).
+    # WAN is docker one-shot / operator-managed on this box — do not block
+    # acquire_gpu / stage_gate on the 84–96 GB table entries.
+    "stage_budget_overrides": {
+        "video:wan2.2": 0,
+        "video:wan2.5": 0,
+        "wan2.2": 0,
+        "wan2.5": 0,
+    },
 }
 
 

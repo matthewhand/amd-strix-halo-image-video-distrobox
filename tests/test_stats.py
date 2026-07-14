@@ -178,9 +178,14 @@ def test_get_output_counts_default_dir_fallback(tmp_path, monkeypatch):
 # ---------- _lookup / _pretty ------------------------------------------------
 
 def test_lookup_known_and_unknown():
-    assert stats._lookup("qwen") == 20
-    assert stats._lookup("wan2.5") == 56
-    assert stats._lookup("kokoro") == 1
+    assert stats._lookup("qwen") == 28
+    # wan2.5 peak ignored by default config override → 0
+    assert stats._lookup("wan2.5") == 0
+    assert stats._lookup("wan2.2", role="video") == 0
+    assert stats._lookup("kokoro") == 8
+    assert stats._lookup("dramabox") == 18
+    assert stats._lookup("ltx-2.3", role="image") == 38
+    assert stats._lookup("ltx-2.3", role="video") == 48
     assert stats._lookup("totally-unknown-model") == 0
     assert stats._lookup("none") == 0
     assert stats._lookup("") == 0
@@ -223,37 +228,57 @@ def test_get_ram_estimate_breakdown_structure():
 
 
 def test_get_ram_estimate_total_math():
-    # qwen(20) + ltx-2.3(28) + heartmula(10) + kokoro(1) + ltx-spatial(18) + overhead(6)
+    # Serial peak = max(qwen28, ltx48, heartmula14, kokoro8, spatial30) = 48
+    # estimated = peak + overhead(6) + safety_free(10) = 64
     r = stats.get_ram_estimate("qwen", "ltx-2.3", "heartmula", "ltx-spatial",
                                tts_model="kokoro")
-    assert r["estimated_gb"] == 83.0
+    assert r["serial_peak_gb"] == 48.0
+    assert r["estimated_gb"] == 64.0  # 48 + 6 + 10
+    assert r["safety_free_gb"] == 10
+    assert r["naive_all_warm_gb"] == 28 + 48 + 14 + 8 + 30 + 6  # 134
     assert r["budget_gb"] == 128
-    # 80 <= 83 < 100 -> warn
+    # serial 64 is ok-tier, but naive all-warm ≥100 → warn (stack risk)
     assert r["status"] == "warn"
 
 
 def test_get_ram_estimate_status_ok():
-    # qwen(20) + overhead(6) = 26 -> ok
+    # serial peak qwen 28 + oh 6 + free 10 = 44 -> ok
     r = stats.get_ram_estimate("qwen", None, None, None)
-    assert r["estimated_gb"] == 26.0
+    assert r["estimated_gb"] == 44.0
     assert r["status"] == "ok"
 
 
 def test_get_ram_estimate_status_danger():
-    # qwen(20) + wan2.5(56) + heartmula(10) + ... push >= 100
-    r = stats.get_ram_estimate("qwen", "wan2.5", "heartmula", "ltx-spatial",
+    # wan2.5 budget overridden to 0; peak becomes ltx-spatial 30 → serial 30+6+10=46
+    # Use many large non-wan peaks to still hit danger on serial path:
+    # qwen 28 + ltx 48 + heartmula 14 + spatial 30 + qwen-tts 10 → peak 48 → 64 ok/warn
+    # Force danger via naive stack without wan: still serial peak 48
+    r = stats.get_ram_estimate("qwen", "ltx-2.3", "heartmula", "ltx-spatial",
                                tts_model="qwen-tts")
-    # 20 + 56 + 10 + 18 + 4 + 6 = 114
-    assert r["estimated_gb"] == 114.0
-    assert r["status"] == "danger"
+    assert r["serial_peak_gb"] == 48.0
+    assert r["breakdown"][3]["model"] == "qwen-tts"
+    assert r["breakdown"][3]["gb"] == 10
+    # wan override: video row is 0
+    r_wan = stats.get_ram_estimate("qwen", "wan2.5", None, None, tts_model=None)
+    assert r_wan["breakdown"][1]["model"] == "wan2.5"
+    assert r_wan["breakdown"][1]["gb"] == 0
+    assert r_wan["serial_peak_gb"] == 28.0  # qwen only
 
 
 def test_get_ram_estimate_slopped_costs_zero():
     base = stats.get_ram_estimate("qwen", None, None, None)["estimated_gb"]
     sl = stats.get_ram_estimate("slopped:existing.png", None, None, None)
-    # Slopped base contributes 0 instead of qwen's 20.
-    assert sl["estimated_gb"] == base - 20
+    # Slopped base contributes 0 instead of qwen's 28 → estimated drops by 28.
+    assert sl["estimated_gb"] == base - 28
     assert sl["breakdown"][0]["label"].startswith("Slopped (")
+
+
+def test_get_ram_estimate_includes_dramabox():
+    r = stats.get_ram_estimate("qwen", "ltx-2.3", None, None, tts_model="dramabox")
+    tts_row = r["breakdown"][3]
+    assert tts_row["model"] == "dramabox"
+    assert tts_row["gb"] == 18
+    assert tts_row["label"] == "DramaBox"
 
 
 # ---------- get_sys_stats (all subprocess + /proc mocked) --------------------

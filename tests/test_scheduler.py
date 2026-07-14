@@ -35,13 +35,13 @@ def test_check_budget_qwen_plenty(monkeypatch):
     assert need == pytest.approx(44.0, abs=0.1)
 
 
-def test_check_budget_wan25_tight(monkeypatch):
-    # 50 GB available — NOT enough for wan2.5 (96 + 6 + 10 = 112).
+def test_check_budget_wan25_override_ignores_peak(monkeypatch):
+    # WAN peak overridden to 0 — only safety (10) is required.
     m = mock.mock_open(read_data=_mk_meminfo(50 * 1024 * 1024))
     with mock.patch("builtins.open", m):
         ok, avail, need = sched.check_budget("video", "wan2.5")
-    assert ok is False
-    assert need == pytest.approx(112.0, abs=0.1)
+    assert ok is True
+    assert need == pytest.approx(10.0, abs=0.1)  # safety only
 
 
 def test_check_budget_unknown_stage(monkeypatch):
@@ -267,7 +267,9 @@ def test_pause_resume_toggle():
 
 def test_stage_budget_gb_includes_overhead():
     assert sched.stage_budget_gb("image", "qwen") == 28 + sched.OVERHEAD_GB
-    assert sched.stage_budget_gb("video", "wan2.5") == 96 + sched.OVERHEAD_GB
+    # WAN ignored via config override → 0 (no overhead pad)
+    assert sched.stage_budget_gb("video", "wan2.5") == 0.0
+    assert sched.stage_budget_gb("video", "wan2.2") == 0.0
     assert sched.stage_budget_gb("bogus", "bogus") == sched.OVERHEAD_GB
 
 
