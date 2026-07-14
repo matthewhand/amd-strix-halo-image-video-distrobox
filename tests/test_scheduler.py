@@ -178,7 +178,7 @@ def test_planner_hit_skips_cold_load(monkeypatch):
     async def _noop(*a, **k):
         return {"ok": True, "before_gb": 100.0, "after_gb": 100.0, "freed_gb": 0.0}
     monkeypatch.setattr(sched, "free_between", _noop)
-    monkeypatch.setattr(sched, "_planner_enabled", lambda: True)
+    monkeypatch.setattr(sched, "_planner_enabled", lambda *a, **k: True)
     while not sched.SchedulerEvents.empty():
         sched.SchedulerEvents.get_nowait()
 

@@ -345,6 +345,10 @@ async def acquire_gpu(
     wait_start = _now()
     blocks = 0
 
+    # One scheduler-config read per acquire (planner + idle-GPU guard).
+    # Port of 7566014 read-once pattern adapted to land's acquire_gpu shape.
+    _sc = _load_scheduler_config()
+
     # Phase 5 — consult the memory_planner BEFORE the budget loop. If the
     # operator opted in (`scheduler.use_planner == True`) AND the required
     # model is already resident from a prior stage, the planner skips the
@@ -354,7 +358,7 @@ async def acquire_gpu(
     if (
         _memory_planner is not None
         and model
-        and _planner_enabled()
+        and _planner_enabled(_sc)
         and model in GPU.resident_models
     ):
         planner_hit = True
@@ -386,7 +390,8 @@ async def acquire_gpu(
             ok = projected_resident <= max(0.0, available - float(safety_gb))
 
             # GPU Guard rule: if enabled, we also wait for GPU usage to be low.
-            conf = _load_scheduler_config()
+            # Reuse the single _sc read from acquire entry (7566014 land port).
+            conf = _sc
             guard_enabled = bool(conf.get("pause_for_idle_gpu", False))
             if guard_enabled and ok:
                 max_pct = float(conf.get("pause_idle_max_pct", 50))
@@ -644,11 +649,13 @@ def _load_scheduler_config() -> dict:
     return {"use_planner": False, "memory_safety_gb": SAFETY_GB}
 
 
-def _planner_enabled() -> bool:
+def _planner_enabled(conf: Optional[dict] = None) -> bool:
     """Phase 5 toggle — defaults False so behavior is unchanged for users
-    who haven't opted in."""
+    who haven't opted in. `conf` lets acquire_gpu pass a single pre-loaded
+    scheduler config (avoids a redundant load_config read)."""
     try:
-        return bool(_load_scheduler_config().get("use_planner", False))
+        conf = conf if conf is not None else _load_scheduler_config()
+        return bool(conf.get("use_planner", False))
     except Exception:
         return False
 
