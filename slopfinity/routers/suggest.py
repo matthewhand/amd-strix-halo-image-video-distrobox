@@ -200,16 +200,20 @@ async def enhance_distribute(data: dict = Body(...)):
     if persist:
         out_stages = result.get("stages") or {}
         try:
-            config = cfg.load_config()
-            if out_stages.get("image"):
-                config["image_prompt"] = out_stages["image"]
-            if out_stages.get("video"):
-                config["video_prompt"] = out_stages["video"]
-            if out_stages.get("music"):
-                config["music_prompt"] = out_stages["music"]
-            if out_stages.get("tts"):
-                config["tts_prompt"] = out_stages["tts"]
-            cfg.save_config(config)
+            # Atomic RMW under config_lock (d4bfdee remainder): persist only the
+            # per-stage *_prompt keys this fan-out produced so a concurrent
+            # background whole-config save cannot clobber them (and vice versa).
+            def _persist_stages(config):
+                if out_stages.get("image"):
+                    config["image_prompt"] = out_stages["image"]
+                if out_stages.get("video"):
+                    config["video_prompt"] = out_stages["video"]
+                if out_stages.get("music"):
+                    config["music_prompt"] = out_stages["music"]
+                if out_stages.get("tts"):
+                    config["tts_prompt"] = out_stages["tts"]
+                return config
+            cfg.mutate_config(_persist_stages)
             persisted = True
         except Exception as e:
             # Persistence is best-effort — never fail the fan-out itself
