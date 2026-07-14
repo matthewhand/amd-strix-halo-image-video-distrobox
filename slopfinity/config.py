@@ -1,3 +1,5 @@
+import contextlib
+import fcntl
 import json
 import os
 import time
@@ -388,7 +390,7 @@ def save_config(config):
     """Atomic write-rename for config.json (close torn-write window).
 
     Land-adapted slice of d4bfdee durability: os.replace is POSIX-atomic on the
-    same filesystem. Full lost-update RMW (mutate_config + config_lock) still deferred.
+    same filesystem. mutate_config + config_lock available for opt-in RMW writers.
     """
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     tmp = CONFIG_FILE + ".tmp"
@@ -402,6 +404,41 @@ def save_config(config):
         os.chmod(CONFIG_FILE, 0o600)
     except Exception:
         pass
+
+
+_CONFIG_LOCK_FILE = CONFIG_FILE + ".lock"
+
+
+@contextlib.contextmanager
+def config_lock():
+    """Cross-process advisory lock for a load_config → save_config round-trip.
+
+    Land-adapted slice of d4bfdee RMW: separate flock from any queue lock;
+    non-recursive (do not nest). Router full rewiring still optional.
+    """
+    os.makedirs(os.path.dirname(_CONFIG_LOCK_FILE) or ".", exist_ok=True)
+    with open(_CONFIG_LOCK_FILE, "a+") as fd:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def mutate_config(mutator):
+    """Locked read→modify→write of the config (close lost-update race).
+
+    Callers pass the WHOLE config dict to save_config, so two unsynchronised
+    loops can revert each other's keys. Route concurrent writers through this
+    to serialise load→mutate→save. CONTRACT: mutator must not call
+    load_config/save_config/mutate_config (non-recursive) or block on I/O.
+    """
+    with config_lock():
+        c = load_config()
+        result = mutator(c)
+        c = result if isinstance(result, dict) else c
+        save_config(c)
+        return c
 
 
 def redact(config):
@@ -465,8 +502,6 @@ def set_state(mode="Idle", step="Waiting", video=0, total=0, chain=0, total_chai
 # remain functional (the file lock + atomic write still cover the
 # torn-write case); they're just exposed to the read-then-write race
 # until updated.
-import contextlib
-import fcntl
 
 _QUEUE_LOCK_FILE = QUEUE_FILE + ".lock"
 

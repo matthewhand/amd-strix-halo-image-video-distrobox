@@ -48,20 +48,23 @@ router = APIRouter()
 
 @router.post("/config")
 async def update_config(data: dict = Body(...)):
-    config = cfg.load_config()
-    # Resolve `__random__` placeholders to a concrete model from the role's
-    # candidate pool. We persist the chosen model (not the sentinel) so the
-    # rest of the pipeline never has to know about pseudo-models. `__slopped__`
-    # without a concrete file selection is treated the same as `__random__`
-    # (fall back to a real model) — the UI is responsible for sending
-    # `slopped:<filename>` once the user picks one.
+    # Resolve `__random__` placeholders before RMW so we don't hold the lock
+    # during pure request shaping.
+    data = dict(data)
     for role, pool in _RANDOM_CANDIDATES.items():
         v = data.get(role)
         if v == "__random__" or v == "__slopped__":
             data[role] = random.choice(pool) if pool else "none"
-    config.update(data)
-    cfg.save_config(config)
+
+    def _apply(config):
+        config = dict(config)
+        config.update(data)
+        return config
+
+    # d4bfdee land slice: serialise full-dict POST against concurrent writers.
+    cfg.mutate_config(_apply)
     return {"status": "ok"}
+
 
 
 @router.get("/settings")

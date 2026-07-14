@@ -62,9 +62,18 @@ def _docker_cmd(in_path: str, out_path: str) -> List[str]:
     ]
 
 
-async def _run(cmd: List[str]) -> int:
+# Hard cap (seconds) for docker GPU post call. On timeout return 124
+# so acquire_gpu releases the lock instead of hanging forever.
+POST_TIMEOUT_S = 600
+
+
+async def _run(cmd: List[str], timeout: int = POST_TIMEOUT_S) -> int:
     def _do() -> int:
-        return subprocess.run(cmd, check=False).returncode
+        try:
+            return subprocess.run(cmd, check=False, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            print(f"⏱  post worker timeout after {timeout}s", flush=True)
+            return 124  # conventional timeout exit code → treated as failure
     return await asyncio.to_thread(_do)
 
 
