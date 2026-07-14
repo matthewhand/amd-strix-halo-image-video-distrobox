@@ -190,6 +190,19 @@ async def settings_post(data: dict = Body(...)):
     - `api_key == "***"` means the client echoed back the mask — also strip.
     - Any explicit non-empty value is persisted.
     """
+    # ac13df4 land-shaped: validate llm.base_url BEFORE persist (SSRF).
+    # Land keeps the guard on server._validate_llm_base_url (no net_guard.py).
+    # Lazy import avoids circular import (server includes this router at import).
+    llm_in_pre = data.get("llm") or {}
+    if isinstance(llm_in_pre, dict):
+        _nb = str(llm_in_pre.get("base_url") or "").strip()
+        if _nb:
+            from slopfinity.server import _validate_llm_base_url
+            ok, err = _validate_llm_base_url(_nb)
+            if not ok:
+                return JSONResponse(
+                    {"ok": False, "error": f"llm.base_url: {err}"}, status_code=400
+                )
     # d4bfdee remainder: serialise settings RMW against concurrent writers.
     def _apply(c):
         c = dict(c)
