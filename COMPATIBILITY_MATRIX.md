@@ -15,7 +15,7 @@ This matrix defines the supported resolutions, aspect ratios, and configurations
 
 | Model | Supported Resolutions (WxH) | Recommended | Notes |
 | :--- | :--- | :--- | :--- |
-| **Ernie-Image** | **≤ `512*512` on gfx1151** | `512*512` | **GPU-hangs above 512²** — CK grouped-conv kernel wedges the GPU during VAE decode (not a lib-path issue; symlink repair ruled out). Pipeline auto-caps to 512² (`slopfinity/compat.py`). See `docs/gfx1151-known-issues.md`. |
+| **Ernie-Image** | **≤ `512*512` on gfx1151** | `512*512` | **GPU-hangs above 512²** — CK grouped-conv kernel wedges the GPU during VAE decode (not a lib-path issue; symlink repair ruled out). Stay ≤512² (launcher/operator mitigation). See `docs/gfx1151-known-issues.md`. |
 | **Qwen-Image** | Flexible (up to ~2048px) | `1664*928`, `1024*1024` | **Priority #2:** Very stable on ROCm. |
 | **LTX-2.3 (Base)** | Multiples of 32 | `1280*720` | **Priority #3:** Used as fallback cinematic base. |
 

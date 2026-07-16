@@ -2,8 +2,9 @@
 
 Hardware-specific quirks found while validating the slop pipeline on AMD
 Ryzen AI Max "Strix Halo" (gfx1151) with the TheRock ROCm nightly stack
-(`torch 2.11.0+rocm7.13.0a20260424`). Single source of truth for the guard
-logic is [`slopfinity/compat.py`](../slopfinity/compat.py).
+(`torch 2.11.0+rocm7.13.0a20260424`). The ERNIE 512² mitigation is applied at
+launchers/UI (operators should stay ≤512²); there is **no** `slopfinity/compat.py`
+module on current private `main` — do not treat that path as live code.
 
 ---
 
@@ -45,9 +46,9 @@ cosmetic bug; fixing it does **not** help, so we did **not** bake it in.
 
 ### Mitigation (shipped)
 
-`slopfinity/compat.py` caps ERNIE to `ERNIE_MAX_DIM = 512`. `run_fleet.py` and
-`slopfinity/worker_sh.py` pass `--width 512 --height 512`; `routers/config.py`
-surfaces a UI warning when ERNIE is selected (toasted by `app.js`).
+Operators / launchers should pass `--width 512 --height 512` for ERNIE.
+`run_fleet.py` is **not** on clean toolbox main (HTTP workers + optional
+coordinator). Prefer launcher defaults and the dashboard model picker.
 
 ### Outstanding
 
@@ -64,7 +65,7 @@ surfaces a UI warning when ERNIE is selected (toasted by `app.js`).
 
 ---
 
-## Other known-broken states (in `compat.py`)
+## Other known-broken states
 
 See also the full [Compatibility Matrix](../COMPATIBILITY_MATRIX.md) for
 supported resolutions / aspect ratios per image & video model.
