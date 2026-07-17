@@ -249,6 +249,9 @@ async def subjects_suggest(n: int = 6, subjects: str = "", endless: int = 0, ope
     same cache_key as row 1 and all show identical chips).
     """
     import time
+    # Clamp n: it drives how many ideas the LLM generates while holding the
+    # serialized GPU lock — an unbounded value lets one request monopolise it.
+    n = max(1, min(int(n or 6), 30))
     # The default suggestion system prompt lives in server.py. Imported
     # lazily to avoid a circular import at module load (server.py includes
     # this router). Without it line ~264 raised NameError and 500'd

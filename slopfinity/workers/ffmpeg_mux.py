@@ -80,5 +80,8 @@ def mux(
         loop_audio=loop_audio,
         pad_to_video=pad_to_video,
     )
-    proc = subprocess.run(cmd, capture_output=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return False
     return proc.returncode == 0 and os.path.exists(out_path)

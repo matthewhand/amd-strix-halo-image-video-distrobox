@@ -32,7 +32,10 @@ def _ffmpeg_available() -> bool:
 
 async def _run(cmd: List[str]) -> int:
     def _do() -> int:
-        return subprocess.run(cmd, capture_output=True).returncode
+        try:
+            return subprocess.run(cmd, capture_output=True, timeout=600).returncode
+        except subprocess.TimeoutExpired:
+            return 1
     return await asyncio.to_thread(_do)
 
 
