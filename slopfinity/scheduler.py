@@ -228,6 +228,8 @@ async def free_between(comfy_url: str = COMFY_URL) -> dict:
     Returns {ok, before_gb, after_gb, freed_gb}.
     """
     before = _mem_available_gb()
+    if not has_gpu():
+        return {"ok": True, "before_gb": before, "after_gb": before, "freed_gb": 0.0}
     ok = False
     try:
         payload = json.dumps({"unload_models": True, "free_memory": True}).encode(
@@ -257,6 +259,23 @@ async def free_between(comfy_url: str = COMFY_URL) -> dict:
         "after_gb": after,
         "freed_gb": round(max(0.0, after - before), 2),
     }
+
+
+def has_gpu() -> bool:
+    """Check if an AMD GPU is available via /dev/kfd or rocminfo."""
+    if hasattr(has_gpu, "_result"):
+        return has_gpu._result
+    
+    if os.path.exists("/dev/kfd"):
+        has_gpu._result = True
+        return True
+    try:
+        result = subprocess.run(['rocminfo'], capture_output=True, text=True, timeout=2)
+        has_gpu._result = (result.returncode == 0)
+        return has_gpu._result
+    except (FileNotFoundError, subprocess.SubprocessError):
+        has_gpu._result = False
+        return False
 
 
 async def emergency_free() -> dict:
@@ -339,6 +358,10 @@ async def acquire_gpu(
     """
     _ensure_loop_bound()
     await paused.wait()
+
+    if not has_gpu():
+        yield {"stage": stage, "model": model, "wait_seconds": 0.0, "gpu_bypassed": True}
+        return
 
     base_need = stage_budget_gb(stage, model)
     rid = job_id or f"r{next(_RESERVATION_ID)}"
