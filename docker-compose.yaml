@@ -1,7 +1,8 @@
 # Docker Compose v2 for AMD Strix Halo Image & Video Toolbox
 #
 # Profiles:
-#   qwen-image   → Qwen Image Studio server on :8000
+#   qwen-image   → Qwen Image Studio server on :${QWEN_PORT:-8180}
+#   mage-image   → Mage-Flow Turbo image worker on :${MAGE_PORT:-8181}
 #   qwen-tts     → Qwen3-TTS server on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)
 #   comfyui      → ComfyUI server on :8188
 #   slopfinity   → Slopfinity dashboard on :9099 (see override)
@@ -9,6 +10,7 @@
 #
 # Full stack:      docker compose --profile slop up -d
 # Image-only:      docker compose --profile qwen-image up -d
+# Mage-only:       docker compose --profile mage-image up -d
 # ComfyUI-only:    docker compose --profile comfyui up -d
 #
 # Override ports and paths via .env (see .env.example).
@@ -85,29 +87,79 @@ services:
     command: ["tail", "-f", "/dev/null"]
 
   # Qwen-Image-only service profile. Separate from qwen-tts (P4, port 8010)
-  # so the profile name reflects modality. Mutually exclusive with a toolbox
-  # running start_docker.sh on :8000 — pre-flight guard below exits cleanly
-  # if the port is already bound.
+  # so the profile name reflects modality. Port is ${QWEN_PORT} (default 8180
+  # so it does not collide with LiteLLM / other hub services on :8000).
+  # Pre-flight guard exits cleanly if the chosen port is already bound.
   qwen-image-service:
     extends: strix-halo-toolbox
     container_name: strix-halo-qwen-image
     profiles:
       - qwen-image
       - slop
+    environment:
+      - QWEN_PORT=${QWEN_PORT:-8180}
     command: >
       bash -c "
-        if (echo > /dev/tcp/127.0.0.1/8000) 2>/dev/null ; then
-          echo 'ERROR: Port 8000 is already bound (likely a toolbox running start_docker.sh).' 1>&2
+        PORT=$${QWEN_PORT:-8180}
+        if (echo > /dev/tcp/127.0.0.1/$$PORT) 2>/dev/null ; then
+          echo \"ERROR: Port $$PORT is already bound (likely a toolbox running start_docker.sh).\" 1>&2
           echo '       Stop the other Qwen server first, or change QWEN_PORT.' 1>&2
           sleep 30
           exit 0
         fi
-        echo '🎨 Starting Qwen Image Studio...'
+        echo \"🎨 Starting Qwen Image Studio on port $$PORT...\"
         if [ -f /opt/qwen_launcher.py ] && [ -f /opt/qwen-image-studio/qwen-image-studio/server.py ]; then
           cp /opt/qwen_launcher.py /opt/qwen-image-studio/qwen-image-mps.py
         fi
         cd /opt/qwen-image-studio/qwen-image-studio
-        exec uvicorn server:app --host 0.0.0.0 --port 8000
+        exec uvicorn server:app --host 0.0.0.0 --port $$PORT
+      "
+
+  # Mage-Flow image worker (microsoft/Mage-Flow-Turbo by default). SDPA
+  # attention backend for ROCm/gfx1151 — no CUDA flash-attn required.
+  # Port ${MAGE_PORT:-8181}. Writes PNGs under comfy-outputs/mage/.
+  mage-image-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-mage-image
+    # ROOT: same reason as comfyui — torch+ROCm device enum needs uid 0
+    # on this host for reliable HIP init under long-lived workers.
+    user: "0:0"
+    profiles:
+      - mage-image
+      - slop
+    environment:
+      - USER=root
+      - MAGE_PORT=${MAGE_PORT:-8181}
+      - MAGE_MODEL=${MAGE_MODEL:-microsoft/Mage-Flow-Turbo}
+      - MAGE_STEPS=${MAGE_STEPS:-4}
+      - MAGE_CFG=${MAGE_CFG:-1.0}
+      - MAGE_ATTN_BACKEND=${MAGE_ATTN_BACKEND:-sdpa}
+      - MAGE_FA_SHIM=1
+      - MAGE_PRELOAD=${MAGE_PRELOAD:-1}
+      - MAGE_OUT_DIR=/opt/ComfyUI/output/mage
+      - MAGE_ROOT=/opt/Mage
+      - HF_HOME=/home/user/.cache/huggingface
+      - HUGGINGFACE_HUB_CACHE=/home/user/.cache/huggingface/hub
+    volumes:
+      - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
+      - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
+      - ./Mage:/opt/Mage:ro
+      - ./scripts/mage_launcher.py:/opt/mage_launcher.py:ro
+      - ./scripts/mage_serve.py:/opt/mage_serve.py:ro
+    command: >
+      bash -c "
+        PORT=$${MAGE_PORT:-8181}
+        if (echo > /dev/tcp/127.0.0.1/$$PORT) 2>/dev/null ; then
+          echo \"ERROR: Port $$PORT is already bound.\" 1>&2
+          sleep 30
+          exit 0
+        fi
+        mkdir -p /opt/ComfyUI/output/mage
+        # loguru is required by mage_flow but not baked into the toolbox image.
+        pip install --quiet --root-user-action=ignore loguru 2>/dev/null || true
+        echo \"🎨 Starting Mage-Flow image worker on port $$PORT (model=$${MAGE_MODEL:-microsoft/Mage-Flow-Turbo})...\"
+        export PYTHONPATH=/opt/Mage:$${PYTHONPATH:-}
+        exec python3 /opt/mage_serve.py
       "
 
   # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so

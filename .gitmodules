@@ -2,3 +2,6 @@
 	path = slopfinity
 	url = https://github.com/matthewhand/slopfinity.git
 	branch = main
+[submodule "Mage"]
+	path = Mage
+	url = https://github.com/microsoft/Mage.git
