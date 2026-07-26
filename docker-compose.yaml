@@ -316,9 +316,14 @@ services:
     container_name: strix-halo-heartmula
     profiles:
       - heartmula
+    user: "0:0"
     environment:
+      - USER=root
+      - LOGNAME=root
       - HSA_OVERRIDE_GFX_VERSION=11.5.1
       - HEARTMULA_OUT_DIR=/workspace/music
+      - TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor
+      - XDG_CACHE_HOME=/tmp/xdg-cache
     volumes:
       - ./comfy-outputs/experiments:/workspace
       - ./scripts/heartmula_launcher.py:/opt/heartmula_launcher.py:ro
@@ -333,7 +338,8 @@ services:
         fi
         # /workspace/music is served by the dashboard at /files/music/<name>;
         # run_fleet resolves the worker's returned URL back to this dir.
-        mkdir -p /workspace/music && chown -R $(id -u):$(id -g) /workspace/music 2>/dev/null || true
+        mkdir -p /workspace/music /tmp/torchinductor /tmp/xdg-cache
+        chown -R $(id -u):$(id -g) /workspace/music 2>/dev/null || true
         echo '🎼 Starting HeartMuLa music worker on :8011 (out=/workspace/music)...'
         exec python3 /opt/heartmula_serve.py
       "
@@ -360,18 +366,20 @@ services:
     command: >
       bash -c "
         if (echo > /dev/tcp/127.0.0.1/8188) 2>/dev/null ; then
-          echo 'ERROR: Port 8188 is already bound (likely a toolbox running start_docker.sh).' 1>&2
-          echo '       Stop the other ComfyUI server first.' 1>&2
+          echo 'ERROR: Port 8188 is already bound.' 1>&2
           sleep 30
-          exit 0
+          exit 1
         fi
-        echo '🖼️  Starting ComfyUI (FP16 weights, FP32 VAE)...'
+        echo 'Starting ComfyUI (FP16 weights, FP32 VAE)...'
         cd /opt/ComfyUI
-        # --fp32-vae: forces every VAE decode to fp32 regardless of the
-        #   model's native dtype. On Strix Halo (gfx1151) bf16/fp16 VAE
-        #   decodes produce a faint 8/16-px block-grid pattern in some
-        #   models (LTX-Video-2.3 especially); fp32 eliminates it. Costs
-        #   ~2× VAE-decode VRAM, fine on UMA. See README §14 + the
-        #   slop-card "⚠ vae grid" chip's tooltip for context.
+        # kornia>=0.8 dropped pyramid.pad — strip bare pad import from LTX node.
+        LTXY=custom_nodes/ComfyUI-LTXVideo/pyramid_blending.py
+        if [ -f \"$$LTXY\" ]; then
+          sed -i '/^[[:space:]]*pad,$$/d' \"$$LTXY\" || true
+          if ! grep -q 'def pad(' \"$$LTXY\"; then
+            sed -i 's/^from torch import Tensor$$/from torch import Tensor\\n\\ndef pad(img, padding):\\n    return F.pad(img, padding)\\n/' \"$$LTXY\" || true
+          fi
+          echo 'patched LTX pyramid pad'
+        fi
         exec python3 main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --force-fp16 --fp32-vae
       "
