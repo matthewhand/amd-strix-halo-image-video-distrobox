@@ -123,6 +123,7 @@ services:
   mage-image-service:
     extends: strix-halo-toolbox
     container_name: strix-halo-mage-image
+    restart: unless-stopped
     # ROOT: same reason as comfyui — torch+ROCm device enum needs uid 0
     # on this host for reliable HIP init under long-lived workers.
     user: "0:0"
