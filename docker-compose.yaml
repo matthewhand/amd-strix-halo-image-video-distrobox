@@ -99,6 +99,8 @@ services:
       - qwen-image
       - slop
     environment:
+      # getpass.getuser() fails without USER during job bookkeeping
+      - USER=root
       - QWEN_PORT=${QWEN_PORT:-8180}
     command: >
       bash -c "
