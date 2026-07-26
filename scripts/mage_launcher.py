@@ -125,9 +125,45 @@ def parse_args():
     return p.parse_args()
 
 
+def _ensure_loguru() -> None:
+    """loguru is required by mage_flow but not always baked into the toolbox image."""
+    try:
+        import loguru  # noqa: F401
+        return
+    except ImportError:
+        pass
+    try:
+        import subprocess
+
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "--root-user-action=ignore", "loguru"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+        )
+        import loguru  # noqa: F401
+        return
+    except Exception:
+        pass
+    # Minimal fallback so imports succeed offline.
+    import logging
+    import types
+
+    mod = types.ModuleType("loguru")
+
+    class _L:
+        def __getattr__(self, name):
+            return getattr(logging.getLogger("mage"), name, lambda *a, **k: None)
+
+    mod.logger = _L()  # type: ignore[attr-defined]
+    sys.modules["loguru"] = mod
+
+
 def main() -> int:
     args = parse_args()
     _install_flash_attn_shim()
+    _ensure_loguru()
     _ensure_mage_on_path()
 
     # Force HF cache under the toolbox mount when present.
@@ -147,12 +183,16 @@ def main() -> int:
         print("❌ No GPU detected (torch.cuda.is_available() == False).", file=sys.stderr)
         return 1
 
-    # Set SDPA *before* importing model modules that resolve the backend.
+    # ROCm: force SDPA for BOTH the DiT backend and the HF text encoder.
+    # ModelConfig defaults to flash2 and re-applies set_attn_backend on load;
+    # VF_HF_ATTN_IMPL overrides the Qwen3-VL attn_implementation string.
+    os.environ["VF_HF_ATTN_IMPL"] = args.attn if args.attn in ("sdpa", "eager") else "sdpa"
     try:
         from mage_flow.models.modules._attn_backend import set_attn_backend
 
         set_attn_backend(args.attn)
-        print(f"[MAGE] attention backend={args.attn}", file=sys.stderr)
+        print(f"[MAGE] attention backend={args.attn} (VF_HF_ATTN_IMPL={os.environ['VF_HF_ATTN_IMPL']})",
+              file=sys.stderr)
     except Exception as exc:
         print(f"[MAGE] WARN: could not set attn backend: {exc}", file=sys.stderr)
 
@@ -161,7 +201,45 @@ def main() -> int:
     print(f"[MAGE] Loading {args.model} on {args.device} ...", file=sys.stderr)
     t0 = time.time()
     pipe = MageFlowPipeline.from_pretrained(args.model, device=args.device)
+    # Re-apply after load — MageFlowModel.__init__ resets backend from config.attn_type.
+    try:
+        from mage_flow.models.modules._attn_backend import set_attn_backend
+
+        set_attn_backend(args.attn)
+    except Exception:
+        pass
     print(f"[MAGE] loaded in {time.time() - t0:.1f}s", file=sys.stderr)
+
+    # Content filter uses Qwen3-VL .generate(). On ROCm + transformers>=5.6 the
+    # patched text encoder often fails closed (white blank) even for clean
+    # prompts. Default: fail-open unless MAGE_CONTENT_FILTER=1 forces the gate.
+    skip_cf = os.environ.get("MAGE_CONTENT_FILTER", "0") != "1"
+    if skip_cf:
+        from mage_flow.models.modules.mage_text import FilterVerdict
+
+        def _allow(prompt, max_new_tokens=160):
+            return FilterVerdict(False, [], "rocm fail-open (MAGE_CONTENT_FILTER!=1)", "")
+
+        pipe.model.txt_enc.screen_text = _allow  # type: ignore[method-assign]
+        if hasattr(pipe.model.txt_enc, "screen_edit"):
+            pipe.model.txt_enc.screen_edit = (  # type: ignore[method-assign]
+                lambda prompt, ref_images, max_new_tokens=192: FilterVerdict(
+                    False, [], "rocm fail-open", ""
+                )
+            )
+        print("[MAGE] content filter: fail-open (set MAGE_CONTENT_FILTER=1 to enforce)",
+              file=sys.stderr)
+    else:
+        try:
+            verdict = pipe.model.txt_enc.screen_text(args.prompt)
+            print(
+                f"[MAGE] content_filter violates={verdict.violates} "
+                f"cats={verdict.categories} reason={verdict.reason!r} "
+                f"raw={verdict.raw[:200]!r}",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(f"[MAGE] content_filter probe failed: {exc}", file=sys.stderr)
 
     print(
         f"[MAGE] generate {args.width}x{args.height} steps={args.steps} cfg={args.cfg}",
@@ -184,6 +262,13 @@ def main() -> int:
     size = os.path.getsize(out)
     print(f"✅ Saved {out} ({size} bytes) in {time.time() - t1:.1f}s", file=sys.stderr)
     print(out)
+    # Refuse to claim success on all-white refusal placeholders.
+    if size < 20000:
+        print(
+            f"⚠ output is very small ({size} B) — likely a content-filter refusal "
+            "placeholder (white blank). Check content_filter logs above.",
+            file=sys.stderr,
+        )
     return 0
 
 

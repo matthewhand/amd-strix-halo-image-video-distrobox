@@ -71,6 +71,41 @@ _PIPE = None
 _PIPE_MODEL = None
 _LOAD_ERROR: Optional[str] = None
 
+# Short UI/slopfinity ids → preferred checkpoint. Turbo aliases always pin to
+# DEFAULT_MODEL so a local snapshot (MAGE_MODEL=/…/Mage-Flow-Turbo) is reused
+# instead of re-downloading microsoft/Mage-Flow-Turbo from the Hub.
+_MODEL_ALIASES = {
+    "mage": "turbo",
+    "mage-turbo": "turbo",
+    "mage-flow-turbo": "turbo",
+    "microsoft/mage-flow-turbo": "turbo",
+    "mage-flow": "microsoft/Mage-Flow",
+    "mage-rl": "microsoft/Mage-Flow",
+    "mage-base": "microsoft/Mage-Flow-Base",
+}
+
+
+def _is_turbo_id(model_id: str) -> bool:
+    m = (model_id or "").lower()
+    return (
+        m in ("mage", "mage-turbo", "mage-flow-turbo", "turbo")
+        or m.endswith("mage-flow-turbo")
+        or "mage-flow-turbo" in m
+        or m.endswith("/turbo")
+    )
+
+
+def _resolve_model_id(raw: str) -> str:
+    """Map request model → load path. Prefer DEFAULT_MODEL for all Turbo ids."""
+    mid = (raw or "").strip() or DEFAULT_MODEL
+    key = mid.lower()
+    kind = _MODEL_ALIASES.get(key)
+    if kind == "turbo" or _is_turbo_id(mid):
+        return DEFAULT_MODEL
+    if kind:
+        return kind
+    return mid
+
 
 def _install_flash_attn_shim() -> None:
     """Stub flash_attn so importlib / transformers probes succeed on ROCm.
@@ -128,24 +163,89 @@ def _ensure_mage_on_path() -> None:
             return
 
 
+def _ensure_loguru() -> None:
+    try:
+        import loguru  # noqa: F401
+        return
+    except ImportError:
+        pass
+    try:
+        import subprocess
+
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "--root-user-action=ignore", "loguru"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+        )
+    except Exception:
+        import logging
+        import types
+
+        mod = types.ModuleType("loguru")
+
+        class _L:
+            def __getattr__(self, name):
+                return getattr(logging.getLogger("mage"), name, lambda *a, **k: None)
+
+        mod.logger = _L()  # type: ignore[attr-defined]
+        sys.modules["loguru"] = mod
+
+
 def _get_pipe(model_id: str):
     global _PIPE, _PIPE_MODEL, _LOAD_ERROR
-    if _PIPE is not None and _PIPE_MODEL == model_id:
+    model_id = _resolve_model_id(model_id)
+    # Reuse warm weights if already loaded for the same logical checkpoint
+    # (local path vs HF turbo id must not trigger a second multi-GB load).
+    if _PIPE is not None and (
+        _PIPE_MODEL == model_id
+        or (
+            _is_turbo_id(_PIPE_MODEL or "")
+            and _is_turbo_id(model_id)
+        )
+    ):
         return _PIPE
     _install_flash_attn_shim()
+    _ensure_loguru()
     _ensure_mage_on_path()
+    # Force SDPA for DiT + HF Qwen3-VL text encoder on ROCm (flash2 is CUDA-only).
+    attn = ATTN if ATTN in ("sdpa", "eager", "flash2", "flash4") else "sdpa"
+    os.environ["VF_HF_ATTN_IMPL"] = "sdpa" if attn in ("sdpa", "eager") else attn
     try:
         from mage_flow.models.modules._attn_backend import set_attn_backend
 
-        set_attn_backend(ATTN)
+        set_attn_backend(attn)
     except Exception as exc:
         print(f"[MAGE] WARN set_attn_backend: {exc}", flush=True)
     from mage_flow import MageFlowPipeline
 
-    print(f"[MAGE] Loading {model_id} on {DEVICE} (attn={ATTN}) ...", flush=True)
+    print(f"[MAGE] Loading {model_id} on {DEVICE} (attn={attn}) ...", flush=True)
     t0 = time.time()
     try:
         _PIPE = MageFlowPipeline.from_pretrained(model_id, device=DEVICE)
+        # Re-apply: MageFlowModel.__init__ resets backend from config.attn_type=flash2.
+        try:
+            from mage_flow.models.modules._attn_backend import set_attn_backend
+
+            set_attn_backend(attn)
+        except Exception:
+            pass
+        # ROCm: content-filter .generate() often fails closed → white blanks.
+        # Fail-open unless MAGE_CONTENT_FILTER=1.
+        if os.environ.get("MAGE_CONTENT_FILTER", "0") != "1":
+            try:
+                from mage_flow.models.modules.mage_text import FilterVerdict
+
+                def _allow(prompt, max_new_tokens=160):
+                    return FilterVerdict(
+                        False, [], "rocm fail-open (MAGE_CONTENT_FILTER!=1)", ""
+                    )
+
+                _PIPE.model.txt_enc.screen_text = _allow  # type: ignore[method-assign]
+                print("[MAGE] content filter: fail-open", flush=True)
+            except Exception as exc:
+                print(f"[MAGE] WARN content filter patch: {exc}", flush=True)
         _PIPE_MODEL = model_id
         _LOAD_ERROR = None
         print(f"[MAGE] loaded in {time.time() - t0:.1f}s", flush=True)
@@ -186,17 +286,7 @@ def generate(payload: dict = Body(...)):
     if not prompt:
         return JSONResponse({"ok": False, "error": "prompt is required"}, status_code=400)
 
-    model_id = str(payload.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
-    # Map short slopfinity ids → HF repos
-    aliases = {
-        "mage": "microsoft/Mage-Flow-Turbo",
-        "mage-turbo": "microsoft/Mage-Flow-Turbo",
-        "mage-flow-turbo": "microsoft/Mage-Flow-Turbo",
-        "mage-flow": "microsoft/Mage-Flow",
-        "mage-rl": "microsoft/Mage-Flow",
-        "mage-base": "microsoft/Mage-Flow-Base",
-    }
-    model_id = aliases.get(model_id.lower(), model_id)
+    model_id = _resolve_model_id(str(payload.get("model") or DEFAULT_MODEL))
 
     try:
         steps = int(payload.get("steps") or DEFAULT_STEPS)
@@ -208,18 +298,27 @@ def generate(payload: dict = Body(...)):
         return JSONResponse({"ok": False, "error": f"bad numeric param: {exc}"}, status_code=400)
 
     # Turbo defaults when steps look like a Qwen tier mapping
-    if model_id.endswith("Turbo") and steps > 8:
+    if _is_turbo_id(model_id) and steps > 8:
         steps = DEFAULT_STEPS
         if payload.get("cfg") is None:
             cfg = DEFAULT_CFG
 
-    out_path = payload.get("out") or payload.get("path")
-    if out_path:
-        out_path = str(out_path)
-        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    else:
-        name = f"mage_{int(time.time())}_{uuid.uuid4().hex[:8]}.png"
-        out_path = os.path.join(OUT_DIR, name)
+    # Always write under OUT_DIR (shared bind-mount). Ignore caller "out"
+    # paths that are not under OUT_DIR — host absolute paths from the
+    # dashboard (e.g. /home/.../v0_base.png) are not writable in-container.
+    requested = payload.get("out") or payload.get("path")
+    name = f"mage_{int(time.time())}_{uuid.uuid4().hex[:8]}.png"
+    out_path = os.path.join(OUT_DIR, name)
+    if requested:
+        req = str(requested)
+        try:
+            if os.path.commonpath(
+                [os.path.abspath(req), os.path.abspath(OUT_DIR)]
+            ) == os.path.abspath(OUT_DIR):
+                out_path = os.path.abspath(req)
+        except ValueError:
+            pass  # different drives / invalid — keep OUT_DIR default
+    os.makedirs(os.path.dirname(out_path) or OUT_DIR, exist_ok=True)
 
     t0 = time.time()
     print(

@@ -3,6 +3,7 @@
 # Profiles:
 #   qwen-image   → Qwen Image Studio server on :${QWEN_PORT:-8180}
 #   mage-image   → Mage-Flow Turbo image worker on :${MAGE_PORT:-8181}
+#   homie-video  → HOMIE subject-to-video (Wan2.1-14B) on :${HOMIE_PORT:-8192}
 #   qwen-tts     → Qwen3-TTS server on :8010 (HSA_OVERRIDE_GFX_VERSION=11.0.0)
 #   comfyui      → ComfyUI server on :8188
 #   slopfinity   → Slopfinity dashboard on :9099 (see override)
@@ -11,6 +12,7 @@
 # Full stack:      docker compose --profile slop up -d
 # Image-only:      docker compose --profile qwen-image up -d
 # Mage-only:       docker compose --profile mage-image up -d
+# HOMIE-only:      docker compose --profile homie-video up -d
 # ComfyUI-only:    docker compose --profile comfyui up -d
 #
 # Override ports and paths via .env (see .env.example).
@@ -130,18 +132,31 @@ services:
     environment:
       - USER=root
       - MAGE_PORT=${MAGE_PORT:-8181}
-      - MAGE_MODEL=${MAGE_MODEL:-microsoft/Mage-Flow-Turbo}
+      # Prefer the on-disk Turbo snapshot (17GB). HF hub id is fallback only.
+      - MAGE_MODEL=${MAGE_MODEL:-/models/Mage-Flow-Turbo}
       - MAGE_STEPS=${MAGE_STEPS:-4}
       - MAGE_CFG=${MAGE_CFG:-1.0}
       - MAGE_ATTN_BACKEND=${MAGE_ATTN_BACKEND:-sdpa}
+      - MAGE_ATTN=${MAGE_ATTN_BACKEND:-sdpa}
+      - VF_HF_ATTN_IMPL=${VF_HF_ATTN_IMPL:-sdpa}
       - MAGE_FA_SHIM=1
+      # Enable experimental ROCm SDPA kernels (gfx1151).
+      - TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}
+      # Content filter uses Qwen3-VL .generate(); fail-open by default on ROCm.
+      - MAGE_CONTENT_FILTER=${MAGE_CONTENT_FILTER:-0}
+      # Preload so first /api/generate is fast (model ~20s to load once).
       - MAGE_PRELOAD=${MAGE_PRELOAD:-1}
       - MAGE_OUT_DIR=/opt/ComfyUI/output/mage
       - MAGE_ROOT=/opt/Mage
+      - MAGE_FLOW_ROOT=/opt/Mage/mage_flow
       - HF_HOME=/home/user/.cache/huggingface
       - HUGGINGFACE_HUB_CACHE=/home/user/.cache/huggingface/hub
+      - HF_XET_HIGH_PERFORMANCE=${HF_XET_HIGH_PERFORMANCE:-1}
     volumes:
       - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
+      # Complete Turbo weights live under the project huggingface-cache even when
+      # HF_CACHE points at /mnt/downloads (shared hub). Bind them explicitly.
+      - ${MAGE_LOCAL_DIR:-./huggingface-cache/local/Mage-Flow-Turbo}:/models/Mage-Flow-Turbo:ro
       - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
       - ./Mage:/opt/Mage:ro
       - ./scripts/mage_launcher.py:/opt/mage_launcher.py:ro
@@ -155,11 +170,68 @@ services:
           exit 0
         fi
         mkdir -p /opt/ComfyUI/output/mage
-        # loguru is required by mage_flow but not baked into the toolbox image.
-        pip install --quiet --root-user-action=ignore loguru 2>/dev/null || true
+        # Prefer local Turbo snapshot if present (avoids multi-GB Hub re-download).
+        if [ -f /models/Mage-Flow-Turbo/model_index.json ]; then
+          export MAGE_MODEL=/models/Mage-Flow-Turbo
+        elif [ -f /home/user/.cache/huggingface/local/Mage-Flow-Turbo/model_index.json ]; then
+          export MAGE_MODEL=/home/user/.cache/huggingface/local/Mage-Flow-Turbo
+        fi
         echo \"🎨 Starting Mage-Flow image worker on port $$PORT (model=$${MAGE_MODEL:-microsoft/Mage-Flow-Turbo})...\"
         export PYTHONPATH=/opt/Mage:$${PYTHONPATH:-}
+        export VF_HF_ATTN_IMPL=$${VF_HF_ATTN_IMPL:-sdpa}
+        export MAGE_CONTENT_FILTER=$${MAGE_CONTENT_FILTER:-0}
         exec python3 /opt/mage_serve.py
+      "
+
+  # HOMIE subject-to-video (https://github.com/YIYANGCAI/HOMIE) — Wan2.1-T2V-14B
+  # + trained Homie weights. Reference-image → video personalization.
+  # Port ${HOMIE_PORT:-8192}. Weights must be downloaded separately (see README).
+  # UMA-heavy: do not co-warm with Mage/Qwen/Comfy.
+  homie-video-service:
+    extends: strix-halo-toolbox
+    container_name: strix-halo-homie-video
+    user: "0:0"
+    profiles:
+      - homie-video
+      - slop
+    environment:
+      - USER=root
+      - HOMIE_PORT=${HOMIE_PORT:-8192}
+      - HOMIE_ROOT=/opt/HOMIE
+      - HOMIE_CKPT_DIR=${HOMIE_CKPT_DIR:-/opt/weights/Wan2.1-T2V-14B-Diffusers}
+      - HOMIE_WEIGHTS=${HOMIE_WEIGHTS:-/opt/weights/HOMIE-Wan-Model}
+      - HOMIE_SIZE=${HOMIE_SIZE:-832*480}
+      - HOMIE_FRAMES=${HOMIE_FRAMES:-49}
+      - HOMIE_STEPS=${HOMIE_STEPS:-50}
+      - HOMIE_CFG=${HOMIE_CFG:-5.0}
+      - HOMIE_FPS=${HOMIE_FPS:-16}
+      - HOMIE_FA_SHIM=1
+      - HOMIE_OFFLOAD=${HOMIE_OFFLOAD:-1}
+      - HOMIE_OUT_DIR=/opt/ComfyUI/output/homie
+      - HOMIE_LAUNCHER=/opt/homie_launcher.py
+      - HF_HOME=/home/user/.cache/huggingface
+      - HUGGINGFACE_HUB_CACHE=/home/user/.cache/huggingface/hub
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
+      - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
+      - ${HOMIE_WEIGHTS_HOST:-./homie-weights}:/opt/weights
+      - ./HOMIE:/opt/HOMIE:ro
+      - ./scripts/homie_launcher.py:/opt/homie_launcher.py:ro
+      - ./scripts/homie_serve.py:/opt/homie_serve.py:ro
+    command: >
+      bash -c "
+        PORT=$${HOMIE_PORT:-8192}
+        if (echo > /dev/tcp/127.0.0.1/$$PORT) 2>/dev/null ; then
+          echo \"ERROR: Port $$PORT is already bound.\" 1>&2
+          sleep 30
+          exit 0
+        fi
+        mkdir -p /opt/ComfyUI/output/homie /opt/weights
+        echo \"🎬 Starting HOMIE video worker on port $$PORT (weights=$${HOMIE_WEIGHTS:-/opt/weights/HOMIE-Wan-Model})...\"
+        export PYTHONPATH=/opt/HOMIE:$${PYTHONPATH:-}
+        exec python3 /opt/homie_serve.py
       "
 
   # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so
