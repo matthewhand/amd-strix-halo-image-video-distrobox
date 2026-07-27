@@ -16,6 +16,7 @@ Run (toolbox container / compose profile mage-image):
 from __future__ import annotations
 
 import os
+import random
 import sys
 import time
 import types
@@ -26,6 +27,28 @@ from unittest.mock import MagicMock
 
 from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
+
+# Inclusive upper bound for diffusion noise seeds (matches slopfinity queue_schema).
+_SEED_MAX = 2**31 - 1
+
+
+def _resolve_request_seed(payload: dict) -> int:
+    """Concrete seed for this generate call.
+
+    Missing / negative (sentinel -1) → fresh random. Never sticky-default to 42
+    when callers omit the field (the old trap that made infinity look identical).
+    Positive ints are used as-is.
+    """
+    raw = payload.get("seed")
+    if raw is None or raw is False or raw == "":
+        return random.randint(1, _SEED_MAX)
+    try:
+        seed = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"bad seed: {exc}") from exc
+    if seed < 0 or seed == 0:
+        return random.randint(1, _SEED_MAX)
+    return seed & _SEED_MAX
 
 
 def _first_writable(candidates):
@@ -293,7 +316,7 @@ def generate(payload: dict = Body(...)):
         cfg = float(payload.get("cfg") if payload.get("cfg") is not None else DEFAULT_CFG)
         width = int(payload.get("width") or DEFAULT_WIDTH)
         height = int(payload.get("height") or DEFAULT_HEIGHT)
-        seed = int(payload.get("seed") if payload.get("seed") is not None else 42)
+        seed = _resolve_request_seed(payload)
     except (TypeError, ValueError) as exc:
         return JSONResponse({"ok": False, "error": f"bad numeric param: {exc}"}, status_code=400)
 
