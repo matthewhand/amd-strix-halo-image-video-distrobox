@@ -124,6 +124,10 @@ def music(payload: dict = Body(...)):
     return {
         "ok": True,
         "url": f"/files/music/{name}",
+        # Absolute path inside the container / shared mount so orchestrators
+        # can copy without re-resolving the dashboard URL.
+        "audio_path": out_path,
+        "path": out_path,
         "duration": duration,
         "elapsed_s": round(time.time() - t0, 1),
     }
