@@ -104,3 +104,6 @@ evidence/**/*.png
 evidence/**/*.mp4
 !evidence/**/manifest.json
 slop_test/
+
+# Playwright catalog runtime captures (regenerate locally)
+e2e/catalog-out/

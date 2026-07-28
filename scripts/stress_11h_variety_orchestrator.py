@@ -129,11 +129,15 @@ def resume_if_ok(slop: str, log_path: Path) -> None:
 
 
 def inject_prompt(slop: str, prompt: str, rank: int) -> dict:
+    # Pin the same clean scene+keyword onto image/video stages so the concept
+    # LLM enhancer cannot rewrite them into cinematic meta-prose.
+    stage_prompts = json.dumps({"image": prompt, "video": prompt})
     return http_json(
         "POST",
         f"{slop}/inject",
         data={
             "prompt": prompt,
+            "stage_prompts": stage_prompts,
             "priority": str(max(1, 100 - rank)),
             "infinity": "0",
             "concurrent": "1",
