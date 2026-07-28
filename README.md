@@ -730,6 +730,8 @@ Performance improvements to investigate:
 
 The Slopfinity dashboard (web UI, fleet scheduler, and backend) lives in its own private project, `matthewhand/slopfinity`, and is pulled into this repo as a git submodule at [`slopfinity/`](slopfinity). This repo stays focused on the distrobox/Docker ROCm environment for Strix Halo image & video generation; the submodule carries the dashboard code, its docs, branding, and demo assets.
 
+**Product status (honest):** the dashboard is **`0.9.0-preview`** — **0-auth, single-operator, loopback by default**. It is **not** a multi-user or public-internet product. Packaging tags such as `v1.0.0` on the private submodule are pin notes only (see `slopfinity/RELEASE-v1.0.0.md`). Full operator status, security model, and evidence table: [`slopfinity/README.slopfinity.md`](slopfinity/README.slopfinity.md).
+
 Toolbox-owned launchers that drive the submodule remain in this repo root: `bin/slopfinity`, `dark_server.py`, and `scripts/slopfinity_http.py` (`import slopfinity` resolves via `PYTHONPATH=$REPO`).
 
 > **Docs map (in the submodule):** [`slopfinity/README.slopfinity.md`](slopfinity/README.slopfinity.md) (operators) · [`slopfinity/docs/slopfinity-toolbox-boundary.md`](slopfinity/docs/slopfinity-toolbox-boundary.md) (ownership / NOT shipped) · [`slopfinity/docs/slopfinity-private-repo.md`](slopfinity/docs/slopfinity-private-repo.md) (private mirror) · [`slopfinity/docs/slopfinity-docs-index.md`](slopfinity/docs/slopfinity-docs-index.md) (index + honesty checklist).
