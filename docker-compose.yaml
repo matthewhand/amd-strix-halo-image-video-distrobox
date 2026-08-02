@@ -32,11 +32,17 @@ services:
     # ROCm REPL.
 
     # Run as host user so mounted files have correct ownership
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "0:0"
 
     # GPU and system access
     network_mode: host
     privileged: true
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
     environment:
       # Set HOME for non-root user (mount targets use this path)
       - HOME=/home/user
@@ -76,7 +82,7 @@ services:
       - ${COMFY_MODELS:-./comfy-models}:/opt/ComfyUI/models
       - ${COMFY_INPUT:-./comfy-input}:/opt/ComfyUI/input
       - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
-      - ./scripts/start_docker.sh:/opt/start_docker.sh:ro
+      - ./scripts/ops/start_docker.sh:/opt/start_docker.sh:ro
 
     security_opt:
       - seccomp:unconfined

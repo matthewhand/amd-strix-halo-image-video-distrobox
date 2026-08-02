@@ -72,6 +72,7 @@ def _ensure_mage_on_path() -> None:
     candidates = [
         os.environ.get("MAGE_FLOW_ROOT"),
         "/opt/Mage/mage_flow",
+        str(Path(__file__).resolve().parents[2] / "submodules" / "Mage" / "mage_flow"),
         str(Path(__file__).resolve().parents[1] / "Mage" / "mage_flow"),
         str(Path("/workspace/Mage/mage_flow")),
         str(Path("/workspace/../Mage/mage_flow").resolve()),

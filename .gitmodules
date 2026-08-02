@@ -3,5 +3,8 @@
 	url = https://github.com/matthewhand/slopfinity.git
 	branch = main
 [submodule "Mage"]
-	path = Mage
+	path = submodules/Mage
 	url = https://github.com/microsoft/Mage.git
+[submodule "HOMIE"]
+	path = submodules/HOMIE
+	url = https://github.com/YIYANGCAI/HOMIE.git

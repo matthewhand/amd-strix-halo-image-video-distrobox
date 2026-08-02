@@ -33,6 +33,8 @@ concat.txt
 tests/private_prompts/
 
 # Data directories (created by docker-compose or at runtime)
+models/
+.grok/
 huggingface-cache/
 qwen-outputs/
 wan-models/
@@ -89,21 +91,5 @@ node_modules/
 # Playwright e2e — generated artifacts only, the spec stays committed.
 test-results/
 playwright-report/
-e2e/artifacts/
-dist/
-# CI artifact lane (results.json/xml, failure-packet.md, failed-tests.json
-# from .github/workflows/playwright.yml + scripts/extract-failures.mjs).
-# Local devs running `npx playwright test` won't generate these unless
-# they set CI=1, but the dir is conventional — gitignore it.
-artifacts/
-
-# Asset evidence: keep the canonical media on disk (regenerable via
-# scripts/build_evidence_tts.py); track only structure + manifest.
-evidence/**/*.wav
-evidence/**/*.png
-evidence/**/*.mp4
-!evidence/**/manifest.json
-slop_test/
-
-# Playwright catalog runtime captures (regenerate locally)
-e2e/catalog-out/
+tests/e2e/artifacts/
+tests/e2e/catalog-out/
