@@ -210,7 +210,7 @@ export QWEN_TEST_PROMPT="Custom test prompt"
    - Validates container health
 
 2. **Service Health Check**
-   - Tests HTTP connectivity to localhost:8000
+   - Tests HTTP connectivity to localhost:8180
    - Validates web UI responsiveness
    - Retries with exponential backoff
 
@@ -316,9 +316,9 @@ ls -la /dev/dri /dev/kfd
 **API Not Responding**
 ```bash
 # Check if service is running
-curl http://localhost:8000
+curl http://localhost:8180
 # Check container logs
-docker logs strix-halo-toolbox
+docker logs strix-halo-qwen-image
 ```
 
 **Images Not Persisting**

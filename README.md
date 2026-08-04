@@ -64,7 +64,7 @@ Both modes use the **same container image** built from the same Dockerfile. The 
 | **HOME sharing** | Full HOME is shared automatically | Explicit volume mounts per directory |
 | **User** | Runs as your host user | Runs as root inside the container |
 | **Services** | Manual via shell aliases (`start_qwen_studio`, `start_comfy_ui`) | Auto-started by `start_docker.sh` with restart monitoring |
-| **GUI access** | X11/Wayland forwarded (can open image viewers) | Web UI only (ports 8000, 8188) |
+| **GUI access** | X11/Wayland forwarded (can open image viewers) | Web UI only (ports 8180, 8188) |
 
 ### Volume mapping (Docker Compose)
 
@@ -97,7 +97,7 @@ In Distrobox, these mounts are unnecessary — your entire HOME is shared, so al
 
 | Service | Default port | Managed by |
 |---------|-------------|------------|
-| Qwen Image Studio | 8000 | `start_docker.sh` / `QWEN_PORT` env var |
+| Qwen Image Studio | 8180 | `start_docker.sh` / `QWEN_PORT` env var (not 8000 — LiteLLM) |
 | ComfyUI | 8188 | `start_docker.sh` / `COMFYUI_PORT` env var |
 
 Set a port to `0` in docker-compose to disable that service.
@@ -239,7 +239,7 @@ You can customize ports or disable specific services using environment variables
 services:
   strix-halo-toolbox:
     environment:
-      - QWEN_PORT=8001      # Change Qwen port (default: 8000)
+      - QWEN_PORT=8181      # Change Qwen port (default: 8180; avoid :8000 / LiteLLM)
       - COMFYUI_PORT=0      # Disable ComfyUI (default: 8188)
 ```
 
@@ -375,7 +375,7 @@ For interactive use, the Qwen Image Studio web UI is also available:
 start_qwen_studio
 
 # Docker Compose
-docker compose up -d   # starts on port 8000
+docker compose --profile qwen-image up -d   # Qwen Image Studio on port 8180
 ```
 
 The container automatically applies ROCm compatibility patches (`scripts/apply_qwen_patches.py`).

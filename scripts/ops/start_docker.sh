@@ -3,8 +3,9 @@ set -e
 
 echo '🚀 Starting Strix Halo Toolbox services...'
 
-# Default configuration (env vars passed from docker-compose)
-QWEN_PORT=${QWEN_PORT:-8000}
+# Default configuration (env vars passed from docker-compose).
+# Keep Qwen off :8000 — LiteLLM / other hubs own that port.
+QWEN_PORT=${QWEN_PORT:-8180}
 COMFYUI_PORT=${COMFYUI_PORT:-8188}
 
 # --- Deploy Patched Launcher (Shim for ROCm) ---
