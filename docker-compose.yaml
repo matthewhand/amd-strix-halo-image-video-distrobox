@@ -167,7 +167,7 @@ services:
       # HF_CACHE points at /mnt/downloads (shared hub). Bind them explicitly.
       - ${MAGE_LOCAL_DIR:-./huggingface-cache/local/Mage-Flow-Turbo}:/models/Mage-Flow-Turbo:ro
       - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
-      - ./Mage:/opt/Mage:ro
+      - ./submodules/Mage:/opt/Mage:ro
       - ./scripts/mage_launcher.py:/opt/mage_launcher.py:ro
       - ./scripts/mage_serve.py:/opt/mage_serve.py:ro
     command: >
@@ -226,7 +226,7 @@ services:
       - ${HF_CACHE:-./huggingface-cache}:/home/user/.cache/huggingface
       - ${COMFY_OUTPUTS:-./comfy-outputs}:/opt/ComfyUI/output
       - ${HOMIE_WEIGHTS_HOST:-./homie-weights}:/opt/weights
-      - ./HOMIE:/opt/HOMIE:ro
+      - ./submodules/HOMIE:/opt/HOMIE:ro
       - ./scripts/homie_launcher.py:/opt/homie_launcher.py:ro
       - ./scripts/homie_serve.py:/opt/homie_serve.py:ro
     command: >
@@ -254,7 +254,7 @@ services:
       - qwen-tts
       - slop
     environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
       # Redirect HuggingFace cache to a writable bind-mounted path. The default
       # /home/user/.cache/huggingface is read-only for the container UID once
       # the model tries to materialize the CustomVoice subdir, causing every

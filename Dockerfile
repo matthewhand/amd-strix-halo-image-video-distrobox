@@ -33,7 +33,6 @@ COPY scripts/qwen_launcher.py /opt/
 COPY scripts/qwen_tts_launcher.py /opt/
 COPY scripts/qwen_tts_serve.py /opt/
 COPY scripts/wan_launcher.py /opt/
-COPY scripts/test_wan_permutations.py /opt/
 COPY scripts/download_wan_cli.sh /opt/
 COPY scripts/ernie_launcher.py /opt/
 COPY scripts/get_ernie_image.sh /opt/
@@ -109,7 +108,7 @@ RUN chmod -R a+rwX /opt && chmod +x /opt/*.sh /opt/*.py || true && \
     dnf clean all && rm -rf /var/cache/dnf/*
 
 # ROCm/Triton env (exports TRITON_HIP_* and LD_LIBRARY_PATH; also FA enable)
-COPY scripts/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
+COPY scripts/ops/01-rocm-env-for-triton.sh /etc/profile.d/01-rocm-env-for-triton.sh
 
 # ROCm environment for Strix Halo (gfx1151)
 ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
@@ -124,11 +123,11 @@ ENV LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_devel/lib
 ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.13/site-packages/_rocm_sdk_core/lib
 
 # Banner script (runs on login). Use a high sort key so it runs after venv.sh and 01-rocm-env...
-COPY scripts/99-toolbox-banner.sh /etc/profile.d/99-toolbox-banner.sh
+COPY scripts/ops/99-toolbox-banner.sh /etc/profile.d/99-toolbox-banner.sh
 RUN chmod 0644 /etc/profile.d/99-toolbox-banner.sh
 
 # Keep /opt/venv/bin first after user dotfiles
-COPY scripts/zz-venv-last.sh /etc/profile.d/zz-venv-last.sh
+COPY scripts/ops/zz-venv-last.sh /etc/profile.d/zz-venv-last.sh
 RUN chmod 0644 /etc/profile.d/zz-venv-last.sh
 
 # Disable core dumps in interactive shells (helps with recovering faster from ROCm crashes)
