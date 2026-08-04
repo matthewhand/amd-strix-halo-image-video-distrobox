@@ -475,7 +475,7 @@ _frames_per_chain = max(1, _frames_per_chain)
 
 ## Test Coverage
 
-**File:** `/home/matthewh/amd-strix-halo-image-video-toolboxes/.claude/worktrees/flamboyant-ride-2e7c01/tests/test_comfy_poll.py`
+**File:** `tests/unit/`
 
 | Test | Lines | What it verifies |
 |------|-------|------------------|
