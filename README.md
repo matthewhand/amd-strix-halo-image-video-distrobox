@@ -95,10 +95,15 @@ In Distrobox, these mounts are unnecessary — your entire HOME is shared, so al
 
 ### Services & ports
 
-| Service | Default port | Managed by |
-|---------|-------------|------------|
-| Qwen Image Studio | 8180 | `start_docker.sh` / `QWEN_PORT` env var (not 8000 — LiteLLM) |
-| ComfyUI | 8188 | `start_docker.sh` / `COMFYUI_PORT` env var |
+| Service | Default port | Managed by / Env Var |
+|---------|-------------|----------------------|
+| Qwen Image Studio | 8180 | `scripts/ops/start_docker.sh` / `QWEN_PORT` (not 8000 — LiteLLM) |
+| Mage-Flow | 8181 | `MAGE_PORT` |
+| ComfyUI | 8188 | `scripts/ops/start_docker.sh` / `COMFYUI_PORT` |
+| HOMIE | 8192 | `HOMIE_PORT` |
+| Qwen3-TTS | 8010 | `QWEN_TTS_PORT` / `TTS_PORT` |
+| HeartMuLa | 8011 | `HEARTMULA_PORT` |
+| Slopfinity Dashboard | 9099 | `SLOPFINITY_BIND_PORT` |
 
 Set a port to `0` in docker-compose to disable that service.
 
@@ -207,11 +212,11 @@ Inside, your prompt looks normal but you’re in the container with:
 
 This distrobox will be updated regularly with new nightly builds from TheRock for ROCm 7 and updated support for image and video generation.
 
-You can use `refresh-toolbox.sh` to pull updates:
+You can use `scripts/ops/refresh-toolbox.sh` to pull updates:
 
 ```bash
-chmod +x refresh-toolbox.sh
-./refresh-toolbox.sh
+chmod +x scripts/ops/refresh-toolbox.sh
+./scripts/ops/refresh-toolbox.sh
 ```
 
 > [[!WARNING] ⚠️ **Refreshing deletes the current distrobox**
@@ -388,9 +393,9 @@ The container automatically applies ROCm compatibility patches (`scripts/apply_q
 ### 6.5. Test Scripts
 
 ```bash
-python tests/test_qwen_generation.py     # single image smoke test
-python tests/test_qwen_variations.py     # multiple prompts/settings
-python tests/test_waldo_birdseye.py      # birds-eye puzzle images
+python tests/legacy/test_qwen_generation.py     # single image smoke test
+python tests/legacy/test_qwen_variations.py     # multiple prompts/settings
+python tests/legacy/test_waldo_birdseye.py      # birds-eye puzzle images
 ```
 
 ---
@@ -562,7 +567,7 @@ docker run -d --name comfyui \
   bash -c 'cd /opt/ComfyUI && python main.py --listen 0.0.0.0 --port 8188 --output-directory /opt/ComfyUI/output --disable-mmap'
 
 # Generate a workflow and submit it
-python scripts/generate_ltx_workflow.py --prompt "your prompt" --output workflow.json
+python scripts/generators/generate_ltx_workflow.py --prompt "your prompt" --output workflow.json
 python scripts/comfyui_api.py workflow.json
 ```
 
@@ -576,7 +581,7 @@ Generate a still image with Qwen, then animate it with LTX-2:
 docker cp my_image.png comfyui:/opt/ComfyUI/input/
 
 # Step 3: Submit image-to-video workflow
-python tests/test_qwen_to_ltx2.py
+python tests/legacy/test_qwen_to_ltx2.py
 ```
 
 The `LTXVImgToVideo` node takes the image as the first frame and generates motion + audio from a text prompt.
@@ -601,9 +606,9 @@ LTX-2 needs these in `~/comfy-models/`:
 ### 8.5. Test Scripts
 
 ```bash
-python tests/test_ltx2_variations.py      # text-to-video (various resolutions/lengths)
-python tests/test_ltx2_audio_video.py     # video with generated audio
-python tests/test_qwen_to_ltx2.py         # image-to-video pipeline
+python tests/legacy/test_ltx2_variations.py      # text-to-video (various resolutions/lengths)
+python tests/legacy/test_ltx2_audio_video.py     # video with generated audio
+python tests/legacy/test_qwen_to_ltx2.py         # image-to-video pipeline
 ```
 
 ### 8.6. Performance
@@ -677,16 +682,20 @@ For detailed information on the symlink hacks, CPU offloading, and kernel requir
 
 All helper scripts live under `scripts/`. The Dockerfile copies them into the container at build time. Nothing in the repo root is needed at runtime.
 
-| Script | Purpose |
-|--------|---------|
-| `apply_qwen_patches.py` | ROCm monkey-patches for Qwen (offload_state_dict, segfault fix) |
-| `qwen_launcher.py` | Qwen CLI wrapper with flash-attention shim |
-| `wan_launcher.py` | WAN CLI wrapper with flash-attention shim |
-| `start_docker.sh` | Docker Compose entrypoint (starts Qwen + ComfyUI) |
-| `patch_gemma_loader.py` | Force Gemma encoder to CPU (LTX-2 workaround, `--revert` to undo) |
-| `generate_ltx_workflow.py` | Generate ComfyUI API workflow JSON for LTX-2 |
-| `comfy_model_manager.py` | Download/manage ComfyUI models |
-| `diagnose.sh` | Validate ROCm setup and GPU detection |
+| Script / Subdirectory | Purpose |
+|-----------------------|---------|
+| `scripts/apply_qwen_patches.py` | ROCm monkey-patches for Qwen (offload_state_dict, segfault fix) |
+| `scripts/qwen_launcher.py` | Qwen CLI wrapper with flash-attention shim |
+| `scripts/wan_launcher.py` | WAN CLI wrapper with flash-attention shim |
+| `scripts/ops/start_docker.sh` | Docker Compose entrypoint (starts services) |
+| `scripts/patch_gemma_loader.py` | Force Gemma encoder to CPU (LTX-2 workaround, `--revert` to undo) |
+| `scripts/generators/generate_ltx_workflow.py` | Generate ComfyUI API workflow JSON for LTX-2 |
+| `scripts/comfy_model_manager.py` | Download/manage ComfyUI models |
+| `scripts/ops/diagnose.sh` | Validate ROCm setup and GPU detection |
+| `scripts/ops/` | Environment, banner, installation, and docker operation scripts |
+| `scripts/generators/` | Workflow and media generators |
+| `scripts/orchestration/` | Marathon pipelines and multi-stage orchestrators |
+| `scripts/benchmarks/` | Benchmark and debugging scripts |
 
 ---
 

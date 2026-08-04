@@ -6,8 +6,10 @@ This guide provides a comprehensive technical manual for running ComfyUI on AMD 
 
 ### 1. Start ComfyUI
 ```bash
-# Recommendation: Use the complete launcher which handles the ROCm environment
-distrobox enter strix-halo-image-video -- python3 ~/amd-strix-halo-image-video-distrobox/start_comfyui_complete.py
+# Recommendation: Use Docker Compose or start directly in Distrobox
+docker compose up -d comfyui
+# Or inside Distrobox:
+# distrobox enter strix-halo-image-video -- python3 /opt/ComfyUI/main.py --listen 0.0.0.0 --port 8188
 ```
 
 ### 2. Access Web Interface
@@ -78,9 +80,9 @@ We use `/mnt/data` (mapped to `~/comfy-models`) to host models across multiple t
 
 If you ever **Refresh/Update** the toolbox, you MUST run these scripts to restore functionality:
 
-1.  **Restore Links**: `/opt/set_extra_paths.sh`
-2.  **Restore Gemma Fix**: `python3 patch_gemma_loader.py`
-3.  **Restore Tokenizer Fix**: `python3 patch_lt_tokenizer.py`
+1.  **Restore Links**: `scripts/set_extra_paths.sh`
+2.  **Restore Gemma Fix**: `python3 scripts/patch_gemma_loader.py`
+3.  **Restore Patches**: `python3 scripts/patches/fix_ltx_kornia_pad.py`
 
 ---
 

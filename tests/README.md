@@ -19,9 +19,9 @@ inference is forbidden in CI, even via `workflow_dispatch`.
 2. Spawn the mock via `subprocess.Popen` from your test, point the
    relevant env var (or seeded `config.json`) at it, and tear down on
    exit (`atexit` + `try/finally`).
-3. A pytest test under `tests/` is picked up automatically by the
+3. A pytest test under `tests/unit/` is picked up automatically by the
    gating `.github/workflows/python-tests.yml` job (it runs all of
-   `tests/` except `e2e_qwen_web_test.py`). The lightweight
+   `tests/` except `tests/e2e/e2e_qwen_web_test.py`). The lightweight
    `.github/workflows/e2e-qwen-web-test.yml::e2e-qwen-web-light` job
    also runs the mock-backed surface.
 4. **NEVER call a real model in CI** — even via `workflow_dispatch`. The
@@ -81,10 +81,10 @@ export SLOPFINITY_LLM_CPU_URL=""        # or point SLOPFINITY_LLM_PRIMARY_URL at
 # No ComfyUI locally -> let scheduler.free_between() fail fast:
 export SLOPFINITY_COMFY_URL="http://127.0.0.1:1"
 
-python -m pytest tests/ --ignore=tests/e2e_qwen_web_test.py -q
+python -m pytest tests/ --ignore=tests/e2e/e2e_qwen_web_test.py -q
 ```
 
-`tests/e2e_qwen_web_test.py` is excluded because it needs a real AMD
+`tests/e2e/e2e_qwen_web_test.py` is excluded because it needs a real AMD
 GPU / ROCm (covered by the self-hosted job in `e2e-qwen-web-test.yml`).
 
 Test deps beyond the runtime requirements: `pytest`, `pytest-asyncio`,
@@ -103,7 +103,7 @@ writable workspace path, `SLOPFINITY_LLM_CPU_URL=""`, and
 `SLOPFINITY_COMFY_URL="http://127.0.0.1:1"`, then runs:
 
 ```bash
-python -m pytest tests/ --ignore=tests/e2e_qwen_web_test.py -q
+python -m pytest tests/ --ignore=tests/e2e/e2e_qwen_web_test.py -q
 ```
 
 This job **gates** (no `continue-on-error`) — a failing test fails the
@@ -130,9 +130,9 @@ The `tests/test_*.py` suite is **31 files / 382 test functions**
 | `test_server_*.py`, `test_queue_schema.py` | server config/assets/queue + SQLite schema |
 | `test_ssrf_guard.py` | SSRF guard on outbound probes |
 
-The `tests/run_*.py` files (`run_smoke.py`, `run_matrix.py`,
-`run_all_permutations.py`, the `run_*_wave.py` family) are manual
-pipeline drivers, not pytest cases.
+The test files under `tests/benchmarks/` (`run_smoke.py`, `run_matrix.py`,
+`run_all_permutations.py`, `run_chained_wave.py`, etc.) and `tests/legacy/` are manual
+pipeline drivers or legacy suites, not pytest unit cases.
 
 ---
 
@@ -177,11 +177,11 @@ End-to-end testing for the Qwen Image Web UI that validates the complete workflo
 python -m pip install requests
 
 # Run the complete E2E test
-python tests/e2e_qwen_web_test.py
+python tests/e2e/e2e_qwen_web_test.py
 
 # Run with Docker Compose
 docker compose --profile qwen-image up --build -d
-python tests/e2e_qwen_web_test.py
+python tests/e2e/e2e_qwen_web_test.py
 docker compose down
 ```
 
@@ -333,13 +333,13 @@ docker exec strix-halo-toolbox ls -la /root/.qwen-image-studio/
 
 Run with verbose output:
 ```bash
-python -v tests/e2e_qwen_web_test.py
+python -v tests/e2e/e2e_qwen_web_test.py
 ```
 
 Enable debug logging:
 ```bash
 export E2E_DEBUG=1
-python tests/e2e_qwen_web_test.py
+python tests/e2e/e2e_qwen_web_test.py
 ```
 
 ## Performance Benchmarks
