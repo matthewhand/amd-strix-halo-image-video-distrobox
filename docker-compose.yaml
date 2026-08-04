@@ -67,7 +67,7 @@ services:
       - HF_HUB_ENABLE_HF_TRANSFER=1
 
       # Service Configuration (set to 0 to disable in start_docker.sh)
-      # - QWEN_PORT=8000
+      # - QWEN_PORT=8180
       # - COMFYUI_PORT=8188
 
     volumes:
@@ -243,7 +243,7 @@ services:
         exec python3 /opt/homie_serve.py
       "
 
-  # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8000) so
+  # Qwen3-TTS service profile on :8010. Separate from qwen-image (:8180) so
   # you can run TTS independently. Enforces HSA_OVERRIDE_GFX_VERSION=11.0.0
   # (NOT the 11.5.1 used by the rest of the stack — the TTS model's kernels
   # regress under 11.5.1 on gfx1151).

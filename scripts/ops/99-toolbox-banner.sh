@@ -85,12 +85,12 @@ printf 'GPU    : %s\n\n' "$GPU"
 printf 'Repo   : https://github.com/matthewhand/amd-strix-halo-image-video-distrobox\n'
 printf 'Image  : amd-strix-halo-image-video-distrobox\n\n'
 printf 'Included:\n'
-printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://localhost:8000)"
+printf '  - %-16s → %s\n' "Qwen Image Studio" "start_qwen_studio (http://localhost:8180)"
 printf '  - %-16s → %s\n' "WAN 2.2 (CLI)"     "cd /opt/wan-video-studio && python generate.py ..."
 printf '  - %-16s → %s\n' "ComfyUI"            "start_comfy_ui (http://localhost:8188)"
 echo
 
 
-# Aliases
-alias start_qwen_studio='cd /opt/qwen-image-studio && uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8000'
+# Aliases (Qwen on 8180 so it does not collide with LiteLLM on :8000)
+alias start_qwen_studio='cd /opt/qwen-image-studio && uvicorn qwen-image-studio.server:app --reload --host 0.0.0.0 --port 8180'
 alias start_comfy_ui='cd /opt/ComfyUI && python main.py --port 8188 --output-directory $HOME/comfy-outputs --disable-mmap'

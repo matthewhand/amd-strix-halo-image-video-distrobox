@@ -16,6 +16,9 @@ import subprocess
 
 MOCK_MODE = os.environ.get("MOCK_QWEN_WEB") == "1"
 PERSIST_THRESHOLD = 100 if MOCK_MODE else 1_000_000
+# Match docker-compose / .env default (not 8000 — LiteLLM owns that).
+QWEN_PORT = int(os.environ.get("QWEN_PORT", "8180"))
+QWEN_BASE = f"http://localhost:{QWEN_PORT}"
 
 def has_gpu():
     """Check if an AMD GPU is available via /dev/kfd or torch."""
@@ -82,7 +85,7 @@ def _check_service_health():
     max_retries = 10
     for i in range(max_retries):
         try:
-            response = requests.get('http://localhost:8000', timeout=10)
+            response = requests.get(QWEN_BASE, timeout=10)
             if response.status_code == 200:
                 print("✅ Qwen Web UI is responsive")
                 return True
@@ -99,7 +102,7 @@ def test_service_health():
     ok = _check_service_health()
     if not ok:
         import pytest
-        pytest.skip("Qwen Web UI not reachable on :8000")
+        pytest.skip(f"Qwen Web UI not reachable on :{QWEN_PORT}")
     assert ok, "Qwen Web UI did not return HTTP 200"
 
 def _run_image_generation_via_api():
@@ -123,7 +126,7 @@ def _run_image_generation_via_api():
     try:
         # Submit generation job
         response = requests.post(
-            'http://localhost:8000/api/generate',
+            f'{QWEN_BASE}/api/generate',
             json=generation_data,
             timeout=30
         )
@@ -146,7 +149,7 @@ def _run_image_generation_via_api():
 
         while time.time() - start_time < max_wait:
             try:
-                status_response = requests.get(f'http://localhost:8000/api/job/{job_id}', timeout=10)
+                status_response = requests.get(f'{QWEN_BASE}/api/job/{job_id}', timeout=10)
                 if status_response.status_code == 200:
                     status_data = status_response.json()
                     status = status_data.get('status')
@@ -175,11 +178,12 @@ def _run_image_generation_via_api():
 
 def test_image_generation_via_api():
     """pytest: opt-in only — runs a REAL image generation against the live Qwen
-    Web UI on :8000 (submit + poll). Skipped by default because the outcome
-    depends on the live backend's API/version (e.g. a 422 from a drifted request
-    schema) and on GPU availability, neither of which is a slopfinity-code
-    regression — so it must not break `pytest tests/` on a dev box that happens
-    to have :8000 up. CI (no backend) skips on the health check regardless.
+    Web UI on :8180 by default (submit + poll; override with QWEN_PORT).
+    Skipped by default because the outcome depends on the live backend's
+    API/version (e.g. a 422 from a drifted request schema) and on GPU
+    availability, neither of which is a slopfinity-code regression — so it
+    must not break `pytest tests/` on a dev box that happens to have Qwen up.
+    CI (no backend) skips on the health check regardless.
     Opt in with SLOPFINITY_RUN_PIPELINE_E2E=1 to validate live generation.
     """
     import os
@@ -187,7 +191,7 @@ def test_image_generation_via_api():
     if os.environ.get("SLOPFINITY_RUN_PIPELINE_E2E") != "1":
         pytest.skip("live qwen generation e2e; set SLOPFINITY_RUN_PIPELINE_E2E=1 to run")
     if not _check_service_health():
-        pytest.skip("Qwen Web UI not reachable on :8000")
+        pytest.skip(f"Qwen Web UI not reachable on :{QWEN_PORT}")
     job_data = _run_image_generation_via_api()
     assert job_data is not False, "image generation via API did not complete"
 
@@ -330,7 +334,7 @@ def _start_mock_server():
     deadline = time.time() + 5
     while time.time() < deadline:
         try:
-            r = requests.get("http://localhost:8000/", timeout=1)
+            r = requests.get(f"{QWEN_BASE}/", timeout=1)
             if r.status_code == 200:
                 print("✅ Mock server is ready")
                 return proc
